@@ -1,0 +1,1 @@
+{"version":3,"file":"Toolbar.d.ts","sourceRoot":"","sources":["../src/Toolbar.tsx"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,OAAO,CAAA;AAEtC,MAAM,WAAW,YAAY;IAC3B,QAAQ,EAAE,SAAS,CAAA;IACnB,KAAK,CAAC,EAAE,KAAK,CAAC,aAAa,CAAA;CAC5B;AAED,wBAAgB,OAAO,CAAC,EAAE,QAAQ,EAAE,KAAK,EAAE,EAAE,YAAY,2CAexD"}

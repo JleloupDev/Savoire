@@ -1,0 +1,21 @@
+# Keep alive — repousse le timer de teardown manuellement
+name: Repousser le teardown
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'teardown-watchdog.yml',
+              ref: 'main'
+            })
+            console.log('Timer réinitialisé — teardown repoussé à dans 1h')

@@ -1,0 +1,7 @@
+<Project>
+  <Sdk Name="Microsoft.VisualStudio.JavaScript.Sdk" Version="1.0.4923532" />
+  <PropertyGroup>
+    <StartupCommand>pnpm dev</StartupCommand>
+    <JavaScriptTestFramework>None</JavaScriptTestFramework>
+  </PropertyGroup>
+</Project>

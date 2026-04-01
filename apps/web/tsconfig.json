@@ -1,0 +1,17 @@
+{
+  "extends": "../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/application": ["../../packages/application/src/index.ts"],
+      "@savoire/editor-core": ["../../packages/editor-core/src/index.ts"],
+      "@savoire/infrastructure-sync": ["../../packages/infrastructure-sync/src/index.ts"],
+      "@savoire/platform": ["../../packages/platform/src/index.ts"],
+      "@savoire/plugin-api": ["../../packages/plugin-api/src/index.ts"],
+      "@savoire/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

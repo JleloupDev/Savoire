@@ -1,0 +1,75 @@
+# ===== .NET =====
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+*.DotSettings.user
+
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+# DECISION: garder les packages frontend versionnés à la racine
+
+# Publish
+publish/
+**/publish/
+
+# ===== Node / JS =====
+node_modules/
+
+# npm/yarn/pnpm
+.npm
+.yarn/
+.pnpm-store/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== IDE =====
+.idea/
+*.swp
+*.swo
+
+# ===== MAUI / Mobile =====
+*.keystore
+*.jks
+**/Platforms/Android/Resources/mipmap-*/
+**/Platforms/iOS/Entitlements.plist
+
+# ===== Blazor WASM =====
+# (wwwroot/js/editor.bundle.js is generated — exclure si on préfère rebuild à chaque fois)
+# client-web/wwwroot/js/editor.bundle.js
+# client-desktop/wwwroot/js/editor.bundle.js
+
+# ===== Desktop (Tauri) =====
+apps/*/dist/
+apps/*/obj/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/.cargo/
+apps/desktop/src-tauri/.rustup/
+apps/desktop/src-tauri/*.log
+tests/frontend/unit/*/obj/
+
+# ===== Claude Code =====
+.claude/
+
+# ===== Azure Developer CLI =====
+.azure/
+
+# ===== Secrets =====
+**/appsettings.json
+!**/appsettings.Example.json
+
+# ===== Internal working notes =====
+docs/
+
+# ===== Local build outputs =====
+.tmp_build/
+aspire/data
+/.local/data/

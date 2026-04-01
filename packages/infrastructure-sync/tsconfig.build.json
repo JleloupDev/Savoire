@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "paths": {
+      "@savoire/application": ["../application/dist/index.d.ts"],
+      "@savoire/domain-sync": ["../domain-sync/dist/index.d.ts"],
+      "@savoire/platform": ["../platform/dist/index.d.ts"]
+    }
+  },
+  "exclude": ["**/*.test.ts"]
+}

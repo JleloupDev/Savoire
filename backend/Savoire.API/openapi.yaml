@@ -1,0 +1,1089 @@
+openapi: 3.0.3
+
+info:
+  title: Collaborative Vault API
+  description: |
+    API du serveur de synchronisation pour l'application de notes collaborative.
+    
+    ## Authentification V1
+    
+    En V1, l'identité est déclarée via le header `X-User-Id`. Aucune vérification
+    de mot de passe ou de token n'est effectuée. Ce mécanisme sera remplacé par
+    un JWT Bearer token en V2 sans changement des endpoints.
+    
+    ## Conventions
+    
+    - Tous les identifiants sont des UUID v4
+    - Toutes les dates sont en ISO 8601 UTC
+    - Les erreurs suivent le format RFC 7807 (Problem Details)
+    - Les chemins de fichiers utilisent `/` comme séparateur, sans slash initial
+    
+  version: 1.0.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Développement local
+  - url: https://your-server.com/api/v1
+    description: Self-hosted
+
+tags:
+  - name: Users
+    description: Gestion des comptes utilisateurs
+  - name: Vaults
+    description: Gestion des vaults (espaces de travail)
+  - name: Folders
+    description: Arborescence de dossiers dans un vault
+  - name: Documents
+    description: Documents Markdown
+  - name: Sync
+    description: Synchronisation CRDT et état de sync
+
+# ─────────────────────────────────────────────
+# SECURITY
+# ─────────────────────────────────────────────
+
+security:
+  - UserIdHeader: []
+
+components:
+  securitySchemes:
+    UserIdHeader:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: Identifiant de l'utilisateur (V1 — pas de vérification de mot de passe)
+
+# ─────────────────────────────────────────────
+# SCHEMAS
+# ─────────────────────────────────────────────
+
+  schemas:
+
+    # ── Erreur standard RFC 7807 ──────────────
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://errors.app/vault-not-found
+        title:
+          type: string
+          example: Vault introuvable
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Le vault 'abc-123' n'existe pas ou vous n'y avez pas accès.
+      required: [type, title, status]
+
+    # ── Users ────────────────────────────────
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: jean
+        displayName:
+          type: string
+          example: Jean
+      required: [id, displayName]
+
+    # ── Vaults ───────────────────────────────
+    VaultSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Notes personnelles
+        role:
+          type: string
+          enum: [owner, editor, viewer]
+        documentCount:
+          type: integer
+          example: 142
+        folderCount:
+          type: integer
+          example: 12
+        lastModifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sizeBytes:
+          type: integer
+          format: int64
+          example: 2048000
+      required: [id, name, role, documentCount, folderCount, sizeBytes]
+
+    VaultDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/VaultSummaryDto'
+        - type: object
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/VaultMemberDto'
+            createdAt:
+              type: string
+              format: date-time
+          required: [members, createdAt]
+
+    VaultMemberDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          example: marie
+        displayName:
+          type: string
+          example: Marie
+        role:
+          type: string
+          enum: [owner, editor, viewer]
+      required: [userId, displayName, role]
+
+    CreateVaultRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Mes recherches
+      required: [name]
+
+    RenameVaultRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Nouveau nom
+      required: [name]
+
+    AddMemberRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          example: marie
+        role:
+          type: string
+          enum: [editor, viewer]
+      required: [userId, role]
+
+    CloneRequest:
+      type: object
+      properties:
+        localPath:
+          type: string
+          example: /home/jean/Documents/NotesPerso
+      required: [localPath]
+
+    CloneManifestDto:
+      type: object
+      properties:
+        vaultId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        localPath:
+          type: string
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderDto'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentSummaryDto'
+        totalDocuments:
+          type: integer
+        totalSizeBytes:
+          type: integer
+          format: int64
+      required: [vaultId, name, localPath, folders, documents, totalDocuments, totalSizeBytes]
+
+    # ── Folders ──────────────────────────────
+    FolderDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+          example: Projets/Alpha
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, path, createdAt]
+
+    CreateFolderRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: Projets/Beta/Specs
+          description: Chemin relatif dans le vault. Les dossiers intermédiaires sont créés automatiquement.
+      required: [path]
+
+    MoveFolderRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: Archives/Projets/Beta
+          description: Nouveau chemin complet du dossier.
+      required: [path]
+
+    MoveFolderResultDto:
+      type: object
+      properties:
+        movedDocuments:
+          type: integer
+          example: 12
+        movedFolders:
+          type: integer
+          example: 3
+      required: [movedDocuments, movedFolders]
+
+    # ── Documents ────────────────────────────
+    DocumentSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+          example: Inbox/idée.md
+        title:
+          type: string
+          nullable: true
+          example: Une idée
+        hash:
+          type: string
+          example: sha256-abc123
+        sizeBytes:
+          type: integer
+          example: 1240
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, path, hash, sizeBytes, createdAt, updatedAt]
+
+    CreateDocumentRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: Inbox/nouvelle-note.md
+          description: Chemin relatif dans le vault. Doit se terminer par .md
+        content:
+          type: string
+          default: ""
+          example: "# Nouvelle note\n\n"
+          description: Contenu Markdown initial. Optionnel.
+      required: [path]
+
+    MoveDocumentRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: Archives/idée.md
+          description: Nouveau chemin complet du document.
+      required: [path]
+
+    # ── Sync ─────────────────────────────────
+    SyncStatusDto:
+      type: object
+      properties:
+        since:
+          type: string
+          format: date-time
+        checkedAt:
+          type: string
+          format: date-time
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncChangeDto'
+      required: [since, checkedAt, changes]
+
+    SyncChangeDto:
+      type: object
+      properties:
+        docId:
+          type: string
+          format: uuid
+        path:
+          type: string
+        changeType:
+          type: string
+          enum: [created, modified, deleted, moved]
+        hash:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        oldPath:
+          type: string
+          nullable: true
+          description: Ancien chemin, renseigné uniquement si changeType est "moved"
+      required: [docId, path, changeType, updatedAt]
+
+    SyncRequest:
+      type: object
+      properties:
+        clientId:
+          type: string
+          format: uuid
+          description: Identifiant stable de l'appareil client.
+        stateVector:
+          type: array
+          items:
+            type: integer
+          description: Vecteur d'état Yjs du client, sérialisé en tableau d'entiers.
+      required: [clientId, stateVector]
+
+    SyncResponseDto:
+      type: object
+      properties:
+        missingOps:
+          type: array
+          items:
+            type: integer
+          description: Opérations manquantes côté client, sérialisées en tableau d'entiers.
+        serverStateVector:
+          type: array
+          items:
+            type: integer
+          description: Vecteur d'état courant du serveur.
+      required: [missingOps, serverStateVector]
+
+    PushOperationsRequest:
+      type: object
+      properties:
+        clientId:
+          type: string
+          format: uuid
+        producedAt:
+          type: string
+          format: date-time
+          description: Horodatage de production côté client (UTC).
+        ops:
+          type: array
+          items:
+            type: integer
+          description: Opération Yjs sérialisée en tableau d'entiers.
+      required: [clientId, producedAt, ops]
+
+# ─────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────
+
+paths:
+
+  # ══════════════════════════════════════════
+  # USERS
+  # ══════════════════════════════════════════
+
+  /users:
+    get:
+      tags: [Users]
+      summary: Liste tous les utilisateurs
+      operationId: listUsers
+      security: []
+      responses:
+        '200':
+          description: Liste des utilisateurs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserDto'
+
+  /users/{userId}:
+    get:
+      tags: [Users]
+      summary: Détails d'un utilisateur
+      operationId: getUser
+      security: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: jean
+      responses:
+        '200':
+          description: Utilisateur trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '404':
+          description: Utilisateur inconnu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /users/{userId}/vaults:
+    get:
+      tags: [Users, Vaults]
+      summary: Liste les vaults accessibles par l'utilisateur
+      operationId: listUserVaults
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Vaults owned + membre
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VaultSummaryDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [Users, Vaults]
+      summary: Crée un vault pour l'utilisateur
+      operationId: createVault
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVaultRequest'
+      responses:
+        '201':
+          description: Vault créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultSummaryDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════
+  # VAULTS
+  # ══════════════════════════════════════════
+
+  /vaults/{vaultId}:
+    get:
+      tags: [Vaults]
+      summary: Détails d'un vault avec ses membres
+      operationId: getVault
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '200':
+          description: Vault trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultDetailDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Vaults]
+      summary: Renomme un vault
+      operationId: renameVault
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameVaultRequest'
+      responses:
+        '200':
+          description: Vault renommé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultSummaryDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Vaults]
+      summary: Supprime un vault et tout son contenu
+      operationId: deleteVault
+      description: Réservé à l'owner. Suppression définitive, non récupérable.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '204':
+          description: Vault supprimé
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{vaultId}/members:
+    post:
+      tags: [Vaults]
+      summary: Ajoute un membre au vault
+      operationId: addMember
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+      responses:
+        '200':
+          description: Membre ajouté
+        '400':
+          description: Utilisateur inconnu ou déjà membre
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /vaults/{vaultId}/members/{memberId}:
+    delete:
+      tags: [Vaults]
+      summary: Retire un membre du vault
+      operationId: removeMember
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: marie
+      responses:
+        '204':
+          description: Membre retiré
+        '403':
+          description: L'appelant n'est pas owner, ou tentative de retirer l'owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{vaultId}/clone:
+    post:
+      tags: [Vaults]
+      summary: Retourne le manifeste de clonage du vault
+      operationId: cloneVault
+      description: |
+        Retourne la liste complète des documents et dossiers du vault.
+        Le client utilise ce manifeste pour télécharger chaque fichier
+        via GET /documents/{docId}/content et /crdt.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloneRequest'
+      responses:
+        '200':
+          description: Manifeste de clonage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloneManifestDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════
+  # FOLDERS
+  # ══════════════════════════════════════════
+
+  /vaults/{vaultId}/folders:
+    get:
+      tags: [Folders]
+      summary: Liste tous les dossiers du vault
+      operationId: listFolders
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '200':
+          description: Arborescence complète des dossiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FolderDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Folders]
+      summary: Crée un dossier
+      operationId: createFolder
+      description: Les dossiers intermédiaires sont créés automatiquement.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Dossier créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Le chemin est déjà occupé par un document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /vaults/{vaultId}/folders/{folderId}:
+    patch:
+      tags: [Folders]
+      summary: Renomme ou déplace un dossier
+      operationId: moveFolder
+      description: |
+        Renomme ou déplace un dossier et tout son contenu récursivement.
+        Tous les chemins des documents enfants sont mis à jour.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFolderRequest'
+      responses:
+        '200':
+          description: Dossier déplacé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoveFolderResultDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Le chemin cible est déjà occupé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags: [Folders]
+      summary: Supprime un dossier
+      operationId: deleteFolder
+      description: |
+        Supprime un dossier. Si le dossier contient des documents ou
+        sous-dossiers, le paramètre `force=true` est requis. Avec force,
+        tous les documents sont soft-deleted.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/FolderId'
+        - name: force
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Requis pour supprimer un dossier non vide.
+      responses:
+        '204':
+          description: Dossier supprimé
+        '400':
+          description: Dossier non vide et force absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════
+  # DOCUMENTS
+  # ══════════════════════════════════════════
+
+  /vaults/{vaultId}/documents:
+    get:
+      tags: [Documents]
+      summary: Liste les documents du vault
+      operationId: listDocuments
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - name: folder
+          in: query
+          schema:
+            type: string
+          example: Projets/Alpha
+          description: Filtrer par dossier (chemin exact, non récursif).
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Inclure les documents soft-deleted.
+      responses:
+        '200':
+          description: Liste des documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentSummaryDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Documents]
+      summary: Crée un document
+      operationId: createDocument
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+      responses:
+        '201':
+          description: Document créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummaryDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Le chemin est déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /vaults/{vaultId}/documents/{docId}:
+    patch:
+      tags: [Documents]
+      summary: Renomme ou déplace un document
+      operationId: moveDocument
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveDocumentRequest'
+      responses:
+        '200':
+          description: Document déplacé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummaryDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Chemin cible occupé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags: [Documents]
+      summary: Supprime un document (soft delete)
+      operationId: deleteDocument
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      responses:
+        '204':
+          description: Document supprimé
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{vaultId}/documents/{docId}/content:
+    get:
+      tags: [Documents]
+      summary: Télécharge le contenu Markdown
+      operationId: getDocumentContent
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      responses:
+        '200':
+          description: Contenu Markdown du document
+          content:
+            text/markdown:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Documents]
+      summary: Remplace intégralement le contenu
+      operationId: replaceDocumentContent
+      description: |
+        Remplace le contenu Markdown et réinitialise le CRDT.
+        Utilisé pour l'import initial ou la résolution manuelle de conflits.
+        Cette opération brise l'historique CRDT — à utiliser avec précaution.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Contenu remplacé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummaryDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{vaultId}/documents/{docId}/crdt:
+    get:
+      tags: [Documents]
+      summary: Télécharge l'état CRDT binaire (Yjs)
+      operationId: getDocumentCrdt
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      responses:
+        '200':
+          description: État CRDT binaire Yjs
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════
+  # SYNC
+  # ══════════════════════════════════════════
+
+  /vaults/{vaultId}/sync/status:
+    get:
+      tags: [Sync]
+      summary: État de synchronisation du vault depuis un timestamp
+      operationId: getSyncStatus
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          example: '2026-02-01T00:00:00Z'
+          description: Retourner les changements survenus après ce timestamp.
+      responses:
+        '200':
+          description: Changements depuis le timestamp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /vaults/{vaultId}/documents/{docId}/sync:
+    post:
+      tags: [Sync]
+      summary: Synchronise l'état CRDT d'un document
+      operationId: syncDocument
+      description: |
+        Le client envoie son vecteur d'état Yjs.
+        Le serveur répond avec les opérations que le client ne connaît pas encore.
+        Utilisé principalement lors de la reconnexion après une période offline.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '200':
+          description: Opérations manquantes côté client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponseDto'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{vaultId}/documents/{docId}/operations:
+    post:
+      tags: [Sync]
+      summary: Pousse des opérations CRDT produites offline
+      operationId: pushOperations
+      description: |
+        Envoie les opérations Yjs produites pendant une période offline.
+        Le serveur les merge dans l'état CRDT et les broadcast aux clients connectés.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/DocId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushOperationsRequest'
+      responses:
+        '200':
+          description: Opérations reçues et mergées
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+# ─────────────────────────────────────────────
+# REUSABLE PARAMETERS
+# ─────────────────────────────────────────────
+
+  parameters:
+    VaultId:
+      name: vaultId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Identifiant du vault
+
+    FolderId:
+      name: folderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Identifiant du dossier
+
+    DocId:
+      name: docId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Identifiant du document
+
+# ─────────────────────────────────────────────
+# REUSABLE RESPONSES
+# ─────────────────────────────────────────────
+
+  responses:
+    BadRequest:
+      description: Requête invalide (header manquant, userId inconnu, validation échouée)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Forbidden:
+      description: L'utilisateur n'a pas accès à cette ressource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'

@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Debug Frontend (Chrome)",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/apps/web",
+            "sourceMapPathOverrides": {
+                "webpack:///./~/*": "${workspaceFolder}/frontend/node_modules/*",
+                "webpack:///src/*": "${workspaceFolder}/apps/web/src/*"
+            },
+            "preLaunchTask": "frontend:web:dev"
+        },
+        {
+            "name": "Debug Backend (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/backend/Savoire.API/bin/Debug/net10.0/Savoire.Server.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/backend/Savoire.API",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "preLaunchTask": ""
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack (Backend + Frontend)",
+            "configurations": ["Debug Backend (.NET)", "Debug Frontend (Chrome)"]
+        }
+    ]
+}
+

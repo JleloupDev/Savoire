@@ -1,0 +1,1 @@
+{"root":["./src/approot.test.ts","./src/documentsessionservice.test.ts","./src/documentsservice.test.ts","./src/pluginapiadapter.test.ts","./src/syncorchestrator.test.ts","./src/vaultsservice.test.ts","./src/workspaceservice.test.ts"],"errors":true,"version":"5.9.3"}

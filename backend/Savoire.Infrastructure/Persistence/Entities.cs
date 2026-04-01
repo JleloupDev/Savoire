@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jean Leloup
+// Entités EF Core — mappent vers les agrégats Domain via Rehydrate().
+
+using Savoire.Domain.Aggregates;
+using System.Text.Json;
+
+namespace Savoire.Infrastructure.Persistence;
+
+public class VaultEntity
+{
+    public string Id        { get; set; } = null!;
+    public string Name      { get; set; } = null!;
+    public string OwnerId   { get; set; } = null!;
+    public DateTime CreatedAt { get; set; }
+
+    public ICollection<VaultMemberEntity> Members   { get; set; } = [];
+    public ICollection<DocumentEntity>    Documents { get; set; } = [];
+    public ICollection<FolderEntity>      Folders   { get; set; } = [];
+
+    public Vault ToDomain() => Vault.Rehydrate(Id, Name, OwnerId, CreatedAt);
+}
+
+public class VaultMemberEntity
+{
+    public string   VaultId  { get; set; } = null!;
+    public string   UserId   { get; set; } = null!;
+    public string   Role     { get; set; } = null!;
+    public DateTime JoinedAt { get; set; }
+
+    public VaultEntity Vault { get; set; } = null!;
+
+    public VaultMember ToDomain() => new(VaultId, UserId, Role, JoinedAt);
+}
+
+public class DocumentEntity
+{
+    public string    Id        { get; set; } = null!;
+    public string    VaultId   { get; set; } = null!;
+    public string    Path      { get; set; } = null!;
+    public string?   Title     { get; set; }
+    public long      SizeBytes { get; set; }
+    public string    Hash      { get; set; } = "";
+    public DateTime  CreatedAt { get; set; }
+    public DateTime  UpdatedAt { get; set; }
+    public DateTime? DeletedAt { get; set; }
+
+    public VaultEntity Vault { get; set; } = null!;
+
+    public Document ToDomain() =>
+        Document.Rehydrate(Id, VaultId, Path, Title, SizeBytes, Hash, CreatedAt, UpdatedAt, DeletedAt);
+}
+
+public class FolderEntity
+{
+    public string   Id        { get; set; } = null!;
+    public string   VaultId   { get; set; } = null!;
+    public string   Path      { get; set; } = null!;
+    public DateTime CreatedAt { get; set; }
+
+    public VaultEntity Vault { get; set; } = null!;
+
+    public Folder ToDomain() => Folder.Rehydrate(Id, VaultId, Path, CreatedAt);
+}
+
+public class OperationEntity
+{
+    public string   Id         { get; set; } = null!;
+    public string   DocumentId { get; set; } = null!;
+    public string   ClientId   { get; set; } = null!;
+    public DateTime ProducedAt { get; set; }
+    public DateTime ReceivedAt { get; set; }
+    public byte[]   OpBytes    { get; set; } = null!;
+
+    public Operation ToDomain() =>
+        Operation.Rehydrate(Id, DocumentId, ClientId, ProducedAt, ReceivedAt, OpBytes);
+}
+
+public class SyncVectorEntity
+{
+    public string   DocumentId { get; set; } = null!;
+    public string   ClientId   { get; set; } = null!;
+    public byte[]   Vector     { get; set; } = null!;
+    public DateTime UpdatedAt  { get; set; }
+}
+
+public class ResourcePermissionEntity
+{
+    public string    Id           { get; set; } = null!;
+    public string    ResourceType { get; set; } = null!;
+    public string    ResourceId   { get; set; } = null!;
+    public string    SubjectType  { get; set; } = null!;
+    public string    SubjectId    { get; set; } = null!;
+    public string    Permission   { get; set; } = null!;
+    public string    GrantedBy    { get; set; } = null!;
+    public DateTime  GrantedAt    { get; set; }
+    public DateTime? ExpiresAt    { get; set; }
+
+    public ResourcePermission ToDomain() =>
+        ResourcePermission.Rehydrate(
+            Id, ResourceType, ResourceId, SubjectType, SubjectId,
+            Permission, GrantedBy, GrantedAt, ExpiresAt);
+}
+
+public class DocumentMetaEntity
+{
+    public string   DocumentId  { get; set; } = null!;
+    public string   VaultId     { get; set; } = null!;
+    public string   ContentType { get; set; } = "text/markdown";
+    public string?  DerivedFrom { get; set; }
+    public string?  DerivedBy   { get; set; }
+    public string   Tags        { get; set; } = "[]";        // JSON array
+    public string   Frontmatter { get; set; } = "{}";        // JSON object
+    public DateTime IndexedAt   { get; set; }
+
+    public DocumentMeta ToDomain()
+    {
+        var tags = System.Text.Json.JsonSerializer.Deserialize<string[]>(Tags) ?? [];
+        return DocumentMeta.Rehydrate(DocumentId, VaultId, ContentType, DerivedFrom, DerivedBy, tags, Frontmatter, IndexedAt);
+    }
+}
+
+public class DocLinkEntity
+{
+    public string  Id         { get; set; } = null!;
+    public string  SourceId   { get; set; } = null!;
+    public string  VaultId    { get; set; } = null!;
+    public string? TargetId   { get; set; }
+    public string  TargetPath { get; set; } = null!;
+    public string  LinkType   { get; set; } = "wikilink";
+
+    public DocLink ToDomain() =>
+        DocLink.Rehydrate(Id, SourceId, VaultId, TargetId, TargetPath, LinkType);
+}
+
+public class IndexSnapshotEntity
+{
+    public string   Id           { get; set; } = null!;
+    public string   VaultId      { get; set; } = null!;
+    public string   Namespace    { get; set; } = null!;
+    public long     ProcessedSeq { get; set; }
+    public string   Data         { get; set; } = null!;
+    public DateTime CreatedAt    { get; set; }
+
+    public IndexSnapshot ToDomain() =>
+        IndexSnapshot.Rehydrate(Id, VaultId, Namespace, ProcessedSeq, Data, CreatedAt);
+}
+
+public class ShareLinkEntity
+{
+    public string    Id           { get; set; } = null!;
+    public string    Token        { get; set; } = null!;
+    public string    ResourceType { get; set; } = null!;
+    public string    ResourceId   { get; set; } = null!;
+    public string    Permission   { get; set; } = null!;
+    public string    CreatedBy    { get; set; } = null!;
+    public DateTime  CreatedAt    { get; set; }
+    public DateTime? ExpiresAt    { get; set; }
+    public DateTime? RevokedAt    { get; set; }
+
+    public ShareLink ToDomain() =>
+        ShareLink.Rehydrate(
+            Id, Token, ResourceType, ResourceId, Permission,
+            CreatedBy, CreatedAt, ExpiresAt, RevokedAt);
+}

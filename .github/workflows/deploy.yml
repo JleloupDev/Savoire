@@ -1,0 +1,61 @@
+# Deploy dev — CI/CD vers Azure Container Apps via azd
+name: Deploy dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - run: dotnet build --configuration Release
+      - run: dotnet test --configuration Release --no-build
+        working-directory: tests
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Azure/setup-azd@v1
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login Azure
+        run: |
+          azd auth login \
+            --client-id ${{ secrets.AZURE_CLIENT_ID }} \
+            --client-secret ${{ secrets.AZURE_CLIENT_SECRET }} \
+            --tenant-id ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: Deploy
+        run: azd deploy --no-prompt
+        env:
+          AZURE_ENV_NAME: dev
+          AZURE_LOCATION: westeurope
+
+      - name: Démarrer watchdog teardown (1h)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'teardown-watchdog.yml',
+              ref: 'main'
+            })

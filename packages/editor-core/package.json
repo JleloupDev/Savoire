@@ -1,0 +1,48 @@
+{
+  "name": "@savoire/editor-core",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.3.0",
+    "@codemirror/lang-markdown": "^6.2.0",
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/state": "^6.4.0",
+    "@codemirror/view": "^6.24.0",
+    "@microsoft/signalr": "^8.0.0",
+    "@milkdown/crepe": "^7.19.0",
+    "@milkdown/kit": "^7.19.0",
+    "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-callout": "workspace:*",
+    "@savoire/plugin-code-block": "workspace:*",
+    "@savoire/plugin-mermaid": "workspace:*",
+    "@savoire/plugin-module": "workspace:*",
+    "@savoire/plugin-note-embed": "workspace:*",
+    "@savoire/plugin-runtime": "workspace:*",
+    "@savoire/plugin-table": "workspace:*",
+    "@savoire/plugin-task-list": "workspace:*",
+    "@savoire/plugin-wikilinks": "workspace:*",
+    "marked": "^9.0.0",
+    "y-codemirror.next": "^0.3.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

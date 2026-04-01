@@ -1,0 +1,13 @@
+# .dockerignore — Fichiers à exclure du contexte Docker
+**/bin/
+**/obj/
+**/node_modules/
+**/.vs/
+**/.vscode/
+**/docs/
+**/*.user
+**/*.suo
+**/tests/
+**/.git/
+**/.claude/
+**/client-desktop/

@@ -1,0 +1,35 @@
+# Teardown watchdog — détruit l'environnement Azure 1h après le dernier deploy
+name: Teardown watchdog
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: teardown-dev
+  cancel-in-progress: true    # chaque nouveau deploy repart le timer à zéro
+
+jobs:
+  wait-and-down:
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Attendre 1 heure
+        run: |
+          echo "Teardown dans 1h — $(date -d '+1 hour' '+%H:%M UTC')"
+          sleep 3600
+
+      - uses: actions/checkout@v4
+      - uses: Azure/setup-azd@v1
+
+      - name: Login Azure
+        run: |
+          azd auth login \
+            --client-id ${{ secrets.AZURE_CLIENT_ID }} \
+            --client-secret ${{ secrets.AZURE_CLIENT_SECRET }} \
+            --tenant-id ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: Teardown
+        run: azd down --force --purge
+        env:
+          AZURE_ENV_NAME: dev

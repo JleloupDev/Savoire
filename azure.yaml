@@ -1,0 +1,21 @@
+# azure.yaml — Configuration azd pour déploiement Azure Container Apps
+# DECISION: GHCR au lieu d'ACR pour économiser ~7€/mois (gratuit pour repos publics).
+name: vault-app
+
+services:
+  api:
+    project: .
+    language: docker
+    host: containerapp
+    docker:
+      path: backend/Savoire.API/Dockerfile
+      context: .
+
+  web:
+    project: .
+    language: docker
+    host: containerapp
+    docker:
+      path: apps/web/Dockerfile
+      context: .
+

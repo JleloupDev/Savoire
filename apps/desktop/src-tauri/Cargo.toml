@@ -1,0 +1,29 @@
+[package]
+name = "vault-desktop"
+version = "0.1.0"
+description = "Vault Desktop — POC collaborative notes"
+authors = []
+license = ""
+repository = ""
+default-run = "vault-desktop"
+edition = "2021"
+rust-version = "1.60"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.6", features = [
+  "dialog-open",
+  "dialog-save",
+  "fs-all",
+  "path-all",
+  "protocol-asset"
+] }
+
+[features]
+# This feature is used for production builds or when `devPath` points to the filesystem
+# and the built-in dev server is disabled.
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,23 @@
+{
+  "name": "@savoire/plugin-note-embed",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/plugin-api": "workspace:*",
+    "marked": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

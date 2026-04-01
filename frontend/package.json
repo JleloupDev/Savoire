@@ -1,0 +1,41 @@
+{
+  "name": "savoire-frontend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @savoire/web dev",
+    "dev:view": "pnpm --filter @savoire/view dev",
+    "dev:desktop": "pnpm --filter @savoire/desktop dev",
+    "dev:editor": "pnpm --filter @savoire/editor-dev dev",
+    "build": "pnpm -r build",
+    "build:packages": "pnpm --filter '../packages/**' build",
+    "test": "pnpm run test:unit",
+    "test:unit": "pnpm --filter @savoire/application-tests --filter @savoire/domain-sync-tests --filter @savoire/editor-core-tests --filter @savoire/infrastructure-sync-tests --filter @savoire/platform-tests --filter @savoire/plugin-core-tests --filter @savoire/plugin-runtime-tests --filter @savoire/workspace-tests test",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "arch:check": "pnpm arch:check:core && pnpm arch:check:plugins",
+    "arch:check:core": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/infrastructure-sync/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src ../packages/module-bridge/src ../packages/domain-sync/src ../packages/ui-components/src --config .dependency-cruiser.cjs --output-type err-long",
+    "arch:check:plugins": "depcruise ../packages/plugins --config .dependency-cruiser.cjs --output-type err-long",
+    "arch:graph": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "dependency-cruiser": "^17.3.10",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "happy-dom": "^20.8.3",
+    "prettier": "^3.2.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}

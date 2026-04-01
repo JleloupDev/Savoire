@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Savoire.Server.Architecture.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="NetArchTest.Rules" Version="1.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\backend\Savoire.API\Savoire.API.csproj" />
+    <ProjectReference Include="..\..\backend\Savoire.Application\Savoire.Application.csproj" />
+    <ProjectReference Include="..\..\backend\Savoire.Domain\Savoire.Domain.csproj" />
+    <ProjectReference Include="..\..\backend\Savoire.Infrastructure\Savoire.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
+
+

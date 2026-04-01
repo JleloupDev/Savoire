@@ -1,0 +1,46 @@
+server {
+    listen 8080;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # DECISION: Buffers agrandis pour les JWTs et cookies larges (défaut 8k insuffisant).
+    large_client_header_buffers 4 32k;
+    client_header_buffer_size 4k;
+
+    # Proxy vers l'API — miroir du proxy Vite en dev
+    # DECISION: Timeouts longs pour absorber le cold-start Azure Container Apps (scale-to-zero).
+    location /api/ {
+        proxy_pass ${API_URL}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 120s;
+        proxy_send_timeout    120s;
+        proxy_read_timeout    120s;
+        # DECISION: SNI requis pour TLS vers Azure Container Apps (IP interne sans certificat dédié).
+        proxy_ssl_server_name on;
+    }
+
+    # Proxy SignalR WebSocket
+    location /hubs/ {
+        proxy_pass ${API_URL}/hubs/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $proxy_host;
+        proxy_connect_timeout 120s;
+        proxy_read_timeout    3600s;
+        proxy_ssl_server_name on;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache long pour les assets hashés par Vite
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}

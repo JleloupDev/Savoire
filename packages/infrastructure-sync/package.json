@@ -1,0 +1,31 @@
+{
+  "name": "@savoire/infrastructure-sync",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^8.0.17",
+    "@savoire/application": "workspace:*",
+    "@savoire/domain-sync": "workspace:*",
+    "@savoire/platform": "workspace:*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

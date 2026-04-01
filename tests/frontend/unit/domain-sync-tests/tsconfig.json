@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/domain-sync": ["../../../../packages/domain-sync/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
+
+

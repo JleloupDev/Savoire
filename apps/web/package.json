@@ -1,0 +1,52 @@
+{
+  "name": "@savoire/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^8.0.17",
+    "@savoire/application": "workspace:*",
+    "@savoire/editor-core": "workspace:*",
+    "@savoire/editor-react": "workspace:*",
+    "@savoire/infrastructure-sync": "workspace:*",
+    "@savoire/platform": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-callout": "workspace:*",
+    "@savoire/plugin-code-block": "workspace:*",
+    "@savoire/plugin-filetree": "workspace:*",
+    "@savoire/module-bridge": "workspace:*",
+    "@savoire/plugin-mermaid": "workspace:*",
+    "@savoire/plugin-module": "workspace:*",
+    "@savoire/plugin-note-embed": "workspace:*",
+    "@savoire/plugin-excalidraw": "workspace:*",
+    "@savoire/plugin-mindmap": "workspace:*",
+    "@savoire/plugin-plaintext": "workspace:*",
+    "@savoire/plugin-runtime": "workspace:*",
+    "@savoire/plugin-table": "workspace:*",
+    "@savoire/plugin-task-list": "workspace:*",
+    "@savoire/plugin-backlinks": "workspace:*",
+    "@savoire/plugin-graph": "workspace:*",
+    "@savoire/plugin-metadata": "workspace:*",
+    "@savoire/plugin-vault-browser": "workspace:*",
+    "@savoire/plugin-wikilinks": "workspace:*",
+    "@savoire/ui-components": "workspace:*",
+    "@savoire/workspace": "workspace:*",
+    "dockview": "^4.3.0",
+    "marked": "^9.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.1.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
+      "@savoire/plugin-runtime": ["../../../../packages/plugin-runtime/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
+
+

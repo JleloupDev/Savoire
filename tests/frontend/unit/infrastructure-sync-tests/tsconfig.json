@@ -1,0 +1,14 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/infrastructure-sync": ["../../../../packages/infrastructure-sync/src/index.ts"],
+      "@savoire/domain-sync": ["../../../../packages/domain-sync/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
+
+
