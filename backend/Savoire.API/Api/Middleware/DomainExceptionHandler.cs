@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Handler d'exceptions global — mappe les exceptions Domain vers Problem Details RFC 7807.
+// Global exception handler — maps Domain exceptions to Problem Details RFC 7807.
 
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
@@ -19,26 +19,26 @@ public class DomainExceptionHandler : IExceptionHandler
         (int status, string type, string title) = exception switch
         {
             // Auth
-            InvalidCredentialsException  => (401, "invalid-credentials",   "Identifiants incorrects"),
-            AccountLockedException       => (401, "account-locked",        "Compte verrouillé"),
-            InvalidRefreshTokenException => (401, "invalid-refresh-token", "Token invalide"),
-            UnauthorizedAccessException  => (401, "unauthorized",          "Non authentifié"),
+            InvalidCredentialsException  => (401, "invalid-credentials",   "Invalid credentials"),
+            AccountLockedException       => (401, "account-locked",        "Account locked"),
+            InvalidRefreshTokenException => (401, "invalid-refresh-token", "Invalid token"),
+            UnauthorizedAccessException  => (401, "unauthorized",          "Not authenticated"),
             // Identity
-            EmailAlreadyUsedException    => (400, "email-already-used",    "Email déjà utilisé"),
-            IdentityOperationException   => (400, "identity-error",        "Erreur de compte"),
-            InvalidEmailException        => (400, "invalid-email",         "Email invalide"),
+            EmailAlreadyUsedException    => (400, "email-already-used",    "Email already in use"),
+            IdentityOperationException   => (400, "identity-error",        "Account error"),
+            InvalidEmailException        => (400, "invalid-email",         "Invalid email"),
             // Validation MediatR
-            ValidationException          => (400, "validation-error",      "Données invalides"),
-            // Ressources
-            VaultNotFoundException        => (404, "vault-not-found",      "Vault introuvable"),
-            DocumentNotFoundException     => (404, "document-not-found",   "Document introuvable"),
-            FolderNotFoundException       => (404, "folder-not-found",     "Dossier introuvable"),
-            UserNotFoundException         => (404, "user-not-found",       "Utilisateur introuvable"),
-            // Accès / Conflits
-            AccessDeniedException         => (403, "access-denied",        "Accès refusé"),
-            PathConflictException         => (409, "path-conflict",        "Chemin déjà utilisé"),
-            FolderNotEmptyException       => (400, "folder-not-empty",     "Dossier non vide"),
-            _                             => (500, "internal-error",       "Erreur interne")
+            ValidationException          => (400, "validation-error",      "Invalid data"),
+            // Resources
+            VaultNotFoundException        => (404, "vault-not-found",      "Vault not found"),
+            DocumentNotFoundException     => (404, "document-not-found",   "Document not found"),
+            FolderNotFoundException       => (404, "folder-not-found",     "Folder not found"),
+            UserNotFoundException         => (404, "user-not-found",       "User not found"),
+            // Access / Conflicts
+            AccessDeniedException         => (403, "access-denied",        "Access denied"),
+            PathConflictException         => (409, "path-conflict",        "Path already in use"),
+            FolderNotEmptyException       => (400, "folder-not-empty",     "Folder not empty"),
+            _                             => (500, "internal-error",       "Internal error")
         };
 
         context.Response.StatusCode = status;

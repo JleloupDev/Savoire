@@ -44,11 +44,11 @@ public class IndexDocumentContentCommandHandler(
             await documents.UpdateAsync(doc, ct);
         }
 
-        // Remplace les liens de ce document source
+        // Replace all links for this source document
         var newLinks = new List<DocLink>();
         foreach (var wl in result.Wikilinks)
         {
-            // Résolution du targetId par path
+            // Resolve the targetId by path
             var target = await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath, ct)
                       ?? await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath + ".md", ct);
 

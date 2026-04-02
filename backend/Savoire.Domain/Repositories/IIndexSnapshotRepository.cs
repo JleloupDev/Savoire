@@ -6,7 +6,7 @@ namespace Savoire.Domain.Repositories;
 
 public interface IIndexSnapshotRepository
 {
-    /// <summary>Snapshot le plus récent pour ce namespace dans ce vault.</summary>
+    /// <summary>Most recent snapshot for this namespace in this vault.</summary>
     Task<IndexSnapshot?> GetLatestAsync(string vaultId, string @namespace, CancellationToken ct = default);
 
     Task SaveAsync(IndexSnapshot snapshot, CancellationToken ct = default);

@@ -31,7 +31,7 @@ public static class DatabaseInitializer
 
         db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 
-        // Vault "default" pour rétrocompatibilité (idempotent)
+        // "default" vault for backwards compatibility (idempotent)
         if (!db.Vaults.Any(v => v.Id == "default"))
         {
             db.Vaults.Add(new VaultEntity

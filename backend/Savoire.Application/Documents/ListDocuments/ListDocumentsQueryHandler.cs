@@ -17,8 +17,8 @@ public class ListDocumentsQueryHandler(
     public async Task<IReadOnlyList<DocumentDto>> Handle(
         ListDocumentsQuery q, CancellationToken ct)
     {
-        // VaultAccessBehavior gère l'accès pour les callers normaux.
-        // ShareLink callers sont exclus du behavior — vérification ici.
+        // VaultAccessBehavior handles access for normal callers.
+        // ShareLink callers are excluded from the behavior — check here.
         if (ShareLinkGuard.IsShareLinkCaller(q.CallerId))
             await ShareLinkGuard.RequireVaultReadAsync(q.CallerId, q.VaultId, shareLinks, ct);
 
@@ -27,9 +27,9 @@ public class ListDocumentsQueryHandler(
         return docs.Select(DocumentDto.FromDomain).ToList();
     }
 
-    // DECISION: ces méthodes static restent ici car DeleteDocument et RenameDocument
-    // utilisent "__resolve__" pour VaultId — ils ne peuvent pas implémenter IRequiresVaultAccess.
-    // À migrer quand ces commandes résoudront le VaultId avant dispatch.
+    // DECISION: these static methods stay here because DeleteDocument and RenameDocument
+    // use "__resolve__" for VaultId — they cannot implement IRequiresVaultAccess.
+    // Migrate once those commands resolve the VaultId before dispatch.
 
     internal static async Task RequireAccessAsync(
         string callerId, string vaultId, IVaultRepository vaults, CancellationToken ct)

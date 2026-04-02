@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller utilisateurs — GET /api/v1/users, GET /api/v1/users/{userId}
-// DECISION V2: [AllowAnonymous] conservé — ces endpoints de lecture restent publics.
+// Users controller — GET /api/v1/users, GET /api/v1/users/{userId}
+// DECISION V2: [AllowAnonymous] kept — these read endpoints remain public.
 
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

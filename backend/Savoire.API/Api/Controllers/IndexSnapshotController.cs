@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller index snapshots — persistance côté serveur des états d'index plugin.
+// Index snapshots controller — server-side persistence of plugin index states.
 // Routes : /api/v1/vaults/{vaultId}/index-snapshots/{namespace}
 // see ADR-022
 

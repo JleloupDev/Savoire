@@ -4,8 +4,8 @@
 namespace Savoire.Application.Sync.Common;
 
 /// <summary>
-/// Assigne un numéro de séquence monotone croissant aux ops d'index.
-/// Thread-safe via Interlocked. Singleton — injecté dans VaultHub.
+/// Assigns a monotonically increasing sequence number to index ops.
+/// Thread-safe via Interlocked. Singleton — injected into VaultHub.
 /// </summary>
 public sealed class IndexOpSequencer
 {

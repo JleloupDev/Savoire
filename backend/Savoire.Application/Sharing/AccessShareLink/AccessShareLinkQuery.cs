@@ -6,6 +6,6 @@ using Savoire.Application.Common;
 namespace Savoire.Application.Sharing.AccessShareLink;
 
 /// <summary>
-/// Échange un token de lien de partage contre un JWT scoped.
+/// Exchanges a share link token for a scoped JWT.
 /// </summary>
 public record AccessShareLinkQuery(string Token) : IRequest<ShareLinkAccessDto>;

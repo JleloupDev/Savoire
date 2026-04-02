@@ -5,11 +5,11 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sharing.GrantPermission;
 
-/// <param name="CallerId">Utilisateur qui accorde la permission (doit être owner/admin).</param>
-/// <param name="ResourceType">"vault" ou "document".</param>
-/// <param name="ResourceId">ID de la ressource.</param>
-/// <param name="TargetUserId">Utilisateur qui reçoit la permission.</param>
-/// <param name="Permission">"read", "write" ou "admin".</param>
+/// <param name="CallerId">User granting the permission (must be owner/admin).</param>
+/// <param name="ResourceType">"vault" or "document".</param>
+/// <param name="ResourceId">ID of the resource.</param>
+/// <param name="TargetUserId">User receiving the permission.</param>
+/// <param name="Permission">"read", "write" or "admin".</param>
 public record GrantPermissionCommand(
     string    CallerId,
     string    ResourceType,

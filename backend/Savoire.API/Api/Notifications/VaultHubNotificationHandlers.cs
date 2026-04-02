@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Handlers MediatR pour diffuser les événements de documents via SignalR.
+// MediatR handlers for broadcasting document events via SignalR.
 // see ADR-001
 
 using MediatR;

@@ -7,11 +7,11 @@ using Savoire.Application.Sharing;
 namespace Savoire.Application.Behaviors;
 
 /// <summary>
-/// Pipeline MediatR — vérifie automatiquement l'accès vault pour toute
-/// commande/requête implémentant <see cref="IRequiresVaultAccess"/>.
+/// MediatR pipeline — automatically checks vault access for every
+/// command/query implementing <see cref="IRequiresVaultAccess"/>.
 ///
-/// Les callers de type ShareLink (share:…) ou ViewGrant (view:…) sont
-/// exclus : leur vérification se fait au niveau document dans le handler.
+/// ShareLink (share:…) or ViewGrant (view:…) callers are excluded:
+/// their check is performed at the document level inside the handler.
 /// </summary>
 public class VaultAccessBehavior<TRequest, TResponse>(IVaultAccessGuard guard)
     : IPipelineBehavior<TRequest, TResponse>

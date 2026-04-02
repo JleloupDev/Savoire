@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // DTOs de l'API REST — Milestone 1
 // Les DTOs sont distincts des domain objects (Records.cs).
-// Le mapping est fait par les services (méthodes FromDomain statiques).
+// Mapping is done by services (static FromDomain methods).
 
 using Savoire.Server.Models;
 
@@ -111,7 +111,7 @@ public record SyncResponseDto(byte[][] MissingOps, byte[] ServerStateVector);
 
 public record PushOpsRequestDto(string ClientId, DateTime ProducedAt, byte[] Ops);
 
-// ── Requêtes ───────────────────────────────────────────────────────────────
+// ── Requests ───────────────────────────────────────────────────────────────
 
 public record CreateVaultRequest(string Name);
 public record CreateDocumentRequest(string Path, string? Content);

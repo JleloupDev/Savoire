@@ -5,15 +5,15 @@ namespace Savoire.Application.Common;
 public enum VaultAccessLevel { Read, Write }
 
 /// <summary>
-/// Centralise les vérifications d'accès aux vaults.
-/// Appelé automatiquement par <c>VaultAccessBehavior</c> pour toute requête
-/// implémentant <see cref="IRequiresVaultAccess"/>.
+/// Centralizes vault access checks.
+/// Called automatically by <c>VaultAccessBehavior</c> for every request
+/// implementing <see cref="IRequiresVaultAccess"/>.
 /// </summary>
 public interface IVaultAccessGuard
 {
-    /// <summary>Lève VaultNotFoundException ou AccessDeniedException si l'accès est refusé.</summary>
+    /// <summary>Throws VaultNotFoundException or AccessDeniedException if access is denied.</summary>
     Task RequireReadAsync(string callerId, string vaultId, CancellationToken ct = default);
 
-    /// <summary>Comme RequireReadAsync mais refuse les membres avec le rôle "viewer".</summary>
+    /// <summary>Like RequireReadAsync but rejects members with the "viewer" role.</summary>
     Task RequireWriteAsync(string callerId, string vaultId, CancellationToken ct = default);
 }

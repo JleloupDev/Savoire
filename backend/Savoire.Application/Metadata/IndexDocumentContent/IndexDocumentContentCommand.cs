@@ -5,16 +5,16 @@ using MediatR;
 namespace Savoire.Application.Metadata.IndexDocumentContent;
 
 /// <summary>
-/// Indexe le contenu d'un document : extrait tags, frontmatter, wikilinks
-/// et met à jour les projections DocumentMeta et DocLink.
-/// Appelé depuis le SyncHub après réception d'une op CRDT, ou depuis le
-/// controller REST après un PUT de contenu.
+/// Indexes a document's content: extracts tags, frontmatter, wikilinks
+/// and updates the DocumentMeta and DocLink projections.
+/// Called from SyncHub after receiving a CRDT op, or from the REST
+/// controller after a content PUT.
 /// </summary>
 public record IndexDocumentContentCommand(
     string DocId,
     string VaultId,
     string MarkdownContent,
-    // Null si document primaire. Si renseigné → document dérivé (shadow doc).
+    // Null for a primary document. If set → derived document (shadow doc).
     string? DerivedFrom = null,
     string? DerivedBy   = null,
     string  ContentType = "text/markdown"

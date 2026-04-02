@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Extensions DI pour la couche Infrastructure — appelé depuis Program.cs de l'Api.
+// DI extensions for the Infrastructure layer — called from the Api's Program.cs.
 
 using System.Text;
 using Azure.Storage.Blobs;
@@ -72,7 +72,7 @@ public static class ServiceCollectionExtensions
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
-                    // Résolution dynamique : lit depuis IConfiguration à chaque validation
+                    // Dynamic resolution: reads from IConfiguration on every validation
                     IssuerSigningKeyResolver = (_, _, _, _) =>
                     {
                         var secret = config["Jwt:Secret"]
@@ -87,7 +87,7 @@ public static class ServiceCollectionExtensions
                     ClockSkew = TimeSpan.FromSeconds(30)
                 };
 
-                // SignalR : token depuis query string
+                // SignalR: token from query string
                 options.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = context =>
@@ -107,10 +107,10 @@ public static class ServiceCollectionExtensions
                 policy => policy.RequireClaim("is_admin", "true"));
         });
 
-        // Content store — même code, cible différente selon la connection string injectée
-        // En local : Azurite (via Aspire)
-        // En prod  : Azure Blob Storage réel (via Aspire/azd)
-        // Fallback : filesystem si pas de connection string (tests, CI sans Azure)
+        // Content store — same code, different target depending on the injected connection string
+        // Locally: Azurite (via Aspire)
+        // In prod: real Azure Blob Storage (via Aspire/azd)
+        // Fallback: filesystem when no connection string is present (tests, CI without Azure)
         var blobConnectionString = config.GetConnectionString("vault-files");
 
         if (!string.IsNullOrEmpty(blobConnectionString))
@@ -127,29 +127,29 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IContentStore>(_ => new LocalFileContentStore(storageRoot));
         }
 
-        // Repositories existants (scoped — dépendent du DbContext)
+        // Existing repositories (scoped — depend on DbContext)
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
         services.AddScoped<IDocumentRepository,  EfDocumentRepository>();
         services.AddScoped<IFolderRepository,    EfFolderRepository>();
         services.AddScoped<IOperationRepository, EfOperationRepository>();
 
-        // Repositories Auth
+        // Auth repositories
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
-        // Repositories Sharing
+        // Sharing repositories
         services.AddScoped<IResourcePermissionRepository, EfResourcePermissionRepository>();
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
 
-        // Repositories Metadata & Index
+        // Metadata & Index repositories
         services.AddScoped<IDocumentMetaRepository,  EfDocumentMetaRepository>();
         services.AddScoped<IDocLinkRepository,        EfDocLinkRepository>();
         services.AddScoped<IIndexSnapshotRepository,  EfIndexSnapshotRepository>();
 
-        // Services Domain Auth
+        // Domain Auth services
         services.AddScoped<ITokenService,      TokenService>();
         services.AddScoped<IUserService,       IdentityUserService>();
 
-        // User lookup service backed by ASP.NET Identity (remplace ConfigUserService statique)
+        // User lookup service backed by ASP.NET Identity (replaces the static ConfigUserService)
         services.AddScoped<IUserLookupService, IdentityUserLookupService>();
 
         return services;

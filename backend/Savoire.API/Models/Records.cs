@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Modèles de données — Milestone 1
-// Conforme à docs/Claude/03/MILESTONE_1_SPECS.md § Domain objects
+// Data models — Milestone 1
 
 namespace Savoire.Server.Models;
 
@@ -24,8 +23,8 @@ public record VaultMember(
 public record DocumentRecord(
     string Id,
     string VaultId,
-    string Path,           // chemin relatif dans le vault, ex: "Inbox/idée.md"
-    string? Title,         // extrait du H1 ou du frontmatter
+    string Path,           // relative path within the vault, e.g. "Inbox/note.md"
+    string? Title,         // extracted from H1 or frontmatter
     long SizeBytes,
     string Hash,           // SHA-256 du contenu .md courant — non-nullable, default ''
     DateTime CreatedAt,
@@ -56,7 +55,7 @@ public record SyncVector(
     DateTime UpdatedAt
 );
 
-// ── Statistiques vault (calculées par SQL) ─────────────────────────────────
+// ── Vault statistics (computed by SQL) ────────────────────────────────────
 
 public record VaultStats(
     int       DocumentCount,

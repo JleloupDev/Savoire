@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentation file system locale de IContentStore.
+// Local filesystem implementation of IContentStore.
 // see ADR-002
 
 using Savoire.Application.Abstractions;

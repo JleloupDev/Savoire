@@ -110,7 +110,7 @@ public class SharingController(IMediator mediator) : AppControllerBase(mediator)
         return NoContent();
     }
 
-    // GET /api/v1/share/{token}/access  — échange un token de lien contre un JWT scoped
+    // GET /api/v1/share/{token}/access  — exchanges a share link token for a scoped JWT
     [AllowAnonymous]
     [HttpGet("api/v1/share/{token}/access")]
     public async Task<IActionResult> AccessShareLink(string token, CancellationToken ct)

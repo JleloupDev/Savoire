@@ -26,7 +26,7 @@ public sealed class VaultHub(
 {
     // ── Client → Server ───────────────────────────────────────────────────────
 
-    /// <summary>Rejoint le groupe du vault et reçoit la liste courante de ses documents.</summary>
+    /// <summary>Joins the vault group and receives the current list of its documents.</summary>
     public async Task JoinVault(string vaultId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, vaultId);
@@ -41,13 +41,13 @@ public sealed class VaultHub(
         await Clients.Caller.SendAsync("VaultSnapshot", items);
 
         logger.LogInformation(
-            "Client {ConnectionId} a rejoint le vault {VaultId} — {Count} document(s)",
+            "Client {ConnectionId} joined vault {VaultId} — {Count} document(s)",
             Context.ConnectionId, vaultId, docs.Count);
     }
 
     /// <summary>
-    /// Crée un document via la couche Application (MediatR).
-    /// Le broadcast DocumentCreated est déclenché par DocumentCreatedNotification.
+    /// Creates a document via the Application layer (MediatR).
+    /// The DocumentCreated broadcast is triggered by DocumentCreatedNotification.
     /// </summary>
     public async Task<VaultSnapshotItem> CreateDocument(string vaultId, string path, string? title)
     {
@@ -86,22 +86,22 @@ public sealed class VaultHub(
         }
     }
 
-    /// <summary>Renomme un document via MediatR. Broadcast déclenché par DocumentRenamedNotification.</summary>
+    /// <summary>Renames a document via MediatR. Broadcast triggered by DocumentRenamedNotification.</summary>
     public async Task RenameDocument(string documentId, string newPath)
     {
         string callerId = GetCallerId();
 
-        // Récupère le vaultId depuis l'ID du document (via ListDocuments non — via GetById)
+        // Resolve vaultId from the document ID (not via ListDocuments — via GetById)
         DocumentDto doc = await mediator.Send(
             new RenameDocumentCommand(callerId, "__resolve__", documentId, newPath));
 
         logger.LogInformation(
             "Document {DocumentId} renommé → {NewPath}", documentId, newPath);
 
-        _ = doc; // résultat utilisé par le handler pour notifier via IPublisher
+        _ = doc; // result used by the handler to notify via IPublisher
     }
 
-    /// <summary>Supprime (soft-delete) un document via MediatR. Broadcast déclenché par DocumentDeletedNotification.</summary>
+    /// <summary>Soft-deletes a document via MediatR. Broadcast triggered by DocumentDeletedNotification.</summary>
     public async Task DeleteDocument(string documentId)
     {
         string callerId = GetCallerId();
@@ -111,8 +111,8 @@ public sealed class VaultHub(
     // ── Index ops ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Reçoit une op d'index d'un client, lui assigne un seq et la broadcast aux autres
-    /// membres du groupe vault.
+    /// Receives an index op from a client, assigns a sequence number, and broadcasts it
+    /// to other members of the vault group.
     /// </summary>
     public async Task<long> PushIndexOp(PushIndexOpDto dto)
     {
@@ -123,7 +123,7 @@ public sealed class VaultHub(
 
         var evt = new IndexOpAppliedEvent(seq, dto.DocId, dto.Path, dto.MarkdownContent);
 
-        // Broadcast aux autres membres du groupe (pas à l'émetteur)
+        // Broadcast to other group members (not to the sender)
         await Clients.OthersInGroup(dto.VaultId).SendAsync("IndexOpApplied", evt);
 
         logger.LogDebug(
@@ -133,11 +133,11 @@ public sealed class VaultHub(
         return seq;
     }
 
-    // ── Déconnexion ───────────────────────────────────────────────────────────
+    // ── Disconnection ─────────────────────────────────────────────────────────
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
-        logger.LogInformation("Client déconnecté de VaultHub: {ConnectionId}", Context.ConnectionId);
+        logger.LogInformation("Client disconnected from VaultHub: {ConnectionId}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
 
@@ -145,5 +145,5 @@ public sealed class VaultHub(
 
     private string GetCallerId() =>
         Context.User?.FindFirstValue("sub")
-        ?? throw new HubException("Non authentifié.");
+        ?? throw new HubException("Not authenticated.");
 }

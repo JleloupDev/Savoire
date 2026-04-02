@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Hosted service qui initialise le container Blob au démarrage de l'application.
+// Hosted service that initializes the Blob container at application startup.
 
 using Microsoft.Extensions.Hosting;
 

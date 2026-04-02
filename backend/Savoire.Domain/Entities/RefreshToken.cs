@@ -6,7 +6,7 @@ public class RefreshToken
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string UserId { get; set; } = string.Empty;
-    public string Token { get; set; } = string.Empty;   // haché en base
+    public string Token { get; set; } = string.Empty;   // hashed in the database
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }

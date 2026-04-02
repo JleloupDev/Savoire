@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Read-model (projection) du document — extrait du contenu CRDT et des shadow docs.
+// Document read-model (projection) — extracted from CRDT content and shadow docs.
 
 namespace Savoire.Domain.Aggregates;
 
@@ -10,13 +10,13 @@ public sealed class DocumentMeta
     public string   VaultId     { get; private set; } = null!;
     public string   ContentType { get; private set; } = "text/markdown";
 
-    // Null si document primaire, UUID du document source si dérivé
+    // Null for a primary document, source document UUID if derived
     public string?  DerivedFrom { get; private set; }
-    // Plugin propriétaire du shadow doc (ex: "plugin-excalidraw")
+    // Plugin that owns the shadow doc (e.g. "plugin-excalidraw")
     public string?  DerivedBy   { get; private set; }
 
     public string[] Tags        { get; private set; } = [];
-    public string   Frontmatter { get; private set; } = "{}"; // JSON sérialisé
+    public string   Frontmatter { get; private set; } = "{}"; // serialized JSON
     public DateTime IndexedAt   { get; private set; }
 
     private DocumentMeta() { }

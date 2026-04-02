@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentation file system locale de IContentStore.
+// Local file system implementation of IContentStore.
 // Structure : {storageRoot}/{vaultId}/{docId}.md et .md.crdt
 // see ADR-002
 // En SaaS : remplacer par AzureBlobContentStore ou S3ContentStore.
@@ -21,7 +21,7 @@ public class LocalFileContentStore(string storageRoot) : IContentStore
     private static void EnsureDir(string filePath)
         => Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
 
-    // Écriture atomique : tmp → rename
+    // Atomic write: tmp → rename
     private static async Task WriteAtomicAsync(string path, Stream content, CancellationToken ct)
     {
         EnsureDir(path);

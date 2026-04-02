@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller pièces jointes — upload / download / delete.
-// GET est [AllowAnonymous] : les navigateurs chargent les <img src="..."> sans envoyer le JWT Bearer.
+// Attachments controller — upload / download / delete.
+// GET is [AllowAnonymous]: browsers load <img src="..."> without sending the JWT Bearer token.
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,10 +27,10 @@ public class AttachmentsController(IContentStore contentStore) : ControllerBase
         IFormFile file,
         CancellationToken ct)
     {
-        if (file.Length == 0)                         return BadRequest("Fichier vide.");
-        if (file.Length > MaxFileSize)                return BadRequest("Fichier trop volumineux (max 20 MB).");
+        if (file.Length == 0)                         return BadRequest("Empty file.");
+        if (file.Length > MaxFileSize)                return BadRequest("File too large (max 20 MB).");
         string ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!AllowedExtensions.Contains(ext))         return BadRequest($"Extension non autorisée : {ext}");
+        if (!AllowedExtensions.Contains(ext))         return BadRequest($"Extension not allowed: {ext}");
 
         await using Stream stream = file.OpenReadStream();
         string storagePath = await contentStore.WriteAttachmentAsync(vaultId, file.FileName, stream, ct);
@@ -44,7 +44,7 @@ public class AttachmentsController(IContentStore contentStore) : ControllerBase
 
     // GET /api/v1/vaults/{vaultId}/attachments/{*path}
     [HttpGet("{*path}")]
-    [AllowAnonymous] // Les navigateurs ne peuvent pas envoyer le JWT pour les balises <img>
+    [AllowAnonymous] // Browsers cannot send JWT tokens for <img> tags
     public async Task<IActionResult> Download(string vaultId, string path, CancellationToken ct)
     {
         Stream? stream = await contentStore.ReadAttachmentAsync(vaultId, path, ct);

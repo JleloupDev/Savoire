@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller métadonnées — délègue à MediatR.
 // Routes : /api/v1/vaults/{vaultId}/metadata/...
 
 using MediatR;
@@ -33,7 +32,7 @@ public class MetadataController(IMediator mediator) : AppControllerBase(mediator
 
     /// <summary>
     /// GET /api/v1/vaults/{vaultId}/metadata
-    /// Retourne toutes les métadonnées indexées du vault — endpoint d'audit/debug.
+    /// Returns all indexed metadata for a vault — audit/debug endpoint.
     /// ?includeDerived=false pour exclure les shadow documents.
     /// </summary>
     [HttpGet("api/v1/vaults/{vaultId}/metadata")]
@@ -44,7 +43,7 @@ public class MetadataController(IMediator mediator) : AppControllerBase(mediator
         => Ok(await Mediator.Send(new ListAllMetaQuery(vaultId, GetCallerId(), includeDerived), ct));
 
     // GET /api/v1/vaults/{vaultId}/links
-    // Retourne tous les liens du vault avec les paths source résolus — pour initialiser le graphe client au chargement du vault.
+    // Returns all vault links with resolved source paths — used to initialize the client graph when loading the vault.
     [HttpGet("api/v1/vaults/{vaultId}/links")]
     public async Task<IActionResult> GetVaultLinks(string vaultId, CancellationToken ct)
         => Ok(await Mediator.Send(new GetVaultLinksQuery(vaultId, GetCallerId()), ct));

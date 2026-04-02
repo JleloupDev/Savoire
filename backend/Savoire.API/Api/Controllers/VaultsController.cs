@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller vaults — délègue à MediatR.
 // Routes : /api/v1/users/{userId}/vaults et /api/v1/vaults/{vaultId}
 
 using MediatR;
@@ -58,7 +57,7 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
         string vaultId, [FromBody] AddMemberRequest req, CancellationToken ct)
     {
         await Mediator.Send(new AddVaultMemberCommand(GetCallerId(), vaultId, req.UserId, req.Role), ct);
-        return Ok(new { message = $"Membre '{req.UserId}' ajouté avec le rôle '{req.Role}'." });
+        return Ok(new { message = $"Member '{req.UserId}' added with role '{req.Role}'." });
     }
 
     // DELETE /api/v1/vaults/{vaultId}/members/{memberId}

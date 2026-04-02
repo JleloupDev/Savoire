@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Controller dossiers — délègue à MediatR.
 // Routes : /api/v1/vaults/{vaultId}/folders/...
 
 using MediatR;

@@ -33,18 +33,18 @@ public class RenameDocumentCommandHandler(
         doc.Rename(cmd.NewPath);
         await documents.UpdateAsync(doc, ct);
 
-        // Mise à jour de l'index des liens : les liens qui pointaient vers oldPath
-        // sont mis à jour vers newPath avec le même targetId (UUID stable).
+        // Update the link index: links that pointed to oldPath
+        // are updated to newPath with the same targetId (stable UUID).
         await docLinks.UpdateTargetPathAsync(vaultId, oldPath, cmd.NewPath, doc.Id, ct);
 
-        // Trouve les documents qui contiennent [[oldPath]] pour la cascade CRDT côté client
+        // Find documents that contain [[oldPath]] for the client-side CRDT cascade
         var affectedLinks = await docLinks.GetByTargetPathAsync(vaultId, cmd.NewPath, ct);
         var affectedDocIds = affectedLinks.Select(l => l.SourceId).Distinct().ToList();
 
         await publisher.Publish(new DocumentRenamedNotification(
             doc.Id, doc.VaultId, oldPath, doc.Path, doc.UpdatedAt), ct);
 
-        // Notifie les clients de la cascade wikilink nécessaire
+        // Notify clients of the required wikilink cascade
         if (affectedDocIds.Count > 0)
         {
             await publisher.Publish(new WikilinkCascadeNotification(

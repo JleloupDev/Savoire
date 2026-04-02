@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 namespace Savoire.Domain.ReadModels;
 
-/// <summary>Projection légère d'un lien de vault — utilisée pour initialiser le graphe côté client.</summary>
+/// <summary>Lightweight vault link projection — used to initialize the client-side graph.</summary>
 public record VaultLinkProjection(
     string  SourceId,
     string  SourcePath,

@@ -8,8 +8,8 @@ using Savoire.Domain.Services;
 namespace Savoire.Infrastructure.Auth;
 
 /// <summary>
-/// Implémentation de IUserLookupService basée sur ASP.NET Identity (UserManager).
-/// Remplace ConfigUserService (lecture config statique) pour les utilisateurs créés dynamiquement.
+/// IUserLookupService implementation backed by ASP.NET Identity (UserManager).
+/// Replaces ConfigUserService (static config read) for dynamically created users.
 /// </summary>
 public class IdentityUserLookupService(UserManager<AppUser> userManager) : IUserLookupService
 {

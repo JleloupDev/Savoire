@@ -20,8 +20,8 @@ public class PutDocumentContentCommandHandler(
 {
     public async Task<DocumentDto> Handle(PutDocumentContentCommand cmd, CancellationToken ct)
     {
-        // VaultAccessBehavior gère les callers normaux.
-        // ShareLink/View callers — vérification au niveau document ici.
+        // VaultAccessBehavior handles normal callers.
+        // ShareLink/View callers — document-level check here.
         if (ShareLinkGuard.IsShareLinkCaller(cmd.CallerId) || ShareLinkGuard.IsViewCaller(cmd.CallerId))
             await ShareLinkGuard.RequireDocumentWriteAsync(cmd.CallerId, cmd.VaultId, cmd.DocId, shareLinks, ct);
 

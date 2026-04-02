@@ -5,6 +5,6 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Metadata.GetVaultLinks;
 
-/// <summary>Retourne tous les liens du vault avec les paths source résolus — pour initialiser le graphe client.</summary>
+/// <summary>Returns all vault links with resolved source paths — used to initialize the client graph.</summary>
 public record GetVaultLinksQuery(string VaultId, string CallerId)
     : IRequest<IReadOnlyList<VaultLinkDto>>;

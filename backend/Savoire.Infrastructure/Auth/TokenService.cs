@@ -210,7 +210,7 @@ public class TokenService(
         await refreshTokens.AddAsync(refreshToken);
         await refreshTokens.SaveChangesAsync();
 
-        // Retourner une copie avec le token brut pour le client (haché en base)
+        // Return a copy with the raw token for the client (hashed in the database)
         return new RefreshToken
         {
             Id        = refreshToken.Id,

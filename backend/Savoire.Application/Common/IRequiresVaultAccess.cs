@@ -3,9 +3,9 @@
 namespace Savoire.Application.Common;
 
 /// <summary>
-/// Interface marqueur — toute commande/requête qui l'implémente
-/// déclenche automatiquement la vérification d'accès vault via
-/// <see cref="IVaultAccessGuard"/> dans <c>VaultAccessBehavior</c>.
+/// Marker interface — any command/query implementing it
+/// automatically triggers vault access verification via
+/// <see cref="IVaultAccessGuard"/> in <c>VaultAccessBehavior</c>.
 /// </summary>
 public interface IRequiresVaultAccess
 {

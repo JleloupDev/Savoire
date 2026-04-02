@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Extrait les métadonnées d'un document Markdown :
-// - frontmatter YAML (entre --- et ---)
-// - tags (#tag dans le corps ou champ tags: dans le frontmatter)
-// - wikilinks ([[path]] et ![[path]])
+// Extracts metadata from a Markdown document:
+// - YAML frontmatter (between --- and ---)
+// - tags (#tag in the body or tags: field in the frontmatter)
+// - wikilinks ([[path]] and ![[path]])
 //
 
 using System.Text.Json;

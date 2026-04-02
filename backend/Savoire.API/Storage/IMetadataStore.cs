@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Abstraction de stockage des métadonnées — Milestone 1
-// Implémentation locale : SqliteMetadataStore.
-// Les stores ne connaissent pas le domaine métier — ils manipulent des enregistrements SQL.
+// Metadata storage abstraction — Milestone 1
+// Local implementation: SqliteMetadataStore.
+// Stores have no knowledge of business domain — they manipulate SQL records.
 
 using Savoire.Server.Models;
 
@@ -36,16 +36,16 @@ public interface IMetadataStore
     Task<IReadOnlyList<FolderRecord>> ListVaultFoldersAsync(string vaultId, CancellationToken ct = default);
 
     /// <summary>
-    /// Déplace récursivement un dossier : met à jour le path de tous les sous-dossiers
-    /// et documents dont le path commence par l'ancien path.
+    /// Recursively moves a folder: updates the path of all sub-folders
+    /// and documents whose path starts with the old path.
     /// </summary>
     Task<(int MovedFolders, int MovedDocuments)> MoveFolderAsync(
         string folderId, string newPath, CancellationToken ct = default);
 
     /// <summary>
-    /// Supprime récursivement un dossier et tous ses sous-dossiers.
-    /// Soft-delete tous les documents dont le path commence par le path du dossier.
-    /// Retourne le nombre de documents soft-deletés.
+    /// Recursively deletes a folder and all its sub-folders.
+    /// Soft-deletes all documents whose path starts with the folder path.
+    /// Returns the number of soft-deleted documents.
     /// </summary>
     Task<int> DeleteFolderRecursiveAsync(string folderId, DateTime deletedAt, CancellationToken ct = default);
 
@@ -56,7 +56,7 @@ public interface IMetadataStore
     Task AppendOperationAsync(OperationRecord op, CancellationToken ct = default);
     Task<IReadOnlyList<OperationRecord>> GetOperationsSinceAsync(string docId, DateTime since, CancellationToken ct = default);
 
-    // ── Vecteurs d'état par client ────────────────────────────────────────────
+    // ── Per-client state vectors ──────────────────────────────────────────────
 
     Task<byte[]?> GetSyncVectorAsync(string docId, string clientId, CancellationToken ct = default);
     Task SetSyncVectorAsync(string docId, string clientId, byte[] vector, CancellationToken ct = default);

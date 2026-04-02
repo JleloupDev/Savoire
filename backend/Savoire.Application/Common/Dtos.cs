@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// DTOs de l'API REST — déplacés depuis server/Models/Dto/Dtos.cs.
-// Les handlers retournent ces DTOs ; les controllers les sérialisent en JSON.
+// REST API DTOs — moved from server/Models/Dto/Dtos.cs.
+// Handlers return these DTOs; controllers serialize them to JSON.
 
 using Savoire.Domain.Aggregates;
 
 namespace Savoire.Application.Common;
 
-// ── Utilisateurs ───────────────────────────────────────────────────────────
+// ── Users ──────────────────────────────────────────────────────────────────
 
 public record UserDto(string Id, string DisplayName)
 {
@@ -56,7 +56,7 @@ public record DocumentDto(
         new(d.Id, d.Path, d.Title, d.Hash, d.SizeBytes, d.CreatedAt, d.UpdatedAt);
 }
 
-// ── Dossiers ───────────────────────────────────────────────────────────────
+// ── Folders ────────────────────────────────────────────────────────────────
 
 public record FolderDto(string Id, string Path, DateTime CreatedAt)
 {
@@ -88,7 +88,7 @@ public record CloneManifestDto(
     long                           TotalSizeBytes
 );
 
-// ── Synchronisation ────────────────────────────────────────────────────────
+// ── Synchronization ────────────────────────────────────────────────────────
 
 public record SyncChangeDto(
     string   DocId,
@@ -108,7 +108,7 @@ public record SyncRequestDto(string ClientId, byte[] StateVector);
 public record SyncResponseDto(byte[][] MissingOps, byte[] ServerStateVector);
 public record PushOpsRequestDto(string ClientId, DateTime ProducedAt, byte[] Ops);
 
-// ── Requêtes API (bodies) ──────────────────────────────────────────────────
+// ── API Request bodies ─────────────────────────────────────────────────────
 
 public record CreateVaultRequest(string Name);
 public record CreateDocumentRequest(string Path, string? Content);
@@ -121,9 +121,9 @@ public record CloneRequest(string? LocalPath);
 public record GrantPermissionRequest(string SubjectId, string Permission, DateTime? ExpiresAt);
 public record CreateShareLinkRequest(string Permission, DateTime? ExpiresAt);
 
-// ── Partage ────────────────────────────────────────────────────────────────
+// ── Sharing ────────────────────────────────────────────────────────────────
 
-/// <summary>Une entrée ACL — permission d'un utilisateur sur une ressource.</summary>
+/// <summary>An ACL entry — a user's permission on a resource.</summary>
 public record ResourcePermissionDto(
     string    Id,
     string    ResourceType,
@@ -137,7 +137,7 @@ public record ResourcePermissionDto(
     DateTime? ExpiresAt
 );
 
-/// <summary>Lien de partage — token URL-safe pour accès anonyme ou authentifié.</summary>
+/// <summary>Share link — URL-safe token for anonymous or authenticated access.</summary>
 public record ShareLinkDto(
     string    Id,
     string    Token,
@@ -152,7 +152,7 @@ public record ShareLinkDto(
 );
 
 /// <summary>
-/// Aggregation des droits d'accès d'une ressource (permissions utilisateurs + liens).
+/// Aggregation of a resource's access rights (user permissions + links).
 /// </summary>
 public record ResourceSharingDto(
     string                      ResourceType,
@@ -161,14 +161,14 @@ public record ResourceSharingDto(
     List<ShareLinkDto>          Links
 );
 
-/// <summary>JWT scoped retourné après validation d'un lien de partage.</summary>
+/// <summary>Scoped JWT returned after a share link is validated.</summary>
 public record ShareLinkAccessDto(
     string    AccessToken,
     string    ResourceType,
     string    ResourceId,
     string    Permission,
     DateTime? ExpiresAt,
-    /// <summary>Renseigné pour ResourceType=document afin que le client puisse charger le contenu.</summary>
+    /// <summary>Populated for ResourceType=document so the client can load the content.</summary>
     string?   VaultId = null
 );
 
@@ -193,7 +193,7 @@ public record ViewGrantDto(
 
 public record RedeemViewGrantRequest(string GrantToken);
 
-// ── Métadonnées & Index ─────────────────────────────────────────────────────
+// ── Metadata & Index ───────────────────────────────────────────────────────
 
 public record DocumentMetaDto(
     string   DocumentId,

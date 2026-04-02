@@ -26,7 +26,7 @@ public static class ShareLinkGuard
 
     // ── Vault access ──────────────────────────────────────────────────────────
 
-    /// <summary>Vérifie qu'un lien de partage de vault autorise la lecture de ce vault.</summary>
+    /// <summary>Verifies that a vault share link grants read access to this vault.</summary>
     public static async Task RequireVaultReadAsync(
         string callerId, string vaultId,
         IShareLinkRepository shareLinks, CancellationToken ct)
@@ -43,7 +43,7 @@ public static class ShareLinkGuard
         throw new AccessDeniedException("Lien de partage non valide pour ce vault.");
     }
 
-    /// <summary>Vérifie qu'un lien de partage de vault autorise l'écriture dans ce vault.</summary>
+    /// <summary>Verifies that a vault share link grants write access to this vault.</summary>
     public static async Task RequireVaultWriteAsync(
         string callerId, string vaultId,
         IShareLinkRepository shareLinks, CancellationToken ct)
@@ -63,8 +63,8 @@ public static class ShareLinkGuard
     // ── Document access ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Vérifie la lecture d'un document via un lien de partage.
-    /// Accepte : lien vault couvrant ce vault, ou lien document couvrant ce document.
+    /// Verifies read access to a document via a share link.
+    /// Accepts: a vault link covering this vault, or a document link covering this document.
     /// </summary>
     public static async Task RequireDocumentReadAsync(
         string callerId, string vaultId, string docId,
@@ -84,8 +84,8 @@ public static class ShareLinkGuard
     }
 
     /// <summary>
-    /// Vérifie l'écriture d'un document via un lien de partage.
-    /// Accepte : lien vault write couvrant ce vault, ou lien document write couvrant ce document.
+    /// Verifies write access to a document via a share link.
+    /// Accepts: a vault write link covering this vault, or a document write link covering this document.
     /// </summary>
     public static async Task RequireDocumentWriteAsync(
         string callerId, string vaultId, string docId,

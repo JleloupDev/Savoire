@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Program.cs — Server.Api — Clean Architecture avec MediatR + JWT Auth.
-// AssemblyName = Savoire.Server conservé pour WebApplicationFactory<Program>.
+// Program.cs — Server.Api — Clean Architecture with MediatR + JWT Auth.
+// AssemblyName = Savoire.Server kept for WebApplicationFactory<Program>.
 
 using System.Reflection;
 using FluentValidation;
@@ -50,7 +50,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title       = "Collaborative Vault API",
         Version     = "v1",
-        Description = "API de synchronisation de notes collaborative avec authentification JWT."
+        Description = "Collaborative note sync API with JWT authentication."
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -116,7 +116,7 @@ builder.Services.AddCors(options =>
 
 WebApplication app = builder.Build();
 
-// Migrations EF + seed admin au démarrage
+// Run EF migrations + seed admin on startup
 using (IServiceScope scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -133,7 +133,7 @@ using (IServiceScope scope = app.Services.CreateScope())
 
     await SeedAdminAsync(scope.ServiceProvider);
 
-    // Seed vault "default" pour rétrocompatibilité (idempotent)
+    // Seed "default" vault for backwards compatibility (idempotent)
     db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
     if (!db.Vaults.Any(v => v.Id == "default"))
     {
@@ -153,7 +153,7 @@ app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
-// DECISION V2: UserValidationMiddleware (X-User-Id) supprimé — auth via JWT uniquement.
+// DECISION V2: UserValidationMiddleware (X-User-Id) removed — auth via JWT only.
 
 app.UseSwagger();
 app.UseSwaggerUI(options =>
@@ -176,7 +176,7 @@ app.MapControllers();
 app.MapHub<SyncHub>("/hubs/sync");
 app.MapHub<VaultHub>("/hubs/vault");
 app.MapHub<DocumentRoomHub>("/hubs/room");
-// DocumentHub supprimé — hub legacy remplacé par VaultHub (MediatR)
+// DocumentHub removed — legacy hub replaced by VaultHub (MediatR)
 
 app.Run();
 
@@ -203,8 +203,8 @@ static async Task SeedAdminAsync(IServiceProvider services)
     var result = await userManager.CreateAsync(admin, password);
     if (!result.Succeeded)
         throw new InvalidOperationException(
-            $"Seed admin échoué : {string.Join(", ", result.Errors.Select(e => e.Description))}");
+            $"Admin seed failed: {string.Join(", ", result.Errors.Select(e => e.Description))}");
 }
 
-// Accessible à WebApplicationFactory dans les tests d'intégration
+// Accessible to WebApplicationFactory in integration tests
 public partial class Program { }

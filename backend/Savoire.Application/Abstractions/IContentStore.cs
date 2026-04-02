@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Interface de stockage de contenu — déplacée dans Application (concern applicatif).
-// Implémentée par LocalFileContentStore dans Infrastructure.
+// Content storage interface — moved into Application (application concern).
+// Implemented by LocalFileContentStore in Infrastructure.
 
 namespace Savoire.Application.Abstractions;
 

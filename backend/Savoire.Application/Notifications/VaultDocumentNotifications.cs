@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// MediatR notifications publiées par les handlers de documents.
+// MediatR notifications published by document handlers.
 // see ADR-001
 
 using MediatR;
@@ -32,22 +32,22 @@ public record DocumentDeletedNotification(
 ) : INotification;
 
 /// <summary>
-/// Publiée après que le contenu d'un document a été sauvegardé/indexé.
-/// Déclenche la mise à jour des métadonnées (tags, wikilinks) dans la projection.
+/// Published after a document's content has been saved/indexed.
+/// Triggers the update of metadata (tags, wikilinks) in the projection.
 /// </summary>
 public record DocumentContentIndexedNotification(
     string DocId,
     string VaultId,
-    string MarkdownContent  // texte extrait du CRDT ou du shadow doc
+    string MarkdownContent  // text extracted from the CRDT or the shadow doc
 ) : INotification;
 
 /// <summary>
-/// Publiée après un rename — indique aux clients quels documents contiennent
-/// des wikilinks vers l'ancien path et doivent être mis à jour.
+/// Published after a rename — tells clients which documents contain
+/// wikilinks pointing to the old path and need to be updated.
 /// </summary>
 public record WikilinkCascadeNotification(
     string VaultId,
     string OldPath,
     string NewPath,
-    IReadOnlyList<string> AffectedDocIds  // documents contenant [[OldPath]]
+    IReadOnlyList<string> AffectedDocIds  // documents containing [[OldPath]]
 ) : INotification;

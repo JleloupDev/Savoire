@@ -25,8 +25,8 @@ public class AccessShareLinkQueryHandler(
 
         string jwt = tokenService.GenerateShareLinkAccessToken(link);
 
-        // Pour un lien sur un document, on résout le vaultId afin que le client
-        // puisse construire l'URL de contenu sans connaître le vault a priori.
+        // For a link on a document, resolve the vaultId so the client
+        // can build the content URL without knowing the vault upfront.
         string? vaultId = null;
         if (link.ResourceType == "document")
         {

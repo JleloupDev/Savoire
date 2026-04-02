@@ -19,10 +19,10 @@ public class GrantPermissionCommandHandler(
     public async Task<ResourcePermissionDto> Handle(
         GrantPermissionCommand cmd, CancellationToken ct)
     {
-        // Vérifie que le caller est autorisé à partager cette ressource
+        // Verify that the caller is authorized to share this resource
         await RequireShareRightAsync(cmd.CallerId, cmd.ResourceType, cmd.ResourceId, vaults, documents, permissions, ct);
 
-        // Upsert: remplace si déjà présent
+        // Upsert: replace if already present
         ResourcePermission? existing = await permissions.GetAsync(
             cmd.ResourceType, cmd.ResourceId, "user", cmd.TargetUserId, ct);
         if (existing is not null)
@@ -39,7 +39,7 @@ public class GrantPermissionCommandHandler(
     }
 
     /// <summary>
-    /// Seul l'owner d'un vault peut partager le vault (ou ses documents).
+    /// Only the vault owner can share the vault (or its documents).
     /// </summary>
     internal static async Task RequireShareRightAsync(
         string callerId, string resourceType, string resourceId,
@@ -57,7 +57,7 @@ public class GrantPermissionCommandHandler(
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
 
-        // Un admin ACL peut aussi partager
+        // An ACL admin can also share
         ResourcePermission? acl = await permissions.GetAsync(
             "vault", vaultId, "user", callerId, ct);
         if (acl?.Permission == "admin" && !acl.IsExpired()) return;

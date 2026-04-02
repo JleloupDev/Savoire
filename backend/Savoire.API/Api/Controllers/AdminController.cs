@@ -20,7 +20,7 @@ public class AdminController(IMediator mediator) : ControllerBase
     public async Task<IActionResult> ListUsers() =>
         Ok(await mediator.Send(new ListUsersQuery()));
 
-    /// <summary>Créer un utilisateur directement</summary>
+    /// <summary>Create a user directly</summary>
     [HttpPost("users")]
     [ProducesResponseType(typeof(AuthUserDto), 201)]
     [ProducesResponseType(typeof(ProblemDetails), 400)]
@@ -34,7 +34,7 @@ public class AdminController(IMediator mediator) : ControllerBase
         return Created(string.Empty, result);
     }
 
-    /// <summary>Réinitialiser le mot de passe d'un utilisateur</summary>
+    /// <summary>Reset a user's password</summary>
     [HttpPost("users/{userId}/reset-password")]
     [ProducesResponseType(204)]
     [ProducesResponseType(typeof(ProblemDetails), 404)]

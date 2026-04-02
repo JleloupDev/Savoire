@@ -9,7 +9,7 @@ public sealed record DocumentDeletedEvent(string Id, string Path, DateTime Delet
 
 // ── Index ops ─────────────────────────────────────────────────────────────────
 
-/// <summary>Payload envoyé par le client pour indexer un document.</summary>
+/// <summary>Payload sent by the client to index a document.</summary>
 public sealed record PushIndexOpDto(
     string VaultId,
     string DocId,
@@ -17,8 +17,8 @@ public sealed record PushIndexOpDto(
     string MarkdownContent);
 
 /// <summary>
-/// Broadcast après séquencement d'une op d'index.
-/// Seq est le numéro de séquence global assigné par le serveur.
+/// Broadcast after sequencing an index op.
+/// Seq is the global sequence number assigned by the server.
 /// </summary>
 public sealed record IndexOpAppliedEvent(
     long   Seq,

@@ -21,7 +21,7 @@ public class ResetPasswordCommandHandler(
         var user = await userManager.FindByIdAsync(request.UserId)
             ?? throw new UserNotFoundException(request.UserId);
 
-        // Générer un token de reset interne et l'appliquer immédiatement
+        // Generate an internal reset token and apply it immediately
         var resetToken = await userManager.GeneratePasswordResetTokenAsync(user);
         var result = await userManager.ResetPasswordAsync(
             user, resetToken, request.NewPassword);
@@ -29,7 +29,7 @@ public class ResetPasswordCommandHandler(
         if (!result.Succeeded)
             throw new IdentityOperationException(result.Errors);
 
-        // Révoquer toutes les sessions — l'utilisateur doit se reconnecter
+        // Revoke all sessions — the user must log in again
         await tokenService.RevokeAllUserRefreshTokensAsync(request.UserId);
     }
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentation V1 de IUserLookupService : comptes définis dans appsettings.json.
+// V1 implementation of IUserLookupService: accounts defined in appsettings.json.
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

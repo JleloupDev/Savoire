@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Abstraction de stockage de contenu (fichiers .md et .md.crdt, pièces jointes).
-// Implémentation locale : LocalFileContentStore.
-// Implémentation SaaS future : Azure Blob / S3.
-// Conforme à docs/Claude/Storage requierement.md § Interface d'abstraction (C#)
+// Content storage abstraction (.md and .md.crdt files, attachments).
+// Local implementation: LocalFileContentStore.
+// Future SaaS implementation: Azure Blob / S3.
 
 namespace Savoire.Server.Storage;
 

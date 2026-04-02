@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentation Azure Blob Storage de IContentStore.
+// Azure Blob Storage implementation of IContentStore.
 // see ADR-020
-// NuGet : Azure.Storage.Blobs
+// NuGet: Azure.Storage.Blobs
 
 using Azure.Storage.Blobs;
 using Savoire.Application.Abstractions;
@@ -16,11 +16,11 @@ public class AzureBlobContentStore(
     private readonly BlobContainerClient _container =
         blobServiceClient.GetBlobContainerClient(containerName);
 
-    /// <summary>Crée le container Blob s'il n'existe pas (appeler au démarrage).</summary>
+    /// <summary>Creates the Blob container if it does not exist (call at startup).</summary>
     public async Task InitializeAsync()
         => await _container.CreateIfNotExistsAsync();
 
-    // ── Helpers — mêmes conventions de nommage que LocalFileContentStore ──
+    // ── Helpers — same naming conventions as LocalFileContentStore ──────────
 
     private static string DocBlobName(string vaultId, string docId)
         => $"{vaultId}/{docId}.md";

@@ -17,8 +17,8 @@ public class GetDocumentContentQueryHandler(
 {
     public async Task<Stream> Handle(GetDocumentContentQuery q, CancellationToken ct)
     {
-        // VaultAccessBehavior gère les callers normaux.
-        // ShareLink/View callers sont exclus du behavior — vérification au niveau document ici.
+        // VaultAccessBehavior handles normal callers.
+        // ShareLink/View callers are excluded from the behavior — document-level check here.
         if (ShareLinkGuard.IsShareLinkCaller(q.CallerId) || ShareLinkGuard.IsViewCaller(q.CallerId))
             await ShareLinkGuard.RequireDocumentReadAsync(q.CallerId, q.VaultId, q.DocId, shareLinks, ct);
 

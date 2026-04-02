@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentation SQLite de IMetadataStore — Milestone 1
+// SQLite implementation of IMetadataStore — Milestone 1
 // see ADR-019
-// Le schéma est initialisé par DatabaseInitializer au démarrage (pas dans ce constructeur).
+// Schema is initialized by DatabaseInitializer on startup (not in this constructor).
 
 using Microsoft.Data.Sqlite;
 using Savoire.Server.Models;
@@ -224,7 +224,7 @@ public class SqliteMetadataStore : IMetadataStore
     {
         using SqliteConnection conn = Open();
 
-        // Récupérer le path actuel du dossier
+        // Get the current folder path
         FolderRecord? folder = await GetFolderAsync(folderId, ct);
         if (folder is null) return (0, 0);
 
@@ -232,14 +232,14 @@ public class SqliteMetadataStore : IMetadataStore
         string oldPrefix = oldPath + "/";
         string newPrefix = newPath + "/";
 
-        // Mettre à jour le dossier lui-même
+        // Update the folder itself
         using var cmd1 = conn.CreateCommand();
         cmd1.CommandText = "UPDATE folders SET path = $newPath WHERE id = $id";
         cmd1.Parameters.AddWithValue("$id",      folderId);
         cmd1.Parameters.AddWithValue("$newPath", newPath);
         await cmd1.ExecuteNonQueryAsync(ct);
 
-        // Mettre à jour les sous-dossiers (path LIKE oldPath/%)
+        // Update sub-folders (path LIKE oldPath/%)
         using var cmd2 = conn.CreateCommand();
         cmd2.CommandText = """
             UPDATE folders
@@ -252,7 +252,7 @@ public class SqliteMetadataStore : IMetadataStore
         cmd2.Parameters.AddWithValue("$pattern",      oldPrefix + "%");
         int movedFolders = await cmd2.ExecuteNonQueryAsync(ct);
 
-        // Mettre à jour les documents dont le path commence par oldPath/
+        // Update documents whose path starts with oldPath/
         using var cmd3 = conn.CreateCommand();
         cmd3.CommandText = """
             UPDATE documents
@@ -281,7 +281,7 @@ public class SqliteMetadataStore : IMetadataStore
 
         using SqliteConnection conn = Open();
 
-        // Soft-delete documents dans ce dossier et sous-dossiers
+        // Soft-delete documents in this folder and sub-folders
         using var cmd1 = conn.CreateCommand();
         cmd1.CommandText = """
             UPDATE documents SET deleted_at = $d
@@ -298,7 +298,7 @@ public class SqliteMetadataStore : IMetadataStore
         // Also delete documents exactly in this folder (path starts with folderPath/)
         // (already handled by LIKE $prefix above)
 
-        // Supprimer les sous-dossiers
+        // Delete sub-folders
         using var cmd2 = conn.CreateCommand();
         cmd2.CommandText = """
             DELETE FROM folders
@@ -453,7 +453,7 @@ public class SqliteMetadataStore : IMetadataStore
     {
         using SqliteConnection conn = Open();
         using var cmd = conn.CreateCommand();
-        // CASCADE supprime les membres, documents, dossiers et opérations liés
+        // CASCADE deletes related members, documents, folders, and operations
         cmd.CommandText = "DELETE FROM vaults WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", vaultId);
         await cmd.ExecuteNonQueryAsync(ct);

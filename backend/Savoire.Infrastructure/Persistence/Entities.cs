@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Entités EF Core — mappent vers les agrégats Domain via Rehydrate().
+// EF Core entities — mapped to Domain aggregates via Rehydrate().
 
 using Savoire.Domain.Aggregates;
 using System.Text.Json;

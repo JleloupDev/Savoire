@@ -11,8 +11,8 @@ public interface IOperationRepository
     Task<byte[]?> GetSyncVectorAsync(string docId, string clientId, CancellationToken ct = default);
     Task SetSyncVectorAsync(string docId, string clientId, byte[] vector, CancellationToken ct = default);
     /// <summary>
-    /// Remplace toutes les opérations du document par un unique snapshot compacté.
-    /// Si <paramref name="force"/> est false, sans effet quand le document a peu d'opérations (seuil = 50).
+    /// Replaces all operations for the document with a single compacted snapshot.
+    /// If <paramref name="force"/> is false, has no effect when the document has few operations (threshold = 50).
     /// </summary>
     Task CompactAsync(string docId, byte[] snapshotBytes, bool force = false, CancellationToken ct = default);
 }

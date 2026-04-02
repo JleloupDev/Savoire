@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// AppDbContext — DECISION: migré vers IdentityDbContext<AppUser> pour l'auth V1.
-// Passage de EnsureCreated() à MigrateAsync() pour supporter les migrations EF.
+// AppDbContext — DECISION: migrated to IdentityDbContext<AppUser> for V1 auth.
+// Switched from EnsureCreated() to MigrateAsync() to support EF migrations.
 
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +27,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(modelBuilder);  // OBLIGATOIRE pour Identity
+        base.OnModelCreating(modelBuilder);  // REQUIRED for Identity
 
         modelBuilder.Entity<VaultEntity>(e =>
         {

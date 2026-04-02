@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Exceptions métier — déplacées depuis server/Models/Exceptions.cs
-// Le DomainExceptionHandler dans Api les mappe en Problem Details RFC 7807.
+// Domain exceptions — moved from server/Models/Exceptions.cs
+// DomainExceptionHandler in Api maps them to RFC 7807 Problem Details.
 
 namespace Savoire.Domain.Exceptions;
 
