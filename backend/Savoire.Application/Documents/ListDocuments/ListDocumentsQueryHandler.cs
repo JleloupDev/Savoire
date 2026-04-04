@@ -4,6 +4,7 @@ using MediatR;
 using Savoire.Application.Common;
 using Savoire.Application.Sharing;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 
@@ -49,7 +50,7 @@ public class ListDocumentsQueryHandler(
         if (vault.IsOwner(callerId)) return;
         VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
         if (member is null) throw new VaultNotFoundException(vaultId);
-        if (member.Role is "viewer")
+        if (member.Role == VaultRole.Viewer)
             throw new AccessDeniedException("Les membres 'viewer' ne peuvent pas modifier ce vault.");
     }
 }

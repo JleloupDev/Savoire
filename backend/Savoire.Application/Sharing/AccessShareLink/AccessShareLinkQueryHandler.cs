@@ -3,6 +3,7 @@
 using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Interfaces;
 using Savoire.Domain.Repositories;
@@ -28,14 +29,14 @@ public class AccessShareLinkQueryHandler(
         // For a link on a document, resolve the vaultId so the client
         // can build the content URL without knowing the vault upfront.
         string? vaultId = null;
-        if (link.ResourceType == "document")
+        if (link.ResourceType == ResourceType.Document)
         {
             var doc = await documents.GetByIdAsync(link.ResourceId, ct);
             vaultId = doc?.VaultId;
         }
 
         return new ShareLinkAccessDto(
-            jwt, link.ResourceType, link.ResourceId,
-            link.Permission, link.ExpiresAt, vaultId);
+            jwt, link.ResourceType.ToApiString(), link.ResourceId,
+            link.Permission.ToApiString(), link.ExpiresAt, vaultId);
     }
 }

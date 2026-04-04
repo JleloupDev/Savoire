@@ -3,6 +3,7 @@
 using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Repositories;
 using Savoire.Domain.ValueObjects;
 
@@ -14,14 +15,14 @@ public class ListVaultsQueryHandler(IVaultRepository vaults)
     public async Task<IReadOnlyList<VaultSummaryDto>> Handle(
         ListVaultsQuery query, CancellationToken ct)
     {
-        IReadOnlyList<(Vault Vault, string Role)> items =
+        IReadOnlyList<(Vault Vault, VaultRole Role)> items =
             await vaults.GetForUserAsync(query.UserId, ct);
 
         var result = new List<VaultSummaryDto>(items.Count);
-        foreach ((Vault vault, string role) in items)
+        foreach ((Vault vault, VaultRole role) in items)
         {
             VaultStats stats = await vaults.GetStatsAsync(vault.Id, ct);
-            result.Add(ToSummary(vault, role, stats));
+            result.Add(ToSummary(vault, role.ToApiString(), stats));
         }
         return result;
     }

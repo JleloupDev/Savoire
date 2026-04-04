@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 
@@ -39,7 +40,7 @@ public static class ShareLinkGuard
         }
 
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
-        if (link.ResourceType == "vault" && link.ResourceId == vaultId) return;
+        if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId) return;
         throw new AccessDeniedException("Lien de partage non valide pour ce vault.");
     }
 
@@ -56,7 +57,7 @@ public static class ShareLinkGuard
         }
 
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
-        if (link.ResourceType == "vault" && link.ResourceId == vaultId && link.AllowsWrite()) return;
+        if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId && link.AllowsWrite()) return;
         throw new AccessDeniedException("Lien de partage sans permission d'écriture sur ce vault.");
     }
 
@@ -78,8 +79,8 @@ public static class ShareLinkGuard
         }
 
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
-        if (link.ResourceType == "vault"    && link.ResourceId == vaultId) return;
-        if (link.ResourceType == "document" && link.ResourceId == docId)   return;
+        if (link.ResourceType == ResourceType.Vault    && link.ResourceId == vaultId) return;
+        if (link.ResourceType == ResourceType.Document && link.ResourceId == docId)   return;
         throw new AccessDeniedException("Lien de partage non valide pour ce document.");
     }
 
@@ -99,8 +100,8 @@ public static class ShareLinkGuard
         }
 
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
-        if (link.ResourceType == "vault"    && link.ResourceId == vaultId && link.AllowsWrite()) return;
-        if (link.ResourceType == "document" && link.ResourceId == docId   && link.AllowsWrite()) return;
+        if (link.ResourceType == ResourceType.Vault    && link.ResourceId == vaultId && link.AllowsWrite()) return;
+        if (link.ResourceType == ResourceType.Document && link.ResourceId == docId   && link.AllowsWrite()) return;
         throw new AccessDeniedException("Lien de partage sans permission d'écriture sur ce document.");
     }
 

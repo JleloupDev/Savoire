@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Repositories;
 using Savoire.Domain.ValueObjects;
 
@@ -16,7 +17,7 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
         return e?.ToDomain();
     }
 
-    public async Task<IReadOnlyList<(Vault Vault, string Role)>> GetForUserAsync(
+    public async Task<IReadOnlyList<(Vault Vault, VaultRole Role)>> GetForUserAsync(
         string userId, CancellationToken ct = default)
     {
         var owned = await db.Vaults.AsNoTracking()
@@ -28,9 +29,9 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
             .Where(m => m.UserId == userId && m.Vault.OwnerId != userId)
             .ToListAsync(ct);
 
-        var result = new List<(Vault, string)>();
-        foreach (VaultEntity v in owned)  result.Add((v.ToDomain(), "owner"));
-        foreach (VaultMemberEntity m in memberVaults) result.Add((m.Vault.ToDomain(), m.Role));
+        var result = new List<(Vault, VaultRole)>();
+        foreach (VaultEntity v in owned)          result.Add((v.ToDomain(), VaultRole.Owner));
+        foreach (VaultMemberEntity m in memberVaults) result.Add((m.Vault.ToDomain(), m.Role.ParseVaultRole()));
         return result.OrderBy(x => x.Item1.CreatedAt).ToList();
     }
 
@@ -93,15 +94,15 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
 
         if (existing is not null)
         {
-            existing.Role = member.Role;
+            existing.Role     = member.Role.ToApiString();
             existing.JoinedAt = member.JoinedAt;
         }
         else
         {
             db.VaultMembers.Add(new VaultMemberEntity
             {
-                VaultId = member.VaultId, UserId = member.UserId,
-                Role = member.Role, JoinedAt = member.JoinedAt
+                VaultId  = member.VaultId, UserId = member.UserId,
+                Role     = member.Role.ToApiString(), JoinedAt = member.JoinedAt
             });
         }
         await db.SaveChangesAsync(ct);

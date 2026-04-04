@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
 
@@ -48,7 +49,7 @@ public class EfDocLinkRepository(AppDbContext db) : IDocLinkRepository
                 VaultId    = link.VaultId,
                 TargetId   = link.TargetId,
                 TargetPath = link.TargetPath,
-                LinkType   = link.LinkType,
+                LinkType   = link.LinkType.ToApiString(),
             });
         }
 

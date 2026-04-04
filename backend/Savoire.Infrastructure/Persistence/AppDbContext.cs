@@ -12,7 +12,13 @@ namespace Savoire.Infrastructure.Persistence;
 public class AppDbContext(DbContextOptions<AppDbContext> options)
     : IdentityDbContext<AppUser>(options)
 {
-    public DbSet<VaultEntity>       Vaults      => Set<VaultEntity>();
+    public DbSet<RefResourceTypeEntity>   RefResourceTypes   => Set<RefResourceTypeEntity>();
+    public DbSet<RefPermissionEntity>     RefPermissions     => Set<RefPermissionEntity>();
+    public DbSet<RefVaultRoleEntity>      RefVaultRoles      => Set<RefVaultRoleEntity>();
+    public DbSet<RefLinkTypeEntity>       RefLinkTypes       => Set<RefLinkTypeEntity>();
+    public DbSet<RefSubjectTypeEntity>    RefSubjectTypes    => Set<RefSubjectTypeEntity>();
+    public DbSet<RefSyncChangeTypeEntity> RefSyncChangeTypes => Set<RefSyncChangeTypeEntity>();
+    public DbSet<VaultEntity>             Vaults             => Set<VaultEntity>();
     public DbSet<VaultMemberEntity> VaultMembers => Set<VaultMemberEntity>();
     public DbSet<DocumentEntity>    Documents   => Set<DocumentEntity>();
     public DbSet<FolderEntity>      Folders     => Set<FolderEntity>();
@@ -28,6 +34,41 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);  // REQUIRED for Identity
+
+        // ── Reference tables ──────────────────────────────────────────────────
+        ConfigureRefTable<RefResourceTypeEntity>(modelBuilder, "ref_resource_types");
+        ConfigureRefTable<RefPermissionEntity>  (modelBuilder, "ref_permissions");
+        ConfigureRefTable<RefVaultRoleEntity>   (modelBuilder, "ref_vault_roles");
+        ConfigureRefTable<RefLinkTypeEntity>    (modelBuilder, "ref_link_types");
+        ConfigureRefTable<RefSubjectTypeEntity> (modelBuilder, "ref_subject_types");
+        ConfigureRefTable<RefSyncChangeTypeEntity>(modelBuilder, "ref_sync_change_types");
+
+        modelBuilder.Entity<RefResourceTypeEntity>().HasData(
+            new() { Value = "vault",    Description = "A vault — contains documents and folders." },
+            new() { Value = "document", Description = "A single document within a vault." });
+
+        modelBuilder.Entity<RefPermissionEntity>().HasData(
+            new() { Value = "read",  Description = "Read-only access to the resource." },
+            new() { Value = "write", Description = "Read and write access to the resource." },
+            new() { Value = "admin", Description = "Full control, including sharing the resource." });
+
+        modelBuilder.Entity<RefVaultRoleEntity>().HasData(
+            new() { Value = "owner",  Description = "Vault creator — cannot be removed, has all permissions." },
+            new() { Value = "editor", Description = "Can read and write documents." },
+            new() { Value = "viewer", Description = "Read-only access to all documents in the vault." });
+
+        modelBuilder.Entity<RefLinkTypeEntity>().HasData(
+            new() { Value = "wikilink", Description = "Standard wikilink: [[path]]" },
+            new() { Value = "embed",    Description = "Embedded content: ![[path]]" });
+
+        modelBuilder.Entity<RefSubjectTypeEntity>().HasData(
+            new RefSubjectTypeEntity { Value = "user", Description = "An individual user account." });
+
+        modelBuilder.Entity<RefSyncChangeTypeEntity>().HasData(
+            new() { Value = "created",  Description = "Document was created after the sync baseline." },
+            new() { Value = "modified", Description = "Document was modified after the sync baseline." },
+            new() { Value = "deleted",  Description = "Document was soft-deleted after the sync baseline." },
+            new() { Value = "moved",    Description = "Document was moved (reserved — not yet produced by the server)." });
 
         modelBuilder.Entity<VaultEntity>(e =>
         {
@@ -51,6 +92,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .WithMany(v => v.Members)
              .HasForeignKey(m => m.VaultId)
              .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<RefVaultRoleEntity>()
+             .WithMany()
+             .HasForeignKey(m => m.Role)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DocumentEntity>(e =>
@@ -139,6 +185,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .HasDatabaseName("IX_resource_permissions_unique");
             e.HasIndex(x => new { x.ResourceType, x.ResourceId })
              .HasDatabaseName("idx_rp_resource");
+            e.HasOne<RefResourceTypeEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.ResourceType)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<RefPermissionEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.Permission)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<RefSubjectTypeEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.SubjectType)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DocumentMetaEntity>(e =>
@@ -170,6 +231,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasIndex(x => x.SourceId).HasDatabaseName("idx_doc_links_source");
             e.HasIndex(x => x.TargetId).HasDatabaseName("idx_doc_links_target");
             e.HasIndex(x => new { x.VaultId, x.TargetPath }).HasDatabaseName("idx_doc_links_target_path");
+            e.HasOne<RefLinkTypeEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.LinkType)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<IndexSnapshotEntity>(e =>
@@ -201,6 +267,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasIndex(x => x.Token).IsUnique().HasDatabaseName("IX_share_links_token");
             e.HasIndex(x => new { x.ResourceType, x.ResourceId })
              .HasDatabaseName("idx_sl_resource");
+            e.HasOne<RefResourceTypeEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.ResourceType)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<RefPermissionEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.Permission)
+             .HasPrincipalKey(r => r.Value)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureRefTable<T>(ModelBuilder modelBuilder, string tableName)
+        where T : class
+    {
+        modelBuilder.Entity<T>(e =>
+        {
+            e.ToTable(tableName);
+            e.HasKey("Value");
+            e.Property<string>("Value").HasColumnName("value").IsRequired();
+            e.Property<string>("Description").HasColumnName("description").IsRequired();
         });
     }
 }

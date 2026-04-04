@@ -3,6 +3,7 @@
 using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 using Savoire.Domain.Services;
@@ -28,7 +29,7 @@ public class GetVaultDetailQueryHandler(
         foreach (VaultMember m in members)
         {
             UserInfo? u = await users.GetByIdAsync(m.UserId, ct);
-            memberDtos.Add(new VaultMemberDto(m.UserId, u?.DisplayName ?? m.UserId, m.Role));
+            memberDtos.Add(new VaultMemberDto(m.UserId, u?.DisplayName ?? m.UserId, m.Role.ToApiString()));
         }
 
         return new VaultDetailDto(
@@ -46,9 +47,9 @@ public class GetVaultDetailQueryHandler(
 
     private static string DetermineRole(string callerId, Vault vault, IReadOnlyList<VaultMember> members)
     {
-        if (vault.IsOwner(callerId)) return "owner";
+        if (vault.IsOwner(callerId)) return VaultRole.Owner.ToApiString();
         VaultMember? m = members.FirstOrDefault(m => m.UserId == callerId);
         if (m is null) throw new VaultNotFoundException(vault.Id); // Intentional: ne pas exposer l'existence
-        return m.Role;
+        return m.Role.ToApiString();
     }
 }

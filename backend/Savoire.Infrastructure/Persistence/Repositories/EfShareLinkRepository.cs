@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Infrastructure.Persistence.Repositories;
@@ -25,11 +26,12 @@ public class EfShareLinkRepository(AppDbContext db) : IShareLinkRepository
     }
 
     public async Task<IReadOnlyList<ShareLink>> ListForResourceAsync(
-        string resourceType, string resourceId, CancellationToken ct = default)
+        ResourceType resourceType, string resourceId, CancellationToken ct = default)
     {
+        string rt = resourceType.ToApiString();
         List<ShareLinkEntity> entities = await db.ShareLinks
             .AsNoTracking()
-            .Where(l => l.ResourceType == resourceType && l.ResourceId == resourceId)
+            .Where(l => l.ResourceType == rt && l.ResourceId == resourceId)
             .OrderByDescending(l => l.CreatedAt)
             .ToListAsync(ct);
         return entities.Select(e => e.ToDomain()).ToList();
@@ -41,9 +43,9 @@ public class EfShareLinkRepository(AppDbContext db) : IShareLinkRepository
         {
             Id           = link.Id,
             Token        = link.Token,
-            ResourceType = link.ResourceType,
+            ResourceType = link.ResourceType.ToApiString(),
             ResourceId   = link.ResourceId,
-            Permission   = link.Permission,
+            Permission   = link.Permission.ToApiString(),
             CreatedBy    = link.CreatedBy,
             CreatedAt    = link.CreatedAt,
             ExpiresAt    = link.ExpiresAt,

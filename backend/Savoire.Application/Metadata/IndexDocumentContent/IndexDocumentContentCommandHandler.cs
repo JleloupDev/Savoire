@@ -2,9 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using System.Text.Json;
 using MediatR;
-using Savoire.Domain.Aggregates;
-using Savoire.Domain.Repositories;
 using Savoire.Application.Services;
+using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
+using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Metadata.IndexDocumentContent;
 
@@ -57,7 +58,7 @@ public class IndexDocumentContentCommandHandler(
                 vaultId:    cmd.VaultId,
                 targetPath: wl.TargetPath,
                 targetId:   target?.Id,
-                linkType:   wl.LinkType));
+                linkType:   wl.LinkType.ParseLinkType()));
         }
 
         await links.ReplaceForSourceAsync(cmd.DocId, newLinks, ct);

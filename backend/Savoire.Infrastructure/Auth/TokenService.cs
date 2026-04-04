@@ -8,11 +8,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using Savoire.Domain.Repositories;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Entities;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Interfaces;
+using Savoire.Domain.Repositories;
 
 namespace Savoire.Infrastructure.Auth;
 
@@ -36,9 +37,9 @@ public class TokenService(
             new(JwtRegisteredClaimNames.Sub,  $"share:{link.Id}"),
             new(JwtRegisteredClaimNames.Jti,  Guid.NewGuid().ToString()),
             new("share_link_id",       link.Id),
-            new("share_resource_type", link.ResourceType),
+            new("share_resource_type", link.ResourceType.ToApiString()),
             new("share_resource_id",   link.ResourceId),
-            new("share_permission",    link.Permission),
+            new("share_permission",    link.Permission.ToApiString()),
         };
 
         var token = new JwtSecurityToken(

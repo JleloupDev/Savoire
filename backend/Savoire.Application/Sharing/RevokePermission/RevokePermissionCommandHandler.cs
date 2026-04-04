@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 using Savoire.Domain.Services;
@@ -15,12 +16,14 @@ public class RevokePermissionCommandHandler(
 {
     public async Task Handle(RevokePermissionCommand cmd, CancellationToken ct)
     {
+        ResourceType resourceType = cmd.ResourceType.ParseResourceType();
+
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
-            cmd.CallerId, cmd.ResourceType, cmd.ResourceId,
+            cmd.CallerId, resourceType, cmd.ResourceId,
             vaults, documents, permissions, ct);
 
         var perm = await permissions.GetAsync(
-            cmd.ResourceType, cmd.ResourceId, "user", cmd.TargetUserId, ct);
+            resourceType, cmd.ResourceId, SubjectType.User, cmd.TargetUserId, ct);
 
         if (perm is null) throw new AccessDeniedException(
             $"Aucune permission trouvée pour {cmd.TargetUserId} sur {cmd.ResourceType}/{cmd.ResourceId}.");

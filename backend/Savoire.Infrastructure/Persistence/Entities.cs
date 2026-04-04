@@ -3,6 +3,7 @@
 // EF Core entities — mapped to Domain aggregates via Rehydrate().
 
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using System.Text.Json;
 
 namespace Savoire.Infrastructure.Persistence;
@@ -30,7 +31,7 @@ public class VaultMemberEntity
 
     public VaultEntity Vault { get; set; } = null!;
 
-    public VaultMember ToDomain() => new(VaultId, UserId, Role, JoinedAt);
+    public VaultMember ToDomain() => new(VaultId, UserId, Role.ParseVaultRole(), JoinedAt);
 }
 
 public class DocumentEntity
@@ -98,8 +99,13 @@ public class ResourcePermissionEntity
 
     public ResourcePermission ToDomain() =>
         ResourcePermission.Rehydrate(
-            Id, ResourceType, ResourceId, SubjectType, SubjectId,
-            Permission, GrantedBy, GrantedAt, ExpiresAt);
+            Id,
+            ResourceType.ParseResourceType(),
+            ResourceId,
+            SubjectType.ParseSubjectType(),
+            SubjectId,
+            Permission.ParsePermission(),
+            GrantedBy, GrantedAt, ExpiresAt);
 }
 
 public class DocumentMetaEntity
@@ -130,7 +136,7 @@ public class DocLinkEntity
     public string  LinkType   { get; set; } = "wikilink";
 
     public DocLink ToDomain() =>
-        DocLink.Rehydrate(Id, SourceId, VaultId, TargetId, TargetPath, LinkType);
+        DocLink.Rehydrate(Id, SourceId, VaultId, TargetId, TargetPath, LinkType.ParseLinkType());
 }
 
 public class IndexSnapshotEntity
@@ -146,6 +152,17 @@ public class IndexSnapshotEntity
         IndexSnapshot.Rehydrate(Id, VaultId, Namespace, ProcessedSeq, Data, CreatedAt);
 }
 
+// ── Reference / lookup tables ────────────────────────────────────────────────
+// One table per enum. Values are the canonical API strings from ToApiString().
+// FK constraints from child tables enforce referential integrity at DB level.
+
+public class RefResourceTypeEntity  { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+public class RefPermissionEntity    { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+public class RefVaultRoleEntity     { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+public class RefLinkTypeEntity      { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+public class RefSubjectTypeEntity   { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+public class RefSyncChangeTypeEntity{ public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
+
 public class ShareLinkEntity
 {
     public string    Id           { get; set; } = null!;
@@ -160,6 +177,9 @@ public class ShareLinkEntity
 
     public ShareLink ToDomain() =>
         ShareLink.Rehydrate(
-            Id, Token, ResourceType, ResourceId, Permission,
+            Id, Token,
+            ResourceType.ParseResourceType(),
+            ResourceId,
+            Permission.ParsePermission(),
             CreatedBy, CreatedAt, ExpiresAt, RevokedAt);
 }

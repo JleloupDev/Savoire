@@ -3,6 +3,7 @@
 using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sync.GetSyncStatus;
@@ -20,13 +21,16 @@ public class GetSyncStatusQueryHandler(IDocumentRepository documents)
         var changeDtos = changes.Select(d => new SyncChangeDto(
             DocId:      d.Id,
             Path:       d.Path,
-            ChangeType: d.DeletedAt.HasValue ? "deleted"
-                        : d.CreatedAt >= q.Since ? "created"
-                        : "modified",
+            ChangeType: ResolveChangeType(d, q.Since).ToApiString(),
             Hash:       d.Hash,
             UpdatedAt:  d.DeletedAt ?? d.UpdatedAt
         )).ToList();
 
         return new SyncStatusDto(Since: q.Since, CheckedAt: DateTime.UtcNow, Changes: changeDtos);
     }
+
+    private static SyncChangeType ResolveChangeType(Document d, DateTime since) =>
+        d.DeletedAt.HasValue  ? SyncChangeType.Deleted :
+        d.CreatedAt >= since  ? SyncChangeType.Created :
+                                SyncChangeType.Modified;
 }

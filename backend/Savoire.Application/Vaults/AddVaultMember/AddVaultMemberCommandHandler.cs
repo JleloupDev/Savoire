@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 using Savoire.Domain.Services;
@@ -27,7 +28,7 @@ public class AddVaultMemberCommandHandler(
             await vaults.GetMemberAsync(cmd.VaultId, cmd.MemberId, ct) is not null)
             throw new PathConflictException($"L'utilisateur '{cmd.MemberId}' est déjà membre de ce vault.");
 
-        var member = new VaultMember(cmd.VaultId, cmd.MemberId, cmd.Role, DateTime.UtcNow);
+        var member = new VaultMember(cmd.VaultId, cmd.MemberId, cmd.Role.ParseVaultRole(), DateTime.UtcNow);
         await vaults.AddMemberAsync(member, ct);
     }
 }

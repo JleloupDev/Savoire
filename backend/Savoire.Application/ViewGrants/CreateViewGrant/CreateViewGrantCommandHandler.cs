@@ -6,6 +6,7 @@ using Savoire.Application.Common;
 using Savoire.Application.Documents.ListDocuments;
 using Savoire.Application.Sharing;
 using Savoire.Domain.Aggregates;
+using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Interfaces;
 using Savoire.Domain.Repositories;
@@ -110,9 +111,9 @@ public class CreateViewGrantCommandHandler(
         string p = (requested ?? "read").Trim().ToLowerInvariant();
         return p switch
         {
-            "read" => "read",
+            "read"  => "read",
             "write" => "write",
-            _ => throw new AccessDeniedException("Permission invalide (read|write)."),
+            _       => throw new AccessDeniedException("Permission invalide (read|write)."),
         };
     }
 
@@ -120,9 +121,9 @@ public class CreateViewGrantCommandHandler(
     {
         bool allowed = link.ResourceType switch
         {
-            "vault" => link.ResourceId == doc.VaultId,
-            "document" => link.ResourceId == doc.Id,
-            _ => false,
+            ResourceType.Vault    => link.ResourceId == doc.VaultId,
+            ResourceType.Document => link.ResourceId == doc.Id,
+            _                     => false,
         };
         if (!allowed)
             throw new AccessDeniedException("Lien de partage non valide pour ce document.");
