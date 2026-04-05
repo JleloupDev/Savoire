@@ -231,6 +231,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasIndex(x => x.SourceId).HasDatabaseName("idx_doc_links_source");
             e.HasIndex(x => x.TargetId).HasDatabaseName("idx_doc_links_target");
             e.HasIndex(x => new { x.VaultId, x.TargetPath }).HasDatabaseName("idx_doc_links_target_path");
+            e.HasOne(x => x.Meta)
+             .WithMany(m => m.Links)
+             .HasForeignKey(x => x.SourceId)
+             .HasPrincipalKey(m => m.DocumentId)
+             .OnDelete(DeleteBehavior.Cascade);
             e.HasOne<RefLinkTypeEntity>()
              .WithMany()
              .HasForeignKey(x => x.LinkType)

@@ -11,7 +11,6 @@ namespace Savoire.Application.Metadata.IndexDocumentContent;
 
 public class IndexDocumentContentCommandHandler(
     IDocumentMetaRepository metas,
-    IDocLinkRepository      links,
     IDocumentRepository     documents)
     : IRequestHandler<IndexDocumentContentCommand>
 {
@@ -24,6 +23,23 @@ public class IndexDocumentContentCommandHandler(
                    ?? DocumentMeta.Create(cmd.DocId, cmd.VaultId, cmd.ContentType, cmd.DerivedFrom, cmd.DerivedBy);
 
         meta.UpdateIndex(result.Tags, result.FrontmatterJson);
+
+        // Resolve links and attach them to the meta — DocLink is owned by the index
+        var newLinks = new List<DocLink>();
+        foreach (var wl in result.Wikilinks)
+        {
+            var target = await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath, ct)
+                      ?? await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath + ".md", ct);
+
+            newLinks.Add(DocLink.Create(
+                sourceId:   cmd.DocId,
+                vaultId:    cmd.VaultId,
+                targetPath: wl.TargetPath,
+                targetId:   target?.Id,
+                linkType:   wl.LinkType.ParseLinkType()));
+        }
+        meta.SetLinks(newLinks);
+
         await metas.UpsertAsync(meta, ct);
 
         // Sync Document.Title from frontmatter so DocumentDto returns the right title
@@ -44,23 +60,5 @@ public class IndexDocumentContentCommandHandler(
             doc.UpdateTitle(string.IsNullOrWhiteSpace(frontmatterTitle) ? null : frontmatterTitle);
             await documents.UpdateAsync(doc, ct);
         }
-
-        // Replace all links for this source document
-        var newLinks = new List<DocLink>();
-        foreach (var wl in result.Wikilinks)
-        {
-            // Resolve the targetId by path
-            var target = await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath, ct)
-                      ?? await documents.GetByPathAsync(cmd.VaultId, wl.TargetPath + ".md", ct);
-
-            newLinks.Add(DocLink.Create(
-                sourceId:   cmd.DocId,
-                vaultId:    cmd.VaultId,
-                targetPath: wl.TargetPath,
-                targetId:   target?.Id,
-                linkType:   wl.LinkType.ParseLinkType()));
-        }
-
-        await links.ReplaceForSourceAsync(cmd.DocId, newLinks, ct);
     }
 }

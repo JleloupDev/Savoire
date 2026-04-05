@@ -19,6 +19,9 @@ public sealed class DocumentMeta
     public string   Frontmatter { get; private set; } = "{}"; // serialized JSON
     public DateTime IndexedAt   { get; private set; }
 
+    // Links extracted from this document's content — owned by the index.
+    public IReadOnlyList<DocLink> Links { get; private set; } = [];
+
     private DocumentMeta() { }
 
     public static DocumentMeta Create(
@@ -42,7 +45,8 @@ public sealed class DocumentMeta
     public static DocumentMeta Rehydrate(
         string documentId, string vaultId, string contentType,
         string? derivedFrom, string? derivedBy,
-        string[] tags, string frontmatter, DateTime indexedAt) => new()
+        string[] tags, string frontmatter, DateTime indexedAt,
+        IReadOnlyList<DocLink>? links = null) => new()
     {
         DocumentId  = documentId,
         VaultId     = vaultId,
@@ -52,6 +56,7 @@ public sealed class DocumentMeta
         Tags        = tags,
         Frontmatter = frontmatter,
         IndexedAt   = indexedAt,
+        Links       = links ?? [],
     };
 
     public bool IsDerived => DerivedFrom is not null;
@@ -62,4 +67,6 @@ public sealed class DocumentMeta
         Frontmatter = frontmatterJson;
         IndexedAt   = DateTime.UtcNow;
     }
+
+    public void SetLinks(IReadOnlyList<DocLink> links) => Links = links;
 }

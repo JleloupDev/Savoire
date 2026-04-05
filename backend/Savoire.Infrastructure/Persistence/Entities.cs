@@ -119,21 +119,26 @@ public class DocumentMetaEntity
     public string   Frontmatter { get; set; } = "{}";        // JSON object
     public DateTime IndexedAt   { get; set; }
 
+    public ICollection<DocLinkEntity> Links { get; set; } = [];
+
     public DocumentMeta ToDomain()
     {
-        var tags = System.Text.Json.JsonSerializer.Deserialize<string[]>(Tags) ?? [];
-        return DocumentMeta.Rehydrate(DocumentId, VaultId, ContentType, DerivedFrom, DerivedBy, tags, Frontmatter, IndexedAt);
+        var tags  = System.Text.Json.JsonSerializer.Deserialize<string[]>(Tags) ?? [];
+        var links = Links.Select(l => l.ToDomain()).ToList();
+        return DocumentMeta.Rehydrate(DocumentId, VaultId, ContentType, DerivedFrom, DerivedBy, tags, Frontmatter, IndexedAt, links);
     }
 }
 
 public class DocLinkEntity
 {
     public string  Id         { get; set; } = null!;
-    public string  SourceId   { get; set; } = null!;
+    public string  SourceId   { get; set; } = null!;  // = DocumentMeta.DocumentId
     public string  VaultId    { get; set; } = null!;
     public string? TargetId   { get; set; }
     public string  TargetPath { get; set; } = null!;
     public string  LinkType   { get; set; } = "wikilink";
+
+    public DocumentMetaEntity Meta { get; set; } = null!;
 
     public DocLink ToDomain() =>
         DocLink.Rehydrate(Id, SourceId, VaultId, TargetId, TargetPath, LinkType.ParseLinkType());
