@@ -3,15 +3,27 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview'
 import type { DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps } from 'dockview'
-import type { VaultAPI, ViewSpec, ViewContext, Widget } from '@savoire/plugin-api'
+import type { VaultAPI, ViewSpec, ViewContext, Widget, FileTypeRegistry } from '@savoire/plugin-api'
 import { DockviewAdapter } from './DockviewAdapter'
 import { WorkspaceManagerImpl } from './WorkspaceManagerImpl'
 import { WorkspaceContext } from './WorkspaceContext'
 import 'dockview/dist/styles/dockview.css'
 
+const noopFileTypeRegistry: FileTypeRegistry = {
+  register: () => {},
+  unregister: () => {},
+  resolve: () => undefined,
+  getAll: () => [],
+}
+
 export interface WorkspaceRootProps {
   /** VaultAPI instance provided to all views via ViewContext. */
   vault: VaultAPI
+  /**
+   * Ref to the FileTypeRegistry — resolved after onBeforeReady (plugins loaded).
+   * Views can then enumerate registered file types via ctx.fileTypes.getAll().
+   */
+  fileTypesRef?: React.MutableRefObject<FileTypeRegistry | null>
   /**
    * Called after Dockview is initialized but BEFORE panels are opened.
    * May be async — panels are not opened until this resolves.
@@ -51,7 +63,7 @@ function ViewPanelHost(props: IDockviewPanelProps<ViewPanelParams>) {
 
 // ─── WorkspaceRoot ─────────────────────────────────────────────────────────
 
-export function WorkspaceRoot({ vault, onBeforeReady, onReady, className, style }: WorkspaceRootProps) {
+export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, className, style }: WorkspaceRootProps) {
   // see ADR-011
   const adapter = useMemo(() => new DockviewAdapter(), [])
   const manager = useMemo(() => new WorkspaceManagerImpl(adapter), [adapter])
@@ -72,7 +84,7 @@ export function WorkspaceRoot({ vault, onBeforeReady, onReady, className, style 
           if (b.belowOf === a.id) return -1
           return 0
         })
-        const ctx: ViewContext = { workspace: manager, vault }
+        const ctx: ViewContext = { workspace: manager, vault, fileTypes: fileTypesRef?.current ?? noopFileTypeRegistry }
         let firstCenterId: string | undefined
 
         for (const spec of sorted) {

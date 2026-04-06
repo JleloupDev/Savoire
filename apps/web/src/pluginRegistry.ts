@@ -4,6 +4,8 @@
 
 import type { VaultPlugin } from '@savoire/plugin-api'
 
+// Static registery of plugin, to be replaced by a dynamic discovery mechanism int the future
+// Core plugins could be still registered by a static system.
 export const pluginRegistry: Record<string, () => Promise<VaultPlugin>> = {
   // Workspace plugins — file-type handlers, loaded lazily by extension
   'plugin-excalidraw':  () => import('@savoire/plugin-excalidraw').then(m => m.default),

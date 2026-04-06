@@ -170,6 +170,19 @@ export function usePluginBootstrap({
         new InMemoryIndexStorage(),
       )
 
+      // TEMPORARY: register Markdown as a native file type so the file tree and
+      // creation picker are aware of it before any plugin loads. A better solution
+      // is needed — EditorCore should declare its capabilities through a dedicated
+      // mechanism rather than being bootstrapped here.
+      fileTypeRegistry.register({
+        extension: 'md',
+        label: 'Note Markdown',
+        icon: '📝',
+        creatable: true,
+        create: async () => '',
+        // No open() — EditorCore handles .md files directly via DocumentView.
+      })
+
       // Important: set shared API immediately to avoid races with concurrent onBeforeReady calls.
       pluginAPIRef.current = pluginApi
       triggersRef.current = triggers

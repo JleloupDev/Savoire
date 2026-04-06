@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useEffect, useState, useRef } from 'react'
-import type { ViewContext, VaultAPI } from '@savoire/plugin-api'
+import type { ViewContext, VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
 
 // ─── FileTree component ───────────────────────────────────────────────────
 
@@ -9,6 +9,7 @@ interface FileTreeProps {
   vault: VaultAPI
   onOpenFile: (path: string) => void
   workspace: ViewContext['workspace']
+  fileTypes: FileTypeSpec[]
 }
 
 interface FileNode {
@@ -19,6 +20,11 @@ interface FileNode {
 
 function isDerivedDoc(path: string): boolean {
   return path.endsWith('.derived.md')
+}
+
+function displayName(name: string, fileTypes: FileTypeSpec[]): string {
+  const spec = fileTypes.find(s => name === s.extension || name.endsWith('.' + s.extension))
+  return spec ? name.slice(0, -(spec.extension.length + 1)) : name
 }
 
 async function buildTree(vault: VaultAPI, dir: string): Promise<FileNode[]> {
@@ -45,6 +51,7 @@ function FileNodeRow({
   onRenamed,
   draggedRef,
   onCreateInside,
+  fileTypes,
 }: {
   node: FileNode
   onOpenFile: (p: string) => void
@@ -54,6 +61,7 @@ function FileNodeRow({
   onRenamed: () => void
   draggedRef: React.MutableRefObject<FileNode | null>
   onCreateInside?: (type: 'file' | 'folder', folderPath: string) => void
+  fileTypes: FileTypeSpec[]
 }) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileNode[]>([])
@@ -188,7 +196,7 @@ function FileNodeRow({
         }}
       >
         <span onClick={handleClick} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          {node.isDir ? (expanded ? '▾' : '▸') : '·'}
+          {node.isDir ? (expanded ? '▾' : '▸') : (fileTypes.find(s => node.name.endsWith('.' + s.extension))?.icon ?? '·')}
           {isEditing ? (
             <input
               ref={editInputRef}
@@ -216,7 +224,7 @@ function FileNodeRow({
                 setIsEditing(true)
               }}
             >
-              {node.name}
+              {displayName(node.name, fileTypes)}
             </span>
           )}
         </span>
@@ -281,6 +289,7 @@ function FileNodeRow({
             onRenamed={() => { setChildTick(t => t + 1); onRenamed() }}
             draggedRef={draggedRef}
             onCreateInside={onCreateInside}
+            fileTypes={fileTypes}
           />
         ))
       )}
@@ -292,7 +301,7 @@ function FileNodeRow({
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
-export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
+export function FileTree({ vault, onOpenFile, workspace, fileTypes }: FileTreeProps) {
   const [nodes, setNodes] = useState<FileNode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
@@ -301,6 +310,7 @@ export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
   // ── Create form state ────────────────────────────────────────────────────
   const [creating, setCreating] = useState<'file' | 'folder' | null>(null)
   const [newPath, setNewPath] = useState('')
+  const [selectedExtension, setSelectedExtension] = useState<string>('md')
   const inputRef = useRef<HTMLInputElement>(null)
 
   // ── Drag state (shared across all rows) ─────────────────────────────────
@@ -324,8 +334,16 @@ export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
     if (!p) return
     try {
       if (creating === 'file') {
-        const normalized = p.includes('.') ? p : p + '.md'
+        const normalized = p.includes('.') ? p : `${p}.${selectedExtension}`
         await vault.createFile?.(normalized)
+        const spec = fileTypes.find(s => s.extension === selectedExtension && s.creatable !== false)
+        if (spec) {
+          const initialContent = await spec.create()
+          if (initialContent) {
+            const docId = vault.resolveDocumentId(normalized)
+            if (docId) await vault.write(docId, initialContent)
+          }
+        }
         setCreating(null); setNewPath(''); setTick(t => t + 1)
         onOpenFile(normalized)
       } else {
@@ -383,6 +401,7 @@ export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
             onDeleted={() => setTick(t => t + 1)}
             onRenamed={() => setTick(t => t + 1)}
             draggedRef={draggedRef}
+            fileTypes={fileTypes}
             onCreateInside={(type, folderPath) => {
               setCreating(type)
               setNewPath(folderPath)
@@ -405,7 +424,7 @@ export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
                 value={newPath}
                 onChange={e => { setNewPath(e.target.value); if (error) setError('') }}
                 onKeyDown={e => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') cancelCreate() }}
-                placeholder={creating === 'file' ? 'note.md ou Inbox/note (→ .md auto)' : 'Inbox/ ou Inbox/Notes/'}
+                placeholder={creating === 'file' ? 'nom (extension auto)' : 'Inbox/ ou Inbox/Notes/'}
                 style={{
                   padding: '4px 7px', background: 'rgba(255,255,255,0.07)',
                   color: 'inherit',
@@ -414,6 +433,25 @@ export function FileTree({ vault, onOpenFile, workspace }: FileTreeProps) {
                   boxSizing: 'border-box',
                 }}
               />
+              {creating === 'file' && fileTypes.some(s => s.creatable !== false) && (
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {fileTypes.filter(s => s.creatable !== false).map(spec => (
+                    <button
+                      key={spec.extension}
+                      onClick={() => setSelectedExtension(spec.extension)}
+                      title={spec.label}
+                      style={{
+                        padding: '2px 6px', fontSize: 11, cursor: 'pointer', borderRadius: 3,
+                        border: `1px solid ${selectedExtension === spec.extension ? 'var(--accent, #7c3aed)' : 'rgba(255,255,255,0.15)'}`,
+                        background: selectedExtension === spec.extension ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
+                        color: 'inherit',
+                      }}
+                    >
+                      {spec.icon} {spec.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {error && (
                 <div style={{ fontSize: 11, color: 'var(--color-danger, #dc2626)', padding: '2px 2px 0' }}>
                   {error}
@@ -453,6 +491,7 @@ export class FileTreeWidget {
       <FileTree
         vault={this.ctx.vault}
         workspace={this.ctx.workspace}
+        fileTypes={this.ctx.fileTypes.getAll()}
         onOpenFile={(path) => void this.ctx.workspace.openFile(path)}
       />
     )

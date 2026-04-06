@@ -57,8 +57,9 @@ export class DocumentView {
   mount(): void {
     if (this.editorController || this.pluginFileView) return
 
-    if (this.fileTypeSpec) {
+    if (this.fileTypeSpec?.open) {
       const spec = this.fileTypeSpec
+      const open = spec.open as NonNullable<typeof spec.open>
       const fileCtx: FileContext = {
         vaultId: this.options.vaultId,
         path: this.options.path,
@@ -75,7 +76,7 @@ export class DocumentView {
             }
           : undefined,
       }
-      this.pluginFileView = spec.open(this.options.path, fileCtx)
+      this.pluginFileView = open(this.options.path, fileCtx)
       this.pluginFileView.mount(this.options.container)
       return
     }

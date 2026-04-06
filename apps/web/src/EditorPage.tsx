@@ -459,6 +459,7 @@ export function EditorPage() {
       {/* ── Workspace — always rendered, never remounts ── */}
       <WorkspaceRoot
         vault={vaultProxy}
+        fileTypesRef={fileTypeRegistryRef}
         onBeforeReady={onBeforeReady}
         onReady={(m) => { managerRef.current = m; m.notifyVaultChange() }}
         style={{ flex: 1, overflow: 'hidden' }}

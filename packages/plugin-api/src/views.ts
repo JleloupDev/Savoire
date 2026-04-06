@@ -11,10 +11,12 @@ export interface Widget {
 // ─── Views ───────────────────────────────────────────────────────────────
 import type { WorkspaceAPI } from './workspace'
 import type { VaultAPI } from './vault'
+import type { FileTypeRegistry } from './files'
 
 export interface ViewContext {
   workspace: WorkspaceAPI
   vault: VaultAPI
+  fileTypes: FileTypeRegistry
 }
 
 export interface ViewSpec {

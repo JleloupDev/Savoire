@@ -7,14 +7,14 @@ import type { ContentExtractor } from './indexing'
 export interface FileContext {
   vaultId: string
   path: string
-  /** Identifiant de l'utilisateur courant — utilisé pour la sync (DocumentRoom). */
+  /** Id of the current user, used for sync (DocumentRoom). */
   userId?: string
-  /** VaultAPI injecté pour que le plugin puisse lire/écrire sans dépendre d'un import interne. */
+  /** VaultAPI injected so the plugin can read/write without depending on an internal import. */
   vault?: VaultAPI
   /**
-   * Appelé par le FileView quand son contenu est stable (après debounce interne).
-   * L'app layer convertit le contenu brut via contentExtractor.toShadowDocument()
-   * et l'injecte dans ContentIndexingService pour la mise à jour de l'index local.
+   * Called by the FileView when its content is stabilized (after internal debounce).
+   * The app layer converts the raw content via contentExtractor.toShadowDocument()
+   * and pushes it to ContentIndexingService for local index update
    */
   onContentStabilized?: (rawContent: string) => void
 }
@@ -28,14 +28,24 @@ export interface FileTypeSpec {
   extension: string
   label: string
   icon: string
+  /**
+   * If false, this type does not appear in the creation picker (e.g., images).
+   * The icon is still used elsewhere (file tree, tabs, etc.).
+   * Default: true.
+   */
+  creatable?: boolean
   create(): Promise<string>
-  open(path: string, ctx: FileContext): FileView
-  /** Rendu read-only pour les embeds ![[file.ext]] dans une note markdown. */
+  /**
+   * Opens the file in a custom view. If absent, the host editor (EditorCore) handles
+   * the file — use this for types like Markdown whose editor is built into the core.
+   */
+  open?(path: string, ctx: FileContext): FileView
+  /** Read-only rendering for ![[file.ext]] embeds in a markdown note. */
   renderEmbed?(path: string, ctx: FileContext): Promise<HTMLElement>
   /**
-   * Extracteur de contenu Markdown pour l'indexation.
-   * Si défini, le client appelle toShadowDocument() après chaque sauvegarde
-   * et pousse le résultat au serveur pour indexation.
+   * Markdown content extractor for indexing.
+   * If defined, the client calls toShadowDocument() after each save
+   * and pushes the result to the server for indexing.
    */
   contentExtractor?: ContentExtractor
 }
@@ -43,6 +53,8 @@ export interface FileTypeSpec {
 export interface FileTypeRegistry {
   register(spec: FileTypeSpec): void
   unregister(extension: string): void
-  /** Retourne le spec enregistré pour cette extension, ou undefined si aucun. */
+  /** Returns the registered spec for this extension, or undefined if none. */
   resolve(extension: string): FileTypeSpec | undefined
+  /** Returns all registered file types, sorted by extension. */
+  getAll(): FileTypeSpec[]
 }

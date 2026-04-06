@@ -73,7 +73,7 @@ function createNoopHostAPI(): IEditorHostAPI {
       ...emptyReg,
       detectBlock: () => null, getActive: () => [], detectActive: () => null,
     },
-    files: { register: noop, unregister: noop, resolve: () => undefined },
+    files: { register: noop, unregister: noop, resolve: () => undefined, getAll: () => [] },
     vault: {
       read: async () => '', readDocumentByPath: async () => '',
       write: async () => {}, list: async () => [],

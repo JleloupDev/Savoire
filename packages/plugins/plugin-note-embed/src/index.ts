@@ -59,6 +59,7 @@ const plugin: VaultPlugin = {
         extension: ext,
         label: 'Image',
         icon: '🖼',
+        creatable: false,
         create: async () => { throw new Error('Cannot create image files') },
         open: (path) => {
           let container: HTMLElement | null = null

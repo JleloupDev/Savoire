@@ -239,6 +239,7 @@ export class FileTypeRegistryImpl implements FileTypeRegistry {
   register(spec: FileTypeSpec): void { this.specs.set(spec.extension, spec) }
   unregister(ext: string): void { this.specs.delete(ext) }
   resolve(ext: string): FileTypeSpec | undefined { return this.specs.get(ext) }
+  getAll(): FileTypeSpec[] { return [...this.specs.values()].sort((a, b) => a.extension.localeCompare(b.extension)) }
 }
 
 // ─── VaultAPIStub ─────────────────────────────────────────────────────────
