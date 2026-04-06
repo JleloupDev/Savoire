@@ -1,1 +1,0 @@
-{"version":3,"file":"MetadataWidget.d.ts","sourceRoot":"","sources":["../src/MetadataWidget.tsx"],"names":[],"mappings":"AAOA,OAAO,KAAK,EAAE,WAAW,EAAE,QAAQ,EAAE,MAAM,EAAE,MAAM,iBAAiB,CAAA;AAiLpE,qBAAa,cAAe,YAAW,MAAM;IAEzC,OAAO,CAAC,QAAQ,CAAC,GAAG;IACpB,OAAO,CAAC,QAAQ,CAAC,KAAK;gBADL,GAAG,EAAE,WAAW,EAChB,KAAK,EAAE,QAAQ;IAGlC,MAAM;IAIN,OAAO,IAAI,IAAI;CAChB"}

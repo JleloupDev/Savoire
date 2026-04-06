@@ -73,3 +73,7 @@ docs/
 .tmp_build/
 aspire/data
 /.local/data/
+
+# ===== Frontend package build outputs =====
+packages/*/dist/
+packages/plugins/*/dist/
