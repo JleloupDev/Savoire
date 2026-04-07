@@ -8,7 +8,6 @@ using Savoire.Application.Common;
 using Savoire.Application.Documents.CreateDocument;
 using Savoire.Application.Documents.DeleteDocument;
 using Savoire.Application.Documents.GetDocumentContent;
-using Savoire.Application.Documents.GetDocumentCrdt;
 using Savoire.Application.Documents.ListDocuments;
 using Savoire.Application.Documents.PutDocumentContent;
 using Savoire.Application.Documents.RenameDocument;
@@ -44,15 +43,6 @@ public class DocumentsController(IMediator mediator) : AppControllerBase(mediato
         Stream stream = await Mediator.Send(
             new GetDocumentContentQuery(GetCallerId(), vaultId, docId), ct);
         return File(stream, "text/markdown; charset=utf-8");
-    }
-
-    // GET /api/v1/vaults/{vaultId}/documents/{docId}/crdt
-    [HttpGet("api/v1/vaults/{vaultId}/documents/{docId}/crdt")]
-    public async Task<IActionResult> GetCrdt(string vaultId, string docId, CancellationToken ct)
-    {
-        Stream stream = await Mediator.Send(
-            new GetDocumentCrdtQuery(GetCallerId(), vaultId, docId), ct);
-        return File(stream, "application/octet-stream");
     }
 
     // PATCH /api/v1/vaults/{vaultId}/documents/{docId}

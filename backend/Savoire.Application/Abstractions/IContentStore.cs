@@ -9,8 +9,6 @@ public interface IContentStore
 {
     Task<Stream?> ReadDocumentAsync(string vaultId, string docId, CancellationToken ct = default);
     Task WriteDocumentAsync(string vaultId, string docId, Stream content, CancellationToken ct = default);
-    Task<Stream?> ReadCrdtAsync(string vaultId, string docId, CancellationToken ct = default);
-    Task WriteCrdtAsync(string vaultId, string docId, Stream content, CancellationToken ct = default);
     Task DeleteDocumentAsync(string vaultId, string docId, CancellationToken ct = default);
     Task<Stream?> ReadAttachmentAsync(string vaultId, string storagePath, CancellationToken ct = default);
     Task<string> WriteAttachmentAsync(string vaultId, string filename, Stream content, CancellationToken ct = default);

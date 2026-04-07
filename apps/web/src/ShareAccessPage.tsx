@@ -75,31 +75,17 @@ function createShareVaultApi(
 function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
   const [docs, setDocs] = useState<DocumentDto[] | null>(null)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
-  const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const vaultApi = createShareVaultApi(access.resourceId, access.accessToken, () => docs ?? [])
+  const getToken = () => access.accessToken
 
   useEffect(() => {
     api.listDocuments(access.resourceId, access.accessToken)
-      .then(list => {
-        setDocs(list)
-        if (list.length > 0) void openDoc(list[0], access)
-      })
+      .then(list => { setDocs(list); if (list.length > 0) setSelected(list[0]) })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
   }, [access.resourceId, access.accessToken])
-
-  async function openDoc(doc: DocumentDto, a: ShareLinkAccessDto) {
-    setSelected(doc)
-    setContent('')
-    try {
-      const text = await api.getDocumentContent(a.resourceId, doc.id, a.accessToken)
-      setContent(text)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
 
   if (loading) return <Status>Chargement des documents…</Status>
   if (error)   return <Status error>{error}</Status>
@@ -116,7 +102,7 @@ function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
           : docs.map(d => (
             <button
               key={d.id}
-              onClick={() => void openDoc(d, access)}
+              onClick={() => setSelected(d)}
               style={{
                 display: 'block', width: '100%', textAlign: 'left',
                 padding: '6px 16px', background: selected?.id === d.id ? 'var(--bg-elevated)' : 'transparent',
@@ -131,7 +117,7 @@ function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
         }
       </div>
 
-      {/* Editor */}
+      {/* Editor — content loaded via CRDT (same as main editor) */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {selected
           ? (
@@ -141,9 +127,9 @@ function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
               vaultId={access.resourceId}
               docId={selected.id}
               userId="share"
-              initialContent={content}
               readOnly={ro}
               vault={vaultApi}
+              getToken={getToken}
               pluginRegistry={pluginRegistry}
               defaultPlugins={SHARE_DEFAULT_PLUGINS}
               style={{ height: '100%' }}
@@ -159,21 +145,19 @@ function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
 function VaultShareEmbedView({ access, embedPath }: { access: ShareLinkAccessDto; embedPath: string }) {
   const [docs, setDocs] = useState<DocumentDto[] | null>(null)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
-  const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const vaultApi = createShareVaultApi(access.resourceId, access.accessToken, () => docs ?? [])
+  const getToken = () => access.accessToken
 
   useEffect(() => {
     api.listDocuments(access.resourceId, access.accessToken)
-      .then(async list => {
+      .then(list => {
         setDocs(list)
         const normalized = embedPath.includes('.') ? embedPath : `${embedPath}.md`
         const doc = list.find(d => d.path === embedPath || d.path === normalized)
         if (!doc) throw new Error(`Document introuvable: ${embedPath}`)
         setSelected(doc)
-        const text = await api.getDocumentContent(access.resourceId, doc.id, access.accessToken)
-        setContent(text)
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
@@ -192,9 +176,9 @@ function VaultShareEmbedView({ access, embedPath }: { access: ShareLinkAccessDto
         vaultId={access.resourceId}
         docId={selected.id}
         userId="share"
-        initialContent={content}
         readOnly={ro}
         vault={vaultApi}
+        getToken={getToken}
         pluginRegistry={pluginRegistry}
         defaultPlugins={SHARE_DEFAULT_PLUGINS}
         style={{ height: '100%' }}
@@ -206,42 +190,23 @@ function VaultShareEmbedView({ access, embedPath }: { access: ShareLinkAccessDto
 // ── Document share — single editor ────────────────────────────────────────────
 
 function DocumentShareView({ access, embedded = false }: { access: ShareLinkAccessDto; embedded?: boolean }) {
-  const [content, setContent] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  // Backend must include vaultId for document shares to enable content fetching.
-  const vaultId = access.vaultId
-
-  useEffect(() => {
-    if (!vaultId) { setContent(''); return }
-    api.getDocumentContent(vaultId, access.resourceId, access.accessToken)
-      .then(text => setContent(text))
-      .catch(e => setError(String(e)))
-  }, [vaultId, access.resourceId, access.accessToken])
-
-  if (error)          return <Status error>{error}</Status>
-  if (content === null) return <Status>Chargement…</Status>
-
-  const ro = readOnly(access.permission)
+  const vaultId = access.vaultId ?? ''
   const docs = [{ id: access.resourceId, path: `doc-${access.resourceId}.md`, title: null, hash: '', sizeBytes: 0, createdAt: '', updatedAt: '' }] satisfies DocumentDto[]
-  const vaultApi = createShareVaultApi(vaultId ?? '', access.accessToken, () => docs)
+  const vaultApi = createShareVaultApi(vaultId, access.accessToken, () => docs)
+  const getToken = () => access.accessToken
+  const ro = readOnly(access.permission)
 
   return (
     <div style={{ height: embedded ? '100vh' : 'calc(100vh - 56px)' }}>
-      {!vaultId && (
-        <div style={{ padding: '6px 16px', background: 'rgba(234,179,8,0.1)', borderBottom: '1px solid rgba(234,179,8,0.3)', fontSize: '0.75rem', color: 'var(--color-warning, #b45309)' }}>
-          Le serveur ne retourne pas encore le vaultId pour les partages de document — le contenu ne peut pas être chargé.
-        </div>
-      )}
       <Editor
         key={access.resourceId}
-        serverUrl={!vaultId ? undefined : ''}
-        vaultId={vaultId ?? ''}
+        serverUrl=""
+        vaultId={vaultId}
         docId={access.resourceId}
         userId="share"
-        initialContent={content}
         readOnly={ro}
-        vault={vaultId ? vaultApi : undefined}
+        vault={vaultApi}
+        getToken={getToken}
         pluginRegistry={pluginRegistry}
         defaultPlugins={SHARE_DEFAULT_PLUGINS}
         style={{ height: '100%' }}

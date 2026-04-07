@@ -25,9 +25,6 @@ public class AzureBlobContentStore(
     private static string DocBlobName(string vaultId, string docId)
         => $"{vaultId}/{docId}.md";
 
-    private static string CrdtBlobName(string vaultId, string docId)
-        => $"{vaultId}/{docId}.md.crdt";
-
     private static string AttachBlobName(string vaultId, string storagePath)
         => $"{vaultId}/attachments/{storagePath}";
 
@@ -49,30 +46,11 @@ public class AzureBlobContentStore(
         await blob.UploadAsync(content, overwrite: true, cancellationToken: ct);
     }
 
-    public async Task<Stream?> ReadCrdtAsync(
-        string vaultId, string docId, CancellationToken ct = default)
-    {
-        var blob = _container.GetBlobClient(CrdtBlobName(vaultId, docId));
-        if (!await blob.ExistsAsync(ct)) return null;
-        var response = await blob.DownloadStreamingAsync(cancellationToken: ct);
-        return response.Value.Content;
-    }
-
-    public async Task WriteCrdtAsync(
-        string vaultId, string docId, Stream content, CancellationToken ct = default)
-    {
-        var blob = _container.GetBlobClient(CrdtBlobName(vaultId, docId));
-        await blob.UploadAsync(content, overwrite: true, cancellationToken: ct);
-    }
-
     public async Task DeleteDocumentAsync(
         string vaultId, string docId, CancellationToken ct = default)
     {
         var docBlob = _container.GetBlobClient(DocBlobName(vaultId, docId));
         await docBlob.DeleteIfExistsAsync(cancellationToken: ct);
-
-        var crdtBlob = _container.GetBlobClient(CrdtBlobName(vaultId, docId));
-        await crdtBlob.DeleteIfExistsAsync(cancellationToken: ct);
     }
 
     public async Task<Stream?> ReadAttachmentAsync(
