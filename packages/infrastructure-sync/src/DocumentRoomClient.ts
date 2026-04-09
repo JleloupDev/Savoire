@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// DocumentRoomClient — implémentation de SyncAPI via SignalR /hubs/room.
+// DocumentRoomClient: SyncAPI implementation over SignalR /hubs/room.
 //
-//
-// Le hub utilisé (/hubs/room) est distinct du hub CRDT (/hubs/sync) — il adopte
-// un modèle last-write-wins par snapshot JSON complet, adapté aux documents
-// non-textuels (Excalidraw, tableaux, schémas).
+// Uses a separate hub from the CRDT hub (/hubs/sync): last-write-wins on full JSON
+// snapshots, suited for non-textual documents (Excalidraw, diagrams, tables).
 
 import {
   HubConnection,
@@ -101,10 +99,10 @@ export class DocumentRoomClient implements SyncAPI {
   async openRoom(vaultId: string, docId: string, userId: string): Promise<DocumentRoom> {
     const conn = this.ensureConnection(userId)
     if (conn.state === HubConnectionState.Disconnected) {
-      // Démarrer et stocker la promesse pour les appels concurrents.
+      // Start and store the promise so concurrent callers can await it.
       this.startPromise = conn.start().finally(() => { this.startPromise = null })
     }
-    // Si une connexion est en cours (Connecting), attendre qu'elle se termine.
+    // If a connection is in progress (Connecting), wait for it to complete.
     if (this.startPromise) {
       await this.startPromise
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Implémentations des registres du plugin API.
-// Séparées des types (plugin-api) pour garder le package plugin-api sans code runtime.
+// Plugin API registry implementations.
+// Kept separate from types (plugin-api) so that package has no runtime code.
 
 import type {
   BlockRegistry,

@@ -44,17 +44,17 @@ export class ContentIndexingService {
   /** S'abonne à onDocumentStabilized. Appeler après que les plugins ont chargé. */
   init(): void {
     this.hooks.onDocumentStabilized(async (docId, path, content) => {
-      // 1. Applique localement avec seq=null (op non encore séquencée)
+      // 1. Apply locally with seq=null (op not yet sequenced)
       for (const contributor of this.indexRegistry.getAll()) {
         contributor.onOp(null, docId, path, content)
         const snap = contributor.snapshot()
         await this.storage.saveSnapshot(contributor.namespace, snap, contributor.processedSeq)
       }
 
-      // 2. Notifie les panels (backlinks, metadata) que ce doc a été ré-indexé
+      // 2. Notify panels (backlinks, metadata) that this doc was re-indexed
       this.onIndexed?.(docId, path)
 
-      // 3. Pousse au serveur pour séquencement et broadcast aux autres clients
+      // 3. Push to server for sequencing and broadcast to other clients
       const hub = this.getHub?.()
       if (hub?.pushIndexOp) {
         void hub.pushIndexOp(docId, path, content)
@@ -68,19 +68,18 @@ export class ContentIndexingService {
    * pour éviter des refs périmées après changement de vault.
    */
   attachHub(getHub: () => VaultHubLike | null): void {
-    // Nettoie l'abonnement précédent si on change de vault
+    // Clear previous subscription when vault changes
     this.hubUnsubscribe?.()
     this.hubUnsubscribe = null
     this.getHub = getHub
 
-    // Subscribe aux ops des autres clients
     const hub = getHub()
     if (hub?.onIndexOpApplied) {
       this.hubUnsubscribe = hub.onIndexOpApplied((evt) => {
         for (const contributor of this.indexRegistry.getAll()) {
           contributor.onOp(evt.seq, evt.docId, evt.path, evt.markdownContent)
         }
-        // Pas de saveSnapshot ici — le seq final sera persisté lors de la prochaine op locale
+        // No saveSnapshot here — final seq is persisted on the next local op
       })
     }
   }

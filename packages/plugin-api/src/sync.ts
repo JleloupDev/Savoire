@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // ─── Sync / DocumentRoom ─────────────────────────────────────────────────
 //
-// API format-agnostic de synchronisation temps réel pour les documents non-CRDT
-// (Excalidraw, tableaux, schémas, etc.). Modèle last-write-wins par snapshot JSON.
+// Format-agnostic real-time sync API for non-CRDT documents
+// (Excalidraw, diagrams, tables, etc.). Last-write-wins on full JSON snapshots.
 //
-// Usage dans un plugin :
+// Usage in a plugin:
 //   const room = await api.sync.openRoom(vaultId, docId, userId)
 //   room.onSnapshot((json, fromUserId) => { /* update local view */ })
 //   room.pushSnapshot(json)    // debounced inside plugin

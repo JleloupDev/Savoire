@@ -192,7 +192,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     this.awareness = new Awareness(this.ydoc)
     const yText = this.ydoc.getText('codemirror')
 
-    // Définit l'état local : nom et couleur de l'utilisateur courant.
     const userId = options.userId ?? 'anon'
     this.awareness.setLocalStateField('user', {
       name: userId,
@@ -542,12 +541,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       Y.applyUpdate(this.ydoc, update)
     })
 
-    // Awareness : reçoit les états curseur des autres éditeurs
+    // Awareness: receive cursor states from other editors
     this.connection.on('AwarenessUpdated', (_docId: string, base64: string) => {
       const update = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
       applyAwarenessUpdate(this.awareness, update, 'server')
-      // Synchronise les positions distantes dans CM6 pour que la live preview
-      // ne remplace pas les blocs contenant un curseur d'un pair.
+      // Sync remote positions into CM6 so live preview does not replace blocks
+      // that contain a peer's cursor.
       this.syncRemoteCursorsToView()
     })
 
@@ -560,7 +559,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         .catch(console.error)
     })
 
-    // Awareness : envoie les changements de curseur local aux autres éditeurs
+    // Awareness: send local cursor changes to other editors
     const awarenessHandler = ({ added, updated, removed }: { added: number[], updated: number[], removed: number[] }) => {
       if (this.connection?.state !== HubConnectionState.Connected) return
       const changed = [...added, ...updated, ...removed]
@@ -577,7 +576,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       await this.connection.invoke('JoinDocument', vaultId, docId)
       if (this.destroyed) return
       console.log(`[perf] JoinDocument ack — +${(performance.now() - t0).toFixed(0)} ms`)
-      // Annonce immédiate de notre état local aux autres.
+      // Immediately announce our local state to other peers.
       const initialUpdate = encodeAwarenessUpdate(this.awareness, [this.ydoc.clientID])
       const base64 = btoa(String.fromCharCode(...initialUpdate))
       void this.connection.invoke('UpdateAwareness', vaultId, docId, base64)
@@ -752,7 +751,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     if (this.connectTimer !== null) clearTimeout(this.connectTimer)
     if (this.scopeDebounceTimer !== null) clearTimeout(this.scopeDebounceTimer)
     if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)
-    // Retire notre curseur de l'awareness avant de se déconnecter
+    // Remove our cursor from awareness before disconnecting
     removeAwarenessStates(this.awareness, [this.ydoc.clientID], 'local')
     if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
       void this.connection.stop()

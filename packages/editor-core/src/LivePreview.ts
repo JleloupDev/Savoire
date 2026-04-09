@@ -92,7 +92,6 @@ function buildFrontmatterDecoration(state: EditorState): Range<Decoration> | nul
   }).range(0, endPos)
 }
 
-// Widget pour les blocs gérés par un plugin (renderClient)
 class PluginWidget extends WidgetType {
   constructor(
     private readonly el: HTMLElement,

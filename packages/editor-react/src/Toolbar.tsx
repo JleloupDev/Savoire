@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Toolbar — barre d'outils Markdown façon Word.
-// Se monte au-dessus de l'éditeur CodeMirror.
-// Utilise EditorContext pour accéder au EditorController.
+// Toolbar — Markdown toolbar, mounted above the CodeMirror editor.
 
 import { useEditorContext } from './EditorContext'
 import type { MarkdownFormat } from '@savoire/editor-core'

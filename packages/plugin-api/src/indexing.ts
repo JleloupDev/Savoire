@@ -2,11 +2,11 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // ─── Content extraction (shadow documents) ──────────────────────────────
 //
-// Un plugin qui gère un type de fichier non-Markdown peut déclarer un ContentExtractor
-// pour produire un document shadow Markdown indexable.
-// L'extracteur est isomorphique : il fonctionne côté client ET côté serveur (Node).
+// A plugin that handles a non-Markdown file type can declare a ContentExtractor
+// to produce an indexable Markdown shadow document.
+// The extractor is isomorphic: it runs on both client and server (Node).
 //
-// Usage dans un plugin FileTypeSpec :
+// Usage in a FileTypeSpec plugin:
 //   contentExtractor: {
 //     toShadowDocument(rawContent: string): string { ... }
 //   }
@@ -21,13 +21,13 @@ export interface ContentExtractor {
 
 // ─── Index contributors ───────────────────────────────────────────────────
 //
-// Un plugin peut contribuer à un index persistant (ex. backlinks, tags).
-// Modèle M1 : ops log + snapshots. Le serveur est le séquenceur.
+// A plugin can contribute to a persistent index (e.g. backlinks, tags).
+// Model: ops log + snapshots. The server is the sequencer.
 //
-// Cycle de vie :
-//   1. restore(snapshot)  — au démarrage, restaure l'état depuis le dernier snapshot
-//   2. onOp(seq, docId, content) — pour chaque op depuis processedSeq
-//   3. snapshot()         — périodiquement, sérialise l'état pour persistance
+// Lifecycle:
+//   1. restore(snapshot)       — on startup, restore state from the last snapshot
+//   2. onOp(seq, docId, content) — for each op since processedSeq
+//   3. snapshot()              — periodically, serialize state for persistence
 
 export interface IndexContributor {
   /** Namespace unique de cet index (ex. "backlinks", "tags"). Utilisé comme clé de snapshot. */

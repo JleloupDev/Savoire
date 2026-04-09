@@ -10,7 +10,7 @@ export class SyncOrchestrator {
   constructor(private readonly hubFactory: IVaultHubFactory) {}
 
   async attachVaultSync(vaultId: string, vaultClient: VaultClient, onChanged: () => void): Promise<VaultHubLike> {
-    // Idempotent attach: keep the current hub when the target vault is unchanged.
+    // Idempotent: keeps the current hub if the target vault has not changed.
     if (this.activeHub && this.activeVaultId === vaultId) return this.activeHub
     await this.disposeActive()
     const hub = this.hubFactory.create({ vaultId, vaultClient, onChanged })
