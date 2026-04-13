@@ -184,19 +184,28 @@ static async Task SeedAdminAsync(IServiceProvider services)
 {
     var userManager = services.GetRequiredService<UserManager<AppUser>>();
     var config = services.GetRequiredService<IConfiguration>();
+    var env = services.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>();
 
-    var email    = config["Admin:Email"];
+    var email = config["Admin:Email"];
     var password = config["Admin:Password"];
 
-    if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password)) return;
+    if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+    {
+        if (!env.IsDevelopment())
+            return;
+
+        email ??= "admin@local.dev";
+        password ??= "Admin1234!";
+    }
+
     if (await userManager.FindByEmailAsync(email) is not null) return;
 
     var admin = new AppUser
     {
-        UserName     = email,
-        Email        = email,
-        DisplayName  = config["Admin:DisplayName"] ?? "Admin",
-        IsAdmin      = true,
+        UserName      = email,
+        Email         = email,
+        DisplayName   = config["Admin:DisplayName"] ?? "Admin",
+        IsAdmin       = true,
         EmailConfirmed = true
     };
 

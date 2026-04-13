@@ -133,7 +133,7 @@ export function LoginPage() {
         </button>
 
         <div style={{ fontSize: '0.7rem', color: 'var(--text-faint)', textAlign: 'center' }}>
-          Compte par défaut : admin@local.dev / Admin1234!
+          Identifiants dev local : admin@local.dev / Admin1234!
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { api } from './api'
 import type { AdminUserDto } from './types'
 
 export function AdminPage() {
-  const { token, logout } = useAuth()
+  const { token, isReady, logout } = useAuth()
   const navigate = useNavigate()
 
   const [users, setUsers] = useState<AdminUserDto[]>([])
@@ -32,9 +32,10 @@ export function AdminPage() {
   }, [token])
 
   useEffect(() => {
+    if (!isReady) return
     if (!token) { navigate('/login'); return }
     void loadUsers()
-  }, [token, navigate, loadUsers])
+  }, [isReady, token, navigate, loadUsers])
 
   async function createUser() {
     if (!token || !newEmail || !newPassword || !newDisplayName) return

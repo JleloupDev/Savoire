@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Multi-account auth — matches client-web AuthStateService + IAccountStore logic
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type { AccountEntry, AuthResponse } from './types'
 import { api } from './api'
 
@@ -23,6 +23,7 @@ interface AuthContextValue {
   token: string | null
   accounts: AccountEntry[]
   activeAccount: AccountEntry | null
+  isReady: boolean
 
   // Actions
   login: (res: AuthResponse) => void
@@ -34,11 +35,8 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<AccountEntry[]>(loadAccounts)
-  const [token, setToken] = useState<string | null>(() => {
-    // On reload, we have no access token in memory (expired anyway) — user must re-login or switch
-    // But we keep the accounts list to show who was connected
-    return null
-  })
+  const [token, setToken] = useState<string | null>(null)
+  const [isReady, setIsReady] = useState(false)
 
   const activeAccount = accounts.find(a => a.isActive) ?? null
 
@@ -96,8 +94,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // On mount: restore session from stored refresh token — delegates to switchAccount
+  // to avoid duplicating the token-rotation + account-update logic.
+  useEffect(() => {
+    const active = loadAccounts().find(a => a.isActive)
+    if (!active) { setIsReady(true); return }
+    void switchAccount(active.userId).finally(() => setIsReady(true))
+  }, [switchAccount])
+
   return (
-    <AuthContext.Provider value={{ token, accounts, activeAccount, login, logout, switchAccount }}>
+    <AuthContext.Provider value={{ token, accounts, activeAccount, isReady, login, logout, switchAccount }}>
       {children}
     </AuthContext.Provider>
   )

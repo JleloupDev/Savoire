@@ -45,7 +45,7 @@ function toDocumentDto(doc: { id: string; path: string }): DocumentDto {
 // ── Main editor page ──────────────────────────────────────────────────────────
 
 export function EditorPage() {
-  const { token, accounts, activeAccount, logout, switchAccount } = useAuth()
+  const { token, accounts, activeAccount, isReady, logout, switchAccount } = useAuth()
   const navigate = useNavigate()
 
   const tokenRef = useRef<string | null>(token)
@@ -86,7 +86,7 @@ export function EditorPage() {
   const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('source')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
 
-  useEffect(() => { if (!token) navigate('/login') }, [token, navigate])
+  useEffect(() => { if (isReady && !token) navigate('/login') }, [isReady, token, navigate])
 
   // ── Stable refs ────────────────────────────────────────────────────────────
 
