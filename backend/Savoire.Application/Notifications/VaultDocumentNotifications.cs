@@ -51,3 +51,12 @@ public record WikilinkCascadeNotification(
     string NewPath,
     IReadOnlyList<string> AffectedDocIds  // documents containing [[OldPath]]
 ) : INotification;
+
+/// <summary>
+/// Published after a document-level permission is revoked.
+/// Notifies the target user's open editor sessions via SyncHub.
+/// </summary>
+public record AccessRevokedNotification(
+    string DocId,
+    string TargetUserId
+) : INotification;

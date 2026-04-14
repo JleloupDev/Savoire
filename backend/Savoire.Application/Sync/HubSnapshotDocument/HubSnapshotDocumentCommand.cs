@@ -9,7 +9,7 @@ public record HubSnapshotDocumentCommand(
     string CallerId,
     string VaultId,
     string DocId,
-    byte[] SnapshotBytes) : IRequest, IRequiresVaultAccess
+    byte[] SnapshotBytes) : IRequest, IRequiresDocumentAccess
 {
-    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

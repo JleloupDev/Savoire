@@ -14,7 +14,7 @@ public class PushOpsCommandHandler(
 {
     public async Task Handle(PushOpsCommand cmd, CancellationToken ct)
     {
-        // Access check delegated to VaultAccessBehavior (RequiredAccess = Read).
+        // Access check delegated to VaultAccessBehavior (IRequiresDocumentAccess, Write).
 
         Document? doc = await documents.GetByIdAsync(cmd.DocId, ct);
         if (doc is null || doc.VaultId != cmd.VaultId)

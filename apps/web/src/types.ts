@@ -34,6 +34,14 @@ export interface VaultSummary {
   sizeBytes: number
 }
 
+export interface SharedNote {
+  documentId: string
+  vaultId: string
+  path: string
+  permission: string
+  grantedByDisplayName: string
+}
+
 /** Détail vault retourné par GET /api/v1/vaults/{id} */
 export interface VaultDetail extends VaultSummary {
   members?: { userId: string; displayName: string; email: string; role: string }[]
@@ -98,6 +106,11 @@ export interface ShareLinkAccessDto {
   expiresAt: string | null
   /** Returned by backend for resourceType=document (pending backend update to include this). */
   vaultId?: string
+}
+
+export interface UserDto {
+  id: string
+  displayName: string
 }
 
 export interface AdminUserDto {

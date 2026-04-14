@@ -10,7 +10,7 @@ public class HubSnapshotDocumentCommandHandler(IOperationRepository ops)
 {
     public async Task Handle(HubSnapshotDocumentCommand cmd, CancellationToken ct)
     {
-        // Access check delegated to VaultAccessBehavior (RequiredAccess = Read).
+        // Access check delegated to VaultAccessBehavior (IRequiresDocumentAccess, Write).
         await ops.CompactAsync(cmd.DocId, cmd.SnapshotBytes, force: true, ct);
     }
 }

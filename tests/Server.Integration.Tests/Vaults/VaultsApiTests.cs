@@ -9,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Savoire.Server.Models.Dto;
+using WorkspaceDto = Savoire.Application.Common.WorkspaceDto;
 
 namespace Savoire.Server.Integration.Tests.Vaults;
 
@@ -71,9 +72,9 @@ public class VaultsApiTests : IClassFixture<AppFactory>, IAsyncLifetime
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var vaults = await response.Content.ReadFromJsonAsync<VaultSummaryDto[]>();
-        vaults.Should().NotBeNull();
-        vaults!.Should()
+        var workspace = await response.Content.ReadFromJsonAsync<WorkspaceDto>();
+        workspace.Should().NotBeNull();
+        workspace!.Vaults.Should()
             .Contain(v => v.Name == "Vault Accessible").And
             .NotContain(v => v.Name == "Vault Inaccessible");
     }

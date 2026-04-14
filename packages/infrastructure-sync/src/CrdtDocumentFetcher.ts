@@ -38,6 +38,12 @@ interface DocEntry {
   resolveInit: () => void
 }
 
+export interface DocEventCallbacks {
+  onRenamed?: (newPath: string) => void
+  onDeleted?: () => void
+  onAccessRevoked?: (targetUserId: string) => void
+}
+
 export class CrdtDocumentFetcher implements IDocumentFetcher {
   private readonly serverUrl: string
   private readonly getToken: () => string | null
@@ -45,6 +51,7 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
   private readonly connectionFactory: (serverUrl: string, getToken: () => string | null, userId: string) => HubConnection
   private connection: HubConnection | null = null
   private readonly docs = new Map<string, DocEntry>()
+  private readonly docEventCallbacks = new Map<string, DocEventCallbacks>()
 
   constructor(options: CrdtDocumentFetcherOptions = {}) {
     this.serverUrl = options.serverUrl ?? ''
@@ -77,6 +84,17 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
     // CRDT documents are written via Yjs ops, not REST. This method is intentionally a no-op.
   }
 
+  /**
+   * Subscribe to document metadata events (rename, delete, access revoke) for
+   * a specific document. These arrive via the SyncHub doc-events group, which
+   * the server adds the caller to when JoinDocument detects a non-vault-member.
+   * Returns an unsubscribe function.
+   */
+  subscribeDocumentEvents(docId: string, callbacks: DocEventCallbacks): () => void {
+    this.docEventCallbacks.set(docId, callbacks)
+    return () => { this.docEventCallbacks.delete(docId) }
+  }
+
   private async ensureConnection(): Promise<HubConnection> {
     if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
       return this.connection
@@ -101,6 +119,18 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
       if (!entry?.ready) return
       try { Y.applyUpdate(entry.ydoc, base64ToBytes(opBase64)) }
       catch { /* POC: ignoré — op corrompue */ }
+    })
+
+    this.connection.on('DocumentRenamed', (docId: string, newPath: string) => {
+      this.docEventCallbacks.get(docId)?.onRenamed?.(newPath)
+    })
+
+    this.connection.on('DocumentDeleted', (docId: string) => {
+      this.docEventCallbacks.get(docId)?.onDeleted?.()
+    })
+
+    this.connection.on('AccessRevoked', (docId: string, targetUserId: string) => {
+      this.docEventCallbacks.get(docId)?.onAccessRevoked?.(targetUserId)
     })
 
     await this.connection.start()

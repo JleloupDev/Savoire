@@ -18,6 +18,19 @@ export interface AppDocumentSummary {
   path: string
 }
 
+export interface AppSharedNote {
+  documentId: string
+  vaultId: string
+  path: string
+  permission: string
+  grantedByDisplayName: string
+}
+
+export interface AppWorkspace {
+  vaults: AppVaultSummary[]
+  sharedWithMe: AppSharedNote[]
+}
+
 export interface VaultHubLike {
   connect(): Promise<void>
   dispose(): Promise<void>
@@ -41,7 +54,7 @@ export interface IVaultHubFactory {
 }
 
 export interface IVaultsBackend {
-  listVaults(userId: string, token: string): Promise<AppVaultSummary[]>
+  listVaults(userId: string, token: string): Promise<AppWorkspace>
   createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
@@ -51,7 +64,7 @@ export interface IVaultsBackend {
 }
 
 export interface IVaultsAPI {
-  list(userId: string, token: string): Promise<AppVaultSummary[]>
+  list(userId: string, token: string): Promise<AppWorkspace>
   create(userId: string, name: string, token: string): Promise<AppVaultSummary>
   rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   delete(vaultId: string, token: string): Promise<void>
@@ -75,8 +88,17 @@ export interface ActivateVaultParams {
   onChanged: () => void
 }
 
+export interface ActivateSharedDocParams {
+  vaultId: string
+  doc: IDocumentMeta
+  token: string
+  documentStore: DocumentStore
+  resolveDoc: (path: string) => IDocumentMeta | undefined
+}
+
 export interface IDocumentsAPI {
   activateVault(params: ActivateVaultParams): Promise<ActivatedVault>
+  activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault>
   getActiveClient(): VaultClient | undefined
   getActiveHub(): VaultHubLike | null
   list(vaultId: string, token: string): Promise<AppDocumentSummary[]>

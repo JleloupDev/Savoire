@@ -11,7 +11,7 @@ public class HubPushOperationCommandHandler(IOperationRepository ops)
 {
     public async Task Handle(HubPushOperationCommand cmd, CancellationToken ct)
     {
-        // Access check delegated to VaultAccessBehavior (RequiredAccess = Read).
+        // Access check delegated to VaultAccessBehavior (IRequiresDocumentAccess, Write).
         Operation op = Operation.Create(cmd.DocId, cmd.ClientId, DateTime.UtcNow, cmd.OpBytes);
         await ops.AppendAsync(op, ct);
     }

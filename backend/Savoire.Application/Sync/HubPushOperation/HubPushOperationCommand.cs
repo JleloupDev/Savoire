@@ -10,7 +10,7 @@ public record HubPushOperationCommand(
     string VaultId,
     string DocId,
     string ClientId,
-    byte[] OpBytes) : IRequest, IRequiresVaultAccess
+    byte[] OpBytes) : IRequest, IRequiresDocumentAccess
 {
-    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

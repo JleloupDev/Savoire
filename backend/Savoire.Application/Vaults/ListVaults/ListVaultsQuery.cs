@@ -5,4 +5,4 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Vaults.ListVaults;
 
-public record ListVaultsQuery(string UserId) : IRequest<IReadOnlyList<VaultSummaryDto>>;
+public record ListVaultsQuery(string UserId) : IRequest<WorkspaceDto>;

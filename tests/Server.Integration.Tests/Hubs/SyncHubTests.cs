@@ -256,7 +256,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
 
         // Compacter avec un snapshot
         var snapshotPayload = Convert.ToBase64String("compact-snapshot"u8.ToArray());
-        await writer.InvokeAsync("SnapshotDocument", _docId, snapshotPayload);
+        await writer.InvokeAsync("SnapshotDocument", _vaultId, _docId, snapshotPayload);
         await writer.StopAsync();
 
         // Nouveau client — doit recevoir uniquement le snapshot (1 op)
@@ -279,7 +279,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await conn.StartAsync();
 
         var act = async () => await conn.InvokeAsync(
-            "SnapshotDocument", _docId, "INVALID_BASE64!!!");
+            "SnapshotDocument", _vaultId, _docId, "INVALID_BASE64!!!");
         await act.Should().NotThrowAsync();
     }
 

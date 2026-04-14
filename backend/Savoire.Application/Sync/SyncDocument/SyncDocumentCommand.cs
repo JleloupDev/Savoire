@@ -10,7 +10,7 @@ public record SyncDocumentCommand(
     string         VaultId,
     string         DocId,
     SyncRequestDto Request
-) : IRequest<SyncResponseDto>, IRequiresVaultAccess
+) : IRequest<SyncResponseDto>, IRequiresDocumentAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
 }

@@ -10,6 +10,9 @@ public interface IResourcePermissionRepository
     Task<IReadOnlyList<ResourcePermission>> ListForResourceAsync(
         ResourceType resourceType, string resourceId, CancellationToken ct = default);
 
+    Task<IReadOnlyList<ResourcePermission>> ListForSubjectAsync(
+        SubjectType subjectType, string subjectId, CancellationToken ct = default);
+
     Task<ResourcePermission?> GetAsync(
         ResourceType resourceType, string resourceId,
         SubjectType subjectType, string subjectId,

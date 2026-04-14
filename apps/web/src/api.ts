@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultSummary, VaultDetail, DocumentDto, FolderDto, AuthResponse, AdminUserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
+import type { VaultSummary, VaultDetail, DocumentDto, FolderDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
 
 async function apiFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -166,6 +166,16 @@ export const api = {
         if (!res.ok) throw new Error(`${res.status}`)
         return res.json()
       }),
+
+  // ── Users ─────────────────────────────────────────────────────────────────
+  lookupUserByEmail: (email: string, token: string): Promise<UserDto | null> =>
+    fetch(`/api/v1/users?email=${encodeURIComponent(email)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(async res => {
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`${res.status}`)
+      return res.json() as Promise<UserDto>
+    }),
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   listUsers: (token: string): Promise<AdminUserDto[]> =>

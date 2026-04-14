@@ -11,6 +11,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Savoire.Server.Integration.Tests;
 using Savoire.Server.Models.Dto;
+using WorkspaceDto = Savoire.Application.Common.WorkspaceDto;
 
 namespace Savoire.Server.E2E.Tests;
 
@@ -76,10 +77,10 @@ public class Milestone1E2ETests : IAsyncLifetime
     {
         var vault = await CreateVaultAsync(_clientA, "Mon Vault E2E");
 
-        var resp  = await _clientA.GetAsync($"/api/v1/users/{_userIdA}/vaults");
-        var vaults = await resp.Content.ReadFromJsonAsync<VaultSummaryDto[]>();
+        var resp      = await _clientA.GetAsync($"/api/v1/users/{_userIdA}/vaults");
+        var workspace = await resp.Content.ReadFromJsonAsync<WorkspaceDto>();
 
-        vaults!.Should().Contain(v => v.Id == vault.Id);
+        workspace!.Vaults.Should().Contain(v => v.Id == vault.Id);
     }
 
     // ── M1-02 ────────────────────────────────────────────────────────────────

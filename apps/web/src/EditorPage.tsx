@@ -11,7 +11,7 @@ import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI } from '@savoire/plugin-api'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
-import type { VaultSummary, DocumentDto, AccountEntry } from './types'
+import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
 import { SharingPanel } from './SharingPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot } from './createWebAppRoot'
@@ -77,6 +77,8 @@ export function EditorPage() {
 
   const [activeDoc, setActiveDoc] = useState<DocumentDto | null>(null)
   const [vaults, setVaults] = useState<VaultSummary[]>([])
+  const [sharedWithMe, setSharedWithMe] = useState<SharedNote[]>([])
+  const sharedWithMeRef = useRef<SharedNote[]>(sharedWithMe)
   const [selectedVault, setSelectedVault] = useState<VaultSummary | null>(null)
   const [documents, setDocuments] = useState<DocumentDto[]>([])
 
@@ -137,8 +139,12 @@ export function EditorPage() {
   const onSelectVaultRef = useRef<(vault: VaultSummary) => void>(() => {})
   const onCreateVaultRef = useRef<(name: string) => Promise<void>>(async () => {})
   const onRenameVaultRef = useRef<(vault: VaultSummary, name: string) => Promise<void>>(async () => {})
-  const onAddMemberRef = useRef<(vault: VaultSummary, userId: string, role: string) => Promise<void>>(async () => {})
   const onDeleteVaultRef = useRef<(vault: VaultSummary) => Promise<void>>(async () => {})
+  const onRefreshRef = useRef<() => void>(() => {})
+  const isReadOnlyRef = useRef(false)
+  isReadOnlyRef.current = selectedVault?.role === 'viewer'
+  const onOpenSharedNoteRef = useRef<(note: SharedNote) => void>(() => {})
+  const docEventUnsubRef = useRef<(() => void) | null>(null)
 
   // All values are useRef objects — stable, so useMemo([]) is correct.
   const vaultBrowserRefs: VaultBrowserRefs<VaultSummary> = useMemo(() => ({
@@ -148,7 +154,9 @@ export function EditorPage() {
     onCreateVault: onCreateVaultRef,
     onRenameVault: onRenameVaultRef,
     onDeleteVault: onDeleteVaultRef,
-    onAddMember: onAddMemberRef,
+    onRefresh: onRefreshRef,
+    sharedWithMe: sharedWithMeRef,
+    onOpenSharedNote: onOpenSharedNoteRef,
   }), [])
 
   const {
@@ -189,6 +197,7 @@ export function EditorPage() {
     markdownEditorMode: markdownEditorModeRef,
     contentIndexingService: contentIndexingServiceRef,
     createPluginLoader: () => new PluginLoader(),
+    isReadOnly: isReadOnlyRef,
   }
 
   // ── Create VaultClient and notify workspace of vault change ────────────────
@@ -260,8 +269,10 @@ export function EditorPage() {
     const account = activeAccount ?? accounts[0] ?? null
     if (!token || !account) return
     try {
-      const list = await application.vaults.list(account.userId, token)
+      const { vaults: list, sharedWithMe: shared } = await application.vaults.list(account.userId, token)
       setVaults(list)
+      setSharedWithMe(shared)
+      sharedWithMeRef.current = shared
       vaultsRef.current = list // sync ref before notify so VaultBrowserPanel.sync() reads fresh data
       managerRef.current?.notifyVaultChange()
       if (list.length === 1) void switchToVault(list[0], token)
@@ -278,14 +289,20 @@ export function EditorPage() {
   // ── loadDocument — fetches content, updates topbar ─────────────────────────
 
   loadDocumentRef.current = useCallback(async (doc: DocumentDto): Promise<string> => {
-    if (!selectedVault || !token) return ''
-    if (activeDoc) application.documentSession.close(selectedVault.id, activeDoc.id)
-    const opened = await application.documentSession.open(selectedVault.id, doc.id, doc, token)
+    // Use refs instead of closure values — loadDocumentRef.current is called
+    // asynchronously by EditorAreaWidget and may run after activateSharedDocument
+    // sets new state but before React re-renders update the closure.
+    // see ADR-029
+    const vault = selectedVaultRef.current
+    const tok = tokenRef.current
+    if (!vault || !tok) return ''
+    if (activeDoc) application.documentSession.close(vault.id, activeDoc.id)
+    const opened = await application.documentSession.open(vault.id, doc.id, doc, tok)
     setActiveDoc(doc)
     // Push the CRDT content so plugins (backlinks…) can read it via getActiveDocument().content
     managerRef.current?.setActiveDocumentContent(opened)
     return opened
-  }, [selectedVault, token, activeDoc, application.documentSession])
+  }, [activeDoc, application.documentSession])
 
   refreshDocumentsRef.current = useCallback(async (): Promise<DocumentDto[]> => {
     if (!selectedVault || !token) return []
@@ -317,9 +334,81 @@ export function EditorPage() {
     if (selectedVault?.id === vault.id) setSelectedVault(sv => sv ? { ...sv, name: updated.name } : sv)
   }
 
-  onAddMemberRef.current = async (vault: VaultSummary, userId: string, role: string) => {
-    if (!token) throw new Error('no token')
-    await application.vaults.addMember(vault.id, userId, role, token)
+  onRefreshRef.current = () => { void loadVaults() }
+
+  onOpenSharedNoteRef.current = (note: SharedNote) => {
+    if (!token) return
+    const vault = vaultsRef.current.find(v => v.id === note.vaultId)
+    if (vault) {
+      void switchToVault(vault, token).then(() => {
+        void managerRef.current?.openFile(note.path)
+      })
+    } else {
+      // User has doc-level ACL but is not a vault member.
+      // activateSharedDocument creates a stub VaultClient (no vault hub, no
+      // listDocuments call) so the editor can open without a 403.
+      const docStub = toDocumentDto({ id: note.documentId, path: note.path })
+      const stubVault: VaultSummary = {
+        id: note.vaultId,
+        name: note.path.split('/')[0] ?? note.vaultId,
+        role: note.permission === 'read' ? 'viewer' : 'editor',
+        documentCount: 1,
+        folderCount: 0,
+        lastModifiedAt: null,
+        sizeBytes: 0,
+      }
+
+      if (activeDoc && selectedVaultRef.current)
+        application.documentSession.close(selectedVaultRef.current.id, activeDoc.id)
+
+      docEventUnsubRef.current?.()
+      docEventUnsubRef.current = null
+
+      void application.documents.activateSharedDocument({
+        vaultId: note.vaultId,
+        doc: docStub,
+        token,
+        documentStore: documentStore.current,
+        resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
+      }).then(activated => {
+        vaultAPIRef.current = activated.client
+        selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
+        setSelectedVault(stubVault)
+        setDocuments([docStub])
+        setActiveDoc(null)
+        managerRef.current?.notifyVaultChange()
+
+        // Subscribe to doc metadata events — the server adds non-members to
+        // the doc-events group when JoinDocument runs (triggered by openFile below).
+        docEventUnsubRef.current = documentFetcher.current.subscribeDocumentEvents(note.documentId, {
+          onRenamed: (newPath) => {
+            setDocuments(ds => ds.map(d => d.id === note.documentId ? { ...d, path: newPath } : d))
+            managerRef.current?.notifyVaultChange()
+          },
+          onDeleted: () => {
+            application.documentSession.close(note.vaultId, note.documentId)
+            void application.documents.disposeActiveVault()
+            docEventUnsubRef.current?.()
+            docEventUnsubRef.current = null
+            vaultAPIRef.current = undefined
+            setActiveDoc(null); setSelectedVault(null); setDocuments([])
+            managerRef.current?.notifyVaultChange()
+          },
+          onAccessRevoked: (targetUserId) => {
+            if (targetUserId !== activeAccount?.userId) return
+            application.documentSession.close(note.vaultId, note.documentId)
+            void application.documents.disposeActiveVault()
+            docEventUnsubRef.current?.()
+            docEventUnsubRef.current = null
+            vaultAPIRef.current = undefined
+            setActiveDoc(null); setSelectedVault(null); setDocuments([])
+            managerRef.current?.notifyVaultChange()
+          },
+        })
+
+        void managerRef.current?.openFile(note.path)
+      }).catch(err => console.error('[SharedNote] activateSharedDocument failed', err))
+    }
   }
 
   onDeleteVaultRef.current = async (vault: VaultSummary) => {

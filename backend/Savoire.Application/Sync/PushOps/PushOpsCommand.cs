@@ -10,7 +10,7 @@ public record PushOpsCommand(
     string            VaultId,
     string            DocId,
     PushOpsRequestDto Request
-) : IRequest, IRequiresVaultAccess
+) : IRequest, IRequiresDocumentAccess
 {
-    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

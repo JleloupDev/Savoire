@@ -6,6 +6,7 @@ public interface IUserLookupService
 {
     Task<IReadOnlyList<UserInfo>> GetAllAsync(CancellationToken ct = default);
     Task<UserInfo?> GetByIdAsync(string userId, CancellationToken ct = default);
+    Task<UserInfo?> GetByEmailAsync(string email, CancellationToken ct = default);
     Task<bool> ExistsAsync(string userId, CancellationToken ct = default);
 }
 

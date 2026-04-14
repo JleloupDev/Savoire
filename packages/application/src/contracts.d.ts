@@ -15,6 +15,17 @@ export interface AppDocumentSummary {
     id: string;
     path: string;
 }
+export interface AppSharedNote {
+    documentId: string;
+    vaultId: string;
+    path: string;
+    permission: string;
+    grantedByDisplayName: string;
+}
+export interface AppWorkspace {
+    vaults: AppVaultSummary[];
+    sharedWithMe: AppSharedNote[];
+}
 export interface VaultHubLike {
     connect(): Promise<void>;
     dispose(): Promise<void>;
@@ -31,14 +42,14 @@ export interface IVaultHubFactory {
     create(params: VaultHubFactoryParams): VaultHubLike;
 }
 export interface IVaultsBackend {
-    listVaults(userId: string, token: string): Promise<AppVaultSummary[]>;
+    listVaults(userId: string, token: string): Promise<AppWorkspace>;
     createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>;
     renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>;
     deleteVault(vaultId: string, token: string): Promise<void>;
     listDocuments(vaultId: string, token: string): Promise<AppDocumentSummary[]>;
 }
 export interface IVaultsAPI {
-    list(userId: string, token: string): Promise<AppVaultSummary[]>;
+    list(userId: string, token: string): Promise<AppWorkspace>;
     create(userId: string, name: string, token: string): Promise<AppVaultSummary>;
     rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary>;
     delete(vaultId: string, token: string): Promise<void>;

@@ -25,6 +25,12 @@ public class IdentityUserLookupService(UserManager<AppUser> userManager) : IUser
         return user is null ? null : new UserInfo(user.Id, user.DisplayName, string.Empty);
     }
 
+    public async Task<UserInfo?> GetByEmailAsync(string email, CancellationToken ct = default)
+    {
+        var user = await userManager.FindByEmailAsync(email);
+        return user is null ? null : new UserInfo(user.Id, user.DisplayName, string.Empty);
+    }
+
     public async Task<bool> ExistsAsync(string userId, CancellationToken ct = default)
         => await userManager.FindByIdAsync(userId) is not null;
 }

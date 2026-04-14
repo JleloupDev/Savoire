@@ -20,6 +20,17 @@ public class EfResourcePermissionRepository(AppDbContext db) : IResourcePermissi
         return entities.Select(e => e.ToDomain()).ToList();
     }
 
+    public async Task<IReadOnlyList<ResourcePermission>> ListForSubjectAsync(
+        SubjectType subjectType, string subjectId, CancellationToken ct = default)
+    {
+        string st = subjectType.ToApiString();
+        List<ResourcePermissionEntity> entities = await db.ResourcePermissions
+            .AsNoTracking()
+            .Where(p => p.SubjectType == st && p.SubjectId == subjectId)
+            .ToListAsync(ct);
+        return entities.Select(e => e.ToDomain()).ToList();
+    }
+
     public async Task<ResourcePermission?> GetAsync(
         ResourceType resourceType, string resourceId,
         SubjectType subjectType, string subjectId,

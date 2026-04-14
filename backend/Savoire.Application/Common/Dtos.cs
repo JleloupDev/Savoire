@@ -40,6 +40,19 @@ public record VaultDetailDto(
     long                 SizeBytes
 );
 
+public record SharedNoteDto(
+    string DocumentId,
+    string VaultId,
+    string Path,
+    string Permission,
+    string GrantedByDisplayName
+);
+
+public record WorkspaceDto(
+    IReadOnlyList<VaultSummaryDto> Vaults,
+    IReadOnlyList<SharedNoteDto>   SharedWithMe
+);
+
 // ── Documents ──────────────────────────────────────────────────────────────
 
 public record DocumentDto(

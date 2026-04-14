@@ -11,6 +11,14 @@ export interface VaultSummaryLike {
   folderCount: number
 }
 
+export interface SharedNoteLike {
+  documentId: string
+  vaultId: string
+  path: string
+  permission: string
+  grantedByDisplayName: string
+}
+
 export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummaryLike> {
   vaults: React.MutableRefObject<TVault[]>
   selectedVaultId: React.MutableRefObject<string | null>
@@ -18,7 +26,9 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   onCreateVault: React.MutableRefObject<(name: string) => Promise<void>>
   onRenameVault: React.MutableRefObject<(vault: TVault, name: string) => Promise<void>>
   onDeleteVault: React.MutableRefObject<(vault: TVault) => Promise<void>>
-  onAddMember?: React.MutableRefObject<(vault: TVault, userId: string, role: string) => Promise<void>>
+  onRefresh?: React.MutableRefObject<() => void>
+  sharedWithMe?: React.MutableRefObject<SharedNoteLike[]>
+  onOpenSharedNote?: React.MutableRefObject<(note: SharedNoteLike) => void>
 }
 
 export interface VaultBrowserWorkspaceLike {
@@ -43,19 +53,15 @@ const S = {
   },
 }
 
-function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDelete, onClose, onAddMember }: {
+function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDelete, onClose }: {
   vault: TVault
   onRename: (name: string) => Promise<void>
   onDelete: () => Promise<void>
   onClose: () => void
-  onAddMember?: (userId: string, role: string) => Promise<void>
 }) {
   const [name, setName] = useState(vault.name)
   const [confirmDel, setConfirmDel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [shareUserId, setShareUserId] = useState('')
-  const [shareRole, setShareRole] = useState('viewer')
-  const [shareMsg, setShareMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   async function handleRename() {
     if (!name.trim() || name.trim() === vault.name) return
@@ -66,19 +72,6 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
   async function handleDelete() {
     try { await onDelete(); onClose() }
     catch { setErr('Erreur suppression.') }
-  }
-
-  async function handleShare() {
-    const uid = shareUserId.trim()
-    if (!uid || !onAddMember) return
-    setShareMsg(null)
-    try {
-      await onAddMember(uid, shareRole)
-      setShareMsg({ ok: true, text: `${uid} ajouté (${shareRole})` })
-      setShareUserId('')
-    } catch {
-      setShareMsg({ ok: false, text: 'Erreur — vérifier le user ID' })
-    }
   }
 
   return (
@@ -119,42 +112,6 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
           Supprimer...
         </button>
       )}
-
-      {onAddMember && (
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Partager</div>
-          {shareMsg && (
-            <div style={{ fontSize: 11, color: shareMsg.ok ? 'var(--color-success, #4caf50)' : 'var(--color-danger, #f66)' }}>
-              {shareMsg.text}
-            </div>
-          )}
-          <input
-            value={shareUserId}
-            onChange={e => setShareUserId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && void handleShare()}
-            placeholder="User ID"
-            style={S.inp}
-          />
-          <div style={{ display: 'flex', gap: 4 }}>
-            <select
-              value={shareRole}
-              onChange={e => setShareRole(e.target.value)}
-              style={{ ...S.inp, flex: 1 }}
-            >
-              <option value="viewer">Lecture</option>
-              <option value="editor">Éditeur</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button
-              onClick={() => void handleShare()}
-              disabled={!shareUserId.trim()}
-              style={{ ...S.btn('var(--color-info, #89b4fa)'), flex: 'none', padding: '3px 10px' }}
-            >
-              ↗
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -171,11 +128,13 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [sharedNotes, setSharedNotes] = useState<SharedNoteLike[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
   function sync() {
     setVaults([...refs.vaults.current])
     setSelectedId(refs.selectedVaultId.current)
+    if (refs.sharedWithMe) setSharedNotes([...refs.sharedWithMe.current])
   }
 
   useEffect(() => {
@@ -247,9 +206,6 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                 onRename={(name) => refs.onRenameVault.current(v, name).then(sync)}
                 onDelete={() => refs.onDeleteVault.current(v).then(sync)}
                 onClose={() => setSettingsFor(null)}
-                onAddMember={refs.onAddMember
-                  ? (userId, role) => refs.onAddMember!.current(v, userId, role)
-                  : undefined}
               />
             )}
           </div>
@@ -257,6 +213,33 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
 
         {vaults.length === 0 && (
           <div style={{ padding: '4px 12px', fontSize: 12, color: 'var(--text-faint)' }}>Aucun vault</div>
+        )}
+
+        {sharedNotes.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ padding: '4px 12px', ...S.label }}>Partagé avec moi</div>
+            {sharedNotes.map(note => (
+              <button
+                key={note.documentId}
+                onClick={() => refs.onOpenSharedNote?.current(note)}
+                title={`Par ${note.grantedByDisplayName} · ${note.permission}`}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '5px 12px',
+                  border: 'none', background: 'transparent',
+                  color: 'var(--text-muted)', cursor: 'pointer',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              >
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 500 }}>
+                  {note.path.split('/').pop()}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                  {note.permission} · {note.grantedByDisplayName}
+                </div>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -277,9 +260,20 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
             </div>
           </>
         ) : (
-          <button onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), textAlign: 'left' }}>
-            + Nouveau vault
-          </button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
+              + Nouveau vault
+            </button>
+            {refs.onRefresh && (
+              <button
+                onClick={() => refs.onRefresh!.current()}
+                title="Actualiser"
+                style={{ ...S.btn('var(--text-muted)'), flex: 'none', padding: '3px 8px' }}
+              >
+                ↺
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

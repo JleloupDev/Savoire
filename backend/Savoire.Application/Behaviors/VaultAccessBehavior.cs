@@ -15,7 +15,7 @@ namespace Savoire.Application.Behaviors;
 /// </summary>
 public class VaultAccessBehavior<TRequest, TResponse>(IVaultAccessGuard guard)
     : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : IRequest<TResponse>
+    where TRequest : notnull
 {
     public async Task<TResponse> Handle(
         TRequest request,
@@ -28,8 +28,19 @@ public class VaultAccessBehavior<TRequest, TResponse>(IVaultAccessGuard guard)
         {
             if (req.RequiredAccess == VaultAccessLevel.Write)
                 await guard.RequireWriteAsync(req.CallerId, req.VaultId, ct);
+            else if (req.RequiredAccess == VaultAccessLevel.Admin)
+                await guard.RequireAdminAsync(req.CallerId, req.VaultId, ct);
             else
                 await guard.RequireReadAsync(req.CallerId, req.VaultId, ct);
+        }
+        else if (request is IRequiresDocumentAccess docReq
+            && !ShareLinkGuard.IsShareLinkCaller(docReq.CallerId)
+            && !ShareLinkGuard.IsViewCaller(docReq.CallerId))
+        {
+            if (docReq.RequiredAccess == VaultAccessLevel.Write)
+                await guard.RequireDocumentWriteAsync(docReq.CallerId, docReq.VaultId, docReq.DocId, ct);
+            else
+                await guard.RequireDocumentReadAsync(docReq.CallerId, docReq.VaultId, docReq.DocId, ct);
         }
 
         return await next(ct);

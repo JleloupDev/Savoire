@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultStorage } from '@savoire/platform'
-import type { ActivatedVault, AppDocumentSummary, IDocumentsAPI, IVaultsBackend } from './contracts'
+import type { ActivatedVault, AppDocumentSummary, IDocumentsAPI, IVaultsBackend, VaultHubLike } from './contracts'
 import { SyncOrchestrator } from './SyncOrchestrator'
 
 type ActiveContext = ActivatedVault
@@ -67,6 +67,66 @@ export class DocumentsService implements IDocumentsAPI {
       dispose: async () => {
         await hub.dispose()
       },
+    }
+
+    this.active = active
+    return active
+  }
+
+  /**
+   * Activates a single shared document without connecting to the vault hub.
+   * Used when the caller has document-level ACL but is not a vault member.
+   * The VaultClient is pre-seeded with the one known document; all write
+   * operations on the stub storage throw read-only errors.
+   * see ADR-027
+   */
+  async activateSharedDocument(params: {
+    vaultId: string
+    doc: IDocumentMeta
+    token: string
+    documentStore: DocumentStore
+    resolveDoc: (path: string) => IDocumentMeta | undefined
+  }): Promise<ActivatedVault> {
+    await this.disposeActiveVault()
+
+    const d = params.doc
+    const readOnly = async (): Promise<never> => { throw new Error('read-only shared document') }
+    const stubStorage: IVaultStorage = {
+      listDocuments:   async ()       => [d],
+      listFolders:     async ()       => [],
+      readFile:        async ()       => '',
+      writeFile:       readOnly,
+      resolveFileUrl:  ()             => '',
+      createDocument:  readOnly,
+      renameDocument:  readOnly,
+      deleteDocument:  readOnly,
+      createFolder:    readOnly,
+      deleteFolder:    readOnly,
+      uploadAttachment: readOnly,
+    }
+
+    const client = new VaultClient(
+      params.vaultId,
+      params.token,
+      stubStorage,
+      params.documentStore,
+      params.resolveDoc,
+    )
+    client.addDocument(d)
+
+    const nullHub: VaultHubLike = {
+      connect:        async () => {},
+      dispose:        async () => {},
+      createDocument: readOnly,
+      renameDocument: readOnly,
+      deleteDocument: readOnly,
+    }
+
+    const active: ActivatedVault = {
+      vaultId: params.vaultId,
+      client,
+      hub: nullHub,
+      dispose: async () => {},
     }
 
     this.active = active

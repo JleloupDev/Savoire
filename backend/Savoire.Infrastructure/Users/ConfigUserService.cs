@@ -53,6 +53,10 @@ public class ConfigUserService : IUserLookupService
     public Task<UserInfo?> GetByIdAsync(string userId, CancellationToken ct = default)
         => Task.FromResult(_users.GetValueOrDefault(userId));
 
+    // V1 config-based users have no email — always returns null.
+    public Task<UserInfo?> GetByEmailAsync(string email, CancellationToken ct = default)
+        => Task.FromResult<UserInfo?>(null);
+
     public Task<bool> ExistsAsync(string userId, CancellationToken ct = default)
         => Task.FromResult(_users.ContainsKey(userId));
 

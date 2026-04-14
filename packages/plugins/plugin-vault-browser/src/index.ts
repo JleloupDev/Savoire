@@ -49,4 +49,4 @@ export function createVaultBrowserPlugin<TVault extends VaultSummaryLike = Vault
 }
 
 export { VaultBrowserWidget } from './VaultBrowserWidget'
-export type { VaultBrowserRefs, VaultSummaryLike, VaultBrowserWorkspaceLike } from './VaultBrowserWidget'
+export type { VaultBrowserRefs, VaultSummaryLike, SharedNoteLike, VaultBrowserWorkspaceLike } from './VaultBrowserWidget'

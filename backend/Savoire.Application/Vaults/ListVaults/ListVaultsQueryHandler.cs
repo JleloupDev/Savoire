@@ -5,24 +5,60 @@ using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Enums;
 using Savoire.Domain.Repositories;
+using Savoire.Domain.Services;
 using Savoire.Domain.ValueObjects;
 
 namespace Savoire.Application.Vaults.ListVaults;
 
-public class ListVaultsQueryHandler(IVaultRepository vaults)
-    : IRequestHandler<ListVaultsQuery, IReadOnlyList<VaultSummaryDto>>
+public class ListVaultsQueryHandler(
+    IVaultRepository vaults,
+    IResourcePermissionRepository permissions,
+    IDocumentRepository documents,
+    IUserLookupService users)
+    : IRequestHandler<ListVaultsQuery, WorkspaceDto>
 {
-    public async Task<IReadOnlyList<VaultSummaryDto>> Handle(
-        ListVaultsQuery query, CancellationToken ct)
+    public async Task<WorkspaceDto> Handle(ListVaultsQuery query, CancellationToken ct)
     {
-        IReadOnlyList<(Vault Vault, VaultRole Role)> items =
-            await vaults.GetForUserAsync(query.UserId, ct);
+        var vaultItems = await vaults.GetForUserAsync(query.UserId, ct);
 
-        var result = new List<VaultSummaryDto>(items.Count);
-        foreach ((Vault vault, VaultRole role) in items)
+        var vaultSummaries = new List<VaultSummaryDto>(vaultItems.Count);
+        foreach ((Vault vault, VaultRole role) in vaultItems)
         {
             VaultStats stats = await vaults.GetStatsAsync(vault.Id, ct);
-            result.Add(ToSummary(vault, role.ToApiString(), stats));
+            vaultSummaries.Add(ToSummary(vault, role.ToApiString(), stats));
+        }
+
+        var sharedNotes = await BuildSharedWithMeAsync(query.UserId, ct);
+
+        return new WorkspaceDto(vaultSummaries, sharedNotes);
+    }
+
+    private async Task<IReadOnlyList<SharedNoteDto>> BuildSharedWithMeAsync(
+        string userId, CancellationToken ct)
+    {
+        IReadOnlyList<ResourcePermission> perms = await permissions.ListForSubjectAsync(
+            SubjectType.User, userId, ct);
+
+        var docPerms = perms
+            .Where(p => p.ResourceType == ResourceType.Document && !p.IsExpired())
+            .ToList();
+
+        if (docPerms.Count == 0) return [];
+
+        var result = new List<SharedNoteDto>(docPerms.Count);
+        foreach (ResourcePermission perm in docPerms)
+        {
+            Document? doc = await documents.GetByIdAsync(perm.ResourceId, ct);
+            if (doc is null || doc.DeletedAt.HasValue) continue;
+
+            UserInfo? grantor = await users.GetByIdAsync(perm.GrantedBy, ct);
+            result.Add(new SharedNoteDto(
+                DocumentId:          doc.Id,
+                VaultId:             doc.VaultId,
+                Path:                doc.Path,
+                Permission:          perm.Permission.ToApiString(),
+                GrantedByDisplayName: grantor?.DisplayName ?? perm.GrantedBy
+            ));
         }
         return result;
     }

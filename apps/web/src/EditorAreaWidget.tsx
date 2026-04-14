@@ -38,6 +38,8 @@ export interface EditorAreaRefs {
   contentIndexingService: React.MutableRefObject<import('@savoire/application').ContentIndexingService | null>
   /** Factory for per-document plugin loaders (note-scoped plugins). */
   createPluginLoader: () => IPluginLoader
+  /** True when the active vault/document grants read-only access to the current user. */
+  isReadOnly: React.MutableRefObject<boolean>
 }
 
 interface EditorPanelParams {
@@ -96,6 +98,7 @@ function DocumentPanelHost({
       pluginRegistry,
       serverUrl: '',
       editorMode: refs.markdownEditorMode.current,
+      readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
       getToken: () => refs.token.current,
       onFileContentStabilized: (docId, path, shadowMarkdown) => {

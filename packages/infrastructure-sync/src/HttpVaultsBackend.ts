@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { AppDocumentSummary, AppVaultSummary, IVaultsBackend } from '@savoire/application'
+import type { AppDocumentSummary, AppVaultSummary, AppWorkspace, IVaultsBackend } from '@savoire/application'
 
 export interface HttpVaultsBackendOptions {
   baseUrl?: string
@@ -16,8 +16,8 @@ export class HttpVaultsBackend implements IVaultsBackend {
     this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis)
   }
 
-  listVaults(userId: string, token: string): Promise<AppVaultSummary[]> {
-    return this.requestJson<AppVaultSummary[]>(
+  listVaults(userId: string, token: string): Promise<AppWorkspace> {
+    return this.requestJson<AppWorkspace>(
       `/api/v1/users/${encodeURIComponent(userId)}/vaults`,
       token,
       { method: 'GET' },

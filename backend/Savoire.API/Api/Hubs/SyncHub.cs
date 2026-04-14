@@ -30,14 +30,20 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     public async Task JoinDocument(string vaultId, string docId)
     {
         string callerId = GetCallerId();
-        string[] ops = await mediator.Send(new JoinDocumentQuery(callerId, vaultId, docId));
+        JoinDocumentResult result = await mediator.Send(new JoinDocumentQuery(callerId, vaultId, docId));
 
         await Groups.AddToGroupAsync(Context.ConnectionId, $"doc:{docId}");
-        await Clients.Caller.SendAsync("InitDocument", docId, ops);
+
+        // Non-vault-members with document-level permission subscribe to metadata
+        // events (rename, delete, access revoke) via the doc-events group.
+        if (!result.CallerIsVaultMember)
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"doc-events:{docId}");
+
+        await Clients.Caller.SendAsync("InitDocument", docId, result.Ops);
 
         logger.LogInformation(
-            "Client {Id} joined document {DocId} — {Count} op(s)",
-            Context.ConnectionId, docId, ops.Length);
+            "Client {Id} joined document {DocId} — {Count} op(s), vaultMember={IsMember}",
+            Context.ConnectionId, docId, result.Ops.Length, result.CallerIsVaultMember);
     }
 
     public async Task LeaveDocument(string vaultId, string docId)

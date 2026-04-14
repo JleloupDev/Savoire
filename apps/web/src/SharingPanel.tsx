@@ -3,9 +3,9 @@
 // SharingPanel — modal pour gérer les permissions et les liens de partage
 // d'un vault ou d'un document.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from './api'
-import type { ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, VaultSummary, DocumentDto } from './types'
+import type { ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, UserDto, VaultSummary, DocumentDto } from './types'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -133,7 +133,11 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   // Grant form
-  const [grantSubjectId, setGrantSubjectId] = useState('')
+  const [grantEmail, setGrantEmail] = useState('')
+  const [resolvedUser, setResolvedUser] = useState<UserDto | null>(null)
+  const [resolveError, setResolveError] = useState<string | null>(null)
+  const [resolveBusy, setResolveBusy] = useState(false)
+  const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [grantPermission, setGrantPermission] = useState('read')
   const [grantBusy, setGrantBusy] = useState(false)
 
@@ -159,12 +163,30 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
 
   useEffect(() => { void reload() }, [reload])
 
+  function handleEmailChange(email: string) {
+    setGrantEmail(email)
+    setResolvedUser(null)
+    setResolveError(null)
+    if (resolveTimer.current) clearTimeout(resolveTimer.current)
+    if (!email.trim()) return
+    resolveTimer.current = setTimeout(async () => {
+      setResolveBusy(true)
+      try {
+        const user = await api.lookupUserByEmail(email.trim(), token)
+        if (user) { setResolvedUser(user); setResolveError(null) }
+        else setResolveError('Utilisateur introuvable')
+      } catch { setResolveError('Erreur de recherche') }
+      finally { setResolveBusy(false) }
+    }, 500)
+  }
+
   async function handleGrant() {
-    if (!resourceId || !grantSubjectId.trim()) return
+    if (!resourceId || !resolvedUser) return
     setGrantBusy(true)
     try {
-      await api.grantPermission(target, resourceId, grantSubjectId.trim(), grantPermission, token)
-      setGrantSubjectId('')
+      await api.grantPermission(target, resourceId, resolvedUser.id, grantPermission, token)
+      setGrantEmail('')
+      setResolvedUser(null)
       await reload()
     } catch (e) { setError(String(e)) }
     finally { setGrantBusy(false) }
@@ -239,16 +261,27 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
               <div>
                 <div style={{ ...label, marginBottom: 8 }}>Ajouter un utilisateur</div>
                 <div style={row}>
-                  <input style={inp} placeholder="ID utilisateur" value={grantSubjectId} onChange={e => setGrantSubjectId(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void handleGrant() }} />
+                  <input
+                    style={inp}
+                    type="email"
+                    placeholder="Email"
+                    value={grantEmail}
+                    onChange={e => handleEmailChange(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') void handleGrant() }}
+                    autoComplete="off"
+                  />
                   <select style={sel} value={grantPermission} onChange={e => setGrantPermission(e.target.value)}>
                     <option value="read">Lecture</option>
                     <option value="write">Écriture</option>
                     <option value="admin">Admin</option>
                   </select>
-                  <button style={btnPrimary} onClick={() => void handleGrant()} disabled={grantBusy || !grantSubjectId.trim()}>
+                  <button style={btnPrimary} onClick={() => void handleGrant()} disabled={grantBusy || !resolvedUser}>
                     {grantBusy ? '…' : 'Ajouter'}
                   </button>
                 </div>
+                {resolveBusy && <div style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 4 }}>Recherche…</div>}
+                {resolvedUser && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: 4 }}>✓ {resolvedUser.displayName}</div>}
+                {resolveError && <div style={{ fontSize: '0.72rem', color: 'var(--color-danger)', marginTop: 4 }}>{resolveError}</div>}
               </div>
 
               {/* Permissions list */}

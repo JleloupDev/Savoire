@@ -38,6 +38,14 @@ public class GrantPermissionCommandHandler(
             permission, cmd.CallerId, cmd.ExpiresAt);
         await permissions.AddAsync(perm, ct);
 
+        // Vault grants must also appear in vault_members so GetForUserAsync returns the vault.
+        if (resourceType == ResourceType.Vault)
+        {
+            VaultRole role = permission == Permission.Read ? VaultRole.Viewer : VaultRole.Editor;
+            await vaults.AddMemberAsync(
+                new VaultMember(cmd.ResourceId, cmd.TargetUserId, role, DateTime.UtcNow), ct);
+        }
+
         string? displayName = (await users.GetByIdAsync(cmd.TargetUserId, ct))?.DisplayName;
         return ToDto(perm, displayName);
     }
