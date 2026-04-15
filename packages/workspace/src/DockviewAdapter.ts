@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { DockviewApi, IDockviewPanel } from 'dockview'
-import type { WorkspacePort, WorkspaceLayout, OpenPanelOptions, PanelInstance } from './types'
+import type { WorkspacePort, WorkspaceLayout, OpenPanelOptions, PanelInstance, PanelLocation } from './types'
+
+const DEFAULT_EXPANDED_PANE_SIZE = 280
 
 /**
  * DockviewAdapter — implements WorkspacePort using the Dockview layout engine.
@@ -12,6 +14,10 @@ import type { WorkspacePort, WorkspaceLayout, OpenPanelOptions, PanelInstance } 
  */
 export class DockviewAdapter implements WorkspacePort {
   private api: DockviewApi | null = null
+  private readonly lastExpandedSizes: Record<'left' | 'right', number> = {
+    left: DEFAULT_EXPANDED_PANE_SIZE,
+    right: DEFAULT_EXPANDED_PANE_SIZE,
+  }
 
   /** Called by WorkspaceRoot once Dockview is mounted and ready. */
   setApi(api: DockviewApi): void {
@@ -45,6 +51,45 @@ export class DockviewAdapter implements WorkspacePort {
     this.api?.getPanel(panelId)?.focus()
   }
 
+  collapsePane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void {
+    const groups = this.getGroupsForPanelIds(panelIds)
+    if (groups.length === 0) return
+
+    const currentWidth = Math.max(...groups.map(group => group.width))
+    if (currentWidth > 0) {
+      this.lastExpandedSizes[location] = currentWidth
+    }
+
+    for (const group of groups) {
+      group.api.setConstraints({ minimumWidth: 0, minimumHeight: 0 })
+      group.api.setSize({ width: 0 })
+    }
+  }
+
+  expandPane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void {
+    const groups = this.getGroupsForPanelIds(panelIds)
+    if (groups.length === 0) return
+
+    const width = Math.max(this.lastExpandedSizes[location], DEFAULT_EXPANDED_PANE_SIZE)
+    for (const group of groups) {
+      group.api.setConstraints({ minimumWidth: 100, minimumHeight: 0 })
+      group.api.setSize({ width })
+    }
+  }
+
+  getPaneWidth(panelIds: string[]): number {
+    const groups = this.getGroupsForPanelIds(panelIds)
+    if (groups.length === 0) return 0
+    return Math.max(...groups.map(g => g.width))
+  }
+
+  setPaneWidth(panelIds: string[], width: number): void {
+    const groups = this.getGroupsForPanelIds(panelIds)
+    for (const group of groups) {
+      group.api.setSize({ width })
+    }
+  }
+
   saveLayout(): WorkspaceLayout {
     const panels = this.api?.panels ?? []
     return {
@@ -68,5 +113,18 @@ export class DockviewAdapter implements WorkspacePort {
         if (this.api) this.api.removePanel(panel)
       },
     }
+  }
+
+  private getGroupsForPanelIds(panelIds: string[]) {
+    if (!this.api) return []
+
+    const groups = new Map<string, NonNullable<ReturnType<DockviewApi['getGroup']>>>()
+    for (const panelId of panelIds) {
+      const panel = this.api.getPanel(panelId)
+      if (!panel) continue
+      groups.set(panel.group.id, panel.group)
+    }
+
+    return [...groups.values()]
   }
 }

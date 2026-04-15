@@ -6,6 +6,7 @@ import { BacklinksWidget } from './BacklinksWidget'
 
 export function createBacklinksPlugin(options: {
   tabOf?: string
+  belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
   const contributor = new BacklinksIndexContributor()
@@ -29,6 +30,7 @@ export function createBacklinksPlugin(options: {
         icon: 'link',
         container: 'right',
         tabOf: options.tabOf,
+        belowOf: options.belowOf,
         initialSize: options.initialSize ?? 280,
         closable: true,
         createView(ctx) {

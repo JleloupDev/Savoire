@@ -206,15 +206,15 @@ export function usePluginBootstrap({
           belowOf: 'vault-browser',
           closable: false,
         }), pluginApi)
-        // Backlinks + Metadata + Graph — right panel tabs
+        // Right pane: top = Plugin inspector + Metadata, bottom = Backlinks + Graph
         await pluginLoaderRef.current.loadInternal(createBacklinksPlugin({
-          tabOf: 'plugin-inspector',
+          belowOf: 'plugin-inspector',
         }), pluginApi)
         await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
           tabOf: 'plugin-inspector',
         }), pluginApi)
         const { plugin: graphPlugin, contributor: graphContributor } = createGraphPlugin({
-          tabOf: 'plugin-inspector',
+          tabOf: 'backlinks',
         })
         graphContributorRef.current = graphContributor
         await pluginLoaderRef.current.loadInternal(graphPlugin, pluginApi)

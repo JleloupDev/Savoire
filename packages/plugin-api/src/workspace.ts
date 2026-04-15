@@ -7,10 +7,19 @@ export interface ViewDocument {
   content: string
 }
 
+export interface WorkspacePaneState {
+  collapsed: boolean
+}
+
 export interface WorkspaceAPI {
   openFile(path: string): Promise<void>
   openPanel(panelId: string): void
   closePanel(panelId: string): void
+  collapsePane?(location: 'left' | 'right'): void
+  expandPane?(location: 'left' | 'right'): void
+  togglePane?(location: 'left' | 'right'): void
+  getPaneState?(location: 'left' | 'right'): WorkspacePaneState
+  subscribePaneState?(location: 'left' | 'right', cb: (state: WorkspacePaneState) => void): () => void
   getActiveDocument(): ViewDocument | undefined
   /** Subscribe to vault-change events (fired when selected vault changes). */
   subscribeVaultChange?(cb: () => void): () => void

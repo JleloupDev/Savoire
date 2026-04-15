@@ -31,6 +31,10 @@ export interface PanelInstance {
   close(): void
 }
 
+export interface WorkspacePaneState {
+  collapsed: boolean
+}
+
 // ─── WorkspacePort — abstraction over the layout engine ───────────────────
 
 /** Port implemented by DockviewAdapter (or any other layout engine). */
@@ -38,6 +42,10 @@ export interface WorkspacePort {
   openPanel(panelId: string, options?: OpenPanelOptions): PanelInstance
   closePanel(panelId: string): void
   focusPanel(panelId: string): void
+  collapsePane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void
+  expandPane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void
+  getPaneWidth(panelIds: string[]): number
+  setPaneWidth(panelIds: string[], width: number): void
   saveLayout(): WorkspaceLayout
   restoreLayout(layout: WorkspaceLayout): void
 }

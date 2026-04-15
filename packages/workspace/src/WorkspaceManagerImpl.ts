@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { WorkspaceAPI, ViewDocument } from '@savoire/plugin-api'
-import type { WorkspacePort, WorkspaceLayout } from './types'
+import type { WorkspacePaneState, WorkspacePort, WorkspaceLayout, PanelLocation } from './types'
 import { ViewRegistryImpl } from './ViewRegistryImpl'
 
 export interface ActiveEditorInfo {
@@ -20,11 +20,19 @@ export interface ActiveEditorInfo {
 export class WorkspaceManagerImpl implements WorkspaceAPI {
   readonly views: ViewRegistryImpl
   private activeDocument: ViewDocument | undefined
+  private readonly paneStates: Record<'left' | 'right', WorkspacePaneState> = {
+    left: { collapsed: false },
+    right: { collapsed: false },
+  }
   private openFileCallbacks: ((path: string) => void)[] = []
   private vaultChangeCallbacks: (() => void)[] = []
   private activeEditorCallbacks: ((info: ActiveEditorInfo) => void)[] = []
   private activeDocumentCallbacks: ((path: string) => void)[] = []
   private documentIndexedCallbacks: ((docId: string, path: string) => void)[] = []
+  private paneStateCallbacks: Record<'left' | 'right', Array<(state: WorkspacePaneState) => void>> = {
+    left: [],
+    right: [],
+  }
 
   constructor(private readonly port: WorkspacePort) {
     this.views = new ViewRegistryImpl()
@@ -98,6 +106,67 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
     this.port.focusPanel(panelId)
   }
 
+  collapsePane(location: 'left' | 'right'): void {
+    if (this.paneStates[location].collapsed) return
+    const opposite = location === 'left' ? 'right' : 'left'
+    const oppositeIds = this.getPanePanelIds(opposite)
+    const oppositeCollapsed = this.paneStates[opposite].collapsed
+    const oppositeWidth = oppositeCollapsed ? 0 : this.port.getPaneWidth(oppositeIds)
+    this.port.collapsePane(location, this.getPanePanelIds(location))
+    // Pin the opposite side: keep it collapsed at 0, or restore its pre-collapse width
+    this.port.setPaneWidth(oppositeIds, oppositeWidth)
+    this.paneStates[location] = { collapsed: true }
+    this.emitPaneState(location)
+  }
+
+  expandPane(location: 'left' | 'right'): void {
+    if (!this.paneStates[location].collapsed) return
+    const opposite = location === 'left' ? 'right' : 'left'
+    const oppositeIds = this.getPanePanelIds(opposite)
+    const oppositeCollapsed = this.paneStates[opposite].collapsed
+    const oppositeWidth = oppositeCollapsed ? 0 : this.port.getPaneWidth(oppositeIds)
+    this.port.expandPane(location, this.getPanePanelIds(location))
+    // Pin the opposite side: keep it collapsed at 0, or restore its pre-expand width
+    this.port.setPaneWidth(oppositeIds, oppositeWidth)
+    this.paneStates[location] = { collapsed: false }
+    this.emitPaneState(location)
+  }
+
+  togglePane(location: 'left' | 'right'): void {
+    if (this.paneStates[location].collapsed) {
+      this.expandPane(location)
+    } else {
+      this.collapsePane(location)
+    }
+  }
+
+  getPaneState(location: 'left' | 'right'): WorkspacePaneState {
+    return this.paneStates[location]
+  }
+
+  subscribePaneState(location: 'left' | 'right', cb: (state: WorkspacePaneState) => void): () => void {
+    this.paneStateCallbacks[location].push(cb)
+    return () => {
+      this.paneStateCallbacks[location] = this.paneStateCallbacks[location].filter(x => x !== cb)
+    }
+  }
+
+  getPanelLocation(panelId: string): PanelLocation | undefined {
+    return this.views.getAll().find(view => view.id === panelId)?.container as PanelLocation | undefined
+  }
+
+  getPaneAnchorPanelId(location: 'left' | 'right'): string | undefined {
+    return this.views.getAll().find(view =>
+      view.container === location &&
+      !view.tabOf &&
+      !view.belowOf,
+    )?.id
+  }
+
+  getPaneWidth(location: 'left' | 'right'): number {
+    return this.port.getPaneWidth(this.getPanePanelIds(location))
+  }
+
   getActiveDocument(): ViewDocument | undefined {
     return this.activeDocument
   }
@@ -115,5 +184,16 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
 
   restoreLayout(layout: WorkspaceLayout): void {
     this.port.restoreLayout(layout)
+  }
+
+  private getPanePanelIds(location: 'left' | 'right'): string[] {
+    return this.views.getAll()
+      .filter(view => view.container === location)
+      .map(view => view.id)
+  }
+
+  private emitPaneState(location: 'left' | 'right'): void {
+    const state = this.paneStates[location]
+    for (const cb of this.paneStateCallbacks[location]) cb(state)
   }
 }

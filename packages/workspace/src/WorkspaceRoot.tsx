@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview'
 import type { DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps } from 'dockview'
 import type { VaultAPI, ViewSpec, ViewContext, Widget, FileTypeRegistry } from '@savoire/plugin-api'
@@ -42,6 +42,19 @@ function PermanentTab(props: IDockviewPanelHeaderProps) {
   return <DockviewDefaultTab {...props} hideClose />
 }
 
+// ─── Chevron icon ──────────────────────────────────────────────────────────
+
+function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  return (
+    <svg width="8" height="12" viewBox="0 0 8 12" fill="none" aria-hidden="true" style={{ display: 'block' }}>
+      {direction === 'left'
+        ? <path d="M7 1L1 6L7 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        : <path d="M1 1L7 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      }
+    </svg>
+  )
+}
+
 // ─── Generic view host panel ───────────────────────────────────────────────
 
 interface ViewPanelParams {
@@ -58,7 +71,11 @@ function ViewPanelHost(props: IDockviewPanelProps<ViewPanelParams>) {
     }
   }, [widget])
 
-  return <>{widget.render() as React.ReactNode}</>
+  return (
+    <div className="workspace-view-host" data-view-location={props.params.spec.container}>
+      {widget.render() as React.ReactNode}
+    </div>
+  )
 }
 
 // ─── WorkspaceRoot ─────────────────────────────────────────────────────────
@@ -67,10 +84,36 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
   // see ADR-011
   const adapter = useMemo(() => new DockviewAdapter(), [])
   const manager = useMemo(() => new WorkspaceManagerImpl(adapter), [adapter])
+  const [leftCollapsed,  setLeftCollapsed]  = useState(manager.getPaneState('left').collapsed)
+  const [rightCollapsed, setRightCollapsed] = useState(manager.getPaneState('right').collapsed)
+  const leftToggleRef  = React.useRef<HTMLButtonElement>(null)
+  const rightToggleRef = React.useRef<HTMLButtonElement>(null)
+
+  useEffect(() => manager.subscribePaneState('left',  s => setLeftCollapsed(s.collapsed)),  [manager])
+  useEffect(() => manager.subscribePaneState('right', s => setRightCollapsed(s.collapsed)), [manager])
 
   const onDockviewReady = useCallback(
     (event: DockviewReadyEvent) => {
       adapter.setApi(event.api)
+
+      // Update button positions directly in the DOM — bypasses React batching for smooth drag tracking.
+      // Reads offsetWidth from the group DOM element so it fires continuously during sash drag
+      // (onDidLayoutChange only fires after drag ends).
+      let leftGroupEl: Element | null = null
+      let rightGroupEl: Element | null = null
+
+      const updateButtonPositions = () => {
+        if (leftToggleRef.current) {
+          const w = (leftGroupEl as HTMLElement | null)?.offsetWidth ?? 0
+          leftToggleRef.current.style.left = `${Math.max(0, w - 8)}px`
+        }
+        if (rightToggleRef.current) {
+          const w = (rightGroupEl as HTMLElement | null)?.offsetWidth ?? 0
+          rightToggleRef.current.style.right = `${Math.max(0, w - 8)}px`
+        }
+      }
+
+      const resizeObserver = new ResizeObserver(updateButtonPositions)
 
       // onBeforeReady may be async (plugin loading). Wait for it before opening panels.
       const setup = onBeforeReady?.(manager) ?? Promise.resolve()
@@ -115,7 +158,7 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
             position,
             tabComponent: spec.closable === false ? 'permanent' : undefined,
             initialWidth: spec.container === 'left' || spec.container === 'right' ? spec.initialSize : undefined,
-            initialHeight: spec.container === 'bottom' ? spec.initialSize : undefined,
+            initialHeight: spec.container === 'bottom' || !!spec.belowOf ? spec.initialSize : undefined,
           }
 
           try {
@@ -140,23 +183,60 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
           }
         }
 
+        // Attach ResizeObserver to group DOM elements for live tracking during sash drag
+        const leftAnchorId  = manager.getPaneAnchorPanelId('left')
+        const rightAnchorId = manager.getPaneAnchorPanelId('right')
+        leftGroupEl  = leftAnchorId  ? (event.api.getPanel(leftAnchorId)?.group.element  ?? null) : null
+        rightGroupEl = rightAnchorId ? (event.api.getPanel(rightAnchorId)?.group.element ?? null) : null
+        if (leftGroupEl)  resizeObserver.observe(leftGroupEl)
+        if (rightGroupEl) resizeObserver.observe(rightGroupEl)
+
+        updateButtonPositions()
         onReady?.(manager)
       })
     },
     [adapter, manager, vault, onBeforeReady, onReady],
   )
 
-  const rootClassName = ['workspace-root', className].filter(Boolean).join(' ')
+  const rootClassName = [
+    'workspace-root',
+    leftCollapsed  ? 'workspace-left-collapsed'  : '',
+    rightCollapsed ? 'workspace-right-collapsed' : '',
+    className,
+  ].filter(Boolean).join(' ')
 
   return (
     <WorkspaceContext.Provider value={manager}>
       {/* Wrapper carries style/className; DockviewReact fills it at 100% */}
-      <div className={rootClassName} style={{ width: '100%', height: '100%', ...style }}>
+      <div className={rootClassName} style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
         <DockviewReact
           components={{ view: ViewPanelHost as React.FC<IDockviewPanelProps> }}
           tabComponents={{ permanent: PermanentTab }}
           onReady={onDockviewReady}
         />
+
+        {/* Toggle buttons — always visible, positioned at the inner edge of each side pane.
+            Position is driven by direct DOM updates in updateButtonPositions (smooth drag tracking). */}
+        <button
+          ref={leftToggleRef}
+          type="button"
+          className={`workspace-pane-toggle workspace-pane-toggle-left${leftCollapsed ? ' workspace-pane-toggle--at-edge' : ''}`}
+          aria-label={leftCollapsed ? 'Expand left pane' : 'Collapse left pane'}
+          title={leftCollapsed ? 'Expand left pane' : 'Collapse left pane'}
+          onClick={() => manager.togglePane('left')}
+        >
+          <ChevronIcon direction={leftCollapsed ? 'right' : 'left'} />
+        </button>
+        <button
+          ref={rightToggleRef}
+          type="button"
+          className={`workspace-pane-toggle workspace-pane-toggle-right${rightCollapsed ? ' workspace-pane-toggle--at-edge' : ''}`}
+          aria-label={rightCollapsed ? 'Expand right pane' : 'Collapse right pane'}
+          title={rightCollapsed ? 'Expand right pane' : 'Collapse right pane'}
+          onClick={() => manager.togglePane('right')}
+        >
+          <ChevronIcon direction={rightCollapsed ? 'left' : 'right'} />
+        </button>
       </div>
     </WorkspaceContext.Provider>
   )

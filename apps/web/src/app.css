@@ -457,3 +457,50 @@ button:active { filter: brightness(0.84); }
 .workspace-root .dv-groupview:has(.editor-center-layout) > .dv-tabs-and-actions-container {
   display: none;
 }
+
+.workspace-root .workspace-view-host {
+  height: 100%;
+}
+
+/* ── Pane toggle buttons (always visible, one per side) ─────────────────── */
+
+.workspace-pane-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+  width: 16px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.workspace-pane-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* left/right position is driven by JS direct DOM updates (smooth drag tracking) */
+.workspace-pane-toggle-left,
+.workspace-pane-toggle-right {
+  transform: translateY(-50%);
+  border-radius: var(--radius);
+}
+
+/* At screen edge (pane collapsed): flatten the side touching the viewport edge */
+.workspace-pane-toggle-left.workspace-pane-toggle--at-edge {
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.workspace-pane-toggle-right.workspace-pane-toggle--at-edge {
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
