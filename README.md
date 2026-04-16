@@ -2,6 +2,13 @@
 
 A local-first, self-hostable knowledge platform for teams. Write in Markdown, collaborate in real time, extend with plugins.
 
+Features :
+https://github.com/user-attachments/assets/042153b0-1037-48ac-8f67-654fd9e89cc2
+
+Sync :
+https://github.com/user-attachments/assets/8bbb736f-fbc2-4625-b60f-250be6ab2bf4
+
+
 ## Why?
 
 Most knowledge tools make you choose: powerful or open, collaborative or local, extensible or self-hostable.
