@@ -160,10 +160,10 @@ function GraphPanel({ contributor, workspace }: {
   const label = (path: string) => path.split('/').at(-1)?.replace(/\.md$/, '') ?? path
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--background-primary, #fff)' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
       {/* Header */}
-      <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--background-modifier-border, #ccc)', flexShrink: 0 }}>
-        <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted, #888)' }}>
+      <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
           Graphe — {sim?.nodes.length ?? 0} notes · {sim?.edges.length ?? 0} liens
         </span>
       </div>
@@ -171,7 +171,7 @@ function GraphPanel({ contributor, workspace }: {
       {/* SVG */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {(!sim || sim.nodes.length === 0) ? (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', color: 'var(--text-muted, #888)', fontStyle: 'italic' }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
             Ouvre et édite des notes pour les voir apparaître.
           </div>
         ) : (
@@ -187,7 +187,7 @@ function GraphPanel({ contributor, workspace }: {
                 key={i}
                 x1={e.source.x} y1={e.source.y}
                 x2={e.target.x} y2={e.target.y}
-                stroke={e.type === 'embed' ? 'var(--color-accent, #7c3aed)' : 'var(--background-modifier-border, #aaa)'}
+                stroke={e.type === 'embed' ? 'var(--accent)' : 'var(--border)'}
                 strokeOpacity={e.type === 'embed' ? 0.6 : 0.5}
                 strokeWidth={e.type === 'embed' ? 1.5 : 1}
               />
@@ -205,16 +205,16 @@ function GraphPanel({ contributor, workspace }: {
                 >
                   <circle
                     r={isActive ? 7 : 5}
-                    fill={isActive ? 'var(--color-accent, #7c3aed)' : 'var(--text-normal, #333)'}
+                    fill={isActive ? 'var(--accent)' : 'var(--text-muted)'}
                     fillOpacity={isActive ? 1 : 0.7}
-                    stroke={isActive ? 'var(--color-accent, #7c3aed)' : 'var(--background-modifier-border, #aaa)'}
+                    stroke={isActive ? 'var(--accent)' : 'var(--border)'}
                     strokeWidth={1.5}
                   />
                   <text
                     x={0} y={-10}
                     textAnchor="middle"
                     fontSize={9}
-                    fill={isActive ? 'var(--color-accent, #7c3aed)' : 'var(--text-muted, #666)'}
+                    fill={isActive ? 'var(--accent)' : 'var(--text-muted)'}
                     style={{ pointerEvents: 'none', userSelect: 'none' }}
                   >
                     {label(n.path)}
