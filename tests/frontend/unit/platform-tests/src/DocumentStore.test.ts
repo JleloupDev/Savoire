@@ -29,42 +29,33 @@ describe('DocumentStore.open()', () => {
     expect(fetcher.getDocumentContent).toHaveBeenCalledOnce()
   })
 
-  it('returns cached doc on second open (no extra fetch)', async () => {
+  it('fetches content on each open (no cache)', async () => {
     const fetcher = makeFetcher({ 'doc-1': '# Hello' })
     const store = new DocumentStore(fetcher)
     await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
     await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    expect(fetcher.getDocumentContent).toHaveBeenCalledOnce()
+    expect(fetcher.getDocumentContent).toHaveBeenCalledTimes(2)
   })
 
-  it('increments refCount on each open', async () => {
+  it('returns refCount of 1', async () => {
     const store = new DocumentStore(makeFetcher({ 'doc-1': '' }))
-    await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
     const doc = await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    expect(doc.refCount).toBe(2)
+    expect(doc.refCount).toBe(1)
   })
 
-  it('stores size correctly', async () => {
+  it('size is always 0 (no cache)', async () => {
     const store = new DocumentStore(makeFetcher({ 'a': '', 'b': '' }))
     await store.open(VAULT, 'a', makeMeta('a', 'a.md'), 'tok')
     await store.open(VAULT, 'b', makeMeta('b', 'b.md'), 'tok')
-    expect(store.size).toBe(2)
+    expect(store.size).toBe(0)
   })
 })
 
 describe('DocumentStore.close()', () => {
-  it('decrements refCount', async () => {
+  it('is a no-op', async () => {
     const store = new DocumentStore(makeFetcher({ 'doc-1': '' }))
     await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    store.close(VAULT, 'doc-1')
-    expect(store.get(VAULT, 'doc-1')?.refCount).toBe(1)
-  })
-
-  it('evicts from cache when refCount reaches 0', async () => {
-    const store = new DocumentStore(makeFetcher({ 'doc-1': '' }))
-    await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    store.close(VAULT, 'doc-1')
+    expect(() => store.close(VAULT, 'doc-1')).not.toThrow()
     expect(store.get(VAULT, 'doc-1')).toBeUndefined()
     expect(store.size).toBe(0)
   })
@@ -76,18 +67,18 @@ describe('DocumentStore.close()', () => {
 })
 
 describe('DocumentStore.readContent()', () => {
-  it('returns cached content without fetching again', async () => {
-    const fetcher = makeFetcher({ 'doc-1': '# Cached' })
+  it('always fetches from the fetcher (no cache)', async () => {
+    const fetcher = makeFetcher({ 'doc-1': '# Fresh' })
     const store = new DocumentStore(fetcher)
     await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
     vi.mocked(fetcher.getDocumentContent).mockClear()
 
     const content = await store.readContent(VAULT, 'doc-1', 'tok')
-    expect(content).toBe('# Cached')
-    expect(fetcher.getDocumentContent).not.toHaveBeenCalled()
+    expect(content).toBe('# Fresh')
+    expect(fetcher.getDocumentContent).toHaveBeenCalledOnce()
   })
 
-  it('fetches when doc is not cached (embed of un-opened doc)', async () => {
+  it('fetches when doc was never opened', async () => {
     const fetcher = makeFetcher({ 'doc-2': '# Remote' })
     const store = new DocumentStore(fetcher)
     const content = await store.readContent(VAULT, 'doc-2', 'tok', makeMeta('doc-2', 'doc-2.md'))
@@ -95,46 +86,17 @@ describe('DocumentStore.readContent()', () => {
     expect(fetcher.getDocumentContent).toHaveBeenCalledOnce()
   })
 
-  it('caches embed reads when metadata is provided and content is non-empty', async () => {
-    const store = new DocumentStore(makeFetcher({ 'doc-2': '# Embed cached' }))
-    await store.readContent(VAULT, 'doc-2', 'tok', makeMeta('doc-2', 'doc-2.md'))
-    expect(store.size).toBe(1)
-    expect(store.get(VAULT, 'doc-2')?.refCount).toBe(0)
-  })
-
-  it('does NOT keep passive cache when fetched content is empty', async () => {
-    const store = new DocumentStore(makeFetcher({ 'doc-2': '' }))
+  it('size remains 0 after readContent', async () => {
+    const store = new DocumentStore(makeFetcher({ 'doc-2': '# Embed' }))
     await store.readContent(VAULT, 'doc-2', 'tok', makeMeta('doc-2', 'doc-2.md'))
     expect(store.size).toBe(0)
   })
 
-  it('does NOT cache the result when metadata is missing', async () => {
-    const store = new DocumentStore(makeFetcher({ 'doc-2': '' }))
-    await store.readContent(VAULT, 'doc-2', 'tok')
-    expect(store.size).toBe(0)
-  })
-
-  it('does NOT modify refCount of an open doc', async () => {
-    const store = new DocumentStore(makeFetcher({ 'doc-1': '' }))
-    await store.open(VAULT, 'doc-1', makeMeta('doc-1', 'note.md'), 'tok')
-    await store.readContent(VAULT, 'doc-1', 'tok')
-    expect(store.get(VAULT, 'doc-1')?.refCount).toBe(1)
-  })
-
-  it('deduplicates concurrent uncached reads when metadata is provided', async () => {
-    let resolveFetch: (value: string) => void = () => { throw new Error('fetch not started') }
-    const fetcher: IDocumentFetcher = {
-      getDocumentContent: vi.fn(() => new Promise((resolve) => {
-        resolveFetch = resolve
-      })),
-    }
+  it('fetches on every call — metadata or not', async () => {
+    const fetcher = makeFetcher({ 'doc-2': 'content' })
     const store = new DocumentStore(fetcher)
-    const meta = makeMeta('doc-3', 'doc-3.md')
-    const p1 = store.readContent(VAULT, 'doc-3', 'tok', meta)
-    const p2 = store.readContent(VAULT, 'doc-3', 'tok', meta)
-    expect(fetcher.getDocumentContent).toHaveBeenCalledTimes(1)
-
-    resolveFetch('# Deferred')
-    await expect(Promise.all([p1, p2])).resolves.toEqual(['# Deferred', '# Deferred'])
+    await store.readContent(VAULT, 'doc-2', 'tok', makeMeta('doc-2', 'doc-2.md'))
+    await store.readContent(VAULT, 'doc-2', 'tok')
+    expect(fetcher.getDocumentContent).toHaveBeenCalledTimes(2)
   })
 })

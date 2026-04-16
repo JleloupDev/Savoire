@@ -91,27 +91,13 @@ describe('readDocumentByPath() — attachment fallback', () => {
   })
 })
 
-describe('readDocumentByPath() — cache hit', () => {
-  it('returns cached content on second read without extra fetch', async () => {
-    const fetcher = makeFetcher({ 'id-1': '# Cached' })
-    const store = new DocumentStore(fetcher)
-    await store.open(VAULT, 'id-1', makeMeta('id-1', 'note.md'), TOKEN)
-    vi.mocked(fetcher.getDocumentContent).mockClear()
-
-    const client = new VaultClient(VAULT, TOKEN, stubStorage, store,
-      (path) => DOCS.find(d => d.path === path),
-    )
-    const content = await client.readDocumentByPath('note.md')
-    expect(content).toBe('# Cached')
-    expect(fetcher.getDocumentContent).not.toHaveBeenCalled()
-  })
-
-  it('caches first path-based read and avoids refetch on second read', async () => {
-    const fetcher = makeFetcher({ 'id-1': '# Cached from path' })
+describe('readDocumentByPath() — no cache', () => {
+  it('fetches content on every call (no cache)', async () => {
+    const fetcher = makeFetcher({ 'id-1': '# Fresh' })
     const client = makeClient(fetcher)
     await client.readDocumentByPath('note.md')
     await client.readDocumentByPath('note.md')
-    expect(fetcher.getDocumentContent).toHaveBeenCalledTimes(1)
+    expect(fetcher.getDocumentContent).toHaveBeenCalledTimes(2)
   })
 })
 
