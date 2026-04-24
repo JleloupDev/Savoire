@@ -364,17 +364,27 @@ export function EditorPage() {
       docEventUnsubRef.current?.()
       docEventUnsubRef.current = null
 
+      // DECISION: shared documents use a REST-only DocumentStore (no CRDT fetcher).
+      // The CRDT fetcher connects to /hubs/sync with the user's JWT — which the
+      // server rejects (401) when the user is not a vault member. REST GET
+      // /documents/{id}/content accepts the user token via document-level ACL.
+      const sharedDocStore = new DocumentStore(restFetcher.current)
       void application.documents.activateSharedDocument({
         vaultId: note.vaultId,
         doc: docStub,
         token,
-        documentStore: documentStore.current,
+        documentStore: sharedDocStore,
         resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
       }).then(activated => {
         vaultAPIRef.current = activated.client
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
+        // Update the ref immediately — setDocuments schedules a re-render but openFile
+        // below calls openPathInCenter synchronously, before React re-renders.
+        // Without this, documentsRef.current still holds the previous vault's docs,
+        // causing openPathInCenter to fall through to refreshDocuments() → 404.
+        documentsRef.current = [docStub]
         setActiveDoc(null)
         managerRef.current?.notifyVaultChange()
 

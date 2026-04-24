@@ -11,11 +11,11 @@ import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
 import noteEmbedPlugin from '@savoire/plugin-note-embed'
-import wikilinksPlugin from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import modulePlugin from '@savoire/plugin-module'
 import mermaidPlugin from '@savoire/plugin-mermaid'
 import tablePlugin from '@savoire/plugin-table'
-import { createBacklinksPlugin } from '@savoire/plugin-backlinks'
+import { createHashtagsPlugin } from '@savoire/plugin-hashtags'
 import { createMetadataPlugin } from '@savoire/plugin-metadata'
 import { createGraphPlugin } from '@savoire/plugin-graph'
 import type { VaultAPI, VaultPlugin, IEditorHostAPI } from '@savoire/plugin-api'
@@ -31,7 +31,7 @@ import {
   PluginAPIImpl,
   PluginLoader,
 } from '@savoire/plugin-runtime'
-import { ContentIndexingService } from '@savoire/application'
+import { ContentIndexingService, FilenameIndexContributor } from '@savoire/application'
 import { InMemoryIndexStorage } from '@savoire/platform'
 import type { EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -145,6 +145,7 @@ export function usePluginBootstrap({
       const triggers      = new TriggerRegistryImpl()
       const fileTypeRegistry = new FileTypeRegistryImpl()
       const indexRegistry = new IndexRegistryImpl()
+      indexRegistry.register(new FilenameIndexContributor())
       indexRegistryRef.current = indexRegistry
 
       const pluginApi = new PluginAPIImpl(
@@ -190,7 +191,7 @@ export function usePluginBootstrap({
 
       // see ADR-012
       defaultPluginsRef.current = [
-        mermaidPlugin, calloutPlugin, codeBlockPlugin, wikilinksPlugin,
+        mermaidPlugin, calloutPlugin, codeBlockPlugin,
         noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin,
       ]
 
@@ -206,9 +207,12 @@ export function usePluginBootstrap({
           belowOf: 'vault-browser',
           closable: false,
         }), pluginApi)
-        // Right pane: top = Plugin inspector + Metadata, bottom = Backlinks + Graph
-        await pluginLoaderRef.current.loadInternal(createBacklinksPlugin({
+        // Right pane: top = Plugin inspector + Metadata, bottom = Backlinks + Hashtags + Graph
+        await pluginLoaderRef.current.loadInternal(createWikilinksPlugin({
           belowOf: 'plugin-inspector',
+        }), pluginApi)
+        await pluginLoaderRef.current.loadInternal(createHashtagsPlugin({
+          tabOf: 'backlinks',
         }), pluginApi)
         await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
           tabOf: 'plugin-inspector',

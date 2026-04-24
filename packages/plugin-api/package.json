@@ -16,6 +16,9 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@savoire/domain-index": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.4.0"
   }

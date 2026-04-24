@@ -29,7 +29,7 @@
     "@savoire/plugin-runtime": "workspace:*",
     "@savoire/plugin-table": "workspace:*",
     "@savoire/plugin-task-list": "workspace:*",
-    "@savoire/plugin-backlinks": "workspace:*",
+    "@savoire/plugin-hashtags": "workspace:*",
     "@savoire/plugin-graph": "workspace:*",
     "@savoire/plugin-metadata": "workspace:*",
     "@savoire/plugin-vault-browser": "workspace:*",

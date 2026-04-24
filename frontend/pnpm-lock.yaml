@@ -218,9 +218,6 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
-      '@savoire/plugin-backlinks':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-backlinks
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-callout
@@ -236,6 +233,9 @@ importers:
       '@savoire/plugin-graph':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-graph
+      '@savoire/plugin-hashtags':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-hashtags
       '@savoire/plugin-mermaid':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-mermaid
@@ -309,6 +309,9 @@ importers:
 
   ../packages/application:
     dependencies:
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../domain-index
       '@savoire/platform':
         specifier: workspace:*
         version: link:../platform
@@ -322,6 +325,18 @@ importers:
       vitest:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+
+  ../packages/domain-index:
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
 
   ../packages/domain-sync:
     devDependencies:
@@ -441,6 +456,9 @@ importers:
       '@savoire/application':
         specifier: workspace:*
         version: link:../application
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../domain-index
       '@savoire/domain-sync':
         specifier: workspace:*
         version: link:../domain-sync
@@ -470,6 +488,9 @@ importers:
 
   ../packages/platform:
     dependencies:
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../domain-index
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
@@ -482,6 +503,10 @@ importers:
         version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
 
   ../packages/plugin-api:
+    dependencies:
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../domain-index
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -590,6 +615,22 @@ importers:
         version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
 
   ../packages/plugins/plugin-graph:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-hashtags:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*
@@ -749,6 +790,12 @@ importers:
         specifier: workspace:*
         version: link:../../plugin-api
     devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
