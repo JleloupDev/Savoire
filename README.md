@@ -1,6 +1,6 @@
 # Savoire
 
-A local-first, self-hostable knowledge platform for teams. Write in Markdown, collaborate in real time, extend with plugins.
+A local-first, p2p-ready, self-hostable knowledge platform for teams. Write in Markdown, collaborate in real time, extend with plugins.
 
 Features :
 https://github.com/user-attachments/assets/042153b0-1037-48ac-8f67-654fd9e89cc2
