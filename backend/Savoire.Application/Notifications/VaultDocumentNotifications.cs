@@ -42,17 +42,6 @@ public record DocumentContentIndexedNotification(
 ) : INotification;
 
 /// <summary>
-/// Published after a rename — tells clients which documents contain
-/// wikilinks pointing to the old path and need to be updated.
-/// </summary>
-public record WikilinkCascadeNotification(
-    string VaultId,
-    string OldPath,
-    string NewPath,
-    IReadOnlyList<string> AffectedDocIds  // documents containing [[OldPath]]
-) : INotification;
-
-/// <summary>
 /// Published after a document-level permission is revoked.
 /// Notifies the target user's open editor sessions via SyncHub.
 /// </summary>

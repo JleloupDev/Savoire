@@ -182,19 +182,19 @@ describe('S5 — P2P convergence after offline edits', () => {
 // ── S6 — Staleness detection ───────────────────────────────────────────────────
 
 describe('S6 — staleness detection on vault snapshot', () => {
-  it('flags a doc with entries when server updatedAt is newer than lastValidatedAt', () => {
+  it('flags a doc with entries when peer clock is higher than last indexed', () => {
     const { text } = makeDoc('#salut')
     const engine = new IndexEngine()
     engine.register(new TestHashtagContributor())
     engine.onTextChange(text, 'doc1')
 
-    engine.checkStaleness('doc1', Date.now() + 10_000)
+    engine.checkStaleness('doc1', { clock: 9999 })
     expect(engine.revalidationQueue.has('doc1')).toBe(true)
   })
 
   it('does not flag a doc with no index entries', () => {
     const index = new AnchorIndex()
-    index.checkStaleness('doc2', Date.now() + 10_000)
+    index.checkStaleness('doc2', { clock: 9999 })
     expect(index.revalidationQueue.has('doc2')).toBe(false)
   })
 
@@ -204,7 +204,7 @@ describe('S6 — staleness detection on vault snapshot', () => {
     engine.register(new TestHashtagContributor())
     engine.onTextChange(text, 'doc1')
 
-    engine.checkStaleness('doc1', Date.now() + 10_000)
+    engine.checkStaleness('doc1', { clock: 9999 })
     expect(engine.revalidationQueue.has('doc1')).toBe(true)
 
     engine.onTextChange(text, 'doc1')

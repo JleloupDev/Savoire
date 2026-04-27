@@ -41,12 +41,3 @@ public class VaultHubDocumentDeletedHandler(IHubContext<VaultHub> hub)
             ct);
 }
 
-public class VaultHubWikilinkCascadeHandler(IHubContext<VaultHub> hub)
-    : INotificationHandler<WikilinkCascadeNotification>
-{
-    public Task Handle(WikilinkCascadeNotification n, CancellationToken ct) =>
-        hub.Clients.Group(n.VaultId).SendAsync(
-            "WikilinkCascade",
-            new { n.OldPath, n.NewPath, n.AffectedDocIds },
-            ct);
-}

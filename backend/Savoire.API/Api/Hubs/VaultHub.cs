@@ -13,7 +13,7 @@ using Savoire.Application.Documents.CreateDocument;
 using Savoire.Application.Documents.DeleteDocument;
 using Savoire.Application.Documents.ListDocuments;
 using Savoire.Application.Documents.RenameDocument;
-using Savoire.Application.Metadata.IndexDocumentContent;
+using Savoire.Application.Documents.SyncDocumentTitle;
 using Savoire.Domain.Exceptions;
 
 namespace Savoire.Server.Hubs;
@@ -118,8 +118,7 @@ public sealed class VaultHub(
     {
         long seq = sequencer.Next();
 
-        await mediator.Send(new IndexDocumentContentCommand(
-            dto.DocId, dto.VaultId, dto.MarkdownContent));
+        await mediator.Send(new SyncDocumentTitleCommand(dto.DocId, dto.MarkdownContent));
 
         var evt = new IndexOpAppliedEvent(seq, dto.DocId, dto.Path, dto.MarkdownContent);
 

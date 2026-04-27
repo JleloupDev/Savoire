@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { ICollaborativeText } from './ICollaborativeText'
 import type { IndexEntry } from './IndexEntry'
+import type { CrdtVersion } from './CrdtVersion'
 
 // ── Utility functions ──────────────────────────────────────────────────────────
 
@@ -30,9 +31,9 @@ export class AnchorIndex {
   private readonly byDoc = new Map<string, Map<string, Set<string>>>()
   // namespace → value → Set<entryId>
   private readonly byValue = new Map<string, Map<string, Set<string>>>()
-  // Per-doc timestamp of last full validation (used for staleness detection)
-  private readonly lastValidatedAt = new Map<string, number>()
-  // Docs flagged as potentially stale (server has newer content we haven't indexed)
+  // Per-doc CRDT version at last full validation (used for staleness detection)
+  private readonly lastIndexedVersion = new Map<string, CrdtVersion>()
+  // Docs flagged as potentially stale (a peer has a higher crdtVersion than we last indexed)
   readonly revalidationQueue = new Set<string>()
 
   get size(): number { return this.entries.size }
@@ -89,16 +90,17 @@ export class AnchorIndex {
     })
   }
 
-  markValidated(docId: string): void {
-    this.lastValidatedAt.set(docId, Date.now())
+  markValidated(docId: string, version?: CrdtVersion): void {
+    if (version) this.lastIndexedVersion.set(docId, version)
     this.revalidationQueue.delete(docId)
   }
 
-  // Flag a doc for revalidation if the server has content newer than our last validation.
-  checkStaleness(docId: string, serverUpdatedAt: number): void {
-    const lastValidated = this.lastValidatedAt.get(docId) ?? -1
+  // Flag a doc for revalidation if a peer reports a higher crdtVersion than we last indexed.
+  // Called when receiving FileTree gossip from peers at connection time.
+  checkStaleness(docId: string, current: CrdtVersion): void {
+    const last = this.lastIndexedVersion.get(docId)
     const hasEntries = this._hasEntriesForDoc(docId)
-    if (hasEntries && serverUpdatedAt > lastValidated) {
+    if (hasEntries && (!last || current.clock > last.clock)) {
       this.revalidationQueue.add(docId)
     }
   }

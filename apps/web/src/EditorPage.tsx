@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { CrdtDocumentFetcher, RestDocumentFetcher, RestVaultStorage, DocumentRoomClient } from '@savoire/infrastructure-sync'
-import { VaultClient, DocumentStore } from '@savoire/platform'
+import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -166,7 +166,7 @@ export function EditorPage() {
     fileTypeRegistryRef,
     onControllerReadyRef,
     contentIndexingServiceRef,
-    graphContributorRef,
+    getGraphContributor,
     pluginLoaderRef,
     triggersRef,
   } = usePluginBootstrap({
@@ -239,17 +239,18 @@ export function EditorPage() {
       vaultAPIRef.current = active.client
       onChanged()
 
-      // Connect index sync to the new vault hub
+      // Connect index sync to the new vault hub, then restore its persisted index snapshot.
       contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveHub())
+      await contentIndexingServiceRef.current?.switchVault(new ServerIndexStorage(vault.id, () => tokenRef.current))
 
-      if (graphContributorRef.current) {
-        const contributor = graphContributorRef.current
+      const graphContributor = getGraphContributor()
+      if (graphContributor) {
         fetch(`/api/v1/vaults/${vault.id}/links`, {
           headers: { Authorization: `Bearer ${tok}` },
         })
           .then(r => r.ok ? r.json() : [])
           .then((links: Array<{ sourceId: string; sourcePath: string; targetId: string | null; targetPath: string; linkType: string }>) => {
-            contributor.bulkLoad(links)
+            graphContributor.bulkLoad(links)
             managerRef.current?.notifyDocumentIndexed('', '')
           })
           .catch(err => console.warn('[GraphPlugin] preload links failed', err))
@@ -261,7 +262,7 @@ export function EditorPage() {
     })
     await switchChainRef.current
   // switchToVault only uses stable refs (lastSwitchTsRef, selectedVaultRef, vaultAPIRef,
-  // vaultStorage, documentStore, documentsRef, contentIndexingServiceRef, graphContributorRef,
+  // vaultStorage, documentStore, documentsRef, contentIndexingServiceRef, getGraphContributor,
   // managerRef) and state setters — application.documents is stable (created once in appRootRef).
   }, [application.documents])
 

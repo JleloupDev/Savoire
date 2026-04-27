@@ -6,10 +6,10 @@ import type { HashtagIndexContributor } from './HashtagIndexContributor'
 
 function HashtagsPanel({
   ctx,
-  contributor,
+  getContributor,
 }: {
   ctx: ViewContext
-  contributor: HashtagIndexContributor
+  getContributor: () => HashtagIndexContributor
 }) {
   const { workspace } = ctx
 
@@ -22,11 +22,10 @@ function HashtagsPanel({
 
   const refresh = useCallback((path: string | null) => {
     if (!path) { setTags([]); return }
-    // HashtagIndexContributor indexes by docId (which is set to path by ContentIndexingService)
-    setTags(contributor.getHashtagsForDoc(path))
+    setTags(getContributor().getHashtagsForDoc(path))
     setSelectedTag(null)
     setDocsForTag([])
-  }, [contributor])
+  }, [getContributor])
 
   useEffect(() => { refresh(currentPath) }, [currentPath, refresh])
 
@@ -39,7 +38,7 @@ function HashtagsPanel({
 
   const selectTag = (tag: string) => {
     setSelectedTag(tag)
-    setDocsForTag(contributor.getDocsForHashtag(tag))
+    setDocsForTag(getContributor().getDocsForHashtag(tag))
   }
 
   const T = {
@@ -107,11 +106,11 @@ function HashtagsPanel({
 export class HashtagsWidget implements Widget {
   constructor(
     private readonly ctx: ViewContext,
-    private readonly contributor: HashtagIndexContributor,
+    private readonly getContributor: () => HashtagIndexContributor,
   ) {}
 
   render() {
-    return <HashtagsPanel ctx={this.ctx} contributor={this.contributor} />
+    return <HashtagsPanel ctx={this.ctx} getContributor={this.getContributor} />
   }
 
   dispose(): void {}

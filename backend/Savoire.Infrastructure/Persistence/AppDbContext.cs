@@ -15,7 +15,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefResourceTypeEntity>   RefResourceTypes   => Set<RefResourceTypeEntity>();
     public DbSet<RefPermissionEntity>     RefPermissions     => Set<RefPermissionEntity>();
     public DbSet<RefVaultRoleEntity>      RefVaultRoles      => Set<RefVaultRoleEntity>();
-    public DbSet<RefLinkTypeEntity>       RefLinkTypes       => Set<RefLinkTypeEntity>();
     public DbSet<RefSubjectTypeEntity>    RefSubjectTypes    => Set<RefSubjectTypeEntity>();
     public DbSet<RefSyncChangeTypeEntity> RefSyncChangeTypes => Set<RefSyncChangeTypeEntity>();
     public DbSet<VaultEntity>             Vaults             => Set<VaultEntity>();
@@ -27,8 +26,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefreshToken>              RefreshTokens       => Set<RefreshToken>();
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
-    public DbSet<DocumentMetaEntity>        DocumentMetas       => Set<DocumentMetaEntity>();
-    public DbSet<DocLinkEntity>             DocLinks            => Set<DocLinkEntity>();
     public DbSet<IndexSnapshotEntity>       IndexSnapshots      => Set<IndexSnapshotEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -39,7 +36,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureRefTable<RefResourceTypeEntity>(modelBuilder, "ref_resource_types");
         ConfigureRefTable<RefPermissionEntity>  (modelBuilder, "ref_permissions");
         ConfigureRefTable<RefVaultRoleEntity>   (modelBuilder, "ref_vault_roles");
-        ConfigureRefTable<RefLinkTypeEntity>    (modelBuilder, "ref_link_types");
         ConfigureRefTable<RefSubjectTypeEntity> (modelBuilder, "ref_subject_types");
         ConfigureRefTable<RefSyncChangeTypeEntity>(modelBuilder, "ref_sync_change_types");
 
@@ -56,10 +52,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             new() { Value = "owner",  Description = "Vault creator — cannot be removed, has all permissions." },
             new() { Value = "editor", Description = "Can read and write documents." },
             new() { Value = "viewer", Description = "Read-only access to all documents in the vault." });
-
-        modelBuilder.Entity<RefLinkTypeEntity>().HasData(
-            new() { Value = "wikilink", Description = "Standard wikilink: [[path]]" },
-            new() { Value = "embed",    Description = "Embedded content: ![[path]]" });
 
         modelBuilder.Entity<RefSubjectTypeEntity>().HasData(
             new RefSubjectTypeEntity { Value = "user", Description = "An individual user account." });
@@ -198,47 +190,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasOne<RefSubjectTypeEntity>()
              .WithMany()
              .HasForeignKey(x => x.SubjectType)
-             .HasPrincipalKey(r => r.Value)
-             .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        modelBuilder.Entity<DocumentMetaEntity>(e =>
-        {
-            e.ToTable("document_metas");
-            e.HasKey(x => x.DocumentId);
-            e.Property(x => x.DocumentId).HasColumnName("document_id");
-            e.Property(x => x.VaultId).HasColumnName("vault_id").IsRequired();
-            e.Property(x => x.ContentType).HasColumnName("content_type").HasDefaultValue("text/markdown");
-            e.Property(x => x.DerivedFrom).HasColumnName("derived_from");
-            e.Property(x => x.DerivedBy).HasColumnName("derived_by");
-            e.Property(x => x.Tags).HasColumnName("tags").HasDefaultValue("[]");
-            e.Property(x => x.Frontmatter).HasColumnName("frontmatter").HasDefaultValue("{}");
-            e.Property(x => x.IndexedAt).HasColumnName("indexed_at").IsRequired();
-            e.HasIndex(x => x.VaultId).HasDatabaseName("idx_doc_metas_vault");
-            e.HasIndex(x => x.DerivedFrom).HasDatabaseName("idx_doc_metas_derived_from");
-        });
-
-        modelBuilder.Entity<DocLinkEntity>(e =>
-        {
-            e.ToTable("doc_links");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasColumnName("id");
-            e.Property(x => x.SourceId).HasColumnName("source_id").IsRequired();
-            e.Property(x => x.VaultId).HasColumnName("vault_id").IsRequired();
-            e.Property(x => x.TargetId).HasColumnName("target_id");
-            e.Property(x => x.TargetPath).HasColumnName("target_path").IsRequired();
-            e.Property(x => x.LinkType).HasColumnName("link_type").HasDefaultValue("wikilink");
-            e.HasIndex(x => x.SourceId).HasDatabaseName("idx_doc_links_source");
-            e.HasIndex(x => x.TargetId).HasDatabaseName("idx_doc_links_target");
-            e.HasIndex(x => new { x.VaultId, x.TargetPath }).HasDatabaseName("idx_doc_links_target_path");
-            e.HasOne(x => x.Meta)
-             .WithMany(m => m.Links)
-             .HasForeignKey(x => x.SourceId)
-             .HasPrincipalKey(m => m.DocumentId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasOne<RefLinkTypeEntity>()
-             .WithMany()
-             .HasForeignKey(x => x.LinkType)
              .HasPrincipalKey(r => r.Value)
              .OnDelete(DeleteBehavior.Restrict);
         });

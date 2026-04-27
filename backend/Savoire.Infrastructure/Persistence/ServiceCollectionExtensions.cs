@@ -140,9 +140,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IResourcePermissionRepository, EfResourcePermissionRepository>();
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
 
-        // Metadata & Index repositories
-        services.AddScoped<IDocumentMetaRepository,  EfDocumentMetaRepository>();
-        services.AddScoped<IDocLinkRepository,        EfDocLinkRepository>();
+        // Index repositories
         services.AddScoped<IIndexSnapshotRepository,  EfIndexSnapshotRepository>();
 
         // Domain Auth services

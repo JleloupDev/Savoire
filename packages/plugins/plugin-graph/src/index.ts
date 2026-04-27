@@ -6,12 +6,12 @@ import { GraphWidget } from './GraphWidget'
 
 export interface GraphPluginHandle {
   plugin: VaultPlugin
-  /** Contributor exposé pour permettre un bulkLoad au chargement du vault. */
-  contributor: GraphIndexContributor
+  /** Always returns the current contributor instance (rebuilt on each vault switch). */
+  getContributor: () => GraphIndexContributor
 }
 
 export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPluginHandle {
-  const contributor = new GraphIndexContributor()
+  let current = new GraphIndexContributor()
 
   const plugin: VaultPlugin = {
     manifest: {
@@ -23,8 +23,7 @@ export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPlugin
     },
 
     async onload(api: PluginAPI) {
-      // Register the index contributor so it receives onOp events
-      api.index?.register(contributor)
+      api.index?.registerFactory(() => { current = new GraphIndexContributor(); return current })
 
       api.views.register({
         id: 'graph',
@@ -35,7 +34,7 @@ export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPlugin
         initialSize: 320,
         closable: true,
         createView(ctx) {
-          return new GraphWidget(ctx, contributor)
+          return new GraphWidget(ctx, () => current)
         },
       })
     },
@@ -43,7 +42,7 @@ export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPlugin
     async onunload() {},
   }
 
-  return { plugin, contributor }
+  return { plugin, getContributor: () => current }
 }
 
 export { GraphIndexContributor } from './GraphIndexContributor'

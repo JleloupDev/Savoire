@@ -132,7 +132,7 @@ export class BlockRegistryImpl implements BlockRegistry {
 type StrHook = (s: string) => string | Promise<string>
 type UnknownHook = (v: unknown) => unknown | Promise<unknown>
 type VoidHook<T> = (v: T) => void
-type StabilizedHook = (docId: string, path: string, content: string) => void
+type StabilizedHook = (docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion) => void
 
 export class HookRegistryImpl implements HookRegistry {
   private beforeParseHooks: StrHook[] = []
@@ -183,27 +183,38 @@ export class HookRegistryImpl implements HookRegistry {
     this.documentSaveHooks.forEach(h => h(content))
   }
 
-  runDocumentStabilized(docId: string, path: string, content: string): void {
-    this.documentStabilizedHooks.forEach(h => h(docId, path, content))
+  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion): void {
+    this.documentStabilizedHooks.forEach(h => h(docId, path, content, crdtVersion))
   }
 }
 
 // ─── IndexRegistryImpl ────────────────────────────────────────────────────
 
 export class IndexRegistryImpl implements IIndexRegistry {
-  private readonly contributors = new Map<string, IndexContributor>()
+  private readonly factories = new Map<string, () => IndexContributor>()
+  private current = new Map<string, IndexContributor>()
 
-  register(contributor: IndexContributor): void {
-    this.contributors.set(contributor.namespace, contributor)
-    console.debug(`[IndexRegistry] registered contributor: ${contributor.namespace}`)
+  registerFactory(factory: () => IndexContributor): void {
+    const instance = factory()
+    this.factories.set(instance.namespace, factory)
+    this.current.set(instance.namespace, instance)
+    console.debug(`[IndexRegistry] registered factory: ${instance.namespace}`)
+  }
+
+/** Recreates all contributor instances from factories. Call on vault switch. */
+  rebuild(): void {
+    this.current = new Map(
+      [...this.factories.entries()].map(([ns, factory]) => [ns, factory()])
+    )
+    console.debug(`[IndexRegistry] rebuilt ${this.current.size} contributors`)
   }
 
   getAll(): IndexContributor[] {
-    return [...this.contributors.values()]
+    return [...this.current.values()]
   }
 
   get(namespace: string): IndexContributor | undefined {
-    return this.contributors.get(namespace)
+    return this.current.get(namespace)
   }
 }
 

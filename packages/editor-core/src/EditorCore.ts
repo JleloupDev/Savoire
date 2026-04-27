@@ -248,7 +248,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               const content = update.view.state.doc.toString()
               const docId = this.options.docId ?? ''
               const path  = this.activeFile ?? ''
-              this.pluginAPI.hooks.runDocumentStabilized(docId, path, content)
+              let clock = 0
+              for (const c of Y.decodeStateVector(Y.encodeStateVector(this.ydoc)).values()) clock += c
+              this.pluginAPI.hooks.runDocumentStabilized(docId, path, content, { clock })
             }, 2000)
           }
           if (update.selectionSet) {

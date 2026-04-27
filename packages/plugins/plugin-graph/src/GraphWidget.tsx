@@ -90,8 +90,8 @@ function tickSimulation(nodes: SimNode[], edges: SimEdge[], cx: number, cy: numb
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-function GraphPanel({ contributor, workspace }: {
-  contributor: GraphIndexContributor
+function GraphPanel({ getContributor, workspace }: {
+  getContributor: () => GraphIndexContributor
   workspace: WorkspaceAPI
 }) {
   const [, setTick]            = useState(0)
@@ -117,12 +117,12 @@ function GraphPanel({ contributor, workspace }: {
 
   // Rebuild sim when index changes
   const rebuild = useCallback(() => {
-    const nodes = contributor.getNodes()
-    const edges = contributor.getAllEdges()
+    const nodes = getContributor().getNodes()
+    const edges = getContributor().getAllEdges()
     const { simNodes, simEdges } = buildSimulation(nodes, edges)
     simRef.current = { nodes: simNodes, edges: simEdges }
     setTick(t => t + 1)
-  }, [contributor])
+  }, [getContributor])
 
   useEffect(() => {
     rebuild()
@@ -236,11 +236,11 @@ import type { Widget } from '@savoire/plugin-api'
 export class GraphWidget implements Widget {
   constructor(
     private readonly ctx: ViewContext,
-    private readonly contributor: GraphIndexContributor,
+    private readonly getContributor: () => GraphIndexContributor,
   ) {}
 
   render() {
-    return <GraphPanel contributor={this.contributor} workspace={this.ctx.workspace} />
+    return <GraphPanel getContributor={this.getContributor} workspace={this.ctx.workspace} />
   }
 
   dispose(): void {}

@@ -9,8 +9,6 @@ export function createHashtagsPlugin(options: {
   belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
-  const contributor = new HashtagIndexContributor()
-
   return {
     manifest: {
       id: 'plugin-hashtags',
@@ -21,7 +19,8 @@ export function createHashtagsPlugin(options: {
     },
 
     async onload(api: PluginAPI) {
-      api.index?.register(contributor)
+      let current = new HashtagIndexContributor()
+      api.index?.registerFactory(() => { current = new HashtagIndexContributor(); return current })
 
       api.views.register({
         id: 'hashtags',
@@ -33,7 +32,7 @@ export function createHashtagsPlugin(options: {
         initialSize: options.initialSize ?? 280,
         closable: true,
         createView(ctx) {
-          return new HashtagsWidget(ctx, contributor)
+          return new HashtagsWidget(ctx, () => current)
         },
       })
     },

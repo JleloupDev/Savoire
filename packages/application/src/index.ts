@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 export * from './contracts'
 export * from './FilenameIndexContributor'
+export * from './MetadataIndexContributor'
 export * from './ITextChangeSource'
 export * from './RealtimeIndexingService'
 export * from './ContentIndexingService'

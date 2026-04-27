@@ -11,8 +11,6 @@ export function createBacklinksPlugin(_options: {
   belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
-  const contributor = new BacklinksIndexContributor()
-
   return {
     manifest: {
       id: 'plugin-backlinks',
@@ -23,7 +21,7 @@ export function createBacklinksPlugin(_options: {
     },
 
     async onload(api: PluginAPI) {
-      api.index?.register(contributor)
+      api.index?.registerFactory(() => new BacklinksIndexContributor())
     },
 
     async onunload() {},

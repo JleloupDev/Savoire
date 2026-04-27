@@ -257,6 +257,9 @@ importers:
       '@savoire/plugin-runtime':
         specifier: workspace:*
         version: link:../../packages/plugin-runtime
+      '@savoire/plugin-search':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-search
       '@savoire/plugin-table':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-table
@@ -723,6 +726,25 @@ importers:
         specifier: workspace:*
         version: link:../../plugin-api
     devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-search:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -3236,6 +3258,9 @@ packages:
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
+
+  minisearch@7.2.0:
+    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
 
   mlly@1.8.1:
     resolution: {integrity: sha512-SnL6sNutTwRWWR/vcmCYHSADjiEesp5TGQQ0pXyLhW5IoeibRlF/CbSLailbB3CNqJUk9cVJ9dUDnbD7GrcHBQ==}
@@ -7197,6 +7222,8 @@ snapshots:
       brace-expansion: 2.0.2
 
   minimist@1.2.8: {}
+
+  minisearch@7.2.0: {}
 
   mlly@1.8.1:
     dependencies:

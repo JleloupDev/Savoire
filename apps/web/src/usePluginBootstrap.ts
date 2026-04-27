@@ -18,6 +18,7 @@ import tablePlugin from '@savoire/plugin-table'
 import { createHashtagsPlugin } from '@savoire/plugin-hashtags'
 import { createMetadataPlugin } from '@savoire/plugin-metadata'
 import { createGraphPlugin } from '@savoire/plugin-graph'
+import { createSearchPlugin } from '@savoire/plugin-search'
 import type { VaultAPI, VaultPlugin, IEditorHostAPI } from '@savoire/plugin-api'
 import {
   BlockRegistryImpl,
@@ -31,7 +32,7 @@ import {
   PluginAPIImpl,
   PluginLoader,
 } from '@savoire/plugin-runtime'
-import { ContentIndexingService, FilenameIndexContributor } from '@savoire/application'
+import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor } from '@savoire/application'
 import { InMemoryIndexStorage } from '@savoire/platform'
 import type { EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -66,7 +67,8 @@ export interface PluginBootstrapResult {
   /** Always-current callback: notify inspector whenever an editor gains/loses focus. */
   onControllerReadyRef: MutableRefObject<(ctrl: EditorController | null) => void>
   contentIndexingServiceRef: MutableRefObject<ContentIndexingService | null>
-  graphContributorRef: MutableRefObject<GraphIndexContributor | null>
+  /** Always returns the current GraphIndexContributor (rebuilt on vault switch). */
+  getGraphContributor: () => GraphIndexContributor | null
   pluginLoaderRef: MutableRefObject<PluginLoader>
   triggersRef: MutableRefObject<InstanceType<typeof TriggerRegistryImpl> | null>
 }
@@ -92,7 +94,7 @@ export function usePluginBootstrap({
   const pluginsBootstrapPromiseRef = useRef<Promise<void> | null>(null)
   const indexRegistryRef = useRef<IndexRegistryImpl | null>(null)
   const contentIndexingServiceRef = useRef<ContentIndexingService | null>(null)
-  const graphContributorRef = useRef<GraphIndexContributor | null>(null)
+  const getGraphContributorRef = useRef<(() => GraphIndexContributor | null)>(() => null)
   const triggersRef = useRef<InstanceType<typeof TriggerRegistryImpl> | null>(null)
   const fileTypeRegistryRef = useRef<InstanceType<typeof FileTypeRegistryImpl> | null>(null)
 
@@ -145,8 +147,15 @@ export function usePluginBootstrap({
       const triggers      = new TriggerRegistryImpl()
       const fileTypeRegistry = new FileTypeRegistryImpl()
       const indexRegistry = new IndexRegistryImpl()
-      indexRegistry.register(new FilenameIndexContributor())
+      indexRegistry.registerFactory(() => new FilenameIndexContributor())
+      indexRegistry.registerFactory(() => new MetadataIndexContributor())
       indexRegistryRef.current = indexRegistry
+
+      // Expose Level 2 metadata to plugins via the stable vault proxy.
+      // Always reads from the current contributor instance (rebuilt on vault switch).
+      const getMetadataContributor = () => indexRegistry.get('metadata') as MetadataIndexContributor | undefined
+      vaultProxy.getMetadata = (docId: string) => getMetadataContributor()?.getMetadata(docId) ?? null
+      vaultProxy.getFileTree = () => getMetadataContributor()?.getAllMetadata().map(m => ({ docId: m.docId, path: m.path, crdtVersion: m.crdtVersion })) ?? []
 
       const pluginApi = new PluginAPIImpl(
         new BlockRegistryImpl(slash),
@@ -207,6 +216,9 @@ export function usePluginBootstrap({
           belowOf: 'vault-browser',
           closable: false,
         }), pluginApi)
+        // TEMPORARY: placement manuel des panels dans les panes gauche/droite.
+        // À remplacer par un système de layout déclaratif côté plugin (chaque plugin
+        // déclare ses préférences de placement, le workspace les résout).
         // Right pane: top = Plugin inspector + Metadata, bottom = Backlinks + Hashtags + Graph
         await pluginLoaderRef.current.loadInternal(createWikilinksPlugin({
           belowOf: 'plugin-inspector',
@@ -217,11 +229,15 @@ export function usePluginBootstrap({
         await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
           tabOf: 'plugin-inspector',
         }), pluginApi)
-        const { plugin: graphPlugin, contributor: graphContributor } = createGraphPlugin({
+        const { plugin: graphPlugin, getContributor: getGraphContributor } = createGraphPlugin({
           tabOf: 'backlinks',
         })
-        graphContributorRef.current = graphContributor
+        getGraphContributorRef.current = getGraphContributor
         await pluginLoaderRef.current.loadInternal(graphPlugin, pluginApi)
+        const { plugin: searchPlugin } = createSearchPlugin({
+          belowOf: 'file-tree',
+        })
+        await pluginLoaderRef.current.loadInternal(searchPlugin, pluginApi)
         // excalidraw and mindmap register FileTypeSpec in the workspace API (file-type handlers).
         await pluginLoaderRef.current.loadInternal(excalidrawPlugin, pluginApi)
         await pluginLoaderRef.current.loadInternal(mindmapPlugin, pluginApi)
@@ -236,6 +252,7 @@ export function usePluginBootstrap({
         contentIndexingServiceRef.current?.setOnIndexed((docId, path) => {
           managerRef.current?.notifyDocumentIndexed(docId, path)
         })
+        // restore() est appelé à chaque activation de vault (dans EditorPage), pas ici — pas de vaultId disponible.
         contentIndexingServiceRef.current?.init()
       })()
     }
@@ -255,7 +272,7 @@ export function usePluginBootstrap({
     fileTypeRegistryRef,
     onControllerReadyRef,
     contentIndexingServiceRef,
-    graphContributorRef,
+    getGraphContributor: getGraphContributorRef.current,
     pluginLoaderRef,
     triggersRef,
   }

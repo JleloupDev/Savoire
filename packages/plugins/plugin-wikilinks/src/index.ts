@@ -22,9 +22,6 @@ export function createWikilinksPlugin(options: {
   belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
-  const wikilinkContributor = new WikilinkIndexContributor()
-  const headingContributor = new HeadingIndexContributor()
-
   return {
     manifest: {
       id: 'plugin-wikilinks',
@@ -45,8 +42,8 @@ export function createWikilinksPlugin(options: {
         )
       })
 
-      api.index?.register(wikilinkContributor)
-      api.index?.register(headingContributor)
+      api.index?.registerFactory(() => new WikilinkIndexContributor())
+      api.index?.registerFactory(() => new HeadingIndexContributor())
 
       api.views.register({
         id: 'backlinks',

@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
+      '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
       '@savoire/plugin-callout': src('plugin-callout'),
       '@savoire/plugin-filetree': src('plugin-filetree'),
       '@savoire/plugin-wikilinks': src('plugin-wikilinks'),

@@ -12,7 +12,6 @@ namespace Savoire.Application.Documents.RenameDocument;
 public class RenameDocumentCommandHandler(
     IVaultRepository    vaults,
     IDocumentRepository documents,
-    IDocLinkRepository  docLinks,
     IPublisher          publisher)
     : IRequestHandler<RenameDocumentCommand, DocumentDto>
 {
@@ -33,23 +32,8 @@ public class RenameDocumentCommandHandler(
         doc.Rename(cmd.NewPath);
         await documents.UpdateAsync(doc, ct);
 
-        // Update the link index: links that pointed to oldPath
-        // are updated to newPath with the same targetId (stable UUID).
-        await docLinks.UpdateTargetPathAsync(vaultId, oldPath, cmd.NewPath, doc.Id, ct);
-
-        // Find documents that contain [[oldPath]] for the client-side CRDT cascade
-        var affectedLinks = await docLinks.GetByTargetPathAsync(vaultId, cmd.NewPath, ct);
-        var affectedDocIds = affectedLinks.Select(l => l.SourceId).Distinct().ToList();
-
         await publisher.Publish(new DocumentRenamedNotification(
             doc.Id, doc.VaultId, oldPath, doc.Path, doc.UpdatedAt), ct);
-
-        // Notify clients of the required wikilink cascade
-        if (affectedDocIds.Count > 0)
-        {
-            await publisher.Publish(new WikilinkCascadeNotification(
-                vaultId, oldPath, cmd.NewPath, affectedDocIds), ct);
-        }
 
         return DocumentDto.FromDomain(doc);
     }

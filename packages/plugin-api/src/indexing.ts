@@ -7,6 +7,9 @@ export type {
   ICollaborativeText,
   IndexEntry,
   IndexContributor,
+  CrdtVersion,
+  DocMetadata,
+  FileTreeEntry,
 } from '@savoire/domain-index'
 export { AnchorIndex, resolveEntry, validateEntry } from '@savoire/domain-index'
 export { anchorKey } from '@savoire/domain-index'
@@ -34,7 +37,8 @@ export interface IIndexStoreAPI {
 // ISP: plugins that register contributors receive this narrow interface.
 
 export interface IIndexContributorRegistry {
-  register(contributor: import('@savoire/domain-index').IndexContributor): void
+  /** Register a factory — a fresh instance is created on each vault switch. */
+  registerFactory(factory: () => import('@savoire/domain-index').IndexContributor): void
 }
 
 // ─── Combined (used by application layer wiring) ─────────────────────────────
@@ -46,4 +50,7 @@ export interface IPluginIndexAPI extends IIndexContributorRegistry {}
 
 export interface IIndexRegistry extends IPluginIndexAPI {
   getAll(): import('@savoire/domain-index').IndexContributor[]
+  get(namespace: string): import('@savoire/domain-index').IndexContributor | undefined
+  /** Recreates all contributor instances from their registered factories. */
+  rebuild(): void
 }

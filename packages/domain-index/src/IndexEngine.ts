@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { ICollaborativeText } from './ICollaborativeText'
 import type { IndexContributor } from './IndexContributor'
+import type { CrdtVersion } from './CrdtVersion'
 import { AnchorIndex } from './AnchorIndex'
 
 export class IndexEngine {
@@ -25,8 +26,8 @@ export class IndexEngine {
     return this._index.query(namespace)
   }
 
-  checkStaleness(docId: string, serverUpdatedAt: number): void {
-    this._index.checkStaleness(docId, serverUpdatedAt)
+  checkStaleness(docId: string, current: CrdtVersion): void {
+    this._index.checkStaleness(docId, current)
   }
 
   // ── Registration ───────────────────────────────────────────────────────────
@@ -39,11 +40,11 @@ export class IndexEngine {
   // ── Event handlers ─────────────────────────────────────────────────────────
 
   // Called on every CRDT text change. Drives anchor-based contributors.
-  onTextChange(text: ICollaborativeText, docId: string): void {
+  onTextChange(text: ICollaborativeText, docId: string, version?: CrdtVersion): void {
     for (const c of this.contributors) {
       c.onTextChange?.(text, docId, this._index)
     }
-    this._index.markValidated(docId)
+    this._index.markValidated(docId, version)
     this._index.revalidationQueue.delete(docId)
   }
 

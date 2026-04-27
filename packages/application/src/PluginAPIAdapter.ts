@@ -3,7 +3,9 @@
 import type {
   BlockRegistry,
   CommandRegistry,
+  DocMetadata,
   EditorPositionAPI,
+  FileTreeEntry,
   FileTypeRegistry,
   HookRegistry,
   IPluginAPI,
@@ -24,9 +26,13 @@ import type {
   ViewRegistry,
   WorkspaceAPI,
 } from '@savoire/plugin-api'
+import type { MetadataIndexContributor } from './MetadataIndexContributor'
 
 export class PluginVaultAPIAdapter implements IPluginVaultAPI {
-  constructor(private readonly inner: VaultAPI) {}
+  constructor(
+    private readonly inner: VaultAPI,
+    private readonly metadata?: MetadataIndexContributor,
+  ) {}
 
   read(documentId: string): Promise<string> { return this.inner.read(documentId) }
   readDocumentByPath(path: string): Promise<string> { return this.inner.readDocumentByPath(path) }
@@ -43,6 +49,12 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   deleteFolder(path: string): Promise<void> { return this.inner.deleteFolder?.(path) ?? Promise.resolve() }
   getVaultId(): string { return this.inner.getVaultId?.() ?? '' }
   getToken(): string { return this.inner.getToken?.() ?? '' }
+  getFileTree(): FileTreeEntry[] {
+    return this.metadata?.getAllMetadata().map(m => ({ docId: m.docId, path: m.path, crdtVersion: m.crdtVersion })) ?? []
+  }
+  getMetadata(docId: string): DocMetadata | null {
+    return this.metadata?.getMetadata(docId) ?? null
+  }
 }
 
 export class PluginWorkspaceAPIAdapter implements IPluginWorkspaceAPI {
@@ -128,7 +140,7 @@ export class PluginHooksAPIAdapter implements IPluginHooksAPI {
   onDocumentStabilized(hook: Parameters<HookRegistry['onDocumentStabilized']>[0]): void { this.inner.onDocumentStabilized(hook) }
   runDocumentOpen(path: string): void { this.inner.runDocumentOpen(path) }
   runDocumentSave(content: string): void { this.inner.runDocumentSave(content) }
-  runDocumentStabilized(docId: string, path: string, content: string): void { this.inner.runDocumentStabilized(docId, path, content) }
+  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion): void { this.inner.runDocumentStabilized(docId, path, content, crdtVersion) }
 }
 
 export interface PluginAPIAdapterDeps {
@@ -143,6 +155,7 @@ export interface PluginAPIAdapterDeps {
   triggers: TriggerRegistry
   editor?: EditorPositionAPI
   toolbar?: ToolbarCommandRegistry
+  metadata?: MetadataIndexContributor
 }
 
 export class PluginAPIAdapter implements IPluginAPI {
@@ -159,7 +172,7 @@ export class PluginAPIAdapter implements IPluginAPI {
   readonly toolbar: IPluginToolbarAPI
 
   constructor(deps: PluginAPIAdapterDeps) {
-    this.vault     = new PluginVaultAPIAdapter(deps.vault)
+    this.vault     = new PluginVaultAPIAdapter(deps.vault, deps.metadata)
     this.workspace = new PluginWorkspaceAPIAdapter(deps.workspace)
     this.commands  = new PluginCommandsAPIAdapter(deps.commands)
     this.views     = new PluginViewsAPIAdapter(deps.views)
