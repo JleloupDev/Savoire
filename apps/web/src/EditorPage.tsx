@@ -17,16 +17,117 @@ import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { usePluginBootstrap } from './usePluginBootstrap'
+import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 
 initTheme()
 
-// ── Icon button ───────────────────────────────────────────────────────────────
+// ── Icon rail ─────────────────────────────────────────────────────────────────
 
-function IconBtn({ onClick, children, title }: { onClick: () => void; children: React.ReactNode; title?: string }) {
+import type { RibbonItem } from '@savoire/workspace'
+
+function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, activeAccount, accounts, onSwitchAccount, onAdmin, onLogout }: {
+  ribbonItems: RibbonItem[]
+  activeViewId: string | null
+  onRibbonClick: (item: RibbonItem) => void
+  onSettingsClick: () => void
+  activeAccount: AccountEntry | null
+  accounts: AccountEntry[]
+  onSwitchAccount: (acc: AccountEntry) => void
+  onAdmin: () => void
+  onLogout: () => void
+}) {
+  const [avatarOpen, setAvatarOpen] = useState(false)
+
+  const railBtn = (item: RibbonItem) => {
+    const isActive = activeViewId !== null && (
+      item.type === 'group'
+        ? item.id === activeViewId  // approximate: set by manager on group toggle
+        : item.id === activeViewId
+    )
+    return (
+      <button
+        key={item.id}
+        title={item.title}
+        onClick={() => onRibbonClick(item)}
+        style={{
+          width: 40, height: 40,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: 'none', borderRadius: 8,
+          background: isActive ? 'var(--accent-dim)' : 'transparent',
+          color: isActive ? 'var(--accent)' : 'var(--text-faint)',
+          cursor: 'pointer',
+          transition: 'background 0.12s, color 0.12s',
+          margin: '0 4px',
+        }}
+        onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)' } }}
+        onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)' } }}
+      >
+        <RibbonIcon name={item.icon} />
+      </button>
+    )
+  }
+
+  const leftItems  = ribbonItems.filter(i => i.container === 'left')
+  const rightItems = ribbonItems.filter(i => i.container === 'right')
+
   return (
-    <button onClick={onClick} title={title} style={{ padding: '3px 10px', background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 12, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 5 }}>
-      {children}
-    </button>
+    <div style={{
+      width: 48, background: 'var(--rail)', borderRight: '1px solid var(--rail-border)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between',
+      flexShrink: 0, paddingTop: 8, paddingBottom: 8, zIndex: 10,
+    }}>
+      {/* Top: logo + left-pane ribbon items + right-pane ribbon items */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <div style={{ width: 28, height: 28, background: 'var(--accent)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, cursor: 'default' }}>
+          <RailLogoSvg />
+        </div>
+        {leftItems.map(railBtn)}
+        {rightItems.length > 0 && leftItems.length > 0 && (
+          <div style={{ width: 24, height: 1, background: 'var(--border)', margin: '4px 0' }} />
+        )}
+        {rightItems.map(railBtn)}
+      </div>
+
+      {/* Bottom: settings + avatar */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <button
+          title="Paramètres"
+          onClick={onSettingsClick}
+          style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', margin: '0 4px', transition: 'background 0.12s, color 0.12s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)' }}
+        >
+          <SettingsIcon />
+        </button>
+
+        <div style={{ position: 'relative', marginTop: 2 }}>
+          <div
+            title={activeAccount?.displayName ?? 'Non connecté'}
+            onClick={() => setAvatarOpen(o => !o)}
+            style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent-dim)', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--accent)', fontWeight: 700, cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}
+          >
+            {activeAccount ? activeAccount.displayName.slice(0, 2).toUpperCase() : '?'}
+          </div>
+
+          {avatarOpen && (
+            <>
+              <div onClick={() => setAvatarOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+              <div style={{ position: 'absolute', bottom: 36, left: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 4, display: 'flex', flexDirection: 'column', gap: 2, zIndex: 999, minWidth: 190, boxShadow: 'var(--shadow)' }}>
+                {accounts.map(acc => (
+                  <button key={acc.userId} onClick={() => { onSwitchAccount(acc); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: acc.userId === activeAccount?.userId ? 'var(--bg-elevated)' : 'transparent', color: acc.userId === activeAccount?.userId ? 'var(--color-success)' : 'var(--text)', cursor: 'pointer' }}>
+                    {acc.displayName}
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-faint)', marginLeft: 4 }}>{acc.email}</span>
+                  </button>
+                ))}
+                <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer' }}>⚙ Administration</button>
+                <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}>✕ Déconnexion</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -82,7 +183,9 @@ export function EditorPage() {
   const [selectedVault, setSelectedVault] = useState<VaultSummary | null>(null)
   const [documents, setDocuments] = useState<DocumentDto[]>([])
 
-  const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false)
+  const [ribbonItems, setRibbonItems] = useState<RibbonItem[]>([])
+  const [activeViewId, setActiveViewId] = useState<string | null>(null)
+
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sharingOpen, setSharingOpen] = useState(false)
   const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('source')
@@ -474,7 +577,6 @@ export function EditorPage() {
   // ── Account ────────────────────────────────────────────────────────────────
 
   async function handleSwitchAccount(acc: AccountEntry) {
-    setAccountSwitcherOpen(false)
     if (acc.userId === activeAccount?.userId) return
     const ok = await switchAccount(acc.userId)
     if (ok) {
@@ -487,7 +589,6 @@ export function EditorPage() {
   }
 
   async function handleLogout() {
-    setAccountSwitcherOpen(false)
     await logout(); navigate('/login')
   }
 
@@ -506,53 +607,66 @@ export function EditorPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}>
 
-      {/* ── Topbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', minHeight: 42, flexShrink: 0, gap: 8 }}>
-        <span style={{ fontSize: '0.88rem', fontWeight: 600, color: activeDoc ? 'var(--text)' : 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
-          {activeDoc ? `${selectedVault?.name} / ${activeDoc.path}` : selectedVault ? selectedVault.name : '— Sélectionner un vault —'}
+      {/* ── Icon rail ── */}
+      <IconRail
+        ribbonItems={ribbonItems}
+        activeViewId={activeViewId}
+        onRibbonClick={(item) => {
+          const m = managerRef.current
+          if (!m) return
+          if (item.type === 'group') m.toggleGroup(item.id)
+          else m.toggleView(item.id)
+        }}
+        onSettingsClick={() => setSettingsOpen(true)}
+        activeAccount={activeAccount}
+        accounts={accounts}
+        onSwitchAccount={(acc) => void handleSwitchAccount(acc)}
+        onAdmin={() => void navigate('/admin')}
+        onLogout={() => void handleLogout()}
+      />
+
+      {/* ── Main area (topbar + workspace stacked) ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
+      {/* ── Breadcrumb bar ── */}
+      <div style={{ height: 42, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 6, flexShrink: 0 }}>
+
+        {/* Vault / fichier */}
+        <span style={{ fontSize: 12.5, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
+          {selectedVault?.name ?? '—'}
         </span>
+        {activeDoc && <>
+          <span style={{ color: 'var(--border)', fontSize: 14 }}>/</span>
+          <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            {activeDoc.path}
+          </span>
+        </>}
+        {!activeDoc && <span style={{ flex: 1 }} />}
 
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+        {/* Right actions */}
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
 
-          {/* Account switcher */}
-          <div style={{ position: 'relative' }}>
-            <IconBtn onClick={() => setAccountSwitcherOpen(o => !o)} title="Comptes">
-              <span>👤</span><span>{activeAccount?.displayName ?? 'Non connecté'}</span>
-            </IconBtn>
-            {accountSwitcherOpen && (
-              <div style={{ position: 'absolute', top: 34, right: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 4, display: 'flex', flexDirection: 'column', gap: 2, zIndex: 999, minWidth: 190, boxShadow: 'var(--shadow)' }}>
-                {accounts.map(acc => (
-                  <button key={acc.userId} onClick={() => void handleSwitchAccount(acc)} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: acc.userId === activeAccount?.userId ? 'var(--bg-elevated)' : 'transparent', color: acc.userId === activeAccount?.userId ? 'var(--color-success)' : 'var(--text)' }}>
-                    {acc.displayName}
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-faint)', marginLeft: 4 }}>{acc.email}</span>
-                  </button>
-                ))}
-                <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
-                <button onClick={() => { setAccountSwitcherOpen(false); void navigate('/admin') }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)' }}>⚙ Administration</button>
-                <button onClick={() => void handleLogout()} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)' }}>✕ Déconnexion</button>
-              </div>
-            )}
-          </div>
+          {activeDoc && (
+            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Enregistré ✓</span>
+          )}
 
           {/* Share */}
           {selectedVault && (
-            <IconBtn onClick={() => setSharingOpen(true)} title="Partager">
-              <span>🔗</span><span>Partager</span>
-            </IconBtn>
+            <button onClick={() => setSharingOpen(true)} title="Partager" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              <span>Partager</span>
+            </button>
           )}
 
-          {/* Settings */}
-          <IconBtn onClick={() => setSettingsOpen(true)} title="Paramètres">⚙</IconBtn>
-
-          {/* Markdown editor mode toggle */}
-          <IconBtn
-            onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))}
-            title="Basculer l'éditeur Markdown"
-          >
-            <span>{markdownEditorMode === 'source' ? 'CM6' : 'Rich'}</span>
-          </IconBtn>
+          {/* Editor mode toggle */}
+          <button onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))} title="Basculer l'éditeur" style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+            {markdownEditorMode === 'source' ? 'CM6' : 'Rich'}
+          </button>
         </div>
       </div>
 
@@ -561,23 +675,24 @@ export function EditorPage() {
         vault={vaultProxy}
         fileTypesRef={fileTypeRegistryRef}
         onBeforeReady={onBeforeReady}
-        onReady={(m) => { managerRef.current = m; m.notifyVaultChange() }}
+        onReady={(m) => {
+          managerRef.current = m
+          m.notifyVaultChange()
+          setRibbonItems(m.getRibbonItems())
+          m.subscribeActiveView(setActiveViewId)
+          m.openDefaultLeft('explorer')
+        }}
         style={{ flex: 1, overflow: 'hidden' }}
       />
 
-      {accountSwitcherOpen && (
-        <div onClick={() => setAccountSwitcherOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-      )}
-
       {/* ── Settings modal ── */}
       {settingsOpen && (
-        <>
-          <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)' }} />
-          <div style={{ position: 'fixed', inset: '5vh 10vw', zIndex: 1001, borderRadius: 12, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.5)', border: '1px solid var(--border)' }}>
+        <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
-            <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 16, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
+            <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
           </div>
-        </>
+        </div>
       )}
 
       {sharingOpen && token && selectedVault && (
@@ -597,6 +712,7 @@ export function EditorPage() {
           onClose={() => setQuickOpenVisible(false)}
         />
       )}
+      </div>
     </div>
   )
 }

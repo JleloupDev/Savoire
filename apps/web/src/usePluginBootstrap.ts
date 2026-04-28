@@ -134,10 +134,35 @@ export function usePluginBootstrap({
       closable: false,
       createView: (_ctx: unknown) => new EditorAreaWidget(manager, editorAreaRefs),
     })
+
+    // Declare view groups — must happen before plugins register their views.
+    manager.views.registerGroup({
+      id: 'explorer',
+      title: 'Explorateur',
+      icon: 'files',
+      container: 'left',
+      ribbon: true,
+      initialSize: 260,
+      closable: false,
+      layout: 'stack',
+    })
+    manager.views.registerGroup({
+      id: 'notes-tools',
+      title: 'Notes',
+      icon: 'layout-panel-right',
+      container: 'right',
+      ribbon: true,
+      initialSize: 300,
+      closable: true,
+      layout: 'stack',
+    })
+
     manager.views.register({
       id: 'plugin-inspector',
       title: 'Plugins actifs',
       container: 'right',
+      ribbon: true,
+      icon: 'cpu',
       createView: (_ctx: unknown) => new PluginInspectorWidget(manager),
     })
 
@@ -207,35 +232,33 @@ export function usePluginBootstrap({
       pluginsBootstrapPromiseRef.current = (async () => {
         await pluginLoaderRef.current.loadInternal(createVaultBrowserPlugin({
           refs: vaultBrowserRefs,
-          container: 'left',
-          initialSize: 260,
+          groupId: 'explorer',
           closable: false,
         }), pluginApi)
         await pluginLoaderRef.current.loadInternal(createFileTreePlugin({
-          container: 'left',
+          groupId: 'explorer',
           belowOf: 'vault-browser',
           closable: false,
         }), pluginApi)
-        // TEMPORARY: placement manuel des panels dans les panes gauche/droite.
-        // À remplacer par un système de layout déclaratif côté plugin (chaque plugin
-        // déclare ses préférences de placement, le workspace les résout).
-        // Right pane: top = Plugin inspector + Metadata, bottom = Backlinks + Hashtags + Graph
         await pluginLoaderRef.current.loadInternal(createWikilinksPlugin({
-          belowOf: 'plugin-inspector',
+          groupId: 'notes-tools',
         }), pluginApi)
         await pluginLoaderRef.current.loadInternal(createHashtagsPlugin({
-          tabOf: 'backlinks',
+          container: 'left',
+          ribbon: true,
+          icon: 'tag',
         }), pluginApi)
         await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
-          tabOf: 'plugin-inspector',
+          groupId: 'notes-tools',
         }), pluginApi)
         const { plugin: graphPlugin, getContributor: getGraphContributor } = createGraphPlugin({
-          tabOf: 'backlinks',
+          groupId: 'notes-tools',
         })
         getGraphContributorRef.current = getGraphContributor
         await pluginLoaderRef.current.loadInternal(graphPlugin, pluginApi)
         const { plugin: searchPlugin } = createSearchPlugin({
-          belowOf: 'file-tree',
+          container: 'left',
+          ribbon: true,
         })
         await pluginLoaderRef.current.loadInternal(searchPlugin, pluginApi)
         // excalidraw and mindmap register FileTypeSpec in the workspace API (file-type handlers).

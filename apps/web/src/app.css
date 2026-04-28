@@ -2,27 +2,43 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-/* ── Light (default — mirrors dev:editor) ── */
-:root {
-  --bg-base:     #f9f9f7;
+/* ── Light (default) ── */
+:root,
+[data-theme="light"] {
+  --bg-base:     #f8fafc;
   --bg-surface:  #ffffff;
-  --bg-elevated: #f0efe9;
-  --bg-hover:    #e8e7e0;
-  --border:      #dddcd5;
-  --text:        #1a1a18;
-  --text-muted:  #6b6b60;
-  --text-faint:  #aaa9a0;
-  --accent:      #7c3aed;
-  --accent-dim:  rgba(124, 58, 237, 0.1);
-  --color-success: #15803d;
+  --bg-elevated: #f1f5f9;
+  --bg-hover:    #e2e8f0;
+  --border:      #e2e8f0;
+  --text:        #0f172a;
+  --text-muted:  #64748b;
+  --text-faint:  #94a3b8;
+  --accent:      #0d9488;
+  --accent-hover:#0f766e;
+  --accent-dim:  rgba(13, 148, 136, 0.10);
+  --accent-text: #ffffff;
+  --heading-color: #0d9488;
+  --color-success: #16a34a;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
-  --color-warn:    #b45309;
+  --color-warn:    #d97706;
   --color-code:    #0f7960;
-  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-code: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-ui:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-editor: 'Source Serif 4', 'Georgia', serif;
+  --font-code:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --radius: 6px;
-  --shadow: 0 4px 12px rgba(0,0,0,0.08);
+  --radius-md: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --rail:        #ffffff;
+  --rail-border: #e2e8f0;
+  --on-accent:       rgba(255,255,255,1.00);
+  --on-accent-muted: rgba(255,255,255,0.75);
+  --on-accent-faint: rgba(255,255,255,0.45);
+  --on-accent-dim:   rgba(255,255,255,0.15);
+  --logo-bracket-1: #cb4b16;
+  --logo-bracket-2: #0d9488;
+  --overlay:         rgba(0,0,0,0.45);
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -61,14 +77,25 @@
   --text:        #cdd6f4;
   --text-muted:  #a6adc8;
   --text-faint:  #6c7086;
-  --accent:      #cba6f7;
-  --accent-dim:  rgba(203, 166, 247, 0.12);
+  --accent:      #2dd4bf;
+  --accent-hover:#14b8a6;
+  --accent-dim:  rgba(45, 212, 191, 0.12);
+  --accent-text: #0f172a;
+  --heading-color: #2dd4bf;
   --color-success: #a6e3a1;
   --color-info:    #89b4fa;
   --color-danger:  #f38ba8;
   --color-warn:    #f9e2af;
   --color-code:    #94e2d5;
   --shadow: 0 4px 12px rgba(0,0,0,0.4);
+  --rail:        #181825;
+  --rail-border: #313244;
+  --on-accent:       rgba(15,23,42,0.90);
+  --on-accent-muted: rgba(15,23,42,0.65);
+  --on-accent-faint: rgba(15,23,42,0.40);
+  --on-accent-dim:   rgba(15,23,42,0.15);
+  --logo-bracket-1: #cb4b16;
+  --logo-bracket-2: #2dd4bf;
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -96,69 +123,79 @@
   --dv-background-color: var(--bg-base);
 }
 
-/* ── Solarized Light ── */
-[data-theme="solarized-light"] {
+/* ── Sépia ── */
+[data-theme="sepia"] {
+  --bg-base:     #f5f0e8;
+  --bg-surface:  #faf7f2;
+  --bg-elevated: #ede5d8;
+  --bg-hover:    #ddd4c2;
+  --border:      #d6c9b5;
+  --text:        #3b2f1e;
+  --text-muted:  #6b5744;
+  --text-faint:  #a08070;
+  --accent:      #0f766e;
+  --accent-hover:#0d5f59;
+  --accent-dim:  rgba(15, 118, 110, 0.10);
+  --accent-text: #ffffff;
+  --heading-color: #92400e;
+  --color-success: #15803d;
+  --color-info:    #2563eb;
+  --color-danger:  #dc2626;
+  --color-warn:    #b45309;
+  --color-code:    #0f7960;
+  --shadow: 0 4px 12px rgba(0,0,0,0.06);
+  --rail:        #faf7f2;
+  --rail-border: #d6c9b5;
+  /* ── Dockview ── */
+  --dv-paneview-active-outline-color: var(--accent);
+  --dv-tabs-and-actions-container-font-size: 13px;
+  --dv-tabs-and-actions-container-height: 35px;
+  --dv-tab-close-icon: var(--text-muted);
+  --dv-drag-over-background-color: var(--accent-dim);
+  --dv-drag-over-border-color: var(--accent);
+  --dv-tabs-container-scrollbar-color: var(--bg-hover);
+  --dv-group-view-background-color: var(--bg-base);
+  --dv-tabs-and-actions-container-background-color: var(--bg-surface);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-base);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-elevated);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-elevated);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-base);
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text-muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-faint);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-icon-hover-background-color: var(--bg-hover);
+  --dv-floating-box-shadow: var(--shadow);
+  --dv-active-sash-color: var(--accent);
+  --dv-background-color: var(--bg-base);
+}
+
+/* ── Solarized ── */
+[data-theme="solarized"] {
   --bg-base:     #fdf6e3;
   --bg-surface:  #eee8d5;
   --bg-elevated: #e6e0ce;
   --bg-hover:    #d5cebc;
   --border:      #cdc8b5;
-  --text:        #657b83;
+  --text:        #586e75;
   --text-muted:  #839496;
   --text-faint:  #93a1a1;
-  --accent:      #268bd2;
-  --accent-dim:  rgba(38, 139, 210, 0.12);
+  --accent:      #2aa198;
+  --accent-hover:#1d8a82;
+  --accent-dim:  rgba(42, 161, 152, 0.12);
+  --accent-text: #fdf6e3;
+  --heading-color: #cb4b16;
   --color-success: #859900;
   --color-info:    #268bd2;
   --color-danger:  #dc322f;
   --color-warn:    #b58900;
   --color-code:    #2aa198;
-  --shadow: 0 4px 12px rgba(0,0,0,0.08);
-  /* ── Dockview ── */
-  --dv-paneview-active-outline-color: var(--accent);
-  --dv-tabs-and-actions-container-font-size: 13px;
-  --dv-tabs-and-actions-container-height: 35px;
-  --dv-tab-close-icon: var(--text-muted);
-  --dv-drag-over-background-color: var(--accent-dim);
-  --dv-drag-over-border-color: var(--accent);
-  --dv-tabs-container-scrollbar-color: var(--bg-hover);
-  --dv-group-view-background-color: var(--bg-base);
-  --dv-tabs-and-actions-container-background-color: var(--bg-surface);
-  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-base);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-elevated);
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-elevated);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-base);
-  --dv-tab-divider-color: var(--border);
-  --dv-activegroup-visiblepanel-tab-color: var(--text);
-  --dv-activegroup-hiddenpanel-tab-color: var(--text-muted);
-  --dv-inactivegroup-visiblepanel-tab-color: var(--text-muted);
-  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-faint);
-  --dv-separator-border: var(--border);
-  --dv-paneview-header-border-color: var(--border);
-  --dv-icon-hover-background-color: var(--bg-hover);
-  --dv-floating-box-shadow: var(--shadow);
-  --dv-active-sash-color: var(--accent);
-  --dv-background-color: var(--bg-base);
-}
-
-/* ── Solarized Dark ── */
-[data-theme="solarized-dark"] {
-  --bg-base:     #002b36;
-  --bg-surface:  #073642;
-  --bg-elevated: #0a4152;
-  --bg-hover:    #124d5e;
-  --border:      #0d3d4a;
-  --text:        #839496;
-  --text-muted:  #657b83;
-  --text-faint:  #586e75;
-  --accent:      #268bd2;
-  --accent-dim:  rgba(38, 139, 210, 0.15);
-  --color-success: #859900;
-  --color-info:    #2aa198;
-  --color-danger:  #dc322f;
-  --color-warn:    #b58900;
-  --color-code:    #2aa198;
-  --shadow: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow: 0 4px 12px rgba(0,0,0,0.06);
+  --rail:        #eee8d5;
+  --rail-border: #cdc8b5;
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -241,6 +278,9 @@ button:active { filter: brightness(0.84); }
   margin: 0 auto !important;
   padding: 0 24px;
   caret-color: var(--accent);
+  font-family: var(--font-editor) !important;
+  font-size: 15.5px;
+  line-height: 1.8;
 }
 
 .cm-line {
@@ -285,12 +325,12 @@ button:active { filter: brightness(0.84); }
    a heading. They mirror .vault-rendered-block hN styles so there is no visual jump
    between rendered and edit mode — color/weight/size apply to the entire line,
    including the # marker and the heading text. */
-.cm-line.vault-h1-live { color: var(--accent) !important; font-weight: 700 !important; font-size: 1.35em !important; }
-.cm-line.vault-h2-live { color: var(--accent) !important; font-weight: 700 !important; font-size: 1.2em !important; }
-.cm-line.vault-h3-live { color: var(--accent) !important; font-weight: 700 !important; font-size: 1.05em !important; }
+.cm-line.vault-h1-live { color: var(--heading-color) !important; font-weight: 700 !important; font-size: 1.35em !important; }
+.cm-line.vault-h2-live { color: var(--heading-color) !important; font-weight: 700 !important; font-size: 1.2em !important; }
+.cm-line.vault-h3-live { color: var(--heading-color) !important; font-weight: 700 !important; font-size: 1.05em !important; }
 .cm-line.vault-h4-live,
 .cm-line.vault-h5-live,
-.cm-line.vault-h6-live { color: var(--accent) !important; font-weight: 600 !important; }
+.cm-line.vault-h6-live { color: var(--heading-color) !important; font-weight: 600 !important; }
 
 /* The '##' marker uses tok-contentSeparator (mapped from HeaderMark in lezer-markdown),
    which app.css styles as --text-faint (grey). Override with accent on heading lines. */
@@ -300,7 +340,7 @@ button:active { filter: brightness(0.84); }
 .cm-editor .cm-line.vault-h4-live .tok-contentSeparator,
 .cm-editor .cm-line.vault-h5-live .tok-contentSeparator,
 .cm-editor .cm-line.vault-h6-live .tok-contentSeparator {
-  color: var(--accent) !important;
+  color: var(--heading-color) !important;
   font-family: inherit !important;
 }
 
@@ -322,13 +362,13 @@ button:active { filter: brightness(0.84); }
   max-width: 680px;
   margin: 1px auto;
   padding: 2px 24px;
-  font-family: var(--font-ui);
-  line-height: 1.5;
+  font-family: var(--font-editor);
+  line-height: 1.8;
 }
 
 .vault-rendered-block h1,
 .vault-rendered-block h2,
-.vault-rendered-block h3 { color: var(--accent); margin: 0.05em 0; font-weight: 700; }
+.vault-rendered-block h3 { color: var(--heading-color); margin: 0.05em 0; font-weight: 700; }
 .vault-rendered-block h1 { font-size: 1.35em; }
 .vault-rendered-block h2 { font-size: 1.2em; }
 .vault-rendered-block h3 { font-size: 1.05em; }
@@ -418,28 +458,58 @@ button:active { filter: brightness(0.84); }
 .workspace-root .dv-groupview,
 .editor-center-layout .dv-groupview {
   background: var(--bg-base);
-  border-color: var(--border);
+  border-color: var(--border) !important;
+}
+
+.workspace-root .dv-branch-node,
+.workspace-root .dv-branch-node-leaf {
+  border-color: var(--border) !important;
 }
 
 .workspace-root .dv-tabs-and-actions-container,
 .editor-center-layout .dv-tabs-and-actions-container {
-  background: var(--bg-base);
-  border-bottom: none;
+  background: var(--bg-elevated) !important;
+  border-bottom: 1px solid var(--border) !important;
+  height: 34px !important;
 }
 
+/* Tab base — inactive */
 .workspace-root .dv-tab,
 .editor-center-layout .dv-tab {
-  color: var(--text) !important;
-  background: var(--bg-base) !important;
+  position: relative;
+  padding: 0 12px !important;
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  color: var(--text-faint) !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-bottom: 2px solid transparent !important;
 }
 
-.workspace-root .dv-active-tab,
-.editor-center-layout .dv-active-tab {
+/* Divider between tabs */
+.workspace-root .dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before {
+  background-color: var(--border) !important;
+}
+
+/* Active tab — uses --bg-base to match editor content area and stay warm in sépia */
+.workspace-root .dv-tab.dv-active-tab,
+.editor-center-layout .dv-tab.dv-active-tab {
   color: var(--text) !important;
-  background: var(--bg-base) !important;
-  font-weight: 600 !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
+  background-color: var(--bg-base) !important;
+  font-weight: 500 !important;
+  border-bottom: 2px solid var(--accent) !important;
+}
+
+/* Tab text content */
+.workspace-root .dv-tab .dv-default-tab-content,
+.editor-center-layout .dv-tab .dv-default-tab-content {
+  font-size: 12.5px !important;
+}
+
+/* Override dockview separator border — must target the pseudo-element directly */
+.workspace-root .dv-split-view-container.dv-separator-border .dv-view:not(:first-child)::before {
+  background-color: var(--border) !important;
 }
 
 .workspace-root .dv-sash,

@@ -42,7 +42,8 @@ export function createWikilinksPlugin(options: {
         )
       })
 
-      api.index?.registerFactory(() => new WikilinkIndexContributor())
+      const wikilinkContributor = new WikilinkIndexContributor()
+      api.index?.registerFactory(() => wikilinkContributor)
       api.index?.registerFactory(() => new HeadingIndexContributor())
 
       api.views.register({

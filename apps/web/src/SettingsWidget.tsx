@@ -14,107 +14,28 @@ import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 export interface Theme {
   id: string
   name: string
-  vars: Record<string, string>
+  preview: { bg: string; surface: string; accent: string; text: string }
 }
 
 const THEMES: Theme[] = [
-  {
-    id: 'dark',
-    name: 'Dark (défaut)',
-    vars: {
-      '--bg': '#0f0f17',
-      '--bg-surface': '#16161e',
-      '--bg-elevated': '#1e1e2e',
-      '--text': '#cdd6f4',
-      '--text-muted': '#a6adc8',
-      '--text-faint': '#585b70',
-      '--border': '#313244',
-      '--accent': '#8b5cf6',
-      '--accent-dim': 'rgba(139,92,246,0.15)',
-    },
-  },
-  {
-    id: 'light',
-    name: 'Light',
-    vars: {
-      '--bg': '#f8f8f2',
-      '--bg-surface': '#ffffff',
-      '--bg-elevated': '#f0f0f5',
-      '--text': '#1e1e2e',
-      '--text-muted': '#4c4f69',
-      '--text-faint': '#9ca0b0',
-      '--border': '#ccd0da',
-      '--accent': '#7c3aed',
-      '--accent-dim': 'rgba(124,58,237,0.12)',
-    },
-  },
-  {
-    id: 'sepia',
-    name: 'Sépia',
-    vars: {
-      '--bg': '#f5f0e8',
-      '--bg-surface': '#faf7f2',
-      '--bg-elevated': '#fff8ef',
-      '--text': '#3b2f1e',
-      '--text-muted': '#6b5744',
-      '--text-faint': '#a08070',
-      '--border': '#d6c9b5',
-      '--accent': '#b45309',
-      '--accent-dim': 'rgba(180,83,9,0.12)',
-    },
-  },
-  {
-    id: 'midnight',
-    name: 'Midnight Blue',
-    vars: {
-      '--bg': '#0a0e1a',
-      '--bg-surface': '#111827',
-      '--bg-elevated': '#1e2a3a',
-      '--text': '#e2e8f0',
-      '--text-muted': '#94a3b8',
-      '--text-faint': '#475569',
-      '--border': '#1e40af33',
-      '--accent': '#3b82f6',
-      '--accent-dim': 'rgba(59,130,246,0.15)',
-    },
-  },
+  { id: 'light',     name: 'Light',     preview: { bg: '#f8fafc', surface: '#ffffff', accent: '#0d9488', text: '#0f172a' } },
+  { id: 'dark',      name: 'Dark',      preview: { bg: '#1e1e2e', surface: '#181825', accent: '#2dd4bf', text: '#cdd6f4' } },
+  { id: 'sepia',     name: 'Sépia',     preview: { bg: '#f5f0e8', surface: '#faf7f2', accent: '#0f766e', text: '#3b2f1e' } },
+  { id: 'solarized', name: 'Solarized', preview: { bg: '#fdf6e3', surface: '#eee8d5', accent: '#2aa198', text: '#586e75' } },
 ]
 
-const THEME_KEY = 'poc-obsidian-theme'
+const THEME_KEY = 'savoire-theme-v2'
 
-function applyTheme(theme: Theme): void {
-  const root = document.documentElement
-  for (const [k, v] of Object.entries(theme.vars)) {
-    root.style.setProperty(k, v)
-  }
-  const bg = theme.vars['--bg']
-  if (bg) root.style.setProperty('--bg-base', bg)
-
-  const text      = theme.vars['--text']       ?? 'inherit'
-  const muted     = theme.vars['--text-muted'] ?? 'inherit'
-  const bgBase     = bg ?? theme.vars['--bg-base']     ?? 'transparent'
-  root.style.setProperty('--dv-activegroup-visiblepanel-tab-color',    text)
-  root.style.setProperty('--dv-activegroup-hiddenpanel-tab-color',     text)
-  root.style.setProperty('--dv-inactivegroup-visiblepanel-tab-color',  text)
-  root.style.setProperty('--dv-inactivegroup-hiddenpanel-tab-color',   text)
-  root.style.setProperty('--dv-tab-close-icon',                        muted)
-  root.style.setProperty('--dv-activegroup-visiblepanel-tab-background-color',   bgBase)
-  root.style.setProperty('--dv-activegroup-hiddenpanel-tab-background-color',    bgBase)
-  root.style.setProperty('--dv-inactivegroup-visiblepanel-tab-background-color', bgBase)
-  root.style.setProperty('--dv-inactivegroup-hiddenpanel-tab-background-color',  bgBase)
-  root.style.setProperty('--dv-tabs-and-actions-container-background-color',     bgBase)
-  root.style.setProperty('--dv-group-view-background-color',  bgBase)
-  root.style.setProperty('--dv-background-color',             bgBase)
+function applyTheme(id: string): void {
+  document.documentElement.setAttribute('data-theme', id)
 }
 
 function loadSavedTheme(): string {
-  return localStorage.getItem(THEME_KEY) ?? 'dark'
+  return localStorage.getItem(THEME_KEY) ?? 'light'
 }
 
 export function initTheme(): void {
-  const id = loadSavedTheme()
-  const theme = THEMES.find(t => t.id === id) ?? THEMES[0]
-  applyTheme(theme)
+  applyTheme(loadSavedTheme())
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -139,9 +60,7 @@ export function SettingsPanel({
   }, [loader, triggers])
 
   function selectTheme(id: string) {
-    const theme = THEMES.find(t => t.id === id)
-    if (!theme) return
-    applyTheme(theme)
+    applyTheme(id)
     localStorage.setItem(THEME_KEY, id)
     setThemeId(id)
   }
@@ -278,8 +197,8 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
                 padding: '14px 16px',
                 borderRadius: 10,
                 border: active ? '2px solid var(--accent)' : '2px solid var(--border)',
-                background: theme.vars['--bg-surface'] ?? '#fff',
-                color: theme.vars['--text'] ?? '#000',
+                background: theme.preview.surface,
+                color: theme.preview.text,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontWeight: 600,
@@ -289,12 +208,12 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
               }}
             >
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                {['--bg', '--bg-surface', '--accent'].map(v => (
-                  <div key={v} style={{ width: 14, height: 14, borderRadius: '50%', background: theme.vars[v] ?? '#888', flexShrink: 0 }} />
+                {[theme.preview.bg, theme.preview.surface, theme.preview.accent].map((c, i) => (
+                  <div key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: c, flexShrink: 0 }} />
                 ))}
               </div>
               {theme.name}
-              {active && <div style={{ fontSize: '0.68rem', color: theme.vars['--accent'] ?? '#888', marginTop: 4, fontWeight: 700 }}>✓ Actif</div>}
+              {active && <div style={{ fontSize: '0.68rem', color: theme.preview.accent, marginTop: 4, fontWeight: 700 }}>✓ Actif</div>}
             </button>
           )
         })}
