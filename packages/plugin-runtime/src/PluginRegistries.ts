@@ -26,6 +26,7 @@ import type {
   TriggerRegistry,
   WorkspaceAPI,
   VaultAPI,
+  ViewGroup,
   ViewRegistry,
   ViewSpec,
 } from '@savoire/plugin-api'
@@ -298,6 +299,9 @@ export class ViewRegistryStub implements ViewRegistry {
   register(_spec: ViewSpec): void {}
   unregister(_id: string): void {}
   getAll(): ViewSpec[] { return [] }
+  registerGroup(_group: ViewGroup): void {}
+  unregisterGroup(_id: string): void {}
+  getGroups(): ViewGroup[] { return [] }
 }
 
 // ─── ToolbarCommandRegistryImpl ───────────────────────────────────────────

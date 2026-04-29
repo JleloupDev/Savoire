@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview'
-import type { DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps } from 'dockview'
+import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps } from 'dockview'
 import type { VaultAPI, ViewSpec, ViewContext, Widget, FileTypeRegistry } from '@savoire/plugin-api'
 import { DockviewAdapter } from './DockviewAdapter'
 import { WorkspaceManagerImpl } from './WorkspaceManagerImpl'
@@ -78,6 +78,51 @@ function ViewPanelHost(props: IDockviewPanelProps<ViewPanelParams>) {
   )
 }
 
+// ─── Panel creation helper ─────────────────────────────────────────────────
+
+function addPanelToWorkspace(
+  spec: ViewSpec,
+  ctx: ViewContext,
+  api: DockviewApi,
+  firstCenterId: string | undefined,
+): void {
+  let position: { referencePanel: string; direction?: 'left' | 'right' | 'below' } | undefined
+
+  if (spec.tabOf && api.getPanel(spec.tabOf)) {
+    position = { referencePanel: spec.tabOf }
+  } else if (spec.belowOf && api.getPanel(spec.belowOf)) {
+    position = { referencePanel: spec.belowOf, direction: 'below' }
+  } else if (spec.container !== 'center' && firstCenterId) {
+    position = {
+      direction: spec.container === 'left' ? 'left' : 'right',
+      referencePanel: firstCenterId,
+    }
+  }
+
+  const panelOptions = {
+    id: spec.id,
+    component: 'view',
+    title: spec.title,
+    params: { spec, ctx } satisfies ViewPanelParams,
+    position,
+    tabComponent: spec.closable === false ? 'permanent' : undefined,
+    initialWidth: spec.container === 'left' || spec.container === 'right' ? spec.initialSize : undefined,
+    initialHeight: spec.belowOf ? spec.initialSize : undefined,
+  }
+
+  try {
+    api.addPanel(panelOptions)
+  } catch (err) {
+    if (position) {
+      try { api.addPanel({ ...panelOptions, position: undefined }) } catch (e2) {
+        console.error('[WorkspaceRoot] Failed to add panel', spec.id, e2, err)
+      }
+    } else {
+      console.error('[WorkspaceRoot] Failed to add panel', spec.id, err)
+    }
+  }
+}
+
 // ─── WorkspaceRoot ─────────────────────────────────────────────────────────
 
 export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, className, style }: WorkspaceRootProps) {
@@ -118,77 +163,83 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
       // onBeforeReady may be async (plugin loading). Wait for it before opening panels.
       const setup = onBeforeReady?.(manager) ?? Promise.resolve()
       void Promise.resolve(setup).then(() => {
-        const sorted = [...manager.views.getAll()].sort((a, b) => {
-          if (a.container === 'center' && b.container !== 'center') return -1
-          if (b.container === 'center' && a.container !== 'center') return 1
-          if (a.tabOf === b.id) return 1  // a goes after b (its tab group owner)
-          if (b.tabOf === a.id) return -1
-          if (a.belowOf === b.id) return 1  // a goes after b (its below reference)
-          if (b.belowOf === a.id) return -1
-          return 0
-        })
         const ctx: ViewContext = { workspace: manager, vault, fileTypes: fileTypesRef?.current ?? noopFileTypeRegistry }
-        let firstCenterId: string | undefined
 
-        for (const spec of sorted) {
-          let position: { referencePanel: string; direction?: 'left' | 'right' | 'below' } | undefined
-
-          if (spec.tabOf) {
-            // Add as a new tab in the same group as the reference panel
-            if (event.api.getPanel(spec.tabOf)) {
-              position = { referencePanel: spec.tabOf }
-            }
-          } else if (spec.belowOf) {
-            // Add as a split below the reference panel
-            if (event.api.getPanel(spec.belowOf)) {
-              position = { referencePanel: spec.belowOf, direction: 'below' }
-            }
-          } else if (spec.container !== 'center' && firstCenterId) {
-            position = {
-              direction: spec.container === 'left' ? 'left' : spec.container === 'right' ? 'right' : 'below',
-              referencePanel: firstCenterId,
-            }
-          }
-
-          const panelOptions = {
-            id: spec.id,
-            component: 'view',
-            title: spec.title,
-            params: { spec, ctx } satisfies ViewPanelParams,
-            position,
-            tabComponent: spec.closable === false ? 'permanent' : undefined,
-            initialWidth: spec.container === 'left' || spec.container === 'right' ? spec.initialSize : undefined,
-            initialHeight: spec.container === 'bottom' || !!spec.belowOf ? spec.initialSize : undefined,
-          }
-
-          try {
-            event.api.addPanel(panelOptions)
-          } catch (err) {
-            // Dockview can fail when a computed reference container is not yet attached.
-            // Fallback to root insertion so workspace still boots.
-            if (position) {
-              try {
-                event.api.addPanel({ ...panelOptions, position: undefined })
-              } catch (fallbackErr) {
-                console.error('[WorkspaceRoot] Failed to add panel', spec.id, fallbackErr)
-                console.error(err)
-              }
-            } else {
-              console.error('[WorkspaceRoot] Failed to add panel', spec.id, err)
-            }
-          }
-
-          if (spec.container === 'center' && !firstCenterId) {
-            firstCenterId = spec.id
+        // ── Resolve groupId for right/center panels ────────────────────────
+        // Left panels are NOT added here — they are added lazily via switchLeftMode.
+        const groupAnchor = new Map<string, string>()
+        for (const spec of manager.views.getAll()) {
+          if (spec.groupId && !groupAnchor.has(spec.groupId)) {
+            groupAnchor.set(spec.groupId, spec.id)
           }
         }
 
-        // Attach ResizeObserver to group DOM elements for live tracking during sash drag
-        const leftAnchorId  = manager.getPaneAnchorPanelId('left')
+        // Track the last registered view per group to chain belowOf in stack mode
+        const groupLastView = new Map<string, string>() // groupId → last added view id
+
+        const resolved = manager.views.getAll()
+          .filter(spec => {
+            const container = spec.groupId
+              ? (manager.views.getGroups().find(g => g.id === spec.groupId)?.container ?? spec.container)
+              : spec.container
+            return container !== 'left'
+          })
+          .map(spec => {
+            if (!spec.groupId) return spec
+            const group = manager.views.getGroups().find(g => g.id === spec.groupId)
+            if (!group) return spec
+            const anchorId = groupAnchor.get(spec.groupId)!
+            if (spec.id === anchorId) {
+              groupLastView.set(spec.groupId, spec.id)
+              return { ...spec, container: group.container, initialSize: spec.initialSize ?? group.initialSize, closable: spec.closable ?? group.closable, tabOf: undefined, belowOf: undefined }
+            }
+            if (group.layout === 'stack') {
+              const prevId = groupLastView.get(spec.groupId) ?? anchorId
+              groupLastView.set(spec.groupId, spec.id)
+              return { ...spec, container: group.container, belowOf: prevId, tabOf: undefined }
+            }
+            groupLastView.set(spec.groupId, spec.id)
+            return { ...spec, container: group.container, tabOf: anchorId, belowOf: undefined }
+          })
+
+        const sorted = [...resolved].sort((a, b) => {
+          if (a.container === 'center' && b.container !== 'center') return -1
+          if (b.container === 'center' && a.container !== 'center') return 1
+          if (a.tabOf === b.id) return 1
+          if (b.tabOf === a.id) return -1
+          if (a.belowOf === b.id) return 1
+          if (b.belowOf === a.id) return -1
+          return 0
+        })
+
+        let firstCenterId: string | undefined
+        let firstRightId: string | undefined
+        for (const spec of sorted) {
+          // All right-container panels that have no explicit tabOf/belowOf are auto-tabbed
+          // to the first right panel so they share a single dockview column.
+          const needsRightAnchor =
+            spec.container === 'right' && !spec.tabOf && !spec.belowOf && firstRightId && spec.id !== firstRightId
+          const resolvedSpec = needsRightAnchor ? { ...spec, tabOf: firstRightId } : spec
+          addPanelToWorkspace(resolvedSpec, ctx, event.api, firstCenterId)
+          if (spec.container === 'center' && !firstCenterId) firstCenterId = spec.id
+          if (spec.container === 'right' && !firstRightId) firstRightId = spec.id
+        }
+
+        // ── Left panel adder — given to WorkspaceManagerImpl for lazy mode switching ──
+        manager.setLeftPanelAdder((spec, panelCtx) => {
+          addPanelToWorkspace(spec, panelCtx, event.api, firstCenterId)
+          // Attach ResizeObserver to the new left group for toggle button tracking
+          const leftPanel = event.api.getPanel(spec.id)
+          if (leftPanel && !leftGroupEl) {
+            leftGroupEl = leftPanel.group.element
+            resizeObserver.observe(leftGroupEl)
+            updateButtonPositions()
+          }
+        }, ctx)
+
+        // Attach ResizeObserver to right group
         const rightAnchorId = manager.getPaneAnchorPanelId('right')
-        leftGroupEl  = leftAnchorId  ? (event.api.getPanel(leftAnchorId)?.group.element  ?? null) : null
         rightGroupEl = rightAnchorId ? (event.api.getPanel(rightAnchorId)?.group.element ?? null) : null
-        if (leftGroupEl)  resizeObserver.observe(leftGroupEl)
         if (rightGroupEl) resizeObserver.observe(rightGroupEl)
 
         updateButtonPositions()

@@ -7,6 +7,7 @@ export interface FileTreePluginOptions {
   viewId?: string
   title?: string
   icon?: string
+  groupId?: string
   container?: 'left' | 'right' | 'center' | 'bottom'
   tabOf?: string
   belowOf?: string
@@ -34,6 +35,7 @@ export function createFileTreePlugin(options: FileTreePluginOptions = {}): Vault
         id: viewId,
         title,
         icon,
+        groupId: options.groupId,
         container,
         tabOf: options.tabOf,
         belowOf: options.belowOf,

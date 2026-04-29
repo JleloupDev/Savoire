@@ -7,11 +7,14 @@ export interface VaultBrowserPluginOptions<TVault extends VaultSummaryLike = Vau
   refs: VaultBrowserRefs<TVault>
   viewId?: string
   title?: string
+  groupId?: string
   container?: 'left' | 'right' | 'center' | 'bottom'
   initialSize?: number
   tabOf?: string
   belowOf?: string
   closable?: boolean
+  ribbon?: boolean
+  icon?: string
 }
 
 export function createVaultBrowserPlugin<TVault extends VaultSummaryLike = VaultSummaryLike>(
@@ -34,11 +37,14 @@ export function createVaultBrowserPlugin<TVault extends VaultSummaryLike = Vault
       api.views.register({
         id: viewId,
         title,
+        groupId: options.groupId,
         container,
         initialSize,
         tabOf: options.tabOf,
         belowOf: options.belowOf,
         closable: options.closable,
+        ribbon: options.ribbon,
+        icon: options.icon,
         createView(ctx) {
           return new VaultBrowserWidget(ctx.workspace, options.refs)
         },

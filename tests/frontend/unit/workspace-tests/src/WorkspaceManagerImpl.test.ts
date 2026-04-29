@@ -10,8 +10,13 @@ function makeMockPort(): WorkspacePort {
     openPanel: vi.fn(() => instance),
     closePanel: vi.fn(),
     focusPanel: vi.fn(),
+    collapsePane: vi.fn(),
+    expandPane: vi.fn(),
+    getPaneWidth: vi.fn(() => 0),
+    setPaneWidth: vi.fn(),
     saveLayout: vi.fn((): WorkspaceLayout => ({ panels: [] })),
     restoreLayout: vi.fn(),
+    subscribeActivePanelChange: vi.fn(() => () => {}),
   }
 }
 

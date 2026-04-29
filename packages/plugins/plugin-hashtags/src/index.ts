@@ -5,9 +5,13 @@ import { HashtagIndexContributor } from './HashtagIndexContributor'
 import { HashtagsWidget } from './HashtagsWidget'
 
 export function createHashtagsPlugin(options: {
+  groupId?: string
   tabOf?: string
   belowOf?: string
   initialSize?: number
+  ribbon?: boolean
+  icon?: string
+  container?: 'left' | 'right'
 } = {}): VaultPlugin {
   return {
     manifest: {
@@ -25,8 +29,10 @@ export function createHashtagsPlugin(options: {
       api.views.register({
         id: 'hashtags',
         title: 'Hashtags',
-        icon: 'hash',
-        container: 'right',
+        icon: options.icon ?? 'hash',
+        ribbon: options.ribbon,
+        groupId: options.groupId,
+        container: options.container ?? 'right',
         tabOf: options.tabOf,
         belowOf: options.belowOf,
         initialSize: options.initialSize ?? 280,

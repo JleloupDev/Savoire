@@ -10,7 +10,7 @@ export interface GraphPluginHandle {
   getContributor: () => GraphIndexContributor
 }
 
-export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPluginHandle {
+export function createGraphPlugin(options: { groupId?: string; tabOf?: string } = {}): GraphPluginHandle {
   let current = new GraphIndexContributor()
 
   const plugin: VaultPlugin = {
@@ -29,6 +29,7 @@ export function createGraphPlugin(options: { tabOf?: string } = {}): GraphPlugin
         id: 'graph',
         title: 'Graphe',
         icon: 'git-fork',
+        groupId: options.groupId,
         container: 'right',
         tabOf: options.tabOf,
         initialSize: 320,

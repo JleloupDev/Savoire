@@ -47,6 +47,7 @@ export type {
   Widget,
   ViewContext,
   ViewSpec,
+  ViewGroup,
   ViewRegistry,
   DocumentRoom,
   DocumentRoomPresence,

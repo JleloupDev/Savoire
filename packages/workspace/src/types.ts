@@ -3,7 +3,7 @@
 // Workspace layout types — Panels, Views, Layout persistence.
 // see ADR-011
 
-export type PanelLocation = 'left' | 'right' | 'bottom' | 'center'
+export type PanelLocation = 'left' | 'right' | 'center'
 
 export interface PanelSpec {
   id: string
@@ -42,10 +42,11 @@ export interface WorkspacePort {
   openPanel(panelId: string, options?: OpenPanelOptions): PanelInstance
   closePanel(panelId: string): void
   focusPanel(panelId: string): void
-  collapsePane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void
-  expandPane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void
+  collapsePane(location: Exclude<PanelLocation, 'center'>, panelIds: string[]): void
+  expandPane(location: Exclude<PanelLocation, 'center'>, panelIds: string[]): void
   getPaneWidth(panelIds: string[]): number
   setPaneWidth(panelIds: string[], width: number): void
   saveLayout(): WorkspaceLayout
   restoreLayout(layout: WorkspaceLayout): void
+  subscribeActivePanelChange(cb: (panelId: string | null) => void): () => void
 }
