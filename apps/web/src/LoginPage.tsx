@@ -4,12 +4,13 @@ import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { api } from './api'
+import { t } from '@savoire/i18n'
 
-const FEATURES = [
-  { icon: '📝', text: 'Markdown natif — édition WYSIWYG ou source' },
-  { icon: '🔗', text: 'Wikilinks et backlinks automatiques' },
-  { icon: '⚡', text: 'Collaboration temps réel (Yjs CRDT)' },
-  { icon: '🧩', text: 'Extensible par plugins' },
+const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
+  { icon: '📝', key: 'login.feature.markdown' },
+  { icon: '🔗', key: 'login.feature.wikilinks' },
+  { icon: '⚡', key: 'login.feature.collab' },
+  { icon: '🧩', key: 'login.feature.plugins' },
 ]
 
 function InputField({
@@ -77,7 +78,7 @@ export function LoginPage() {
       navigate('/')
     } catch (e) {
       const msg = String(e)
-      setError(msg.includes('401') ? 'Email ou mot de passe incorrect.' : `Erreur serveur : ${msg}`)
+      setError(msg.includes('401') ? t('app', 'login.error.credentials') : `Erreur serveur : ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -118,7 +119,7 @@ export function LoginPage() {
             {FEATURES.map((f, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--on-accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'white', fontFamily: 'var(--font-code)', fontWeight: 600, flexShrink: 0 }}>{f.icon}</div>
-                <span style={{ fontSize: 13.5, color: 'var(--on-accent)' }}>{f.text}</span>
+                <span style={{ fontSize: 13.5, color: 'var(--on-accent)' }}>{t('app', f.key)}</span>
               </div>
             ))}
           </div>
@@ -144,8 +145,8 @@ export function LoginPage() {
             </svg>
             <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))' }}>Savoire</span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))', marginBottom: 6 }}>Connexion</div>
-          <div style={{ fontSize: 14, color: 'var(--text-faint)', lineHeight: 1.5 }}>Entrez vos identifiants pour accéder à votre vault.</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))', marginBottom: 6 }}>{t('app', 'login.title')}</div>
+          <div style={{ fontSize: 14, color: 'var(--text-faint)', lineHeight: 1.5 }}>{t('app', 'login.subtitle')}</div>
         </div>
 
         {/* Error */}
@@ -157,11 +158,11 @@ export function LoginPage() {
 
         {/* Fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 24 }}>
-          <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
+          <InputField label={t('app', 'login.email')} type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
           <div>
-            <InputField label="Mot de passe" type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
+            <InputField label={t('app', 'login.password')} type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
             <div style={{ textAlign: 'right', marginTop: 6 }}>
-              <span style={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer' }}>Mot de passe oublié ?</span>
+              <span style={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer' }}>{t('app', 'login.forgot')}</span>
             </div>
           </div>
         </div>
@@ -172,7 +173,7 @@ export function LoginPage() {
           disabled={loading || !email || !password}
           style={{ padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: (!email || !password || loading) ? 'not-allowed' : 'pointer', opacity: (!email || !password) ? 0.45 : 1, transition: 'opacity 0.15s, filter 0.12s', letterSpacing: '0.01em', marginBottom: 28, width: '100%', fontFamily: 'var(--font-ui)' }}
         >
-          {loading ? 'Connexion…' : 'Se connecter →'}
+          {loading ? t('app', 'login.submitting') : t('app', 'login.submit')}
         </button>
 
         {/* Divider */}

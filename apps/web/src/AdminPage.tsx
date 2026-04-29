@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { api } from './api'
 import type { AdminUserDto } from './types'
+import { t, ti } from '@savoire/i18n'
 
 export function AdminPage() {
   const { token, isReady, logout } = useAuth()
@@ -44,7 +45,7 @@ export function AdminPage() {
     setCreateSuccess(null)
     try {
       await api.createUser(token, newEmail.trim(), newPassword, newDisplayName.trim(), newIsAdmin)
-      setCreateSuccess(`Utilisateur ${newEmail} créé.`)
+      setCreateSuccess(ti('app', 'admin.user.created', { email: newEmail }))
       setNewEmail(''); setNewDisplayName(''); setNewPassword(''); setNewIsAdmin(false)
       await loadUsers()
     } catch (e) { setCreateError(String(e)) }
@@ -123,10 +124,10 @@ export function AdminPage() {
         minHeight: 42,
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Administration — Utilisateurs</span>
+        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{t('app', 'admin.title')}</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => navigate('/')} style={topBtn}>← Éditeur</button>
-          <button onClick={handleLogout} style={{ ...topBtn, color: 'var(--color-danger)' }}>Déconnexion</button>
+          <button onClick={() => navigate('/')} style={topBtn}>{t('app', 'admin.back')}</button>
+          <button onClick={handleLogout} style={{ ...topBtn, color: 'var(--color-danger)' }}>{t('app', 'topbar.logout')}</button>
         </div>
       </div>
 
@@ -147,7 +148,7 @@ export function AdminPage() {
           alignSelf: 'flex-start',
           boxShadow: 'var(--shadow)',
         }}>
-          <h3 style={sectionTitle}>Créer un utilisateur</h3>
+          <h3 style={sectionTitle}>{t('app', 'admin.user.create')}</h3>
 
           {createError && (
             <div style={{
@@ -171,9 +172,9 @@ export function AdminPage() {
           )}
 
           {[
-            { label: 'Email', type: 'email', value: newEmail, set: setNewEmail, ph: 'user@example.com' },
-            { label: 'Nom affiché', type: 'text', value: newDisplayName, set: setNewDisplayName, ph: 'Jean Dupont' },
-            { label: 'Mot de passe', type: 'password', value: newPassword, set: setNewPassword, ph: 'Min. 8 caractères' },
+            { label: t('app', 'admin.user.email'), type: 'email', value: newEmail, set: setNewEmail, ph: 'user@example.com' },
+            { label: t('app', 'admin.user.displayName'), type: 'text', value: newDisplayName, set: setNewDisplayName, ph: 'Jean Dupont' },
+            { label: t('app', 'admin.user.password'), type: 'password', value: newPassword, set: setNewPassword, ph: t('app', 'admin.user.passwordHint') },
           ].map(({ label, type, value, set, ph }) => (
             <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</label>
@@ -189,7 +190,7 @@ export function AdminPage() {
               onChange={e => setNewIsAdmin(e.target.checked)}
               style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
             />
-            <label htmlFor="isAdmin" style={{ fontSize: '0.82rem', cursor: 'pointer' }}>Administrateur</label>
+            <label htmlFor="isAdmin" style={{ fontSize: '0.82rem', cursor: 'pointer' }}>{t('app', 'admin.user.isAdmin')}</label>
           </div>
 
           <button
@@ -206,7 +207,7 @@ export function AdminPage() {
               opacity: (createLoading || !newEmail || !newPassword || !newDisplayName) ? 0.5 : 1,
             }}
           >
-            {createLoading ? 'Création…' : "Créer l'utilisateur"}
+            {createLoading ? t('app', 'admin.user.creating') : t('app', 'admin.user.createSubmit')}
           </button>
         </div>
 
@@ -224,7 +225,7 @@ export function AdminPage() {
           boxShadow: 'var(--shadow)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h3 style={sectionTitle}>Utilisateurs ({users.length})</h3>
+            <h3 style={sectionTitle}>{ti('app', 'admin.list.title', { count: String(users.length) })}</h3>
             <button onClick={loadUsers} style={{
               padding: '3px 10px',
               background: 'var(--bg-elevated)',
@@ -232,12 +233,12 @@ export function AdminPage() {
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius)',
               fontSize: '0.72rem',
-            }}>Rafraîchir</button>
+            }}>{t('app', 'admin.refresh')}</button>
           </div>
 
           {loadError && <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>{loadError}</div>}
           {users.length === 0 && !loadError && (
-            <div style={{ color: 'var(--text-faint)', fontSize: '0.8rem' }}>Chargement…</div>
+            <div style={{ color: 'var(--text-faint)', fontSize: '0.8rem' }}>{t('app', 'admin.list.loading')}</div>
           )}
 
           {users.map(user => (
@@ -263,7 +264,7 @@ export function AdminPage() {
                       borderRadius: 8,
                       fontWeight: 700,
                       letterSpacing: '0.04em',
-                    }}>ADMIN</span>
+                    }}>{t('app', 'admin.user.badge.admin')}</span>
                   )}
                   {user.isLockedOut && (
                     <span style={{
@@ -273,7 +274,7 @@ export function AdminPage() {
                       padding: '1px 6px',
                       borderRadius: 8,
                       fontWeight: 700,
-                    }}>DÉSACTIVÉ</span>
+                    }}>{t('app', 'admin.user.badge.disabled')}</span>
                   )}
                 </div>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{user.email}</span>

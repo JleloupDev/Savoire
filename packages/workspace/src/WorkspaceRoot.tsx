@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps } from 'dockview'
 import type { VaultAPI, ViewSpec, ViewContext, Widget, FileTypeRegistry } from '@savoire/plugin-api'
+import { t } from '@savoire/i18n'
 import { DockviewAdapter } from './DockviewAdapter'
 import { WorkspaceManagerImpl } from './WorkspaceManagerImpl'
 import { WorkspaceContext } from './WorkspaceContext'
@@ -272,8 +273,8 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
           ref={leftToggleRef}
           type="button"
           className={`workspace-pane-toggle workspace-pane-toggle-left${leftCollapsed ? ' workspace-pane-toggle--at-edge' : ''}`}
-          aria-label={leftCollapsed ? 'Expand left pane' : 'Collapse left pane'}
-          title={leftCollapsed ? 'Expand left pane' : 'Collapse left pane'}
+          aria-label={leftCollapsed ? t('layout', 'pane.left.expand') : t('layout', 'pane.left.collapse')}
+          title={leftCollapsed ? t('layout', 'pane.left.expand') : t('layout', 'pane.left.collapse')}
           onClick={() => manager.togglePane('left')}
         >
           <ChevronIcon direction={leftCollapsed ? 'right' : 'left'} />
@@ -282,8 +283,8 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
           ref={rightToggleRef}
           type="button"
           className={`workspace-pane-toggle workspace-pane-toggle-right${rightCollapsed ? ' workspace-pane-toggle--at-edge' : ''}`}
-          aria-label={rightCollapsed ? 'Expand right pane' : 'Collapse right pane'}
-          title={rightCollapsed ? 'Expand right pane' : 'Collapse right pane'}
+          aria-label={rightCollapsed ? t('layout', 'pane.right.expand') : t('layout', 'pane.right.collapse')}
+          title={rightCollapsed ? t('layout', 'pane.right.expand') : t('layout', 'pane.right.collapse')}
           onClick={() => manager.togglePane('right')}
         >
           <ChevronIcon direction={rightCollapsed ? 'left' : 'right'} />

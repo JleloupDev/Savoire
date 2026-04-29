@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useState, useEffect, useRef } from 'react'
+import { t } from '@savoire/i18n'
 
 const SearchIco = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -62,7 +63,7 @@ export function QuickOpenModal({
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ouvrir une note…"
+            placeholder={t('app', 'quickopen.placeholder')}
             style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, color: 'var(--text)', outline: 'none' }}
           />
           <span style={{ fontSize: 11, color: 'var(--text-faint)', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>Esc</span>
@@ -71,7 +72,7 @@ export function QuickOpenModal({
         {/* Results */}
         <div style={{ maxHeight: 300, overflowY: 'auto' }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>Aucun résultat</div>
+            <div style={{ padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>{t('app', 'quickopen.empty')}</div>
           ) : (
             filtered.map((doc, i) => {
               const parts = doc.path.split('/')
@@ -99,7 +100,7 @@ export function QuickOpenModal({
 
         {/* Footer shortcuts */}
         <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 12 }}>
-          {([['↑↓', 'naviguer'], ['↵', 'ouvrir'], ['Esc', 'fermer']] as [string, string][]).map(([k, v]) => (
+          {([['↑↓', t('app', 'quickopen.hint.navigate')], ['↵', t('app', 'quickopen.hint.open')], ['Esc', t('app', 'quickopen.hint.close')]] as [string, string][]).map(([k, v]) => (
             <span key={k} style={{ fontSize: 11, color: 'var(--text-faint)' }}>
               <span style={{ background: 'var(--bg-elevated)', padding: '1px 5px', borderRadius: 3, marginRight: 4 }}>{k}</span>{v}
             </span>

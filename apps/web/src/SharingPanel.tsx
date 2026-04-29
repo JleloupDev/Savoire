@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from './api'
 import type { ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, UserDto, VaultSummary, DocumentDto } from './types'
+import { t, ti } from '@savoire/i18n'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ function PermissionRow({ p, onRevoke }: { p: ResourcePermissionDto; onRevoke: ()
       </span>
       <span style={permBadge(p.permission)}>{p.permission}</span>
       {p.expiresAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>exp. {fmtDate(p.expiresAt)}</span>}
-      <button style={btnDanger} onClick={onRevoke}>Révoquer</button>
+      <button style={btnDanger} onClick={onRevoke}>{t('app', 'sharing.revoke')}</button>
     </div>
   )
 }
@@ -103,8 +104,8 @@ function LinkRow({ link, onRevoke }: { link: ShareLinkDto; onRevoke: () => void 
       </span>
       <span style={permBadge(link.permission)}>{link.permission}</span>
       {link.expiresAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>exp. {fmtDate(link.expiresAt)}</span>}
-      <button style={btnGhost} onClick={copy}>{copied ? '✓' : 'Copier'}</button>
-      <button style={btnDanger} onClick={onRevoke}>Révoquer</button>
+      <button style={btnGhost} onClick={copy}>{copied ? '✓' : t('app', 'sharing.copy')}</button>
+      <button style={btnDanger} onClick={onRevoke}>{t('app', 'sharing.revoke')}</button>
     </div>
   )
 }
@@ -174,8 +175,8 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
       try {
         const user = await api.lookupUserByEmail(email.trim(), token)
         if (user) { setResolvedUser(user); setResolveError(null) }
-        else setResolveError('Utilisateur introuvable')
-      } catch { setResolveError('Erreur de recherche') }
+        else setResolveError(t('app', 'sharing.error.userNotFound'))
+      } catch { setResolveError(t('app', 'sharing.error.search')) }
       finally { setResolveBusy(false) }
     }, 500)
   }
@@ -226,15 +227,15 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
         {/* Header */}
         <div style={header}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Partager</span>
+            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{t('app', 'sharing.title')}</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{resourceName}</span>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* Resource selector */}
             {vault && doc && (
               <select style={sel} value={target} onChange={e => setTarget(e.target.value as 'vault' | 'document')}>
-                <option value="document">Note</option>
-                <option value="vault">Vault</option>
+                <option value="document">{t('app', 'sharing.resource.note')}</option>
+                <option value="vault">{t('app', 'sharing.resource.vault')}</option>
               </select>
             )}
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', padding: '0 4px' }}>✕</button>
@@ -245,7 +246,9 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {(['permissions', 'links'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === t ? 600 : 400 }}>
-              {t === 'permissions' ? `Utilisateurs${sharing ? ` (${sharing.permissions.length})` : ''}` : `Liens${sharing ? ` (${activeLinks.length})` : ''}`}
+              {t === 'permissions'
+                ? (sharing ? ti('app', 'sharing.tab.users', { count: String(sharing.permissions.length) }) : t('app', 'sharing.tab.usersEmpty'))
+                : (sharing ? ti('app', 'sharing.tab.links', { count: String(activeLinks.length) }) : t('app', 'sharing.tab.linksEmpty'))}
             </button>
           ))}
         </div>
@@ -253,13 +256,13 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
         {/* Body */}
         <div style={body}>
           {error && <div style={{ color: 'var(--color-danger)', fontSize: '0.78rem' }}>{error}</div>}
-          {loading && <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>Chargement…</div>}
+          {loading && <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.loading')}</div>}
 
           {tab === 'permissions' && (
             <>
               {/* Add user form */}
               <div>
-                <div style={{ ...label, marginBottom: 8 }}>Ajouter un utilisateur</div>
+                <div style={{ ...label, marginBottom: 8 }}>{t('app', 'sharing.addUser')}</div>
                 <div style={row}>
                   <input
                     style={inp}
@@ -271,24 +274,24 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
                     autoComplete="off"
                   />
                   <select style={sel} value={grantPermission} onChange={e => setGrantPermission(e.target.value)}>
-                    <option value="read">Lecture</option>
-                    <option value="write">Écriture</option>
-                    <option value="admin">Admin</option>
+                    <option value="read">{t('app', 'sharing.permission.read')}</option>
+                    <option value="write">{t('app', 'sharing.permission.write')}</option>
+                    <option value="admin">{t('app', 'sharing.permission.admin')}</option>
                   </select>
                   <button style={btnPrimary} onClick={() => void handleGrant()} disabled={grantBusy || !resolvedUser}>
                     {grantBusy ? '…' : 'Ajouter'}
                   </button>
                 </div>
-                {resolveBusy && <div style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 4 }}>Recherche…</div>}
+                {resolveBusy && <div style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 4 }}>{t('app', 'sharing.resolving')}</div>}
                 {resolvedUser && <div style={{ fontSize: '0.72rem', color: 'var(--color-success)', marginTop: 4 }}>✓ {resolvedUser.displayName}</div>}
                 {resolveError && <div style={{ fontSize: '0.72rem', color: 'var(--color-danger)', marginTop: 4 }}>{resolveError}</div>}
               </div>
 
               {/* Permissions list */}
               <div>
-                <div style={{ ...label, marginBottom: 4 }}>Accès actuels</div>
+                <div style={{ ...label, marginBottom: 4 }}>{t('app', 'sharing.currentAccess')}</div>
                 {!sharing || sharing.permissions.length === 0
-                  ? <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>Aucun accès partagé.</div>
+                  ? <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.empty')}</div>
                   : sharing.permissions.map(p => (
                     <PermissionRow key={p.id} p={p} onRevoke={() => void handleRevokePerm(p)} />
                   ))
@@ -301,23 +304,23 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
             <>
               {/* Create link form */}
               <div>
-                <div style={{ ...label, marginBottom: 8 }}>Créer un lien de partage</div>
+                <div style={{ ...label, marginBottom: 8 }}>{t('app', 'sharing.createLink')}</div>
                 <div style={row}>
                   <select style={sel} value={linkPermission} onChange={e => setLinkPermission(e.target.value)}>
-                    <option value="read">Lecture</option>
-                    <option value="write">Écriture</option>
+                    <option value="read">{t('app', 'sharing.permission.read')}</option>
+                    <option value="write">{t('app', 'sharing.permission.write')}</option>
                   </select>
                   <button style={btnPrimary} onClick={() => void handleCreateLink()} disabled={linkBusy}>
-                    {linkBusy ? '…' : 'Créer le lien'}
+                    {linkBusy ? '…' : t('app', 'sharing.createLinkSubmit')}
                   </button>
                 </div>
               </div>
 
               {/* Links list */}
               <div>
-                <div style={{ ...label, marginBottom: 4 }}>Liens actifs</div>
+                <div style={{ ...label, marginBottom: 4 }}>{t('app', 'sharing.activeLinks')}</div>
                 {activeLinks.length === 0
-                  ? <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>Aucun lien actif.</div>
+                  ? <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.noLinks')}</div>
                   : activeLinks.map(link => (
                     <LinkRow key={link.id} link={link} onRevoke={() => void handleRevokeLink(link)} />
                   ))

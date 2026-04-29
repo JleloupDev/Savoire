@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/workspace': path.resolve(__dirname, '../../../../packages/workspace/src/index.ts'),
+      '@savoire/i18n': path.resolve(__dirname, '../../../../packages/i18n/src/index.ts'),
     },
   },
   test: {

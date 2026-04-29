@@ -11,6 +11,7 @@
   "dependencies": {
     "@microsoft/signalr": "^8.0.17",
     "@savoire/application": "workspace:*",
+    "@savoire/i18n": "workspace:*",
     "@savoire/editor-core": "workspace:*",
     "@savoire/editor-react": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",

@@ -18,6 +18,8 @@ import { createWebAppRoot } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
+import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
+import type { Locale } from '@savoire/i18n'
 
 initTheme()
 
@@ -200,6 +202,9 @@ export function AppShell() {
   const [sharingOpen, setSharingOpen] = useState(false)
   const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('source')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
+  const [locale, setLocaleState] = useState<Locale>(getLocale)
+
+  useEffect(() => subscribeLocale(setLocaleState), [])
 
   useEffect(() => { if (isReady && !token) navigate('/login') }, [isReady, token, navigate])
 
@@ -660,23 +665,32 @@ export function AppShell() {
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
 
           {activeDoc && (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Enregistré ✓</span>
+            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
           )}
 
           {/* Share */}
           {selectedVault && (
-            <button onClick={() => setSharingOpen(true)} title="Partager" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+            <button onClick={() => setSharingOpen(true)} title={t('app', 'topbar.share')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
-              <span>Partager</span>
+              <span>{t('app', 'topbar.share')}</span>
             </button>
           )}
 
           {/* Editor mode toggle */}
-          <button onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))} title="Basculer l'éditeur" style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
-            {markdownEditorMode === 'source' ? 'CM6' : 'Rich'}
+          <button onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))} title={t('app', 'topbar.editor.toggle')} style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+            {markdownEditorMode === 'source' ? t('app', 'topbar.editor.source') : t('app', 'topbar.editor.rich')}
+          </button>
+
+          {/* Language switcher */}
+          <button
+            onClick={() => setLocale(locale === 'fr' ? 'en' : 'fr')}
+            title={locale === 'fr' ? 'Switch to English' : 'Passer en français'}
+            style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)', letterSpacing: '0.03em' }}
+          >
+            {locale === 'fr' ? 'EN' : 'FR'}
           </button>
         </div>
       </div>
