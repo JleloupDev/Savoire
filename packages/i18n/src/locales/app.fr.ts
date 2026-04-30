@@ -84,6 +84,21 @@ export const appFr = {
   'quickopen.hint.open': 'ouvrir',
   'quickopen.hint.close': 'fermer',
 
+  // Sync
+  'sync.disconnected': 'Connexion perdue',
+  'sync.reconnected': 'Reconnecté',
+
+  // Sharing notifications
+  'notify.sharing.grantSuccess': 'Accès accordé',
+  'notify.sharing.revokeSuccess': 'Accès révoqué',
+  'notify.sharing.linkCreated': 'Lien de partage créé',
+  'notify.sharing.linkRevoked': 'Lien révoqué',
+  'notify.sharing.copied': 'Lien copié',
+
+  // Admin notifications
+  'notify.admin.userCreated': 'Utilisateur créé',
+  'notify.admin.passwordReset': 'Mot de passe réinitialisé',
+
   // Topbar
   'topbar.share': 'Partager',
   'topbar.noVault': '—',

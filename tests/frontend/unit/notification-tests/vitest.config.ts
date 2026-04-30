@@ -6,9 +6,6 @@ import path from 'path'
 export default defineConfig({
   resolve: {
     alias: {
-      '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
-      '@savoire/workspace': path.resolve(__dirname, '../../../../packages/workspace/src/index.ts'),
-      '@savoire/i18n': path.resolve(__dirname, '../../../../packages/i18n/src/index.ts'),
       '@savoire/notifications': path.resolve(__dirname, '../../../../packages/notifications/src/index.ts'),
     },
   },
@@ -18,4 +15,3 @@ export default defineConfig({
     reporters: ['verbose'],
   },
 })
-

@@ -6,6 +6,7 @@ import { useAuth } from './AuthContext'
 import { api } from './api'
 import type { AdminUserDto } from './types'
 import { t, ti } from '@savoire/i18n'
+import { notify } from '@savoire/notifications'
 
 export function AdminPage() {
   const { token, isReady, logout } = useAuth()
@@ -48,14 +49,22 @@ export function AdminPage() {
       setCreateSuccess(ti('app', 'admin.user.created', { email: newEmail }))
       setNewEmail(''); setNewDisplayName(''); setNewPassword(''); setNewIsAdmin(false)
       await loadUsers()
-    } catch (e) { setCreateError(String(e)) }
+      notify('success', t('app', 'notify.admin.userCreated'))
+    } catch (e) {
+      setCreateError(String(e))
+    }
     finally { setCreateLoading(false) }
   }
 
   async function confirmReset(userId: string) {
     if (!token || !resetPassword) return
-    try { await api.resetPassword(token, userId, resetPassword); setResetTarget(null); setResetPassword('') }
-    catch (e) { setLoadError(String(e)) }
+    try {
+      await api.resetPassword(token, userId, resetPassword)
+      setResetTarget(null); setResetPassword('')
+      notify('success', t('app', 'notify.admin.passwordReset'))
+    } catch (e) {
+      setLoadError(String(e))
+    }
   }
 
   async function handleRevoke(userId: string) {

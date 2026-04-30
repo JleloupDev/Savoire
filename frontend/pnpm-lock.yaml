@@ -215,6 +215,9 @@ importers:
       '@savoire/module-bridge':
         specifier: workspace:*
         version: link:../../packages/module-bridge
+      '@savoire/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -493,6 +496,12 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/notifications:
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -940,6 +949,19 @@ importers:
       yjs:
         specifier: ^13.6.0
         version: 13.6.30
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+
+  ../tests/frontend/unit/notification-tests:
+    dependencies:
+      '@savoire/notifications':
+        specifier: workspace:*
+        version: link:../../../../packages/notifications
     devDependencies:
       typescript:
         specifier: ^5.4.0

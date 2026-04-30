@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from './api'
 import type { ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, UserDto, VaultSummary, DocumentDto } from './types'
 import { t, ti } from '@savoire/i18n'
+import { notify } from '@savoire/notifications'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ function LinkRow({ link, onRevoke }: { link: ShareLinkDto; onRevoke: () => void 
   const copy = () => {
     void navigator.clipboard.writeText(linkUrl(link.token))
     setCopied(true); setTimeout(() => setCopied(false), 1500)
+    notify('info', t('app', 'notify.sharing.copied'))
   }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.8rem' }}>
@@ -189,7 +191,10 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
       setGrantEmail('')
       setResolvedUser(null)
       await reload()
-    } catch (e) { setError(String(e)) }
+      notify('success', t('app', 'notify.sharing.grantSuccess'))
+    } catch (e) {
+      setError(String(e))
+    }
     finally { setGrantBusy(false) }
   }
 
@@ -198,7 +203,10 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     try {
       await api.revokePermission(target, resourceId, p.subjectId, token)
       await reload()
-    } catch (e) { setError(String(e)) }
+      notify('success', t('app', 'notify.sharing.revokeSuccess'))
+    } catch (e) {
+      setError(String(e))
+    }
   }
 
   async function handleCreateLink() {
@@ -207,7 +215,10 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     try {
       await api.createShareLink(target, resourceId, linkPermission, token)
       await reload()
-    } catch (e) { setError(String(e)) }
+      notify('success', t('app', 'notify.sharing.linkCreated'))
+    } catch (e) {
+      setError(String(e))
+    }
     finally { setLinkBusy(false) }
   }
 
@@ -215,7 +226,10 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     try {
       await api.revokeShareLink(link.id, token)
       await reload()
-    } catch (e) { setError(String(e)) }
+      notify('success', t('app', 'notify.sharing.linkRevoked'))
+    } catch (e) {
+      setError(String(e))
+    }
   }
 
   const activeLinks = sharing?.links.filter(l => l.isValid) ?? []
@@ -244,9 +258,9 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {(['permissions', 'links'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === t ? 600 : 400 }}>
-              {t === 'permissions'
+          {(['permissions', 'links'] as const).map(tabKey => (
+            <button key={tabKey} onClick={() => setTab(tabKey)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === tabKey ? '2px solid var(--accent)' : '2px solid transparent', color: tab === tabKey ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === tabKey ? 600 : 400 }}>
+              {tabKey === 'permissions'
                 ? (sharing ? ti('app', 'sharing.tab.users', { count: String(sharing.permissions.length) }) : t('app', 'sharing.tab.usersEmpty'))
                 : (sharing ? ti('app', 'sharing.tab.links', { count: String(activeLinks.length) }) : t('app', 'sharing.tab.linksEmpty'))}
             </button>

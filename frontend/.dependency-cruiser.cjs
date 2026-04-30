@@ -25,7 +25,7 @@
 //     ↓ plugin-api
 //   plugins/* (except plugin-runtime)
 //     ↓ plugin-api (plugin-module also module-bridge)
-//   plugin-api, domain-sync, ui-components
+//   plugin-api, domain-sync, ui-components, i18n, notifications
 //     ↓ (nothing — leaves)
 // ═══════════════════════════════════════════════════════════════════════════
 

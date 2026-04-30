@@ -20,6 +20,8 @@ import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
 import type { Locale } from '@savoire/i18n'
+import { notify } from '@savoire/notifications'
+import { ToastContainer } from './ToastContainer'
 
 initTheme()
 
@@ -183,6 +185,10 @@ export function AppShell() {
   const appRootRef = useRef(createWebAppRoot({
     documentStore: documentStore.current,
     getToken: () => tokenRef.current,
+    onConnectionChange: (state) => {
+      if (state === 'disconnected') notify('warn', t('app', 'sync.disconnected'))
+      else notify('success', t('app', 'sync.reconnected'))
+    },
   }))
   const application = appRootRef.current.api
 
@@ -737,6 +743,8 @@ export function AppShell() {
           onClose={() => setQuickOpenVisible(false)}
         />
       )}
+
+      <ToastContainer />
       </div>
     </div>
   )

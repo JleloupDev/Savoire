@@ -61,6 +61,7 @@ export class VaultHubClient {
   private connection: HubConnection | null = null
   private connectPromise: Promise<void> | null = null
   private disposed = false
+  private disposing = false
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
   private indexOpCallbacks: ((evt: IndexOpAppliedEvent) => void)[] = []
@@ -73,6 +74,7 @@ export class VaultHubClient {
     private readonly onChanged: () => void,
     /** JWT Bearer token factory — required by the [Authorize] hub. */
     private readonly getToken: () => string | null = () => null,
+    private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
   ) {}
 
   async connect(): Promise<void> {
@@ -125,6 +127,7 @@ export class VaultHubClient {
       // ── Reconnection: rejoin vault to get fresh snapshot ─────────────────
       this.connection.onreconnected(async () => {
         console.debug('[VaultHub] Reconnected — rejoining vault')
+        this.onConnectionChange?.('connected')
         try {
           await this.connection!.invoke('JoinVault', this.vaultId)
         } catch (err) {
@@ -134,6 +137,7 @@ export class VaultHubClient {
       })
 
       this.connection.onclose((err) => {
+        if (!this.disposing) this.onConnectionChange?.('disconnected')
         if (this.isUnauthorizedError(err)) this.blockOnUnauthorized()
       })
     }
@@ -231,6 +235,7 @@ export class VaultHubClient {
   /** Cleanly disconnect from VaultHub. */
   async dispose(): Promise<void> {
     this.disposed = true
+    this.disposing = true
     this.pendingCreates.clear()
     if (this.connection) {
       try { await this.connection.stop() } catch { /* POC: ignore */ }
