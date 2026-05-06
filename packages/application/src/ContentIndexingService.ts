@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { HookRegistry, IIndexRegistry } from '@savoire/plugin-api'
+import type { CrdtVersion } from '@savoire/domain-index'
 import type { ILocalIndexStorage } from '@savoire/platform'
 import type { VaultHubLike } from './contracts'
 
 /**
- * ContentIndexingService — abonné à onDocumentStabilized, dispatche aux IndexContributors.
+ * ContentIndexingService — subscribes to onDocumentStabilized and dispatches to IndexContributors.
  *
  * see ADR-015
  *
- * Cycle de vie :
- *   1. restore()       — au démarrage, recharge les snapshots persistés
- *   2. init()          — s'abonne au hook (appeler après que les plugins ont chargé)
- *   3. attachHub(hub)  — appelé après activation du vault, branche la sync serveur
+ * Lifecycle:
+ *   1. restore()       — on startup, reloads persisted snapshots
+ *   2. init()          — subscribes to the hook (call after plugins have loaded)
+ *   3. attachHub(hub)  — called after vault activation, wires server sync
  */
 export class ContentIndexingService {
   private getHub: (() => VaultHubLike | null) | null = null
@@ -22,15 +23,22 @@ export class ContentIndexingService {
   constructor(
     private readonly hooks: HookRegistry,
     private readonly indexRegistry: IIndexRegistry,
-    private readonly storage: ILocalIndexStorage,
+    private storage: ILocalIndexStorage,
   ) {}
 
-  /** Callback appelé après chaque indexation locale (pour notifier les panels). */
+  /** Swaps storage, rebuilds fresh contributor instances, and reloads snapshots for the new vault. */
+  async switchVault(storage: ILocalIndexStorage): Promise<void> {
+    this.storage = storage
+    this.indexRegistry.rebuild()
+    await this.restore()
+  }
+
+  /** Callback invoked after each local indexing pass (to notify panels). */
   setOnIndexed(cb: (docId: string, path: string) => void): void {
     this.onIndexed = cb
   }
 
-  /** Recharge les snapshots depuis le stockage. Appeler avant init(). */
+  /** Reloads snapshots from storage. Call before init(). */
   async restore(): Promise<void> {
     for (const contributor of this.indexRegistry.getAll()) {
       const saved = await this.storage.loadSnapshot(contributor.namespace)
@@ -41,12 +49,15 @@ export class ContentIndexingService {
     }
   }
 
-  /** S'abonne à onDocumentStabilized. Appeler après que les plugins ont chargé. */
+  /** Subscribes to onDocumentStabilized. Call after plugins have loaded. */
   init(): void {
-    this.hooks.onDocumentStabilized(async (docId, path, content) => {
+    this.hooks.onDocumentStabilized(async (docId, path, content, crdtVersion?: CrdtVersion) => {
       // 1. Apply locally with seq=null (op not yet sequenced)
       for (const contributor of this.indexRegistry.getAll()) {
         contributor.onOp(null, docId, path, content)
+        if (crdtVersion && 'updateCrdtVersion' in contributor) {
+          (contributor as { updateCrdtVersion(docId: string, version: CrdtVersion): void }).updateCrdtVersion(docId, crdtVersion)
+        }
         const snap = contributor.snapshot()
         await this.storage.saveSnapshot(contributor.namespace, snap, contributor.processedSeq)
       }
@@ -63,9 +74,9 @@ export class ContentIndexingService {
   }
 
   /**
-   * Branche la sync serveur. Appelé après activation du vault.
-   * Le hub est consulté via getHub() à chaque op (pas capturé à l'enregistrement)
-   * pour éviter des refs périmées après changement de vault.
+   * Wires server sync. Called after vault activation.
+   * The hub is queried via getHub() on each op (not captured at registration time)
+   * to avoid stale refs after a vault switch.
    */
   attachHub(getHub: () => VaultHubLike | null): void {
     // Clear previous subscription when vault changes
@@ -91,19 +102,20 @@ export class ContentIndexingService {
   }
 
   /**
-   * Indexe immédiatement un contenu shadow pré-converti.
-   * Utilisé par les FileViews non-Markdown (Excalidraw, etc.) via onFileContentStabilized.
-   * Le contenu est déjà en Markdown (shadow document) — pas de contentExtractor ici.
+   * Immediately indexes pre-converted shadow content.
+   * Used by non-Markdown FileViews (Excalidraw, etc.) via onFileContentStabilized.
+   * Content is already in Markdown (shadow document) — no contentExtractor here.
    */
-  async indexNow(docId: string, path: string, shadowMarkdown: string): Promise<void> {
+  async indexNow(docId: string, path: string, shadowMarkdown: string, pushToHub = true): Promise<void> {
     for (const contributor of this.indexRegistry.getAll()) {
       contributor.onOp(null, docId, path, shadowMarkdown)
       const snap = contributor.snapshot()
       await this.storage.saveSnapshot(contributor.namespace, snap, contributor.processedSeq)
     }
-    const hub = this.getHub?.()
-    if (hub?.pushIndexOp) {
-      void hub.pushIndexOp(docId, path, shadowMarkdown)
+    if (pushToHub) {
+      const hub = this.getHub?.()
+      if (hub?.pushIndexOp) void hub.pushIndexOp(docId, path, shadowMarkdown)
     }
   }
+
 }

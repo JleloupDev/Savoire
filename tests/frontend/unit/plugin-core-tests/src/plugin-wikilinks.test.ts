@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll } from 'vitest'
-import plugin from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
+const plugin = createWikilinksPlugin({ belowOf: 'plugin-inspector' })
 import type { PluginAPI } from '@savoire/plugin-api'
 
 // ── Stub API ──────────────────────────────────────────────────────────────────
@@ -22,7 +23,9 @@ const stubAPI = {
   },
   commands: { register: () => {}, unregister: () => {} },
   triggers: { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined },
-  files: { register: () => {}, unregister: () => {} },
+  files: { register: () => {}, unregister: () => {}, getAll: () => [], getByExtension: () => undefined },
+  views: { register: () => {}, unregister: () => {}, getAll: () => [] },
+  index: { register: () => {}, registerFactory: () => {}, unregister: () => {}, getAll: () => [], rebuild: () => {} },
   vault: {
     read: async () => '',
     readDocumentByPath: async () => '',

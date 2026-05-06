@@ -1,67 +1,80 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// dependency-cruiser — FICHIER PROTÉGÉ
+// dependency-cruiser — PROTECTED FILE
 //
-// Ce fichier ne doit PAS être modifié sans demande explicite de l'utilisateur.
-// Il encode les contraintes d'architecture du monorepo frontend et sert de
-// garde-fou automatique contre les violations de dépendances inter-packages.
+// Do NOT modify this file without an explicit request from the user.
+// It encodes the architecture constraints of the frontend monorepo and acts
+// as an automated guard against inter-package dependency violations.
 //
-// Hiérarchie stricte (une couche ne peut importer que depuis les couches inférieures) :
+// Strict hierarchy (a layer may only import from layers below it):
 //
 //   apps (web, view, desktop, editor-dev)
-//     ↓ peuvent tout importer
+//     ↓ may import anything
 //   editor-react
 //     ↓ editor-core, plugin-api
 //   editor-core
-//     ↓ plugin-api UNIQUEMENT (pas plugin-runtime)
+//     ↓ plugin-api ONLY (not plugin-runtime)
 //   plugin-runtime
 //     ↓ plugin-api
 //   workspace, module-bridge, ui-components
-//     ↓ plugin-api (ui-components: rien)
+//     ↓ plugin-api (ui-components: nothing)
 //   infrastructure-sync
 //     ↓ application, domain-sync, platform
 //   application
 //     ↓ platform, plugin-api
 //   platform
 //     ↓ plugin-api
-//   plugins/* (sauf plugin-runtime)
-//     ↓ plugin-api (plugin-module aussi module-bridge)
+//   plugins/* (except plugin-runtime)
+//     ↓ plugin-api (plugin-module also module-bridge)
 //   plugin-api, domain-sync, ui-components
-//     ↓ (rien — feuilles)
+//     ↓ (nothing — leaves)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
   forbidden: [
 
-    // ── Règles générales ───────────────────────────────────────────────────
+    // ── General rules ──────────────────────────────────────────────────────
 
     {
       name: 'no-circular',
       severity: 'error',
-      comment: 'Les dépendances circulaires sont interdites.',
+      comment: 'Circular dependencies are forbidden.',
       from: {},
       to: { circular: true },
     },
 
-    // ── plugin-api — feuille absolue ────────────────────────────────────────
+    // ── domain-index — absolute leaf ───────────────────────────────────────
+
+    {
+      name: 'domain-index-no-cross-package-imports',
+      severity: 'error',
+      comment: 'domain-index is an absolute leaf — no dependencies on other @savoire packages.',
+      from: { path: '^packages/domain-index/src' },
+      to: {
+        path: '^packages/',
+        pathNot: '^packages/domain-index/',
+      },
+    },
+
+    // ── plugin-api — may only import from domain-index ─────────────────────
 
     {
       name: 'plugin-api-no-cross-package-imports',
       severity: 'error',
-      comment: 'plugin-api ne doit importer aucun autre package @poc.',
+      comment: 'plugin-api may only import from domain-index.',
       from: { path: '^packages/plugin-api/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/plugin-api/',
+        pathNot: '^packages/(plugin-api|domain-index)/',
       },
     },
 
-    // ── domain-sync — feuille ───────────────────────────────────────────────
+    // ── domain-sync — leaf ─────────────────────────────────────────────────
 
     {
       name: 'domain-sync-no-cross-package-imports',
       severity: 'error',
-      comment: 'domain-sync est une feuille — aucune dépendance vers d\'autres packages @poc.',
+      comment: 'domain-sync is a leaf — no dependencies on other @savoire packages.',
       from: { path: '^packages/domain-sync/src' },
       to: {
         path: '^packages/',
@@ -69,12 +82,12 @@ module.exports = {
       },
     },
 
-    // ── ui-components — feuille ─────────────────────────────────────────────
+    // ── ui-components — leaf ───────────────────────────────────────────────
 
     {
       name: 'ui-components-no-cross-package-imports',
       severity: 'error',
-      comment: 'ui-components est une feuille — aucune dépendance vers d\'autres packages @poc.',
+      comment: 'ui-components is a leaf — no dependencies on other @savoire packages.',
       from: { path: '^packages/ui-components/src' },
       to: {
         path: '^packages/',
@@ -82,51 +95,51 @@ module.exports = {
       },
     },
 
-    // ── platform — uniquement plugin-api ────────────────────────────────────
+    // ── platform — plugin-api and domain-index ─────────────────────────────
 
     {
-      name: 'platform-only-plugin-api',
+      name: 'platform-only-plugin-api-and-domain-index',
       severity: 'error',
-      comment: 'platform ne peut importer que depuis plugin-api.',
+      comment: 'platform may only import from plugin-api and domain-index.',
       from: { path: '^packages/platform/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/(plugin-api|platform)/',
+        pathNot: '^packages/(plugin-api|domain-index|platform)/',
       },
     },
 
-    // ── application — uniquement plugin-api et platform ─────────────────────
+    // ── application — plugin-api, platform and domain-index ────────────────
 
     {
-      name: 'application-only-plugin-api-and-platform',
+      name: 'application-only-plugin-api-platform-domain-index',
       severity: 'error',
-      comment: 'application ne peut importer que depuis plugin-api et platform.',
+      comment: 'application may only import from plugin-api, platform and domain-index.',
       from: { path: '^packages/application/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/(plugin-api|platform|application)/',
+        pathNot: '^packages/(plugin-api|platform|domain-index|application)/',
       },
     },
 
-    // ── infrastructure-sync — uniquement application, domain-sync, platform ──
+    // ── infrastructure-sync — application, domain-sync, platform, domain-index
 
     {
       name: 'infrastructure-sync-allowed-deps',
       severity: 'error',
-      comment: 'infrastructure-sync ne peut importer que depuis application, domain-sync et platform.',
+      comment: 'infrastructure-sync may only import from application, domain-sync, platform, domain-index and plugin-api.',
       from: { path: '^packages/infrastructure-sync/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/(application|domain-sync|platform|plugin-api|infrastructure-sync)/',
+        pathNot: '^packages/(application|domain-sync|domain-index|platform|plugin-api|infrastructure-sync)/',
       },
     },
 
-    // ── plugin-runtime — uniquement plugin-api ──────────────────────────────
+    // ── plugin-runtime — plugin-api only ───────────────────────────────────
 
     {
       name: 'plugin-runtime-only-plugin-api',
       severity: 'error',
-      comment: 'plugin-runtime ne peut importer que depuis plugin-api.',
+      comment: 'plugin-runtime may only import from plugin-api.',
       from: { path: '^packages/plugin-runtime/src' },
       to: {
         path: '^packages/',
@@ -134,19 +147,19 @@ module.exports = {
       },
     },
 
-    // ── editor-core — uniquement plugin-api (pas plugin-runtime!) ───────────
+    // ── editor-core — plugin-api only (not plugin-runtime!) ────────────────
 
     {
       name: 'editor-core-no-plugin-runtime',
       severity: 'error',
-      comment: 'editor-core ne doit PAS importer depuis plugin-runtime. Utiliser IPluginLoader/IEditorHostAPI depuis plugin-api.',
+      comment: 'editor-core must NOT import from plugin-runtime. Use IPluginLoader/IEditorHostAPI from plugin-api.',
       from: { path: '^packages/editor-core/src' },
       to: { path: '^packages/plugin-runtime/' },
     },
     {
       name: 'editor-core-only-plugin-api',
       severity: 'error',
-      comment: 'editor-core ne peut importer que depuis plugin-api (et ses propres fichiers).',
+      comment: 'editor-core may only import from plugin-api (and its own files).',
       from: { path: '^packages/editor-core/src' },
       to: {
         path: '^packages/',
@@ -154,12 +167,12 @@ module.exports = {
       },
     },
 
-    // ── editor-react — uniquement editor-core et plugin-api ─────────────────
+    // ── editor-react — editor-core and plugin-api only ─────────────────────
 
     {
       name: 'editor-react-allowed-deps',
       severity: 'error',
-      comment: 'editor-react ne peut importer que depuis editor-core et plugin-api.',
+      comment: 'editor-react may only import from editor-core and plugin-api.',
       from: { path: '^packages/editor-react/src' },
       to: {
         path: '^packages/',
@@ -167,12 +180,12 @@ module.exports = {
       },
     },
 
-    // ── workspace — uniquement plugin-api ───────────────────────────────────
+    // ── workspace — plugin-api only ────────────────────────────────────────
 
     {
       name: 'workspace-only-plugin-api',
       severity: 'error',
-      comment: 'workspace ne peut importer que depuis plugin-api.',
+      comment: 'workspace may only import from plugin-api.',
       from: { path: '^packages/workspace/src' },
       to: {
         path: '^packages/',
@@ -180,12 +193,12 @@ module.exports = {
       },
     },
 
-    // ── module-bridge — uniquement plugin-api ───────────────────────────────
+    // ── module-bridge — plugin-api only ────────────────────────────────────
 
     {
       name: 'module-bridge-only-plugin-api',
       severity: 'error',
-      comment: 'module-bridge ne peut importer que depuis plugin-api.',
+      comment: 'module-bridge may only import from plugin-api.',
       from: { path: '^packages/module-bridge/src' },
       to: {
         path: '^packages/',
@@ -193,25 +206,25 @@ module.exports = {
       },
     },
 
-    // ── plugins/* (hors plugin-runtime) — uniquement plugin-api ─────────────
+    // ── plugins/* (except plugin-runtime) — plugin-api only ────────────────
 
     {
       name: 'plugins-only-plugin-api',
       severity: 'error',
-      comment: 'Les plugins ne peuvent importer que depuis plugin-api (imports intra-plugin autorisés).',
+      comment: 'Plugins may only import from plugin-api (intra-plugin imports allowed).',
       from: {
         path: '^packages/plugins/(?!(plugin-module|plugin-runtime))',
       },
       to: {
         path: '^packages/',
-        // Autoriser plugin-api et les imports intra-plugin (même dossier plugin)
+        // Allow plugin-api and intra-plugin imports (same plugin folder)
         pathNot: '^packages/(plugin-api|plugins/)',
       },
     },
     {
       name: 'plugin-module-allowed-deps',
       severity: 'error',
-      comment: 'plugin-module peut importer depuis plugin-api et module-bridge uniquement.',
+      comment: 'plugin-module may only import from plugin-api and module-bridge.',
       from: { path: '^packages/plugins/plugin-module/src' },
       to: {
         path: '^packages/',
@@ -228,8 +241,8 @@ module.exports = {
       path: '(dist|node_modules|coverage)/',
     },
     moduleSystems: ['es6', 'cjs'],
-    // tsPreCompilationDeps trop coûteux en mémoire sur de grands scans — désactivé.
-    // Les règles d'architecture portent sur les imports de modules, pas les types.
+    // tsPreCompilationDeps is too memory-intensive on large scans — disabled.
+    // Architecture rules apply to module imports, not type-level dependencies.
     tsPreCompilationDeps: false,
     tsConfig: { fileName: 'tsconfig.base.json' },
     reporterOptions: {

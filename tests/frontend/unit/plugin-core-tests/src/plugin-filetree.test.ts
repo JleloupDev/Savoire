@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi } from 'vitest'
-import type { PluginAPI, ViewRegistry, ViewSpec, ViewContext, Widget, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
+import type { PluginAPI, ViewRegistry, ViewSpec, ViewContext, Widget, VaultAPI, WorkspaceAPI, FileTypeRegistry } from '@savoire/plugin-api'
 import plugin from '@savoire/plugin-filetree'
 
 function makeVaultAPI(): VaultAPI {
@@ -21,6 +21,15 @@ function makeWorkspaceAPI(): WorkspaceAPI {
     openPanel: vi.fn(),
     closePanel: vi.fn(),
     getActiveDocument: vi.fn(() => undefined),
+  }
+}
+
+function makeFileTypeRegistry(): FileTypeRegistry {
+  return {
+    register: vi.fn(),
+    unregister: vi.fn(),
+    getAll: vi.fn(() => []),
+    getByExtension: vi.fn(() => undefined),
   }
 }
 
@@ -95,7 +104,7 @@ describe('plugin-filetree onload()', () => {
     const api = makePluginAPI(views)
     await plugin.onload(api)
 
-    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI() }
+    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI(), fileTypes: makeFileTypeRegistry() }
     const widget: Widget = views.registered[0].createView(ctx)
     expect(typeof widget.render).toBe('function')
   })
@@ -105,7 +114,7 @@ describe('plugin-filetree onload()', () => {
     const api = makePluginAPI(views)
     await plugin.onload(api)
 
-    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI() }
+    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI(), fileTypes: makeFileTypeRegistry() }
     const widget = views.registered[0].createView(ctx)
     const rendered = widget.render()
     expect(rendered).not.toBeNull()
@@ -116,7 +125,7 @@ describe('plugin-filetree onload()', () => {
     const api = makePluginAPI(views)
     await plugin.onload(api)
 
-    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI() }
+    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault: makeVaultAPI(), fileTypes: makeFileTypeRegistry() }
     const widget = views.registered[0].createView(ctx)
     expect(() => widget.dispose?.()).not.toThrow()
   })
@@ -145,7 +154,7 @@ describe('plugin-filetree buildTree — shadow doc filtering', () => {
 
     // Simuler un render du widget pour déclencher buildTree via vault.list
     // On vérifie indirectement : vault.list est appelé avec ''
-    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault }
+    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault, fileTypes: makeFileTypeRegistry() }
     const widget = views.registered[0].createView(ctx)
     // Le widget est créé — la logique de filtrage est dans buildTree (appelée au render)
     // Le test confirme que l'API list est bien appelée et que le plugin est fonctionnel.
@@ -164,7 +173,7 @@ describe('plugin-filetree buildTree — shadow doc filtering', () => {
     api.vault = vault
     await plugin.onload(api)
 
-    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault }
+    const ctx: ViewContext = { workspace: makeWorkspaceAPI(), vault, fileTypes: makeFileTypeRegistry() }
     const widget = views.registered[0].createView(ctx)
     expect(widget).toBeDefined()
   })

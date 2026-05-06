@@ -15,7 +15,7 @@ import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
 import noteEmbedPlugin from '@savoire/plugin-note-embed'
-import wikilinksPlugin from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import modulePlugin from '@savoire/plugin-module'
 import mermaidPlugin from '@savoire/plugin-mermaid'
 import tablePlugin from '@savoire/plugin-table'
@@ -23,7 +23,7 @@ import tablePlugin from '@savoire/plugin-table'
 const readOnly = (permission: string) => permission === 'read'
 
 const SHARE_DEFAULT_PLUGINS: VaultPlugin[] = [
-  mermaidPlugin, calloutPlugin, codeBlockPlugin, wikilinksPlugin,
+  mermaidPlugin, calloutPlugin, codeBlockPlugin, createWikilinksPlugin(),
   noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin,
 ]
 

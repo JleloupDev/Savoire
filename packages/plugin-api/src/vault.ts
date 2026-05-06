@@ -24,4 +24,8 @@ export interface VaultAPI {
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */
   getToken?(): string
+  /** Returns Level 1 gossipable metadata for all known documents. */
+  getFileTree?(): import('./indexing').FileTreeEntry[]
+  /** Returns Level 2 metadata (title, tags, aliases, frontmatter) for a document. */
+  getMetadata?(docId: string): import('./indexing').DocMetadata | null
 }

@@ -2,46 +2,30 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { BacklinksIndexContributor } from './BacklinksIndexContributor'
-import { BacklinksWidget } from './BacklinksWidget'
 
-export function createBacklinksPlugin(options: {
+// DECISION: view moved to plugin-wikilinks — backlinks panel is now provided by
+// the wikilinks plugin which owns the contributor. This package keeps the contributor
+// for backward compatibility with existing snapshots that reference namespace 'backlinks'.
+export function createBacklinksPlugin(_options: {
   tabOf?: string
   belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
-  const contributor = new BacklinksIndexContributor()
-
   return {
     manifest: {
       id: 'plugin-backlinks',
       name: 'Backlinks',
       version: '0.0.1',
-      description: 'Affiche les documents qui pointent vers le document courant.',
-      permissions: ['vault:read', 'ui:editor'],
+      description: 'Indexe les backlinks (vue fournie par plugin-wikilinks).',
+      permissions: ['vault:read'],
     },
 
     async onload(api: PluginAPI) {
-      // Enregistre le contributeur dans l'index local
-      api.index?.register(contributor)
-
-      api.views.register({
-        id: 'backlinks',
-        title: 'Backlinks',
-        icon: 'link',
-        container: 'right',
-        tabOf: options.tabOf,
-        belowOf: options.belowOf,
-        initialSize: options.initialSize ?? 280,
-        closable: true,
-        createView(ctx) {
-          return new BacklinksWidget(ctx, contributor)
-        },
-      })
+      api.index?.registerFactory(() => new BacklinksIndexContributor())
     },
 
     async onunload() {},
   }
 }
 
-export { BacklinksWidget } from './BacklinksWidget'
 export { BacklinksIndexContributor } from './BacklinksIndexContributor'

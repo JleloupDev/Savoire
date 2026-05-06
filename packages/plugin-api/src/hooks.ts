@@ -24,7 +24,7 @@ export interface HookRegistry {
    * Fired by editor-core after ~2s of inactivity on a document.
    * Used by ContentIndexingService to trigger local index updates.
    */
-  onDocumentStabilized(hook: (docId: string, path: string, content: string) => void): void
+  onDocumentStabilized(hook: (docId: string, path: string, content: string, crdtVersion?: import('./indexing').CrdtVersion) => void): void
   // Execution (called by editor-core to run the pipeline)
   runBeforeParse(source: string): Promise<string>
   // Sync variant for CM6 StateField (which must be synchronous).
@@ -33,5 +33,5 @@ export interface HookRegistry {
   runAfterRender(html: string): Promise<string>
   runDocumentOpen(path: string): void
   runDocumentSave(content: string): void
-  runDocumentStabilized(docId: string, path: string, content: string): void
+  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('./indexing').CrdtVersion): void
 }

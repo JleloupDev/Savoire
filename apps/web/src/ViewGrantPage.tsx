@@ -12,7 +12,7 @@ import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
 import noteEmbedPlugin from '@savoire/plugin-note-embed'
-import wikilinksPlugin from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import modulePlugin from '@savoire/plugin-module'
 import tablePlugin from '@savoire/plugin-table'
 import { pluginRegistry } from './pluginRegistry'
@@ -86,7 +86,7 @@ const defaultPlugins: VaultPlugin[] = [
   mermaidPlugin,
   calloutPlugin,
   codeBlockPlugin,
-  wikilinksPlugin,
+  createWikilinksPlugin(),
   noteEmbedPlugin,
   modulePlugin,
   taskListPlugin,

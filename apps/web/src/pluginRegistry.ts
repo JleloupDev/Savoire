@@ -15,7 +15,7 @@ export const pluginRegistry: Record<string, () => Promise<VaultPlugin>> = {
   'plugin-mermaid':     () => import('@savoire/plugin-mermaid').then(m => m.default),
   'plugin-callout':     () => import('@savoire/plugin-callout').then(m => m.default),
   'plugin-code-block':  () => import('@savoire/plugin-code-block').then(m => m.default),
-  'plugin-wikilinks':   () => import('@savoire/plugin-wikilinks').then(m => m.default),
+  'plugin-wikilinks':   () => import('@savoire/plugin-wikilinks').then(m => m.createWikilinksPlugin()),
   'plugin-note-embed':  () => import('@savoire/plugin-note-embed').then(m => m.default),
   'plugin-module':      () => import('@savoire/plugin-module').then(m => m.default),
   'plugin-task-list':   () => import('@savoire/plugin-task-list').then(m => m.default),

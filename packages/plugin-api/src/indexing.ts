@@ -1,69 +1,56 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// ─── Content extraction (shadow documents) ──────────────────────────────
+
+// Re-export domain types — plugins only depend on plugin-api, never on domain-index directly.
+export type {
+  RelPosJSON,
+  ICollaborativeText,
+  IndexEntry,
+  IndexContributor,
+  CrdtVersion,
+  DocMetadata,
+  FileTreeEntry,
+} from '@savoire/domain-index'
+export { AnchorIndex, resolveEntry, validateEntry } from '@savoire/domain-index'
+export { anchorKey } from '@savoire/domain-index'
+
+// ─── Content extraction (shadow documents) ──────────────────────────────────
 //
 // A plugin that handles a non-Markdown file type can declare a ContentExtractor
 // to produce an indexable Markdown shadow document.
 // The extractor is isomorphic: it runs on both client and server (Node).
-//
-// Usage in a FileTypeSpec plugin:
-//   contentExtractor: {
-//     toShadowDocument(rawContent: string): string { ... }
-//   }
 
 export interface ContentExtractor {
-  /**
-   * Transforme le contenu brut d'un document (JSON, SVG, etc.) en Markdown indexable.
-   * Le résultat est envoyé au serveur via POST /api/v1/vaults/{vaultId}/documents/{docId}/index.
-   */
   toShadowDocument(rawContent: string): string
 }
 
-// ─── Index contributors ───────────────────────────────────────────────────
-//
-// A plugin can contribute to a persistent index (e.g. backlinks, tags).
-// Model: ops log + snapshots. The server is the sequencer.
-//
-// Lifecycle:
-//   1. restore(snapshot)       — on startup, restore state from the last snapshot
-//   2. onOp(seq, docId, content) — for each op since processedSeq
-//   3. snapshot()              — periodically, serialize state for persistence
+// ─── Index store API (read-only, exposed to plugins) ─────────────────────────
+// ISP: plugins that only need to query the index receive this narrow interface.
 
-export interface IndexContributor {
-  /** Namespace unique de cet index (ex. "backlinks", "tags"). Utilisé comme clé de snapshot. */
-  namespace: string
-  /**
-   * Restaure l'état interne depuis un snapshot persisté.
-   * Appelé au démarrage si un snapshot existe côté serveur.
-   */
-  restore(snapshot: string, processedSeq: number): void
-  /**
-   * Traite une opération de contenu.
-   * @param seq  Séquence serveur de l'op. null = op locale non encore séquencée (offline).
-   * @param docId UUID stable du document.
-   * @param path Chemin vault-relatif du document (ex. "Inbox/note.md").
-   * @param markdownContent Contenu Markdown (shadow doc inclus) à indexer.
-   */
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void
-  /**
-   * Sérialise l'état courant en JSON string pour persistance côté serveur.
-   */
-  snapshot(): string
-  /** Dernière séquence traitée — utilisée pour le checkpoint. */
-  readonly processedSeq: number
+export interface IIndexStoreAPI {
+  query(namespace: string): import('@savoire/domain-index').IndexEntry[]
+  getByValue(namespace: string, value: string): import('@savoire/domain-index').IndexEntry[]
+  getByDoc(namespace: string, docId: string): import('@savoire/domain-index').IndexEntry[]
 }
 
-// ─── Index API (exposed to plugins) ──────────────────────────────────────
+// ─── Contributor registry (write-only, exposed to plugins) ───────────────────
+// ISP: plugins that register contributors receive this narrow interface.
 
-export interface IPluginIndexAPI {
-  /** Enregistre un contributeur d'index. Appelé dans VaultPlugin.onload(). */
-  register(contributor: IndexContributor): void
+export interface IIndexContributorRegistry {
+  /** Register a factory — a fresh instance is created on each vault switch. */
+  registerFactory(factory: () => import('@savoire/domain-index').IndexContributor): void
 }
 
-// ─── Index registry (used by application layer) ───────────────────────────
-// Wider than IPluginIndexAPI — exposes read access for ContentIndexingService.
+// ─── Combined (used by application layer wiring) ─────────────────────────────
+
+export interface IPluginIndexAPI extends IIndexContributorRegistry {}
+
+// ─── Index registry (used by application layer) ───────────────────────────────
+// Wider than IPluginIndexAPI — exposes contributor list for ContentIndexingService.
 
 export interface IIndexRegistry extends IPluginIndexAPI {
-  /** Returns all registered contributors. Used by ContentIndexingService. */
-  getAll(): IndexContributor[]
+  getAll(): import('@savoire/domain-index').IndexContributor[]
+  get(namespace: string): import('@savoire/domain-index').IndexContributor | undefined
+  /** Recreates all contributor instances from their registered factories. */
+  rebuild(): void
 }

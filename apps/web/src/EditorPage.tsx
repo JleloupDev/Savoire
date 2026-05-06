@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { CrdtDocumentFetcher, RestDocumentFetcher, RestVaultStorage, DocumentRoomClient } from '@savoire/infrastructure-sync'
-import { VaultClient, DocumentStore } from '@savoire/platform'
+import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -166,7 +166,7 @@ export function EditorPage() {
     fileTypeRegistryRef,
     onControllerReadyRef,
     contentIndexingServiceRef,
-    graphContributorRef,
+    getGraphContributor,
     pluginLoaderRef,
     triggersRef,
   } = usePluginBootstrap({
@@ -239,17 +239,18 @@ export function EditorPage() {
       vaultAPIRef.current = active.client
       onChanged()
 
-      // Connect index sync to the new vault hub
+      // Connect index sync to the new vault hub, then restore its persisted index snapshot.
       contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveHub())
+      await contentIndexingServiceRef.current?.switchVault(new ServerIndexStorage(vault.id, () => tokenRef.current))
 
-      if (graphContributorRef.current) {
-        const contributor = graphContributorRef.current
+      const graphContributor = getGraphContributor()
+      if (graphContributor) {
         fetch(`/api/v1/vaults/${vault.id}/links`, {
           headers: { Authorization: `Bearer ${tok}` },
         })
           .then(r => r.ok ? r.json() : [])
           .then((links: Array<{ sourceId: string; sourcePath: string; targetId: string | null; targetPath: string; linkType: string }>) => {
-            contributor.bulkLoad(links)
+            graphContributor.bulkLoad(links)
             managerRef.current?.notifyDocumentIndexed('', '')
           })
           .catch(err => console.warn('[GraphPlugin] preload links failed', err))
@@ -261,7 +262,7 @@ export function EditorPage() {
     })
     await switchChainRef.current
   // switchToVault only uses stable refs (lastSwitchTsRef, selectedVaultRef, vaultAPIRef,
-  // vaultStorage, documentStore, documentsRef, contentIndexingServiceRef, graphContributorRef,
+  // vaultStorage, documentStore, documentsRef, contentIndexingServiceRef, getGraphContributor,
   // managerRef) and state setters — application.documents is stable (created once in appRootRef).
   }, [application.documents])
 
@@ -364,17 +365,27 @@ export function EditorPage() {
       docEventUnsubRef.current?.()
       docEventUnsubRef.current = null
 
+      // DECISION: shared documents use a REST-only DocumentStore (no CRDT fetcher).
+      // The CRDT fetcher connects to /hubs/sync with the user's JWT — which the
+      // server rejects (401) when the user is not a vault member. REST GET
+      // /documents/{id}/content accepts the user token via document-level ACL.
+      const sharedDocStore = new DocumentStore(restFetcher.current)
       void application.documents.activateSharedDocument({
         vaultId: note.vaultId,
         doc: docStub,
         token,
-        documentStore: documentStore.current,
+        documentStore: sharedDocStore,
         resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
       }).then(activated => {
         vaultAPIRef.current = activated.client
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
+        // Update the ref immediately — setDocuments schedules a re-render but openFile
+        // below calls openPathInCenter synchronously, before React re-renders.
+        // Without this, documentsRef.current still holds the previous vault's docs,
+        // causing openPathInCenter to fall through to refreshDocuments() → 404.
+        documentsRef.current = [docStub]
         setActiveDoc(null)
         managerRef.current?.notifyVaultChange()
 

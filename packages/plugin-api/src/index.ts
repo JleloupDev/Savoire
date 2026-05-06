@@ -56,8 +56,18 @@ export type {
   NoteScope,
   ContentExtractor,
   IndexContributor,
+  ICollaborativeText,
+  IndexEntry,
+  RelPosJSON,
   IPluginIndexAPI,
+  IIndexContributorRegistry,
   IIndexRegistry,
   IEditorHostAPI,
   IPluginLoader,
+  CrdtVersion,
+  DocMetadata,
+  FileTreeEntry,
 } from './types'
+
+// Runtime values from domain-index re-exported via indexing.ts
+export { AnchorIndex, resolveEntry, validateEntry, anchorKey } from './indexing'

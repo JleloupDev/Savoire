@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
+using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
 
@@ -12,7 +13,10 @@ public record SaveIndexSnapshotCommand(
     long   ProcessedSeq,
     string Data,
     string CallerId
-) : IRequest;
+) : IRequest, IRequiresVaultAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+}
 
 public class SaveIndexSnapshotCommandHandler(IIndexSnapshotRepository snapshots)
     : IRequestHandler<SaveIndexSnapshotCommand>
