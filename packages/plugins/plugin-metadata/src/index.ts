@@ -4,6 +4,7 @@ import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { MetadataWidget } from './MetadataWidget'
 
 export function createMetadataPlugin(options: {
+  groupId?: string
   tabOf?: string
 } = {}): VaultPlugin {
   return {
@@ -20,6 +21,7 @@ export function createMetadataPlugin(options: {
         id: 'metadata',
         title: 'Métadonnées',
         icon: 'tag',
+        groupId: options.groupId,
         container: 'right',
         tabOf: options.tabOf,
         initialSize: 280,

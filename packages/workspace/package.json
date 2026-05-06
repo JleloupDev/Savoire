@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/i18n": "workspace:*",
     "dockview": "^4.3.0"
   },
   "peerDependencies": {

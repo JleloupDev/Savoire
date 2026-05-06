@@ -206,12 +206,18 @@ importers:
       '@savoire/editor-react':
         specifier: workspace:*
         version: link:../../packages/editor-react
+      '@savoire/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@savoire/infrastructure-sync':
         specifier: workspace:*
         version: link:../../packages/infrastructure-sync
       '@savoire/module-bridge':
         specifier: workspace:*
         version: link:../../packages/module-bridge
+      '@savoire/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -451,6 +457,12 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/i18n:
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/infrastructure-sync:
     dependencies:
       '@microsoft/signalr':
@@ -484,6 +496,12 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/notifications:
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -843,6 +861,9 @@ importers:
 
   ../packages/workspace:
     dependencies:
+      '@savoire/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
@@ -928,6 +949,19 @@ importers:
       yjs:
         specifier: ^13.6.0
         version: 13.6.30
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+
+  ../tests/frontend/unit/notification-tests:
+    dependencies:
+      '@savoire/notifications':
+        specifier: workspace:*
+        version: link:../../../../packages/notifications
     devDependencies:
       typescript:
         specifier: ^5.4.0

@@ -16,7 +16,7 @@
 //   plugin-runtime
 //     ↓ plugin-api
 //   workspace, module-bridge, ui-components
-//     ↓ plugin-api (ui-components: nothing)
+//     ↓ plugin-api, i18n (ui-components: nothing)
 //   infrastructure-sync
 //     ↓ application, domain-sync, platform
 //   application
@@ -25,7 +25,7 @@
 //     ↓ plugin-api
 //   plugins/* (except plugin-runtime)
 //     ↓ plugin-api (plugin-module also module-bridge)
-//   plugin-api, domain-sync, ui-components
+//   plugin-api, domain-sync, ui-components, i18n, notifications
 //     ↓ (nothing — leaves)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -159,11 +159,11 @@ module.exports = {
     {
       name: 'editor-core-only-plugin-api',
       severity: 'error',
-      comment: 'editor-core may only import from plugin-api (and its own files).',
+      comment: 'editor-core may only import from plugin-api and i18n (and its own files).',
       from: { path: '^packages/editor-core/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/(plugin-api|editor-core)/',
+        pathNot: '^packages/(plugin-api|i18n|editor-core)/',
       },
     },
 
@@ -185,11 +185,11 @@ module.exports = {
     {
       name: 'workspace-only-plugin-api',
       severity: 'error',
-      comment: 'workspace may only import from plugin-api.',
+      comment: 'workspace may only import from plugin-api and i18n.',
       from: { path: '^packages/workspace/src' },
       to: {
         path: '^packages/',
-        pathNot: '^packages/(plugin-api|workspace)/',
+        pathNot: '^packages/(plugin-api|i18n|workspace)/',
       },
     },
 

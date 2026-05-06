@@ -85,6 +85,9 @@ export class PluginViewsAPIAdapter implements IPluginViewsAPI {
   register(spec: Parameters<ViewRegistry['register']>[0]): void { this.inner.register(spec) }
   unregister(id: string): void { this.inner.unregister(id) }
   getAll() { return this.inner.getAll() }
+  registerGroup(group: Parameters<ViewRegistry['registerGroup']>[0]): void { this.inner.registerGroup(group) }
+  unregisterGroup(id: string): void { this.inner.unregisterGroup(id) }
+  getGroups() { return this.inner.getGroups() }
 }
 
 export class PluginBlocksAPIAdapter implements IPluginBlocksAPI {

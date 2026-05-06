@@ -83,7 +83,7 @@ function createNoopHostAPI(): IEditorHostAPI {
       openFile: async () => {}, openPanel: noop, closePanel: noop,
       getActiveDocument: () => undefined,
     },
-    views: emptyReg,
+    views: { ...emptyReg, registerGroup: noop, unregisterGroup: noop, getGroups: () => [] },
     slash: emptyReg,
     triggers: { ...emptyReg, findConflict: () => undefined },
     editor: { getCursorCoords: () => null, getSelectionCoords: () => null, getSelectionText: () => '' },

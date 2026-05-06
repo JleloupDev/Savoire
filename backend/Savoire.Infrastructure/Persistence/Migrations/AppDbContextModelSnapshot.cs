@@ -261,54 +261,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocLinkEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("id");
-
-                    b.Property<string>("LinkType")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("wikilink")
-                        .HasColumnName("link_type");
-
-                    b.Property<string>("SourceId")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("source_id");
-
-                    b.Property<string>("TargetId")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("target_id");
-
-                    b.Property<string>("TargetPath")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("target_path");
-
-                    b.Property<string>("VaultId")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("vault_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LinkType");
-
-                    b.HasIndex("SourceId")
-                        .HasDatabaseName("idx_doc_links_source");
-
-                    b.HasIndex("TargetId")
-                        .HasDatabaseName("idx_doc_links_target");
-
-                    b.HasIndex("VaultId", "TargetPath")
-                        .HasDatabaseName("idx_doc_links_target_path");
-
-                    b.ToTable("doc_links", (string)null);
-                });
-
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -363,61 +315,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("documents", (string)null);
-                });
-
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentMetaEntity", b =>
-                {
-                    b.Property<string>("DocumentId")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("document_id");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("text/markdown")
-                        .HasColumnName("content_type");
-
-                    b.Property<string>("DerivedBy")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("derived_by");
-
-                    b.Property<string>("DerivedFrom")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("derived_from");
-
-                    b.Property<string>("Frontmatter")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("{}")
-                        .HasColumnName("frontmatter");
-
-                    b.Property<DateTime>("IndexedAt")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("indexed_at");
-
-                    b.Property<string>("Tags")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("[]")
-                        .HasColumnName("tags");
-
-                    b.Property<string>("VaultId")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("vault_id");
-
-                    b.HasKey("DocumentId");
-
-                    b.HasIndex("DerivedFrom")
-                        .HasDatabaseName("idx_doc_metas_derived_from");
-
-                    b.HasIndex("VaultId")
-                        .HasDatabaseName("idx_doc_metas_vault");
-
-                    b.ToTable("document_metas", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
@@ -523,34 +420,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("idx_ops_document");
 
                     b.ToTable("operations_log", (string)null);
-                });
-
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefLinkTypeEntity", b =>
-                {
-                    b.Property<string>("Value")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("value");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("description");
-
-                    b.HasKey("Value");
-
-                    b.ToTable("ref_link_types", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Value = "wikilink",
-                            Description = "Standard wikilink: [[path]]"
-                        },
-                        new
-                        {
-                            Value = "embed",
-                            Description = "Embedded content: ![[path]]"
-                        });
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefPermissionEntity", b =>
@@ -951,23 +820,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocLinkEntity", b =>
-                {
-                    b.HasOne("Savoire.Infrastructure.Persistence.RefLinkTypeEntity", null)
-                        .WithMany()
-                        .HasForeignKey("LinkType")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Savoire.Infrastructure.Persistence.DocumentMetaEntity", "Meta")
-                        .WithMany("Links")
-                        .HasForeignKey("SourceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Meta");
-                });
-
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentEntity", b =>
                 {
                     b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", "Vault")
@@ -1041,11 +893,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Vault");
-                });
-
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentMetaEntity", b =>
-                {
-                    b.Navigation("Links");
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultEntity", b =>

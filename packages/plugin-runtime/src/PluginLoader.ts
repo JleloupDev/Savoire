@@ -8,6 +8,7 @@ export interface PluginEntry {
   id: string
   sandbox: PluginSandbox | null
   plugin: VaultPlugin | null
+  api: PluginAPI | null
 }
 
 // see ADR-014
@@ -22,7 +23,7 @@ export class PluginLoader implements IPluginLoader {
 
     const sandbox = new PluginSandbox()
     await sandbox.load(code, api)
-    this.loaded.set(id, { id, sandbox, plugin: null })
+    this.loaded.set(id, { id, sandbox, plugin: null, api })
     console.log(`[PluginLoader] Plugin loaded: ${id}`)
   }
 
@@ -46,14 +47,12 @@ export class PluginLoader implements IPluginLoader {
       console.warn(`[PluginLoader] Plugin '${id}' already loaded. Skipping.`)
       return
     }
-    if (api.blocks instanceof BlockRegistryImpl) {
-      api.blocks._currentPluginId = id
-    }
+    if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = id
+    api.views._setCurrentPlugin?.(id)
     await plugin.onload(api)
-    if (api.blocks instanceof BlockRegistryImpl) {
-      api.blocks._currentPluginId = undefined
-    }
-    this.loaded.set(id, { id, sandbox: null, plugin })
+    if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = undefined
+    api.views._setCurrentPlugin?.(undefined)
+    this.loaded.set(id, { id, sandbox: null, plugin, api })
     console.log(`[PluginLoader] Internal plugin loaded: ${id}`)
   }
 
@@ -68,6 +67,7 @@ export class PluginLoader implements IPluginLoader {
     } else {
       await entry.sandbox?.unload()
     }
+    entry.api?.views._cleanupPlugin?.(id)
     this.loaded.delete(id)
     console.log(`[PluginLoader] Plugin unloaded: ${id}`)
   }

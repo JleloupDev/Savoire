@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { AppWorkspace, IVaultsAPI, IVaultsBackend } from './contracts'
+import type { AppVaultSummary, AppWorkspace, IVaultsAPI, IVaultsBackend } from './contracts'
 
 export class VaultsService implements IVaultsAPI {
   constructor(private readonly backend: IVaultsBackend) {}

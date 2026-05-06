@@ -18,6 +18,7 @@ function toMarkdownLink(page: string, heading: string | undefined, alias: string
 }
 
 export function createWikilinksPlugin(options: {
+  groupId?: string
   tabOf?: string
   belowOf?: string
   initialSize?: number
@@ -42,13 +43,15 @@ export function createWikilinksPlugin(options: {
         )
       })
 
-      api.index?.registerFactory(() => new WikilinkIndexContributor())
+      const wikilinkContributor = new WikilinkIndexContributor()
+      api.index?.registerFactory(() => wikilinkContributor)
       api.index?.registerFactory(() => new HeadingIndexContributor())
 
       api.views.register({
         id: 'backlinks',
         title: 'Backlinks',
         icon: 'link',
+        groupId: options.groupId,
         container: 'right',
         tabOf: options.tabOf,
         belowOf: options.belowOf,

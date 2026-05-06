@@ -1,4 +1,0 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Jean Leloup
-export type { PluginManifest, PluginPermission, VaultPlugin, IPluginAPI, IPluginVaultAPI, IPluginWorkspaceAPI, IPluginCommandsAPI, IPluginViewsAPI, IPluginBlocksAPI, IPluginHooksAPI, PluginAPI, PluginCommandContext, PluginCommand, CommandRegistry, HookStage, HookRegistry, BlockWidget, BlockContext, BlockSpec, BlockRegistry, FileContext, FileView, FileTypeSpec, FileTypeRegistry, VaultAPI, ViewDocument, WorkspaceAPI, Widget, ViewContext, ViewSpec, ViewRegistry, } from './types';
-//# sourceMappingURL=index.d.ts.map

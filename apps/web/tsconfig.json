@@ -10,7 +10,8 @@
       "@savoire/infrastructure-sync": ["../../packages/infrastructure-sync/src/index.ts"],
       "@savoire/platform": ["../../packages/platform/src/index.ts"],
       "@savoire/plugin-api": ["../../packages/plugin-api/src/index.ts"],
-      "@savoire/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"]
+      "@savoire/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"],
+      "@savoire/domain-index": ["../../packages/domain-index/src/index.ts"]
     }
   },
   "include": ["src"]

@@ -8,21 +8,25 @@ import { VaultHubClient } from './VaultHubClient'
 export interface CreateWebAppRootParams {
   documentStore: DocumentStore
   getToken: () => string | null
+  onConnectionChange?: (state: 'connected' | 'disconnected') => void
 }
 
 const backend: IVaultsBackend = new HttpVaultsBackend()
 
-function makeHubFactory(getToken: () => string | null): IVaultHubFactory {
+function makeHubFactory(
+  getToken: () => string | null,
+  onConnectionChange?: (state: 'connected' | 'disconnected') => void,
+): IVaultHubFactory {
   return {
     create: ({ vaultId, vaultClient, onChanged }) =>
-      new VaultHubClient('', vaultId, vaultClient, onChanged, getToken),
+      new VaultHubClient('', vaultId, vaultClient, onChanged, getToken, onConnectionChange),
   }
 }
 
 export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {
   return new AppRoot({
     backend,
-    hubFactory: makeHubFactory(params.getToken),
+    hubFactory: makeHubFactory(params.getToken, params.onConnectionChange),
     documentStore: params.documentStore,
   })
 }

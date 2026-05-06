@@ -5,8 +5,12 @@ import { FullTextIndexContributor } from './FullTextIndexContributor'
 import { SearchWidget } from './SearchWidget'
 
 export function createSearchPlugin(options: {
+  groupId?: string
+  tabOf?: string
   belowOf?: string
   initialSize?: number
+  ribbon?: boolean
+  container?: 'left' | 'right'
 } = {}): { plugin: VaultPlugin; getContributor: () => FullTextIndexContributor } {
   let current = new FullTextIndexContributor()
 
@@ -26,7 +30,10 @@ export function createSearchPlugin(options: {
         id: 'search',
         title: 'Recherche',
         icon: 'search',
-        container: 'left',
+        ribbon: options.ribbon,
+        groupId: options.groupId,
+        container: options.container ?? 'left',
+        tabOf: options.tabOf,
         belowOf: options.belowOf,
         initialSize: options.initialSize ?? 280,
         closable: true,

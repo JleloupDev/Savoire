@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jean Leloup
+export const appEn = {
+  // Login
+  'login.title': 'Sign in',
+  'login.subtitle': 'Enter your credentials to access your vault.',
+  'login.email': 'Email',
+  'login.password': 'Password',
+  'login.submit': 'Sign in →',
+  'login.submitting': 'Signing in…',
+  'login.forgot': 'Forgot password?',
+  'login.error.credentials': 'Invalid email or password.',
+  'login.feature.markdown': 'Native Markdown — WYSIWYG or source editing',
+  'login.feature.wikilinks': 'Automatic wikilinks and backlinks',
+  'login.feature.collab': 'Real-time collaboration (Yjs CRDT)',
+  'login.feature.plugins': 'Extensible via plugins',
+
+  // Admin
+  'admin.title': 'Administration — Users',
+  'admin.user.email': 'Email',
+  'admin.user.displayName': 'Display name',
+  'admin.user.password': 'Password',
+  'admin.user.passwordHint': 'Min. 8 characters',
+  'admin.user.create': 'Create user',
+  'admin.user.createSubmit': 'Create user',
+  'admin.user.creating': 'Creating…',
+  'admin.user.created': 'User {email} created.',
+  'admin.user.isAdmin': 'Administrator',
+  'admin.user.badge.admin': 'ADMIN',
+  'admin.user.badge.disabled': 'DISABLED',
+  'admin.list.title': 'Users ({count})',
+  'admin.list.loading': 'Loading…',
+  'admin.back': '← Editor',
+  'admin.refresh': 'Refresh',
+  'topbar.logout': 'Sign out',
+
+  // Sharing
+  'sharing.title': 'Share',
+  'sharing.resource.note': 'Note',
+  'sharing.resource.vault': 'Vault',
+  'sharing.loading': 'Loading…',
+  'sharing.addUser': 'Add a user',
+  'sharing.permission.read': 'Read',
+  'sharing.permission.write': 'Write',
+  'sharing.permission.admin': 'Admin',
+  'sharing.empty': 'No shared access.',
+  'sharing.createLink': 'Create a share link',
+  'sharing.createLinkSubmit': 'Create link',
+  'sharing.error.userNotFound': 'User not found',
+  'sharing.error.search': 'Search error',
+  'sharing.revoke': 'Revoke',
+  'sharing.copy': 'Copy',
+  'sharing.tab.users': 'Users ({count})',
+  'sharing.tab.links': 'Links ({count})',
+  'sharing.tab.usersEmpty': 'Users',
+  'sharing.tab.linksEmpty': 'Links',
+  'sharing.resolving': 'Searching…',
+  'sharing.currentAccess': 'Current access',
+  'sharing.activeLinks': 'Active links',
+  'sharing.noLinks': 'No active links.',
+
+  // Settings
+  'settings.title': 'Settings',
+  'settings.tab.plugins': 'Plugins',
+  'settings.tab.triggers': 'Triggers',
+  'settings.tab.themes': 'Themes',
+  'settings.plugins.empty': 'No plugins loaded.',
+  'settings.plugins.active': 'Active',
+  'settings.triggers.empty': 'No triggers registered.',
+  'settings.triggers.description': 'Triggers are character sequences reserved by plugins. A conflict means two plugins are trying to use the same character.',
+  'settings.triggers.col.char': 'Character',
+  'settings.triggers.col.plugin': 'Plugin',
+  'settings.triggers.col.description': 'Description',
+  'settings.themes.description': 'Select a theme. The preference is saved locally.',
+  'settings.theme.light': 'Light',
+  'settings.theme.dark': 'Dark',
+  'settings.theme.sepia': 'Sepia',
+  'settings.theme.solarized': 'Solarized',
+
+  // Quick open
+  'quickopen.placeholder': 'Open a note…',
+  'quickopen.empty': 'No results',
+  'quickopen.hint.navigate': 'navigate',
+  'quickopen.hint.open': 'open',
+  'quickopen.hint.close': 'close',
+
+  // Sync
+  'sync.disconnected': 'Connection lost',
+  'sync.reconnected': 'Reconnected',
+
+  // Sharing notifications
+  'notify.sharing.grantSuccess': 'Access granted',
+  'notify.sharing.revokeSuccess': 'Access revoked',
+  'notify.sharing.linkCreated': 'Share link created',
+  'notify.sharing.linkRevoked': 'Link revoked',
+  'notify.sharing.copied': 'Link copied',
+
+  // Admin notifications
+  'notify.admin.userCreated': 'User created',
+  'notify.admin.passwordReset': 'Password reset',
+
+  // Topbar
+  'topbar.share': 'Share',
+  'topbar.noVault': '—',
+  'topbar.saved': 'Saved ✓',
+  'topbar.editor.toggle': 'Toggle editor',
+  'topbar.editor.source': 'CM6',
+  'topbar.editor.rich': 'Rich',
+} as const

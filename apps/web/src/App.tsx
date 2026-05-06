@@ -3,7 +3,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { LoginPage } from './LoginPage'
-import { EditorPage } from './EditorPage'
+import { AppShell } from './AppShell'
 import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
@@ -17,7 +17,7 @@ export function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/share/:token" element={<ShareAccessPage />} />
           <Route path="/view" element={<ViewGrantPage />} />
-          <Route path="/" element={<EditorPage />} />
+          <Route path="/" element={<AppShell />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

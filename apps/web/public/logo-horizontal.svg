@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" fill="none" width="240" height="80">
+  
+  
+  <path d="M6 4 L2 9 L2 20 L2 31 L6 36" stroke="#cb4b16" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M13 4 L9 9 L9 20 L9 31 L13 36" stroke="#0d9488" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+  
+  <text x="20" y="28" font-family="&#39;Source Serif 4&#39;, Georgia, serif" font-size="22" font-weight="700" fill="#0f172a" letter-spacing="-0.3">Savoire</text>
+  
+  <path d="M107 4 L111 9 L111 20 L111 31 L107 36" stroke="#0d9488" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M114 4 L118 9 L118 20 L118 31 L114 36" stroke="#cb4b16" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>

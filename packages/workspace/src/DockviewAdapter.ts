@@ -19,9 +19,23 @@ export class DockviewAdapter implements WorkspacePort {
     right: DEFAULT_EXPANDED_PANE_SIZE,
   }
 
+  private readonly activePanelCallbacks: ((panelId: string | null) => void)[] = []
+
   /** Called by WorkspaceRoot once Dockview is mounted and ready. */
   setApi(api: DockviewApi): void {
     this.api = api
+    api.onDidActivePanelChange(e => {
+      const id = (e as { id?: string } | null)?.id ?? null
+      for (const cb of this.activePanelCallbacks) cb(id)
+    })
+  }
+
+  subscribeActivePanelChange(cb: (panelId: string | null) => void): () => void {
+    this.activePanelCallbacks.push(cb)
+    return () => {
+      const i = this.activePanelCallbacks.indexOf(cb)
+      if (i !== -1) this.activePanelCallbacks.splice(i, 1)
+    }
   }
 
   openPanel(panelId: string, options?: OpenPanelOptions): PanelInstance {
@@ -51,28 +65,29 @@ export class DockviewAdapter implements WorkspacePort {
     this.api?.getPanel(panelId)?.focus()
   }
 
-  collapsePane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void {
+  collapsePane(location: Exclude<PanelLocation, 'center'>, panelIds: string[]): void {
     const groups = this.getGroupsForPanelIds(panelIds)
     if (groups.length === 0) return
 
     const currentWidth = Math.max(...groups.map(group => group.width))
-    if (currentWidth > 0) {
-      this.lastExpandedSizes[location] = currentWidth
-    }
+    if (currentWidth > 0) this.lastExpandedSizes[location] = currentWidth
 
     for (const group of groups) {
-      group.api.setConstraints({ minimumWidth: 0, minimumHeight: 0 })
+      // Lock width at 0: set min=0, max=0, then size=0.
+      // maximumWidth: 0 prevents dockview from re-expanding the group on relayout.
+      group.api.setConstraints({ minimumWidth: 0, maximumWidth: 0, minimumHeight: 0 })
       group.api.setSize({ width: 0 })
     }
   }
 
-  expandPane(location: Exclude<PanelLocation, 'center' | 'bottom'>, panelIds: string[]): void {
+  expandPane(location: Exclude<PanelLocation, 'center'>, panelIds: string[]): void {
     const groups = this.getGroupsForPanelIds(panelIds)
     if (groups.length === 0) return
 
     const width = Math.max(this.lastExpandedSizes[location], DEFAULT_EXPANDED_PANE_SIZE)
     for (const group of groups) {
-      group.api.setConstraints({ minimumWidth: 100, minimumHeight: 0 })
+      // Release the lock, restore usable constraints, then set width.
+      group.api.setConstraints({ minimumWidth: 100, maximumWidth: Number.MAX_SAFE_INTEGER, minimumHeight: 0 })
       group.api.setSize({ width })
     }
   }
