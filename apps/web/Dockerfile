@@ -13,12 +13,13 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Layer cache : manifestes d'abord
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./frontend/
 COPY apps/web/package.json ./apps/web/
-COPY frontend/packages/ ./frontend/packages/
+COPY packages/ ./packages/
 
 RUN cd frontend && pnpm install --frozen-lockfile
 
 COPY frontend/ ./frontend/
 COPY apps/web/ ./apps/web/
+COPY packages/ ./packages/
 RUN cd frontend && pnpm --filter @savoire/web build
 
 # ── Image finale : nginx ─────────────────────────────────────────────

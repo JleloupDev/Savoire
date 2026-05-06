@@ -15,6 +15,10 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - Storage__Root=/data
       - AllowedOrigins__0=http://localhost:3000
+      - AllowedOrigins__1=${ALLOWED_ORIGIN_1:-http://localhost:8082}
+      - Jwt__Secret=${JWT_SECRET}
+      - Jwt__Issuer=${JWT_ISSUER:-savoire-server}
+      - Jwt__Audience=${JWT_AUDIENCE:-savoire-client}
       - Users__0__Id=jean
       - Users__0__DisplayName=Jean
       - Users__0__DefaultVaultPath=/data/jean
@@ -23,4 +27,15 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      - API_URL=http://api:8080
+    depends_on:
+      - api
 
