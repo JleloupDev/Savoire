@@ -8,7 +8,7 @@ export interface FileTreePluginOptions {
   title?: string
   icon?: string
   groupId?: string
-  container?: 'left' | 'right' | 'center' | 'bottom'
+  container?: 'left' | 'right' | 'center'
   tabOf?: string
   belowOf?: string
   closable?: boolean

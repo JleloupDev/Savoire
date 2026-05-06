@@ -8,7 +8,7 @@ export interface VaultBrowserPluginOptions<TVault extends VaultSummaryLike = Vau
   viewId?: string
   title?: string
   groupId?: string
-  container?: 'left' | 'right' | 'center' | 'bottom'
+  container?: 'left' | 'right' | 'center'
   initialSize?: number
   tabOf?: string
   belowOf?: string
