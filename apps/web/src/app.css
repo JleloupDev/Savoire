@@ -28,8 +28,16 @@
   --font-code:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --radius: 6px;
   --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --font-size-base: 14px;
+  --font-size-sm: 0.82rem;
+  --font-size-xs: 0.75rem;
+  --line-height-ui: 1.5;
+  --line-height-editor: 1.8;
   --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.06);
   --rail:        #ffffff;
   --rail-border: #e2e8f0;
   --on-accent:       rgba(255,255,255,1.00);
@@ -96,6 +104,7 @@
   --on-accent-dim:   rgba(15,23,42,0.15);
   --logo-bracket-1: #cb4b16;
   --logo-bracket-2: #2dd4bf;
+  --overlay:         rgba(0,0,0,0.65);
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -137,7 +146,7 @@
   --accent-hover:#0d5f59;
   --accent-dim:  rgba(15, 118, 110, 0.10);
   --accent-text: #ffffff;
-  --heading-color: #92400e;
+  --heading-color: #0f766e;
   --color-success: #15803d;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
@@ -146,6 +155,13 @@
   --shadow: 0 4px 12px rgba(0,0,0,0.06);
   --rail:        #faf7f2;
   --rail-border: #d6c9b5;
+  --on-accent:       rgba(255,255,255,1.00);
+  --on-accent-muted: rgba(255,255,255,0.75);
+  --on-accent-faint: rgba(255,255,255,0.45);
+  --on-accent-dim:   rgba(255,255,255,0.15);
+  --logo-bracket-1: #cb4b16;
+  --logo-bracket-2: #0f766e;
+  --overlay:         rgba(0,0,0,0.45);
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -196,6 +212,13 @@
   --shadow: 0 4px 12px rgba(0,0,0,0.06);
   --rail:        #eee8d5;
   --rail-border: #cdc8b5;
+  --on-accent:       rgba(255,255,255,0.95);
+  --on-accent-muted: rgba(255,255,255,0.75);
+  --on-accent-faint: rgba(255,255,255,0.45);
+  --on-accent-dim:   rgba(255,255,255,0.15);
+  --logo-bracket-1: #cb4b16;
+  --logo-bracket-2: #2aa198;
+  --overlay:         rgba(0,0,0,0.45);
   /* ── Dockview ── */
   --dv-paneview-active-outline-color: var(--accent);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -574,3 +597,41 @@ button:active { filter: brightness(0.84); }
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
 }
+
+/* ─── Design System Utilities (sv-*) ────────────────────────────────────────── */
+
+.sv-editor { font-family: var(--font-editor); font-size: 15.5px; line-height: var(--line-height-editor); }
+.sv-h1 { font-size: 24px; font-weight: 700; color: var(--heading-color); letter-spacing: -0.01em; margin: 0 0 14px; }
+.sv-h2 { font-size: 17px; font-weight: 600; color: var(--heading-color); letter-spacing: -0.005em; margin: 24px 0 8px; }
+.sv-h3 { font-size: 15px; font-weight: 600; color: var(--heading-color); margin: 20px 0 6px; }
+
+.sv-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.sv-small { font-size: var(--font-size-sm); color: var(--text-muted); }
+.sv-xs    { font-size: var(--font-size-xs); color: var(--text-faint); }
+
+.sv-code {
+  font-family: var(--font-code); font-size: 0.875em;
+  background: var(--bg-elevated); padding: 1px 5px;
+  border-radius: 3px; color: var(--color-code);
+}
+.sv-code-block {
+  font-family: var(--font-code); font-size: 12.5px; line-height: 1.6;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+  color: var(--color-code); overflow-x: auto;
+}
+
+.sv-btn { font-family: var(--font-ui); cursor: pointer; border-radius: var(--radius); border: none; transition: filter 0.12s, background 0.12s; }
+.sv-btn:hover  { filter: brightness(0.93); }
+.sv-btn:active { filter: brightness(0.84); }
+.sv-btn-primary { background: var(--accent); color: var(--accent-text); padding: 9px 16px; font-size: 14px; font-weight: 600; }
+.sv-btn-default { background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); padding: 4px 12px; font-size: 14px; }
+.sv-btn-ghost   { background: transparent; color: var(--text-muted); border: none; padding: 4px 12px; font-size: 14px; }
+
+.sv-input {
+  font-family: var(--font-ui); font-size: 13.5px;
+  padding: 9px 11px; background: var(--bg-base); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sv-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }

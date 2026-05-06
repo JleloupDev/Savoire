@@ -109,7 +109,7 @@ export function LoginPage() {
 
         {/* Hero text */}
         <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: 38, fontWeight: 700, color: 'white', lineHeight: 1.15, letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))', marginBottom: 16 }}>
+          <div style={{ fontSize: 38, fontWeight: 700, color: 'var(--on-accent)', lineHeight: 1.15, letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))', marginBottom: 16 }}>
             Votre base de<br />connaissances,<br />vraiment à vous.
           </div>
           <div style={{ fontSize: 15, color: 'var(--on-accent-muted)', lineHeight: 1.6, maxWidth: 320, marginBottom: 40 }}>
