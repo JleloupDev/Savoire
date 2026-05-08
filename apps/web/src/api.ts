@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultSummary, VaultDetail, DocumentDto, FolderDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
+import type { VaultSummary, DocumentDto, FolderDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
 
 async function apiFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -64,9 +64,6 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
-  getVault: (vaultId: string, token: string): Promise<VaultDetail> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}`, token),
-
   renameVault: (vaultId: string, name: string, token: string): Promise<VaultSummary> =>
     apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}`, token, {
       method: 'PATCH',
@@ -94,23 +91,6 @@ export const api = {
   // ── Documents ────────────────────────────────────────────────────────────
   listDocuments: (vaultId: string, token: string): Promise<DocumentDto[]> =>
     apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`, token),
-
-  createDocument: (vaultId: string, path: string, token: string): Promise<DocumentDto> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`, token, {
-      method: 'POST',
-      body: JSON.stringify({ path, title: path.split('/').pop()?.replace(/\.md$/i, '') ?? 'New note' }),
-    }),
-
-  renameDocument: (vaultId: string, docId: string, path: string, token: string): Promise<DocumentDto> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}`, token, {
-      method: 'PATCH',
-      body: JSON.stringify({ path, title: path.split('/').pop()?.replace(/\.md$/i, '') ?? '' }),
-    }),
-
-  deleteDocument: (vaultId: string, docId: string, token: string): Promise<void> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}`, token, {
-      method: 'DELETE',
-    }),
 
   // ── Attachments (accès direct pour usage interne si besoin) ─────────────
   attachmentUrl: (vaultId: string, path: string): string =>

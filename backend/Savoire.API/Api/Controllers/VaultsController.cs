@@ -8,8 +8,6 @@ using Savoire.Application.Common;
 using Savoire.Application.Vaults.AddVaultMember;
 using Savoire.Application.Vaults.CreateVault;
 using Savoire.Application.Vaults.DeleteVault;
-using Savoire.Application.Vaults.GetCloneManifest;
-using Savoire.Application.Vaults.GetVaultDetail;
 using Savoire.Application.Vaults.ListVaults;
 using Savoire.Application.Vaults.RemoveVaultMember;
 using Savoire.Application.Vaults.RenameVault;
@@ -29,13 +27,8 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
         string userId, [FromBody] CreateVaultRequest req, CancellationToken ct)
     {
         VaultSummaryDto dto = await Mediator.Send(new CreateVaultCommand(userId, req.Name), ct);
-        return CreatedAtAction(nameof(Get), new { vaultId = dto.Id }, dto);
+        return StatusCode(201, dto);
     }
-
-    // GET /api/v1/vaults/{vaultId}
-    [HttpGet("api/v1/vaults/{vaultId}")]
-    public async Task<IActionResult> Get(string vaultId, CancellationToken ct)
-        => Ok(await Mediator.Send(new GetVaultDetailQuery(GetCallerId(), vaultId), ct));
 
     // PATCH /api/v1/vaults/{vaultId}
     [HttpPatch("api/v1/vaults/{vaultId}")]
@@ -68,10 +61,4 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
         await Mediator.Send(new RemoveVaultMemberCommand(GetCallerId(), vaultId, memberId), ct);
         return NoContent();
     }
-
-    // POST /api/v1/vaults/{vaultId}/clone
-    [HttpPost("api/v1/vaults/{vaultId}/clone")]
-    public async Task<IActionResult> Clone(
-        string vaultId, [FromBody] CloneRequest req, CancellationToken ct)
-        => Ok(await Mediator.Send(new GetCloneManifestQuery(GetCallerId(), vaultId, req.LocalPath), ct));
 }

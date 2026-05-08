@@ -59,8 +59,6 @@ export interface IVaultsBackend {
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
   listDocuments(vaultId: string, token: string): Promise<AppDocumentSummary[]>
-  addMember(vaultId: string, userId: string, role: string, token: string): Promise<void>
-  removeMember(vaultId: string, memberId: string, token: string): Promise<void>
 }
 
 export interface IVaultsAPI {
@@ -68,8 +66,6 @@ export interface IVaultsAPI {
   create(userId: string, name: string, token: string): Promise<AppVaultSummary>
   rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   delete(vaultId: string, token: string): Promise<void>
-  addMember(vaultId: string, userId: string, role: string, token: string): Promise<void>
-  removeMember(vaultId: string, memberId: string, token: string): Promise<void>
 }
 
 export interface ActivatedVault {

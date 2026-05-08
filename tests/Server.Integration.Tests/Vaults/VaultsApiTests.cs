@@ -111,30 +111,6 @@ public class VaultsApiTests : IClassFixture<AppFactory>, IAsyncLifetime
     }
 
     [Fact]
-    public async Task POST_clone_Returns_Manifest_With_All_Documents()
-    {
-        // Arrange — créer vault + document
-        var createVaultResp = await _client.PostAsJsonAsync(
-            $"/api/v1/users/{_userId}/vaults", new { name = "Vault Clone" });
-        var vault = await createVaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>();
-
-        await _client.PostAsJsonAsync(
-            $"/api/v1/vaults/{vault!.Id}/documents",
-            new { path = "note.md", content = "# Hello" });
-
-        // Act
-        var response = await _client.PostAsJsonAsync(
-            $"/api/v1/vaults/{vault.Id}/clone",
-            new { localPath = "/tmp/vault" });
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var manifest = await response.Content.ReadFromJsonAsync<CloneManifestDto>();
-        manifest.Should().NotBeNull();
-        manifest!.Documents.Should().Contain(d => d.Path == "note.md");
-    }
-
-    [Fact]
     public async Task POST_members_Adds_Member_To_Vault()
     {
         // Arrange

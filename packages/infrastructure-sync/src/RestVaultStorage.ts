@@ -51,43 +51,18 @@ export class RestVaultStorage implements IVaultStorage {
     return res.json() as Promise<IDocumentMeta[]>
   }
 
-  async createDocument(vaultId: string, path: string, token: string): Promise<IDocumentMeta> {
-    const res = await this.fetchFn(
-      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          path,
-          title: path.split('/').at(-1)?.replace(/\.md$/i, '') ?? 'New note',
-        }),
-      },
-    )
-    if (!res.ok) throw new Error(`${res.status}`)
-    return res.json() as Promise<IDocumentMeta>
+  // These three are always overridden by DocumentsService.activateVault (VaultHub delegate).
+  // The REST endpoints they used to call no longer exist.
+  createDocument(): Promise<IDocumentMeta> {
+    throw new Error('createDocument must go through VaultHub — use DocumentsService.activateVault')
   }
 
-  async renameDocument(vaultId: string, docId: string, path: string, token: string): Promise<void> {
-    const res = await this.fetchFn(
-      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}`),
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          path,
-          title: path.split('/').at(-1)?.replace(/\.md$/i, '') ?? '',
-        }),
-      },
-    )
-    if (!res.ok) throw new Error(`${res.status}`)
+  renameDocument(): Promise<void> {
+    throw new Error('renameDocument must go through VaultHub — use DocumentsService.activateVault')
   }
 
-  async deleteDocument(vaultId: string, docId: string, token: string): Promise<void> {
-    const res = await this.fetchFn(
-      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}`),
-      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
-    )
-    if (!res.ok && res.status !== 204) throw new Error(`${res.status}`)
+  deleteDocument(): Promise<void> {
+    throw new Error('deleteDocument must go through VaultHub — use DocumentsService.activateVault')
   }
 
   async createFolder(vaultId: string, path: string, token: string): Promise<void> {

@@ -21,11 +21,4 @@ export class VaultsService implements IVaultsAPI {
     return this.backend.deleteVault(vaultId, token)
   }
 
-  addMember(vaultId: string, userId: string, role: string, token: string): Promise<void> {
-    return this.backend.addMember(vaultId, userId, role, token)
-  }
-
-  removeMember(vaultId: string, memberId: string, token: string): Promise<void> {
-    return this.backend.removeMember(vaultId, memberId, token)
-  }
 }

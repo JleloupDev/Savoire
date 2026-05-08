@@ -71,12 +71,10 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task JoinVault_AfterDocumentCreated_SnapshotContainsThatDocument()
     {
-        // Préparer un document via REST
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "snapshot-check.md", content = "# Snapshot" });
-        docResp.EnsureSuccessStatusCode();
-        var existingDoc = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!;
+        await using HubConnection setup = CreateConnection();
+        await setup.StartAsync();
+        await setup.InvokeAsync("JoinVault", _vaultId);
+        var existingDoc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "snapshot-check.md", null);
 
         await using HubConnection conn = CreateConnection();
 
@@ -138,12 +136,10 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task RenameDocument_BroadcastsDocumentRenamed_WithOldAndNewPath()
     {
-        // Créer le document à renommer via REST (isolation du test)
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "before-rename.md", content = "# Before" });
-        docResp.EnsureSuccessStatusCode();
-        var doc = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!;
+        await using HubConnection setup = CreateConnection();
+        await setup.StartAsync();
+        await setup.InvokeAsync("JoinVault", _vaultId);
+        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "before-rename.md", null);
 
         await using HubConnection conn = CreateConnection();
 
@@ -166,12 +162,10 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task DeleteDocument_BroadcastsDocumentDeleted_WithDocumentPath()
     {
-        // Créer le document à supprimer via REST
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "to-delete.md", content = "# Delete Me" });
-        docResp.EnsureSuccessStatusCode();
-        var doc = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!;
+        await using HubConnection setup = CreateConnection();
+        await setup.StartAsync();
+        await setup.InvokeAsync("JoinVault", _vaultId);
+        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "to-delete.md", null);
 
         await using HubConnection conn = CreateConnection();
 
@@ -244,12 +238,10 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "PushIndexOp — retourne un numéro de séquence positif")]
     public async Task PushIndexOp_ReturnsSequenceNumber()
     {
-        // Créer un document de test
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "index-seq.md", content = "# Seq" });
-        docResp.EnsureSuccessStatusCode();
-        var doc = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!;
+        await using HubConnection setup = CreateConnection();
+        await setup.StartAsync();
+        await setup.InvokeAsync("JoinVault", _vaultId);
+        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "index-seq.md", null);
 
         await using HubConnection conn = CreateConnection();
         await conn.StartAsync();
@@ -264,11 +256,10 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "PushIndexOp — diffuse IndexOpApplied aux autres clients du vault")]
     public async Task PushIndexOp_BroadcastsIndexOpAppliedToOtherClients()
     {
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "index-broadcast.md", content = "# Broadcast" });
-        docResp.EnsureSuccessStatusCode();
-        var doc = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!;
+        await using HubConnection setup = CreateConnection();
+        await setup.StartAsync();
+        await setup.InvokeAsync("JoinVault", _vaultId);
+        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "index-broadcast.md", null);
 
         await using HubConnection sender   = CreateConnection();
         await using HubConnection receiver = CreateConnection();

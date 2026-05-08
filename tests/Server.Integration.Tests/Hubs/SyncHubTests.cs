@@ -40,12 +40,20 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         vaultResp.EnsureSuccessStatusCode();
         _vaultId = (await vaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
 
-        // Créer un document de test via REST
-        var docResp = await _httpClient.PostAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/documents",
-            new { path = "test-doc.md", content = "# Hello" });
-        docResp.EnsureSuccessStatusCode();
-        _docId = (await docResp.Content.ReadFromJsonAsync<DocumentDto>())!.Id;
+        // Créer un document de test via VaultHub
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl("http://localhost/hubs/vault", options =>
+            {
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.Transports = HttpTransportType.LongPolling;
+                options.AccessTokenProvider = () => Task.FromResult<string?>(_token);
+            })
+            .Build();
+        await hub.StartAsync();
+        await hub.InvokeAsync("JoinVault", _vaultId);
+        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultSnapshotItem>(
+            "CreateDocument", _vaultId, "test-doc.md", null);
+        _docId = doc.Id;
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -67,14 +75,14 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     {
         await using var conn = CreateConnection();
 
-        var tcs = new TaskCompletionSource<(string vaultId, int count)>();
-        conn.On<string, int>("VaultJoined", (vid, count) => tcs.TrySetResult((vid, count)));
+        var tcs = new TaskCompletionSource<string>();
+        conn.On<string>("VaultJoined", vid => tcs.TrySetResult(vid));
 
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
         var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        result.vaultId.Should().Be(_vaultId);
+        result.Should().Be(_vaultId);
     }
 
     // ── JoinDocument ──────────────────────────────────────────────────────────

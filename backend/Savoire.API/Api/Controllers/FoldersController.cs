@@ -8,7 +8,6 @@ using Savoire.Application.Common;
 using Savoire.Application.Folders.CreateFolder;
 using Savoire.Application.Folders.DeleteFolder;
 using Savoire.Application.Folders.ListFolders;
-using Savoire.Application.Folders.RenameFolder;
 
 namespace Savoire.Server.Controllers;
 
@@ -28,13 +27,6 @@ public class FoldersController(IMediator mediator) : AppControllerBase(mediator)
             new CreateFolderCommand(GetCallerId(), vaultId, req.Path), ct);
         return StatusCode(201, dto);
     }
-
-    // PATCH /api/v1/vaults/{vaultId}/folders/{folderId}
-    [HttpPatch("api/v1/vaults/{vaultId}/folders/{folderId}")]
-    public async Task<IActionResult> Rename(
-        string vaultId, string folderId, [FromBody] PatchFolderRequest req, CancellationToken ct)
-        => Ok(await Mediator.Send(
-            new RenameFolderCommand(GetCallerId(), vaultId, folderId, req.Path), ct));
 
     // DELETE /api/v1/vaults/{vaultId}/folders/{folderId}[?force=true]
     [HttpDelete("api/v1/vaults/{vaultId}/folders/{folderId}")]

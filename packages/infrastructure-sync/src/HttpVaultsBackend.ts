@@ -56,21 +56,6 @@ export class HttpVaultsBackend implements IVaultsBackend {
     ).then(list => list.map(d => ({ id: d.id, path: d.path })))
   }
 
-  addMember(vaultId: string, userId: string, role: string, token: string): Promise<void> {
-    return this.requestJson<void>(
-      `/api/v1/vaults/${encodeURIComponent(vaultId)}/members`,
-      token,
-      { method: 'POST', body: JSON.stringify({ userId, role }) },
-    )
-  }
-
-  removeMember(vaultId: string, memberId: string, token: string): Promise<void> {
-    return this.requestJson<void>(
-      `/api/v1/vaults/${encodeURIComponent(vaultId)}/members/${encodeURIComponent(memberId)}`,
-      token,
-      { method: 'DELETE' },
-    )
-  }
 
   private async requestJson<T>(path: string, token: string, init: RequestInit): Promise<T> {
     const res = await this.fetchFn(this.resolve(path), {

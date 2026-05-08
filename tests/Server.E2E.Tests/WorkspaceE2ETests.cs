@@ -72,31 +72,12 @@ public class WorkspaceE2ETests : IAsyncLifetime
         return (await resp.Content.ReadFromJsonAsync<VaultSummaryDto>())!;
     }
 
-    private async Task<DocumentDto> CreateDocAsync(HttpClient client, string vaultId, string path)
-    {
-        var resp = await client.PostAsJsonAsync(
-            $"/api/v1/vaults/{vaultId}/documents", new { path, content = "# test" });
-        resp.EnsureSuccessStatusCode();
-        return (await resp.Content.ReadFromJsonAsync<DocumentDto>())!;
-    }
-
     private async Task<WorkspaceDto> GetWorkspaceAsync(HttpClient client, string userId)
     {
         var resp = await client.GetAsync($"/api/v1/users/{userId}/vaults");
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<WorkspaceDto>())!;
     }
-
-    private Task GrantDocPermissionAsync(HttpClient client, string docId, string subjectId,
-        string permission, DateTime? expiresAt = null)
-        => client.PostAsJsonAsync(
-            $"/api/v1/documents/{docId}/sharing/permissions",
-            new { SubjectId = subjectId, Permission = permission, ExpiresAt = expiresAt })
-            .ContinueWith(t => t.Result.EnsureSuccessStatusCode());
-
-    private Task RevokeDocPermissionAsync(HttpClient client, string docId, string subjectId)
-        => client.DeleteAsync($"/api/v1/documents/{docId}/sharing/permissions/{subjectId}")
-            .ContinueWith(t => t.Result.EnsureSuccessStatusCode());
 
     // ── WS-01 ─────────────────────────────────────────────────────────────────
 
@@ -154,90 +135,6 @@ public class WorkspaceE2ETests : IAsyncLifetime
         var ws = await GetWorkspaceAsync(_clientB, _userIdB);
 
         ws.Vaults.Should().NotContain(v => v.Id == vaultA.Id);
-    }
-
-    // ── WS-05 ─────────────────────────────────────────────────────────────────
-
-    /// <summary>WS-05 : Document partagé via permission → apparaît dans sharedWithMe.</summary>
-    [Fact]
-    public async Task GetWorkspace_SharedDocument_AppearsInSharedWithMe()
-    {
-        var vault = await CreateVaultAsync(_clientA, _userIdA, "Vault Share WS-05");
-        var doc   = await CreateDocAsync(_clientA, vault.Id, "shared-note.md");
-        await GrantDocPermissionAsync(_clientA, doc.Id, _userIdB, "read");
-
-        var ws = await GetWorkspaceAsync(_clientB, _userIdB);
-
-        ws.SharedWithMe.Should().Contain(n =>
-            n.DocumentId == doc.Id &&
-            n.VaultId    == vault.Id &&
-            n.Path       == "shared-note.md" &&
-            n.Permission == "read");
-    }
-
-    // ── WS-06 ─────────────────────────────────────────────────────────────────
-
-    /// <summary>WS-06 : sharedWithMe contient le displayName du donneur d'accès.</summary>
-    [Fact]
-    public async Task GetWorkspace_SharedDocument_GrantorDisplayNameResolved()
-    {
-        var vault = await CreateVaultAsync(_clientA, _userIdA, "Vault Grantor WS-06");
-        var doc   = await CreateDocAsync(_clientA, vault.Id, "grantor-test.md");
-        await GrantDocPermissionAsync(_clientA, doc.Id, _userIdB, "write");
-
-        var ws = await GetWorkspaceAsync(_clientB, _userIdB);
-
-        ws.SharedWithMe.Should().Contain(n =>
-            n.DocumentId == doc.Id &&
-            n.GrantedByDisplayName == _displayA);
-    }
-
-    // ── WS-07 ─────────────────────────────────────────────────────────────────
-
-    /// <summary>WS-07 : Permission expirée → absente de sharedWithMe.</summary>
-    [Fact]
-    public async Task GetWorkspace_ExpiredPermission_AbsentFromSharedWithMe()
-    {
-        var vault = await CreateVaultAsync(_clientA, _userIdA, "Vault Expired WS-07");
-        var doc   = await CreateDocAsync(_clientA, vault.Id, "expired-note.md");
-        await GrantDocPermissionAsync(_clientA, doc.Id, _userIdB, "read",
-            expiresAt: DateTime.UtcNow.AddSeconds(-1));
-
-        var ws = await GetWorkspaceAsync(_clientB, _userIdB);
-
-        ws.SharedWithMe.Should().NotContain(n => n.DocumentId == doc.Id);
-    }
-
-    // ── WS-08 ─────────────────────────────────────────────────────────────────
-
-    /// <summary>WS-08 : Document supprimé (soft-delete) → absent de sharedWithMe.</summary>
-    [Fact]
-    public async Task GetWorkspace_DeletedDocument_AbsentFromSharedWithMe()
-    {
-        var vault = await CreateVaultAsync(_clientA, _userIdA, "Vault Deleted WS-08");
-        var doc   = await CreateDocAsync(_clientA, vault.Id, "deleted-note.md");
-        await GrantDocPermissionAsync(_clientA, doc.Id, _userIdB, "read");
-        await _clientA.DeleteAsync($"/api/v1/vaults/{vault.Id}/documents/{doc.Id}");
-
-        var ws = await GetWorkspaceAsync(_clientB, _userIdB);
-
-        ws.SharedWithMe.Should().NotContain(n => n.DocumentId == doc.Id);
-    }
-
-    // ── WS-09 ─────────────────────────────────────────────────────────────────
-
-    /// <summary>WS-09 : Permission révoquée → absente de sharedWithMe.</summary>
-    [Fact]
-    public async Task GetWorkspace_RevokedPermission_AbsentFromSharedWithMe()
-    {
-        var vault = await CreateVaultAsync(_clientA, _userIdA, "Vault Revoke WS-09");
-        var doc   = await CreateDocAsync(_clientA, vault.Id, "revoked-note.md");
-        await GrantDocPermissionAsync(_clientA, doc.Id, _userIdB, "read");
-        await RevokeDocPermissionAsync(_clientA, doc.Id, _userIdB);
-
-        var ws = await GetWorkspaceAsync(_clientB, _userIdB);
-
-        ws.SharedWithMe.Should().NotContain(n => n.DocumentId == doc.Id);
     }
 
     // ── WS-10 ─────────────────────────────────────────────────────────────────

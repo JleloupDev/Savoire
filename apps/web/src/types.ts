@@ -42,11 +42,6 @@ export interface SharedNote {
   grantedByDisplayName: string
 }
 
-/** Détail vault retourné par GET /api/v1/vaults/{id} */
-export interface VaultDetail extends VaultSummary {
-  members?: { userId: string; displayName: string; email: string; role: string }[]
-}
-
 export interface DocumentDto {
   id: string
   path: string

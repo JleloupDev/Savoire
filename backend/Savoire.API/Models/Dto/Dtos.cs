@@ -64,63 +64,12 @@ public record FolderDto(string Id, string Path, DateTime CreatedAt)
     public static FolderDto FromDomain(FolderRecord f) => new(f.Id, f.Path, f.CreatedAt);
 }
 
-public record FolderMoveResultDto(int MovedDocuments, int MovedFolders);
-
-// ── Clone manifest ─────────────────────────────────────────────────────────
-
-public record CloneManifestFolderDto(string Id, string Path);
-
-public record CloneManifestDocumentDto(
-    string   Id,
-    string   Path,
-    string?  Title,
-    string   Hash,
-    DateTime UpdatedAt,
-    long     SizeBytes
-);
-
-public record CloneManifestDto(
-    string                        VaultId,
-    string                        Name,
-    string?                       LocalPath,
-    List<CloneManifestFolderDto>  Folders,
-    List<CloneManifestDocumentDto> Documents,
-    int                           TotalDocuments,
-    long                          TotalSizeBytes
-);
-
-// ── Synchronisation ────────────────────────────────────────────────────────
-
-public record SyncChangeDto(
-    string    DocId,
-    string    Path,
-    string    ChangeType,    // "created" | "modified" | "deleted" | "moved"
-    string?   Hash,
-    DateTime  UpdatedAt
-);
-
-public record SyncStatusDto(
-    DateTime          Since,
-    DateTime          CheckedAt,
-    List<SyncChangeDto> Changes
-);
-
-public record SyncRequestDto(string ClientId, byte[] StateVector);
-
-public record SyncResponseDto(byte[][] MissingOps, byte[] ServerStateVector);
-
-public record PushOpsRequestDto(string ClientId, DateTime ProducedAt, byte[] Ops);
-
 // ── Requests ───────────────────────────────────────────────────────────────
 
 public record CreateVaultRequest(string Name);
-public record CreateDocumentRequest(string Path, string? Content);
 public record CreateFolderRequest(string Path);
-public record PatchDocumentRequest(string Path);
-public record PatchFolderRequest(string Path);
 public record PatchVaultRequest(string Name);
 public record AddMemberRequest(string UserId, string Role);
-public record CloneRequest(string? LocalPath);
 
 
 // ── Attachments ──────────────────────────────────────────────────────────────
