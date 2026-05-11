@@ -4,8 +4,8 @@
 // d'un vault ou d'un document.
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api } from './api'
-import type { ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, UserDto, VaultSummary, DocumentDto } from './types'
+import type { ISharingAPI, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
+import type { VaultSummary, DocumentDto } from './types'
 import { t, ti } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
 
@@ -78,7 +78,7 @@ function fmtDate(s: string | null): string {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PermissionRow({ p, onRevoke }: { p: ResourcePermissionDto; onRevoke: () => void }) {
+function PermissionRow({ p, onRevoke }: { p: AppResourcePermission; onRevoke: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.8rem' }}>
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -92,7 +92,7 @@ function PermissionRow({ p, onRevoke }: { p: ResourcePermissionDto; onRevoke: ()
   )
 }
 
-function LinkRow({ link, onRevoke }: { link: ShareLinkDto; onRevoke: () => void }) {
+function LinkRow({ link, onRevoke }: { link: AppShareLink; onRevoke: () => void }) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
     void navigator.clipboard.writeText(linkUrl(link.token))
@@ -124,20 +124,21 @@ interface Props {
   token: string
   vault: VaultSummary | null
   document: DocumentDto | null
+  sharingApi: ISharingAPI
   onClose: () => void
 }
 
-export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
+export function SharingPanel({ token, vault, document: doc, sharingApi, onClose }: Props) {
   // Which resource to manage: vault or document
   const [target, setTarget] = useState<'vault' | 'document'>(doc ? 'document' : 'vault')
   const [tab, setTab] = useState<'permissions' | 'links'>('permissions')
-  const [sharing, setSharing] = useState<ResourceSharingDto | null>(null)
+  const [sharing, setSharing] = useState<AppResourceSharing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Grant form
   const [grantEmail, setGrantEmail] = useState('')
-  const [resolvedUser, setResolvedUser] = useState<UserDto | null>(null)
+  const [resolvedUser, setResolvedUser] = useState<AppUserLookup | null>(null)
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [resolveBusy, setResolveBusy] = useState(false)
   const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -155,7 +156,7 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     if (!resourceId) return
     setLoading(true); setError(null)
     try {
-      const data = await api.getSharing(target, resourceId, token)
+      const data = await sharingApi.getSharing(target, resourceId, token)
       setSharing(data)
     } catch (e) {
       setError(String(e))
@@ -175,7 +176,7 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     resolveTimer.current = setTimeout(async () => {
       setResolveBusy(true)
       try {
-        const user = await api.lookupUserByEmail(email.trim(), token)
+        const user = await sharingApi.lookupUserByEmail(email.trim(), token)
         if (user) { setResolvedUser(user); setResolveError(null) }
         else setResolveError(t('app', 'sharing.error.userNotFound'))
       } catch { setResolveError(t('app', 'sharing.error.search')) }
@@ -187,7 +188,7 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     if (!resourceId || !resolvedUser) return
     setGrantBusy(true)
     try {
-      await api.grantPermission(target, resourceId, resolvedUser.id, grantPermission, token)
+      await sharingApi.grantPermission(target, resourceId, resolvedUser.id, grantPermission, token)
       setGrantEmail('')
       setResolvedUser(null)
       await reload()
@@ -198,10 +199,10 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     finally { setGrantBusy(false) }
   }
 
-  async function handleRevokePerm(p: ResourcePermissionDto) {
+  async function handleRevokePerm(p: AppResourcePermission) {
     if (!resourceId) return
     try {
-      await api.revokePermission(target, resourceId, p.subjectId, token)
+      await sharingApi.revokePermission(target, resourceId, p.subjectId, token)
       await reload()
       notify('success', t('app', 'notify.sharing.revokeSuccess'))
     } catch (e) {
@@ -213,7 +214,7 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     if (!resourceId) return
     setLinkBusy(true)
     try {
-      await api.createShareLink(target, resourceId, linkPermission, token)
+      await sharingApi.createShareLink(target, resourceId, linkPermission, token)
       await reload()
       notify('success', t('app', 'notify.sharing.linkCreated'))
     } catch (e) {
@@ -222,9 +223,9 @@ export function SharingPanel({ token, vault, document: doc, onClose }: Props) {
     finally { setLinkBusy(false) }
   }
 
-  async function handleRevokeLink(link: ShareLinkDto) {
+  async function handleRevokeLink(link: AppShareLink) {
     try {
-      await api.revokeShareLink(link.id, token)
+      await sharingApi.revokeShareLink(link.id, token)
       await reload()
       notify('success', t('app', 'notify.sharing.linkRevoked'))
     } catch (e) {

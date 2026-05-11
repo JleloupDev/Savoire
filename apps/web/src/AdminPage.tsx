@@ -3,16 +3,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { api } from './api'
-import type { AdminUserDto } from './types'
+import type { IAdminAPI, AppAdminUser } from '@savoire/application'
 import { t, ti } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
 
-export function AdminPage() {
+export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
   const { token, isReady, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [users, setUsers] = useState<AdminUserDto[]>([])
+  const [users, setUsers] = useState<AppAdminUser[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [newEmail, setNewEmail] = useState('')
@@ -29,7 +28,7 @@ export function AdminPage() {
   const loadUsers = useCallback(async () => {
     if (!token) return
     setLoadError(null)
-    try { setUsers(await api.listUsers(token)) }
+    try { setUsers(await adminApi.listUsers(token)) }
     catch (e) { setLoadError(String(e)) }
   }, [token])
 
@@ -45,7 +44,7 @@ export function AdminPage() {
     setCreateError(null)
     setCreateSuccess(null)
     try {
-      await api.createUser(token, newEmail.trim(), newPassword, newDisplayName.trim(), newIsAdmin)
+      await adminApi.createUser(token, newEmail.trim(), newPassword, newDisplayName.trim(), newIsAdmin)
       setCreateSuccess(ti('app', 'admin.user.created', { email: newEmail }))
       setNewEmail(''); setNewDisplayName(''); setNewPassword(''); setNewIsAdmin(false)
       await loadUsers()
@@ -59,7 +58,7 @@ export function AdminPage() {
   async function confirmReset(userId: string) {
     if (!token || !resetPassword) return
     try {
-      await api.resetPassword(token, userId, resetPassword)
+      await adminApi.resetPassword(token, userId, resetPassword)
       setResetTarget(null); setResetPassword('')
       notify('success', t('app', 'notify.admin.passwordReset'))
     } catch (e) {
@@ -69,12 +68,12 @@ export function AdminPage() {
 
   async function handleRevoke(userId: string) {
     if (!token) return
-    try { await api.revokeSessions(token, userId) } catch { /* POC: ignore */ }
+    try { await adminApi.revokeSessions(token, userId) } catch { /* POC: ignore */ }
   }
 
   async function handleDisable(userId: string) {
     if (!token) return
-    try { await api.disableUser(token, userId); await loadUsers() } catch { /* POC: ignore */ }
+    try { await adminApi.disableUser(token, userId); await loadUsers() } catch { /* POC: ignore */ }
   }
 
   async function handleLogout() {

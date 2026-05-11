@@ -731,6 +731,7 @@ export function AppShell() {
           token={token}
           vault={selectedVault}
           document={activeDoc}
+          sharingApi={application.sharing}
           onClose={() => setSharingOpen(false)}
         />
       )}

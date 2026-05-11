@@ -114,7 +114,139 @@ export interface IWorkspaceAPI {
   ): VaultAPI
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface AppAuthUser {
+  id: string
+  displayName: string
+  email: string
+  isAdmin: boolean
+}
+
+export interface AppAuthResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  user: AppAuthUser
+}
+
+export interface IAuthBackend {
+  login(email: string, password: string): Promise<AppAuthResponse>
+  refresh(refreshToken: string): Promise<AppAuthResponse>
+  logout(accessToken: string, refreshToken: string): Promise<void>
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>
+}
+
+export interface IAuthAPI {
+  login(email: string, password: string): Promise<AppAuthResponse>
+  refresh(refreshToken: string): Promise<AppAuthResponse>
+  logout(accessToken: string, refreshToken: string): Promise<void>
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>
+}
+
+// ── Sharing ───────────────────────────────────────────────────────────────────
+
+export interface AppResourcePermission {
+  id: string
+  resourceType: string
+  resourceId: string
+  subjectType: string
+  subjectId: string
+  subjectDisplayName: string | null
+  permission: string
+  grantedBy: string
+  grantedAt: string
+  expiresAt: string | null
+}
+
+export interface AppShareLink {
+  id: string
+  token: string
+  resourceType: string
+  resourceId: string
+  permission: string
+  createdBy: string
+  createdAt: string
+  expiresAt: string | null
+  revokedAt: string | null
+  isValid: boolean
+}
+
+export interface AppResourceSharing {
+  resourceType: string
+  resourceId: string
+  permissions: AppResourcePermission[]
+  links: AppShareLink[]
+}
+
+export interface AppShareLinkAccess {
+  accessToken: string
+  resourceType: string
+  resourceId: string
+  permission: string
+  expiresAt: string | null
+  vaultId?: string
+}
+
+export interface AppUserLookup {
+  id: string
+  displayName: string
+}
+
+export interface ISharingBackend {
+  getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing>
+  grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
+  revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
+  lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
+  revokeShareLink(linkId: string, token: string): Promise<void>
+  accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+}
+
+export interface ISharingAPI {
+  getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing>
+  grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
+  revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
+  lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
+  revokeShareLink(linkId: string, token: string): Promise<void>
+  accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export interface AppAdminUser {
+  id: string
+  email: string
+  displayName: string
+  isAdmin: boolean
+  createdAt: string
+  lastLoginAt: string | null
+  isLockedOut: boolean
+}
+
+export interface IAdminBackend {
+  listUsers(token: string): Promise<AppAdminUser[]>
+  createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void>
+  resetPassword(token: string, userId: string, newPassword: string): Promise<void>
+  revokeSessions(token: string, userId: string): Promise<void>
+  disableUser(token: string, userId: string): Promise<void>
+}
+
+export interface IAdminAPI {
+  listUsers(token: string): Promise<AppAdminUser[]>
+  createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void>
+  resetPassword(token: string, userId: string, newPassword: string): Promise<void>
+  revokeSessions(token: string, userId: string): Promise<void>
+  disableUser(token: string, userId: string): Promise<void>
+}
+
+// ── Application root ──────────────────────────────────────────────────────────
+
 export interface IApplicationAPI {
+  auth: IAuthAPI
+  admin: IAdminAPI
+  sharing: ISharingAPI
   vaults: IVaultsAPI
   documents: IDocumentsAPI
   documentSession: IDocumentSessionAPI
