@@ -4,4 +4,4 @@ using MediatR;
 
 namespace Savoire.Application.Vaults.RemoveVaultMember;
 
-public record RemoveVaultMemberCommand(string CallerId, string VaultId, string MemberId) : IRequest;
+public sealed record RemoveVaultMemberCommand(string CallerId, string VaultId, string MemberId) : IRequest;

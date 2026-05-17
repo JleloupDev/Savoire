@@ -10,7 +10,7 @@ using Savoire.Domain.Services;
 
 namespace Savoire.Application.Sharing.GrantPermission;
 
-public class GrantPermissionCommandHandler(
+public sealed class GrantPermissionCommandHandler(
     IVaultRepository              vaults,
     IDocumentRepository           documents,
     IResourcePermissionRepository permissions,

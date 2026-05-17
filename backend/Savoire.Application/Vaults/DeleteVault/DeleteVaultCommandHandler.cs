@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Vaults.DeleteVault;
 
-public class DeleteVaultCommandHandler(IVaultRepository vaults)
+public sealed class DeleteVaultCommandHandler(IVaultRepository vaults)
     : IRequestHandler<DeleteVaultCommand>
 {
     public async Task Handle(DeleteVaultCommand cmd, CancellationToken ct)

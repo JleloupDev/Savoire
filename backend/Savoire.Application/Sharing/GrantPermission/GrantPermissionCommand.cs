@@ -10,7 +10,7 @@ namespace Savoire.Application.Sharing.GrantPermission;
 /// <param name="ResourceId">ID of the resource.</param>
 /// <param name="TargetUserId">User receiving the permission.</param>
 /// <param name="Permission">"read", "write" or "admin".</param>
-public record GrantPermissionCommand(
+public sealed record GrantPermissionCommand(
     string    CallerId,
     string    ResourceType,
     string    ResourceId,

@@ -3,7 +3,6 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { api } from './api'
 import { t } from '@savoire/i18n'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
@@ -73,8 +72,7 @@ export function LoginPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.login(email.trim(), password)
-      login(res)
+      await login(email.trim(), password)
       navigate('/')
     } catch (e) {
       const msg = String(e)

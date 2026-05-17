@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sync.HubPushOperation;
 
-public record HubPushOperationCommand(
+public sealed record HubPushOperationCommand(
     string CallerId,
     string VaultId,
     string DocId,

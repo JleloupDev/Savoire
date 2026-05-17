@@ -5,4 +5,4 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Vaults.CreateVault;
 
-public record CreateVaultCommand(string OwnerId, string Name) : IRequest<VaultSummaryDto>;
+public sealed record CreateVaultCommand(string OwnerId, string Name) : IRequest<VaultSummaryDto>;

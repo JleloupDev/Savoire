@@ -5,4 +5,4 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Vaults.RenameVault;
 
-public record RenameVaultCommand(string CallerId, string VaultId, string NewName) : IRequest<VaultSummaryDto>;
+public sealed record RenameVaultCommand(string CallerId, string VaultId, string NewName) : IRequest<VaultSummaryDto>;

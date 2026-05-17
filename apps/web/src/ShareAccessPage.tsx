@@ -8,8 +8,9 @@ import { useState, useEffect } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
 import { Editor } from '@savoire/editor-react'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
+import type { ISharingAPI, AppShareLinkAccess } from '@savoire/application'
 import { api } from './api'
-import type { ShareLinkAccessDto, DocumentDto } from './types'
+import type { DocumentDto } from './types'
 import { pluginRegistry } from './pluginRegistry'
 import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
@@ -72,7 +73,7 @@ function createShareVaultApi(
 
 // ── Vault share — document list + editor ──────────────────────────────────────
 
-function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
+function VaultShareView({ access }: { access: AppShareLinkAccess }) {
   const [docs, setDocs] = useState<DocumentDto[] | null>(null)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -142,7 +143,7 @@ function VaultShareView({ access }: { access: ShareLinkAccessDto }) {
   )
 }
 
-function VaultShareEmbedView({ access, embedPath }: { access: ShareLinkAccessDto; embedPath: string }) {
+function VaultShareEmbedView({ access, embedPath }: { access: AppShareLinkAccess; embedPath: string }) {
   const [docs, setDocs] = useState<DocumentDto[] | null>(null)
   const [selected, setSelected] = useState<DocumentDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -189,7 +190,7 @@ function VaultShareEmbedView({ access, embedPath }: { access: ShareLinkAccessDto
 
 // ── Document share — single editor ────────────────────────────────────────────
 
-function DocumentShareView({ access, embedded = false }: { access: ShareLinkAccessDto; embedded?: boolean }) {
+function DocumentShareView({ access, embedded = false }: { access: AppShareLinkAccess; embedded?: boolean }) {
   const vaultId = access.vaultId ?? ''
   const docs = [{ id: access.resourceId, path: `doc-${access.resourceId}.md`, title: null, hash: '', sizeBytes: 0, createdAt: '', updatedAt: '' }] satisfies DocumentDto[]
   const vaultApi = createShareVaultApi(vaultId, access.accessToken, () => docs)
@@ -217,13 +218,13 @@ function DocumentShareView({ access, embedded = false }: { access: ShareLinkAcce
 
 // ── Page shell ────────────────────────────────────────────────────────────────
 
-export function ShareAccessPage() {
+export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
   const { token } = useParams<{ token: string }>()
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const embedMode = query.get('embed') === '1'
   const embedPath = query.get('path') ?? ''
-  const [access, setAccess] = useState<ShareLinkAccessDto | null>(null)
+  const [access, setAccess] = useState<AppShareLinkAccess | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -233,21 +234,21 @@ export function ShareAccessPage() {
     const cached = sessionStorage.getItem(cacheKey)
     if (cached) {
       try {
-        const parsed = JSON.parse(cached) as ShareLinkAccessDto
+        const parsed = JSON.parse(cached) as AppShareLinkAccess
         setAccess(parsed)
         setLoading(false)
       } catch {
         // ignore cache parse errors
       }
     }
-    api.accessShareLink(token)
+    sharingApi.accessShareLink(token)
       .then(dto => {
         setAccess(dto)
         sessionStorage.setItem(cacheKey, JSON.stringify(dto))
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [token])
+  }, [token, sharingApi])
 
   if (loading) return <FullPage><Status>Vérification du lien…</Status></FullPage>
   if (error)   return <FullPage><Status error>Lien invalide ou expiré. ({error})</Status></FullPage>

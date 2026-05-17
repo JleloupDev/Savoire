@@ -8,9 +8,9 @@ using Savoire.Domain.Entities;
 
 namespace Savoire.Application.Admin.Queries;
 
-public record ListUsersQuery : IRequest<IReadOnlyList<AdminUserDto>>;
+public sealed record ListUsersQuery : IRequest<IReadOnlyList<AdminUserDto>>;
 
-public class ListUsersQueryHandler(
+public sealed class ListUsersQueryHandler(
     UserManager<AppUser> userManager) :
     IRequestHandler<ListUsersQuery, IReadOnlyList<AdminUserDto>>
 {

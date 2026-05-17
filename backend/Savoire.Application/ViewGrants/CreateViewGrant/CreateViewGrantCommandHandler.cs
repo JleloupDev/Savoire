@@ -13,7 +13,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.ViewGrants.CreateViewGrant;
 
-public class CreateViewGrantCommandHandler(
+public sealed class CreateViewGrantCommandHandler(
     IVaultRepository vaults,
     IDocumentRepository documents,
     IShareLinkRepository shareLinks,

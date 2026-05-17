@@ -5,7 +5,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sync.HubSnapshotDocument;
 
-public class HubSnapshotDocumentCommandHandler(IOperationRepository ops)
+public sealed class HubSnapshotDocumentCommandHandler(IOperationRepository ops)
     : IRequestHandler<HubSnapshotDocumentCommand>
 {
     public async Task Handle(HubSnapshotDocumentCommand cmd, CancellationToken ct)

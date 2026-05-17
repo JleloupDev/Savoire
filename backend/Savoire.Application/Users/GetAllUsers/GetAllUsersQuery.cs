@@ -5,4 +5,4 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Users.GetAllUsers;
 
-public record GetAllUsersQuery : IRequest<IReadOnlyList<UserDto>>;
+public sealed record GetAllUsersQuery : IRequest<IReadOnlyList<UserDto>>;

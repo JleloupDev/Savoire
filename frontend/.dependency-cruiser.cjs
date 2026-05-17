@@ -8,7 +8,7 @@
 // Strict hierarchy (a layer may only import from layers below it):
 //
 //   apps (web, view, desktop, editor-dev)
-//     ↓ may import anything
+//     ↓ must NOT import infrastructure-sync or domain-sync directly
 //   editor-react
 //     ↓ editor-core, plugin-api
 //   editor-core
@@ -230,6 +230,66 @@ module.exports = {
         path: '^packages/',
         pathNot: '^packages/(plugin-api|module-bridge|plugins/plugin-module)/',
       },
+    },
+
+    // ── i18n — leaf ────────────────────────────────────────────────────────
+
+    {
+      name: 'i18n-no-cross-package-imports',
+      severity: 'error',
+      comment: 'i18n is a leaf — no dependencies on other @savoire packages.',
+      from: { path: '^packages/i18n/src' },
+      to: {
+        path: '^packages/',
+        pathNot: '^packages/i18n/',
+      },
+    },
+
+    // ── notifications — leaf ───────────────────────────────────────────────
+
+    {
+      name: 'notifications-no-cross-package-imports',
+      severity: 'error',
+      comment: 'notifications is a leaf — no dependencies on other @savoire packages.',
+      from: { path: '^packages/notifications/src' },
+      to: {
+        path: '^packages/',
+        pathNot: '^packages/notifications/',
+      },
+    },
+
+    // ── packages must never depend on apps ────────────────────────────────
+
+    {
+      name: 'no-packages-import-apps',
+      severity: 'error',
+      comment: 'packages/* must never import from apps/* — dependency flows downward only.',
+      from: { path: '^packages/' },
+      to: { path: '^apps/' },
+    },
+
+    // ── apps must not bypass the application layer ─────────────────────────
+    // apps/web, apps/desktop, apps/view must import through @savoire/application,
+    // not directly from infrastructure-sync or domain-sync.
+    // (apps/editor-dev is a dev harness and is exempt.)
+
+    {
+      name: 'apps-no-infrastructure-sync',
+      severity: 'error',
+      comment: 'Apps must not import infrastructure-sync directly — only the composition root (createWebAppRoot.ts / createViewRoot.ts) is allowed.',
+      from: {
+        path: '^apps/(web|desktop|view)/src',
+        pathNot: '(createWebAppRoot|createViewRoot)\\.ts$',
+      },
+      to: { path: '^packages/infrastructure-sync/' },
+    },
+
+    {
+      name: 'apps-no-domain-sync',
+      severity: 'error',
+      comment: 'Apps must not import domain-sync directly — it is an internal detail of infrastructure-sync.',
+      from: { path: '^apps/(web|desktop|view)/src' },
+      to: { path: '^packages/domain-sync/' },
     },
   ],
 

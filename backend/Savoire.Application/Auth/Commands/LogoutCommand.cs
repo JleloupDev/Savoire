@@ -5,9 +5,9 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Auth.Commands;
 
-public record LogoutCommand(string RefreshToken) : IRequest;
+public sealed record LogoutCommand(string RefreshToken) : IRequest;
 
-public class LogoutCommandHandler(
+public sealed class LogoutCommandHandler(
     ITokenService tokenService) : IRequestHandler<LogoutCommand>
 {
     public async Task Handle(LogoutCommand request, CancellationToken ct)

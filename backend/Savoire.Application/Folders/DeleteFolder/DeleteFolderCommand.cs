@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Folders.DeleteFolder;
 
-public record DeleteFolderCommand(string CallerId, string VaultId, string FolderId, bool Force)
+public sealed record DeleteFolderCommand(string CallerId, string VaultId, string FolderId, bool Force)
     : IRequest, IRequiresVaultAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;

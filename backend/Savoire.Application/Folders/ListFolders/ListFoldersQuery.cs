@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Folders.ListFolders;
 
-public record ListFoldersQuery(string CallerId, string VaultId)
+public sealed record ListFoldersQuery(string CallerId, string VaultId)
     : IRequest<IReadOnlyList<FolderDto>>, IRequiresVaultAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;

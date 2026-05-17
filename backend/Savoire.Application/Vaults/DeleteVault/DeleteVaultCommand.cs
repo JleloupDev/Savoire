@@ -4,4 +4,4 @@ using MediatR;
 
 namespace Savoire.Application.Vaults.DeleteVault;
 
-public record DeleteVaultCommand(string CallerId, string VaultId) : IRequest;
+public sealed record DeleteVaultCommand(string CallerId, string VaultId) : IRequest;

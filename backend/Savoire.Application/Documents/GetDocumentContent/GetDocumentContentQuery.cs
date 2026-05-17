@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Documents.GetDocumentContent;
 
-public record GetDocumentContentQuery(string CallerId, string VaultId, string DocId)
+public sealed record GetDocumentContentQuery(string CallerId, string VaultId, string DocId)
     : IRequest<Stream>, IRequiresDocumentAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;

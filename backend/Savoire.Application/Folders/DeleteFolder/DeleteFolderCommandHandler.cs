@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Folders.DeleteFolder;
 
-public class DeleteFolderCommandHandler(IFolderRepository folders)
+public sealed class DeleteFolderCommandHandler(IFolderRepository folders)
     : IRequestHandler<DeleteFolderCommand>
 {
     public async Task Handle(DeleteFolderCommand cmd, CancellationToken ct)

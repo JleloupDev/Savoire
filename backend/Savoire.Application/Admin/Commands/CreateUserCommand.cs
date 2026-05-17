@@ -9,13 +9,13 @@ using Savoire.Domain.Exceptions;
 
 namespace Savoire.Application.Admin.Commands;
 
-public record CreateUserCommand(
+public sealed record CreateUserCommand(
     string Email,
     string Password,
     string DisplayName,
     bool IsAdmin = false) : IRequest<AuthUserDto>;
 
-public class CreateUserCommandHandler(
+public sealed class CreateUserCommandHandler(
     UserManager<AppUser> userManager) :
     IRequestHandler<CreateUserCommand, AuthUserDto>
 {

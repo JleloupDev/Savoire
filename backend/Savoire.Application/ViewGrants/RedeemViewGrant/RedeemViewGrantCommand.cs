@@ -5,4 +5,4 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.ViewGrants.RedeemViewGrant;
 
-public record RedeemViewGrantCommand(string GrantToken) : IRequest<ViewAccessDto>;
+public sealed record RedeemViewGrantCommand(string GrantToken) : IRequest<ViewAccessDto>;

@@ -4,4 +4,4 @@ using MediatR;
 
 namespace Savoire.Application.Sharing.RevokeShareLink;
 
-public record RevokeShareLinkCommand(string CallerId, string LinkId) : IRequest;
+public sealed record RevokeShareLinkCommand(string CallerId, string LinkId) : IRequest;

@@ -12,7 +12,7 @@ namespace Savoire.Application.Sync.JoinDocument;
 /// </summary>
 public record JoinDocumentResult(string[] Ops, bool CallerIsVaultMember);
 
-public record JoinDocumentQuery(
+public sealed record JoinDocumentQuery(
     string CallerId,
     string VaultId,
     string DocId) : IRequest<JoinDocumentResult>, IRequiresDocumentAccess

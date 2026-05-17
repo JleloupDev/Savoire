@@ -4,4 +4,4 @@ using MediatR;
 
 namespace Savoire.Application.Documents.DeleteDocument;
 
-public record DeleteDocumentCommand(string CallerId, string VaultId, string DocId) : IRequest;
+public sealed record DeleteDocumentCommand(string CallerId, string VaultId, string DocId) : IRequest;

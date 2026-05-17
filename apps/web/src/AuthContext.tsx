@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Multi-account auth — matches client-web AuthStateService + IAccountStore logic
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import type { AccountEntry, AuthResponse } from './types'
-import { api } from './api'
+import type { IAuthAPI } from '@savoire/application'
+import type { AccountEntry } from './types'
 
 const STORE_KEY = 'vault_accounts'
 
@@ -26,21 +26,22 @@ interface AuthContextValue {
   isReady: boolean
 
   // Actions
-  login: (res: AuthResponse) => void
+  login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   switchAccount: (userId: string) => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children, authApi }: { children: ReactNode; authApi: IAuthAPI }) {
   const [accounts, setAccounts] = useState<AccountEntry[]>(loadAccounts)
   const [token, setToken] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   const activeAccount = accounts.find(a => a.isActive) ?? null
 
-  const login = useCallback((res: AuthResponse) => {
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await authApi.login(email, password)
     const existing = loadAccounts()
     const updated = existing
       .map(a => ({ ...a, isActive: false }))
@@ -57,12 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveAccounts(final)
     setAccounts(final)
     setToken(res.accessToken)
-  }, [])
+  }, [authApi])
 
   const logout = useCallback(async () => {
     const current = loadAccounts().find(a => a.isActive)
     if (current && token) {
-      try { await api.logout(token, current.refreshToken) } catch { /* POC: ignore */ }
+      try { await authApi.logout(token, current.refreshToken) } catch { /* POC: ignore */ }
     }
     const remaining = loadAccounts().filter(a => !a.isActive)
     saveAccounts(remaining)
@@ -75,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const target = stored.find(a => a.userId === userId)
     if (!target) return false
     try {
-      const res = await api.refresh(target.refreshToken)
+      const res = await authApi.refresh(target.refreshToken)
       const updated = stored.map(a => ({
         ...a,
         isActive: a.userId === userId,

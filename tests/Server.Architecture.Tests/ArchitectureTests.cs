@@ -100,6 +100,35 @@ public sealed class DomainLayerTests
             .GetResult();
         Assert.True(result.IsSuccessful, Helpers.Format(result));
     }
+
+    [Fact(DisplayName = "Domain — pas de dépendance vers EntityFramework Core")]
+    public void Domain_ShouldNotDependOn_EntityFramework()
+    {
+        var result = Types.InAssembly(Assemblies.Domain)
+            .ShouldNot().HaveDependencyOn("Microsoft.EntityFrameworkCore")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Domain — les events de domaine finissent par Event")]
+    public void Domain_DomainEvents_NamingConvention()
+    {
+        var result = Types.InAssembly(Assemblies.Domain)
+            .That().ResideInNamespace($"{Ns.Domain}.Events")
+            .Should().HaveNameEndingWith("Event")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Domain — les Value Objects résident dans Domain.ValueObjects")]
+    public void Domain_ValueObjects_ResideInCorrectNamespace()
+    {
+        var result = Types.InAssembly(Assemblies.Domain)
+            .That().HaveNameEndingWith("ValueObject")
+            .Should().ResideInNamespace($"{Ns.Domain}.ValueObjects")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +207,45 @@ public sealed class ApplicationLayerTests
             .GetResult();
         Assert.True(result.IsSuccessful, Helpers.Format(result));
     }
+
+    [Fact(DisplayName = "Application — les Handlers dépendent de MediatR (implémentent IRequestHandler)")]
+    public void Application_Handlers_DependOnMediatR()
+    {
+        var result = Types.InAssembly(Assemblies.Application)
+            .That().HaveNameEndingWith("Handler")
+            .Should().HaveDependencyOn("MediatR")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Application — les Validators dépendent de FluentValidation")]
+    public void Application_Validators_UseFluentValidation()
+    {
+        var result = Types.InAssembly(Assemblies.Application)
+            .That().HaveNameEndingWith("Validator")
+            .Should().HaveDependencyOn("FluentValidation")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Application — pas de dépendance vers EntityFramework Core")]
+    public void Application_ShouldNotDependOn_EntityFramework()
+    {
+        var result = Types.InAssembly(Assemblies.Application)
+            .ShouldNot().HaveDependencyOn("Microsoft.EntityFrameworkCore")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Application — les Commands et Queries sont des types scellés")]
+    public void Application_RequestTypes_AreSealed()
+    {
+        var result = Types.InAssembly(Assemblies.Application)
+            .That().ImplementInterface(typeof(MediatR.IBaseRequest))
+            .Should().BeSealed()
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +294,27 @@ public sealed class InfrastructureLayerTests
             Assert.True(implements,
                 $"{repo.FullName} must implement a Domain repository interface.");
         }
+    }
+
+    [Fact(DisplayName = "Infrastructure — le DbContext réside dans Infrastructure.Persistence")]
+    public void Infrastructure_DbContext_ResideInPersistenceNamespace()
+    {
+        var result = Types.InAssembly(Assemblies.Infrastructure)
+            .That().HaveNameEndingWith("DbContext")
+            .Should().ResideInNamespace($"{Ns.Infrastructure}.Persistence")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Infrastructure — les configurations EF résident dans Infrastructure.Persistence")]
+    public void Infrastructure_EfConfigurations_ResideInPersistenceNamespace()
+    {
+        var result = Types.InAssembly(Assemblies.Infrastructure)
+            .That().HaveNameEndingWith("Configuration")
+            .And().AreNotInterfaces()
+            .Should().ResideInNamespace($"{Ns.Infrastructure}.Persistence")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
     }
 }
 
@@ -287,6 +376,97 @@ public sealed class ApiLayerTests
             .ShouldNot().HaveDependencyOn($"{Ns.Domain}.Repositories")
             .GetResult();
         Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "API — les Hubs finissent par Hub")]
+    public void Api_Hubs_NamingConvention()
+    {
+        var result = Types.InAssembly(Assemblies.Api)
+            .That().Inherit(typeof(Microsoft.AspNetCore.SignalR.Hub))
+            .And().AreNotAbstract()
+            .Should().HaveNameEndingWith("Hub")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "API — les Hubs résident dans le namespace Hubs")]
+    public void Api_Hubs_ResideInHubsNamespace()
+    {
+        var result = Types.InAssembly(Assemblies.Api)
+            .That().Inherit(typeof(Microsoft.AspNetCore.SignalR.Hub))
+            .Should().ResideInNamespace($"{Ns.Api}.Hubs")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "API — les Hubs ne dépendent pas directement de l'Infrastructure")]
+    public void Api_Hubs_DoNotDependOnInfrastructure()
+    {
+        var result = Types.InAssembly(Assemblies.Api)
+            .That().ResideInNamespace($"{Ns.Api}.Hubs")
+            .ShouldNot().HaveDependencyOn(Ns.Infrastructure)
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Règles transversales
+// ─────────────────────────────────────────────────────────────────────────────
+
+public sealed class CrossCuttingTests
+{
+    [Fact(DisplayName = "Architecture — les Handlers sont des classes scellées")]
+    public void Application_Handlers_AreSealed()
+    {
+        var result = Types.InAssembly(Assemblies.Application)
+            .That().HaveNameEndingWith("Handler")
+            .Should().BeSealed()
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Architecture — les Controllers dépendent de IMediator")]
+    public void Api_Controllers_DependOn_IMediator()
+    {
+        // AttachmentsController injecte IContentStore directement (uploads/downloads binaires).
+        var result = Types.InAssembly(Assemblies.Api)
+            .That().Inherit(typeof(Microsoft.AspNetCore.Mvc.ControllerBase))
+            .And().AreNotAbstract()
+            .And().DoNotHaveNameEndingWith("AttachmentsController")
+            .Should().HaveDependencyOn("MediatR")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Architecture — les Hubs dépendent de IMediator")]
+    public void Api_Hubs_DependOn_IMediator()
+    {
+        // Filtre sur Inherit(Hub) pour exclure les DTOs co-localisés dans le namespace Hubs.
+        var result = Types.InAssembly(Assemblies.Api)
+            .That().Inherit(typeof(Microsoft.AspNetCore.SignalR.Hub))
+            .And().AreNotAbstract()
+            .Should().HaveDependencyOn("MediatR")
+            .GetResult();
+        Assert.True(result.IsSuccessful, Helpers.Format(result));
+    }
+
+    [Fact(DisplayName = "Architecture — les assemblies de production ne dépendent pas de xUnit")]
+    public void Production_Assemblies_DoNotDependOn_Xunit()
+    {
+        foreach (var (name, asm) in new[]
+        {
+            (nameof(Assemblies.Domain), Assemblies.Domain),
+            (nameof(Assemblies.Application), Assemblies.Application),
+            (nameof(Assemblies.Infrastructure), Assemblies.Infrastructure),
+            (nameof(Assemblies.Api), Assemblies.Api),
+        })
+        {
+            var result = Types.InAssembly(asm)
+                .ShouldNot().HaveDependencyOn("Xunit")
+                .GetResult();
+            Assert.True(result.IsSuccessful, $"[{name}] " + Helpers.Format(result));
+        }
     }
 }
 

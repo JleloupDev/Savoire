@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { CrdtDocumentFetcher, RestDocumentFetcher, RestVaultStorage, DocumentRoomClient } from '@savoire/infrastructure-sync'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -14,7 +13,7 @@ import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
 import { SharingPanel } from './SharingPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
-import { createWebAppRoot } from './createWebAppRoot'
+import { createWebAppRoot, createWebInfrastructure } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
@@ -170,20 +169,15 @@ export function AppShell() {
 
   // ── Infrastructure singletons ──────────────────────────────────────────────
 
-  const documentFetcher = useRef(new CrdtDocumentFetcher({
-    getToken: () => tokenRef.current,
-    getUserId: () => activeAccountRef.current?.userId ?? 'reader',
-  }))
-  const restFetcher = useRef(new RestDocumentFetcher())
-  const vaultStorage = useRef(new RestVaultStorage())
-  const documentStore = useRef(new DocumentStore(documentFetcher.current, restFetcher.current))
-  const roomClient = useRef(new DocumentRoomClient({
-    getToken: () => tokenRef.current,
-  }))
+  const infraRef = useRef(createWebInfrastructure(
+    () => tokenRef.current,
+    () => activeAccountRef.current?.userId ?? 'reader',
+  ))
+  const { documentFetcher, restFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
   const managerRef = useRef<WorkspaceManagerImpl | null>(null)
 
   const appRootRef = useRef(createWebAppRoot({
-    documentStore: documentStore.current,
+    documentStore: documentStore,
     getToken: () => tokenRef.current,
     onConnectionChange: (state) => {
       if (state === 'disconnected') notify('warn', t('app', 'sync.disconnected'))
@@ -294,7 +288,7 @@ export function AppShell() {
     pluginLoaderRef,
     triggersRef,
   } = usePluginBootstrap({
-    roomClient: roomClient.current,
+    roomClient: roomClient,
     vaultProxy,
     managerRef,
     vaultBrowserRefs,
@@ -355,8 +349,8 @@ export function AppShell() {
       const active = await application.documents.activateVault({
         vaultId: vault.id,
         token: tok,
-        storage: vaultStorage.current,
-        documentStore: documentStore.current,
+        storage: vaultStorage,
+        documentStore: documentStore,
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
       })
@@ -493,7 +487,7 @@ export function AppShell() {
       // The CRDT fetcher connects to /hubs/sync with the user's JWT — which the
       // server rejects (401) when the user is not a vault member. REST GET
       // /documents/{id}/content accepts the user token via document-level ACL.
-      const sharedDocStore = new DocumentStore(restFetcher.current)
+      const sharedDocStore = new DocumentStore(restFetcher)
       void application.documents.activateSharedDocument({
         vaultId: note.vaultId,
         doc: docStub,
@@ -515,7 +509,7 @@ export function AppShell() {
 
         // Subscribe to doc metadata events — the server adds non-members to
         // the doc-events group when JoinDocument runs (triggered by openFile below).
-        docEventUnsubRef.current = documentFetcher.current.subscribeDocumentEvents(note.documentId, {
+        docEventUnsubRef.current = documentFetcher.subscribeDocumentEvents(note.documentId, {
           onRenamed: (newPath) => {
             setDocuments(ds => ds.map(d => d.id === note.documentId ? { ...d, path: newPath } : d))
             managerRef.current?.notifyVaultChange()
@@ -731,6 +725,7 @@ export function AppShell() {
           token={token}
           vault={selectedVault}
           document={activeDoc}
+          sharingApi={application.sharing}
           onClose={() => setSharingOpen(false)}
         />
       )}

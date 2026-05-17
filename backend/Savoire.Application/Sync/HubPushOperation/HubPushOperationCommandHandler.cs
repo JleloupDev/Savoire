@@ -6,7 +6,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sync.HubPushOperation;
 
-public class HubPushOperationCommandHandler(IOperationRepository ops)
+public sealed class HubPushOperationCommandHandler(IOperationRepository ops)
     : IRequestHandler<HubPushOperationCommand>
 {
     public async Task Handle(HubPushOperationCommand cmd, CancellationToken ct)

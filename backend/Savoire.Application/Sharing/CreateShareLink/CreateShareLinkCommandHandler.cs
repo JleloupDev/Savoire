@@ -9,7 +9,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sharing.CreateShareLink;
 
-public class CreateShareLinkCommandHandler(
+public sealed class CreateShareLinkCommandHandler(
     IVaultRepository              vaults,
     IDocumentRepository           documents,
     IResourcePermissionRepository permissions,

@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sync.HubSnapshotDocument;
 
-public record HubSnapshotDocumentCommand(
+public sealed record HubSnapshotDocumentCommand(
     string CallerId,
     string VaultId,
     string DocId,
