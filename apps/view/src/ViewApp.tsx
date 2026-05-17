@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useEffect, useRef, useState } from 'react'
 import { DocumentView } from '@savoire/editor-core'
-import { DocumentRoomClient, RestDocumentFetcher } from '@savoire/infrastructure-sync'
+import { DirectVaultAPI, createDocumentRoomClient } from './createViewRoot'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
-import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
+import type { VaultPlugin } from '@savoire/plugin-api'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
 import mermaidPlugin from '@savoire/plugin-mermaid'
@@ -27,62 +27,6 @@ export interface ViewAppParams {
   userId?: string
   readOnly: boolean
   serverUrl?: string
-}
-
-class DirectVaultAPI implements VaultAPI {
-  private readonly fetcher: RestDocumentFetcher
-
-  constructor(
-    private readonly vaultId: string,
-    private readonly token: string,
-    private readonly docId: string,
-    private readonly path: string,
-    baseUrl?: string,
-  ) {
-    this.fetcher = new RestDocumentFetcher({ baseUrl: baseUrl ?? '' })
-  }
-
-  async read(documentId: string): Promise<string> {
-    return this.fetcher.getDocumentContent(this.vaultId, documentId, this.token)
-  }
-
-  async readDocumentByPath(path: string): Promise<string> {
-    const resolved = this.resolveDocumentId(path)
-    if (!resolved) throw new Error(`Document not found for path: ${path}`)
-    return this.read(resolved)
-  }
-
-  async write(documentId: string, content: string): Promise<void> {
-    return this.fetcher.writeDocumentContent(this.vaultId, documentId, content, this.token)
-  }
-
-  async list(dir?: string): Promise<string[]> {
-    const prefix = dir ? (dir.endsWith('/') ? dir : `${dir}/`) : ''
-    return this.path.startsWith(prefix) ? [this.path] : []
-  }
-
-  async exists(documentId: string): Promise<boolean> {
-    try {
-      await this.read(documentId)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  resolveDocumentId(path: string): string | undefined {
-    if (path === this.path) return this.docId
-    if (!path.includes('.') && `${path}.md` === this.path) return this.docId
-    return undefined
-  }
-
-  getVaultId(): string {
-    return this.vaultId
-  }
-
-  getToken(): string {
-    return this.token
-  }
 }
 
 const defaultPlugins: VaultPlugin[] = [
@@ -157,10 +101,7 @@ export function ViewApp({ params }: { params: ViewAppParams }) {
         access.path,
         params.serverUrl,
       )
-      const sync = new DocumentRoomClient({
-        serverUrl: params.serverUrl ?? '',
-        getToken: () => access.accessToken,
-      })
+      const sync = createDocumentRoomClient({ serverUrl: params.serverUrl, getToken: () => access.accessToken })
       const pluginApi = PluginAPIImpl.create(vault, sync)
       loader = new PluginLoader()
 

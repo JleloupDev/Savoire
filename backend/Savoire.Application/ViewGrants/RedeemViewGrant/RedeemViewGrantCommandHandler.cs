@@ -9,7 +9,7 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.ViewGrants.RedeemViewGrant;
 
-public class RedeemViewGrantCommandHandler(ITokenService tokenService, ILogger<RedeemViewGrantCommandHandler> logger)
+public sealed class RedeemViewGrantCommandHandler(ITokenService tokenService, ILogger<RedeemViewGrantCommandHandler> logger)
     : IRequestHandler<RedeemViewGrantCommand, ViewAccessDto>
 {
     public Task<ViewAccessDto> Handle(RedeemViewGrantCommand cmd, CancellationToken ct)

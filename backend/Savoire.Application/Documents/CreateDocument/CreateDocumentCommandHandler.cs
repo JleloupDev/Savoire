@@ -12,7 +12,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.CreateDocument;
 
-public class CreateDocumentCommandHandler(
+public sealed class CreateDocumentCommandHandler(
     IDocumentRepository documents,
     IFolderRepository   folderRepo,
     IContentStore       contentStore,

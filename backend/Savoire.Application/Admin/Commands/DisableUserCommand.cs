@@ -8,9 +8,9 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Admin.Commands;
 
-public record DisableUserCommand(string UserId) : IRequest;
+public sealed record DisableUserCommand(string UserId) : IRequest;
 
-public class DisableUserCommandHandler(
+public sealed class DisableUserCommandHandler(
     UserManager<AppUser> userManager,
     ITokenService tokenService) : IRequestHandler<DisableUserCommand>
 {

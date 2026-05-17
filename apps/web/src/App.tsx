@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { HttpAdminBackend, HttpAuthBackend, HttpSharingBackend } from '@savoire/infrastructure-sync'
-import { AdminService, AuthService, SharingService } from '@savoire/application'
+import { createWebServices } from './createWebAppRoot'
 import { AuthProvider } from './AuthContext'
 import { LoginPage } from './LoginPage'
 import { AppShell } from './AppShell'
@@ -10,9 +9,7 @@ import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
 
-const adminApi = new AdminService(new HttpAdminBackend())
-const authApi = new AuthService(new HttpAuthBackend())
-const sharingApi = new SharingService(new HttpSharingBackend())
+const { authApi, adminApi, sharingApi } = createWebServices()
 
 export function App() {
   return (

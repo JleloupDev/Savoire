@@ -8,7 +8,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.DeleteDocument;
 
-public class DeleteDocumentCommandHandler(
+public sealed class DeleteDocumentCommandHandler(
     IVaultRepository    vaults,
     IDocumentRepository documents,
     IPublisher          publisher)

@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sharing.GetResourceSharing;
 
-public record GetResourceSharingQuery(
+public sealed record GetResourceSharingQuery(
     string CallerId,
     string ResourceType,
     string ResourceId

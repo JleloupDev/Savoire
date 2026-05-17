@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Vaults.CreateVault;
 
-public class CreateVaultCommandHandler(IVaultRepository vaults)
+public sealed class CreateVaultCommandHandler(IVaultRepository vaults)
     : IRequestHandler<CreateVaultCommand, VaultSummaryDto>
 {
     public async Task<VaultSummaryDto> Handle(CreateVaultCommand cmd, CancellationToken ct)

@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Vaults.RemoveVaultMember;
 
-public class RemoveVaultMemberCommandHandler(IVaultRepository vaults)
+public sealed class RemoveVaultMemberCommandHandler(IVaultRepository vaults)
     : IRequestHandler<RemoveVaultMemberCommand>
 {
     public async Task Handle(RemoveVaultMemberCommand cmd, CancellationToken ct)

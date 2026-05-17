@@ -7,10 +7,10 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Auth.Commands;
 
-public record RefreshTokenCommand(string RefreshToken, string ClientIp)
+public sealed record RefreshTokenCommand(string RefreshToken, string ClientIp)
     : IRequest<AuthResponse>;
 
-public class RefreshTokenCommandHandler(
+public sealed class RefreshTokenCommandHandler(
     ITokenService tokenService) : IRequestHandler<RefreshTokenCommand, AuthResponse>
 {
     public async Task<AuthResponse> Handle(RefreshTokenCommand request, CancellationToken ct)

@@ -9,7 +9,7 @@ using Savoire.Domain.Services;
 
 namespace Savoire.Application.Sharing.GetResourceSharing;
 
-public class GetResourceSharingQueryHandler(
+public sealed class GetResourceSharingQueryHandler(
     IVaultRepository              vaults,
     IDocumentRepository           documents,
     IResourcePermissionRepository permissions,

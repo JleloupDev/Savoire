@@ -6,13 +6,13 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Metadata.IndexSnapshot;
 
-public record GetIndexSnapshotQuery(string VaultId, string Namespace, string CallerId)
+public sealed record GetIndexSnapshotQuery(string VaultId, string Namespace, string CallerId)
     : IRequest<IndexSnapshotDto?>, IRequiresVaultAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
 }
 
-public record GetIndexSnapshotQueryHandler(IIndexSnapshotRepository Snapshots)
+public sealed record GetIndexSnapshotQueryHandler(IIndexSnapshotRepository Snapshots)
     : IRequestHandler<GetIndexSnapshotQuery, IndexSnapshotDto?>
 {
     public async Task<IndexSnapshotDto?> Handle(GetIndexSnapshotQuery query, CancellationToken ct)

@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Documents.ListDocuments;
 
-public record ListDocumentsQuery(
+public sealed record ListDocumentsQuery(
     string  CallerId,
     string  VaultId,
     string? FolderPrefix   = null,

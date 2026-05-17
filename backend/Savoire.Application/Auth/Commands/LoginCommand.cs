@@ -10,10 +10,10 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Auth.Commands;
 
-public record LoginCommand(string Email, string Password, string ClientIp)
+public sealed record LoginCommand(string Email, string Password, string ClientIp)
     : IRequest<AuthResponse>;
 
-public class LoginCommandHandler(
+public sealed class LoginCommandHandler(
     UserManager<AppUser> userManager,
     SignInManager<AppUser> signInManager,
     ITokenService tokenService) : IRequestHandler<LoginCommand, AuthResponse>

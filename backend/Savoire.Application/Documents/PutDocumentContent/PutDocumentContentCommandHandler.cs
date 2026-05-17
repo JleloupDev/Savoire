@@ -12,7 +12,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.PutDocumentContent;
 
-public class PutDocumentContentCommandHandler(
+public sealed class PutDocumentContentCommandHandler(
     IDocumentRepository  documents,
     IShareLinkRepository shareLinks,
     IContentStore        contentStore)

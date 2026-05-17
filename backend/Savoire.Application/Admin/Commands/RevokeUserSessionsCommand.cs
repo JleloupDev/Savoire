@@ -6,9 +6,9 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Admin.Commands;
 
-public record RevokeUserSessionsCommand(string UserId) : IRequest;
+public sealed record RevokeUserSessionsCommand(string UserId) : IRequest;
 
-public class RevokeUserSessionsCommandHandler(
+public sealed class RevokeUserSessionsCommandHandler(
     ITokenService tokenService,
     IUserService userService) : IRequestHandler<RevokeUserSessionsCommand>
 {

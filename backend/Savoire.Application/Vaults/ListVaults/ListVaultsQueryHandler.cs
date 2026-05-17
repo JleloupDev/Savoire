@@ -10,7 +10,7 @@ using Savoire.Domain.ValueObjects;
 
 namespace Savoire.Application.Vaults.ListVaults;
 
-public class ListVaultsQueryHandler(
+public sealed class ListVaultsQueryHandler(
     IVaultRepository vaults,
     IResourcePermissionRepository permissions,
     IDocumentRepository documents,

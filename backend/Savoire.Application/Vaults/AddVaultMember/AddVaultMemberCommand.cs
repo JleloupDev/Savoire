@@ -4,4 +4,4 @@ using MediatR;
 
 namespace Savoire.Application.Vaults.AddVaultMember;
 
-public record AddVaultMemberCommand(string CallerId, string VaultId, string MemberId, string Role) : IRequest;
+public sealed record AddVaultMemberCommand(string CallerId, string VaultId, string MemberId, string Role) : IRequest;

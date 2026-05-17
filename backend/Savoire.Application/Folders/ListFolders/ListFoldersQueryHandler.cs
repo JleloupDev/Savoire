@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Folders.ListFolders;
 
-public class ListFoldersQueryHandler(IFolderRepository folders)
+public sealed class ListFoldersQueryHandler(IFolderRepository folders)
     : IRequestHandler<ListFoldersQuery, IReadOnlyList<FolderDto>>
 {
     public async Task<IReadOnlyList<FolderDto>> Handle(ListFoldersQuery q, CancellationToken ct)

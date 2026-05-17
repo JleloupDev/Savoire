@@ -9,7 +9,7 @@ using Savoire.Domain.ValueObjects;
 
 namespace Savoire.Application.Vaults.RenameVault;
 
-public class RenameVaultCommandHandler(IVaultRepository vaults)
+public sealed class RenameVaultCommandHandler(IVaultRepository vaults)
     : IRequestHandler<RenameVaultCommand, VaultSummaryDto>
 {
     public async Task<VaultSummaryDto> Handle(RenameVaultCommand cmd, CancellationToken ct)

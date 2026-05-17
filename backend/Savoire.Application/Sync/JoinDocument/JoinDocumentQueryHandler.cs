@@ -6,7 +6,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sync.JoinDocument;
 
-public class JoinDocumentQueryHandler(
+public sealed class JoinDocumentQueryHandler(
     IDocumentRepository  docs,
     IOperationRepository ops,
     IVaultRepository     vaults) : IRequestHandler<JoinDocumentQuery, JoinDocumentResult>

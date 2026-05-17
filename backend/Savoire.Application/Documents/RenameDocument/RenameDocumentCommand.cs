@@ -5,5 +5,5 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Documents.RenameDocument;
 
-public record RenameDocumentCommand(string CallerId, string VaultId, string DocId, string NewPath)
+public sealed record RenameDocumentCommand(string CallerId, string VaultId, string DocId, string NewPath)
     : IRequest<DocumentDto>;

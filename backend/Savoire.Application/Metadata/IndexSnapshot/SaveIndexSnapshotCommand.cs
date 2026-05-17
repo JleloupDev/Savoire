@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Metadata.IndexSnapshot;
 
-public record SaveIndexSnapshotCommand(
+public sealed record SaveIndexSnapshotCommand(
     string VaultId,
     string Namespace,
     long   ProcessedSeq,
@@ -18,7 +18,7 @@ public record SaveIndexSnapshotCommand(
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }
 
-public class SaveIndexSnapshotCommandHandler(IIndexSnapshotRepository snapshots)
+public sealed class SaveIndexSnapshotCommandHandler(IIndexSnapshotRepository snapshots)
     : IRequestHandler<SaveIndexSnapshotCommand>
 {
     public async Task Handle(SaveIndexSnapshotCommand cmd, CancellationToken ct)

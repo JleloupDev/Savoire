@@ -6,9 +6,9 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.SyncDocumentTitle;
 
-public record SyncDocumentTitleCommand(string DocId, string MarkdownContent) : IRequest;
+public sealed record SyncDocumentTitleCommand(string DocId, string MarkdownContent) : IRequest;
 
-public class SyncDocumentTitleCommandHandler(IDocumentRepository documents)
+public sealed class SyncDocumentTitleCommandHandler(IDocumentRepository documents)
     : IRequestHandler<SyncDocumentTitleCommand>
 {
     private static readonly Regex FrontmatterTitleRx =

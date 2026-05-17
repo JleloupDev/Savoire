@@ -6,7 +6,7 @@ using Savoire.Domain.Services;
 
 namespace Savoire.Application.Users.GetAllUsers;
 
-public class GetAllUsersQueryHandler(IUserLookupService users)
+public sealed class GetAllUsersQueryHandler(IUserLookupService users)
     : IRequestHandler<GetAllUsersQuery, IReadOnlyList<UserDto>>
 {
     public async Task<IReadOnlyList<UserDto>> Handle(GetAllUsersQuery q, CancellationToken ct)

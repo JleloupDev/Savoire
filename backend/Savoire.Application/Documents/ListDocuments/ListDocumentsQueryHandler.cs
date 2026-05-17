@@ -10,7 +10,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.ListDocuments;
 
-public class ListDocumentsQueryHandler(
+public sealed class ListDocumentsQueryHandler(
     IDocumentRepository  documents,
     IShareLinkRepository shareLinks)
     : IRequestHandler<ListDocumentsQuery, IReadOnlyList<DocumentDto>>

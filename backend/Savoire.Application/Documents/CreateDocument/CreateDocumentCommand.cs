@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Documents.CreateDocument;
 
-public record CreateDocumentCommand(
+public sealed record CreateDocumentCommand(
     string  CallerId,
     string  VaultId,
     string  Path,

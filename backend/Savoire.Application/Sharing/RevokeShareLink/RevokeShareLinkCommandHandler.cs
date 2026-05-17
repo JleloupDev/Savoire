@@ -7,7 +7,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sharing.RevokeShareLink;
 
-public class RevokeShareLinkCommandHandler(
+public sealed class RevokeShareLinkCommandHandler(
     IVaultRepository              vaults,
     IDocumentRepository           documents,
     IResourcePermissionRepository permissions,

@@ -8,11 +8,11 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Admin.Commands;
 
-public record ResetPasswordCommand(
+public sealed record ResetPasswordCommand(
     string UserId,
     string NewPassword) : IRequest;
 
-public class ResetPasswordCommandHandler(
+public sealed class ResetPasswordCommandHandler(
     UserManager<AppUser> userManager,
     ITokenService tokenService) : IRequestHandler<ResetPasswordCommand>
 {

@@ -4,7 +4,7 @@ using MediatR;
 
 namespace Savoire.Application.Sharing.RevokePermission;
 
-public record RevokePermissionCommand(
+public sealed record RevokePermissionCommand(
     string CallerId,
     string ResourceType,
     string ResourceId,

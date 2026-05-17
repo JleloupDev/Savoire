@@ -8,7 +8,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Folders.CreateFolder;
 
-public class CreateFolderCommandHandler(IFolderRepository folders)
+public sealed class CreateFolderCommandHandler(IFolderRepository folders)
     : IRequestHandler<CreateFolderCommand, FolderDto>
 {
     public async Task<FolderDto> Handle(CreateFolderCommand cmd, CancellationToken ct)

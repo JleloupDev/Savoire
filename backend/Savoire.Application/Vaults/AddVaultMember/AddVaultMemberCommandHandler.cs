@@ -9,7 +9,7 @@ using Savoire.Domain.Services;
 
 namespace Savoire.Application.Vaults.AddVaultMember;
 
-public class AddVaultMemberCommandHandler(
+public sealed class AddVaultMemberCommandHandler(
     IVaultRepository   vaults,
     IUserLookupService users)
     : IRequestHandler<AddVaultMemberCommand>

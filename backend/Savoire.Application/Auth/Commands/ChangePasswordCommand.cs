@@ -8,12 +8,12 @@ using Savoire.Domain.Interfaces;
 
 namespace Savoire.Application.Auth.Commands;
 
-public record ChangePasswordCommand(
+public sealed record ChangePasswordCommand(
     string UserId,
     string CurrentPassword,
     string NewPassword) : IRequest;
 
-public class ChangePasswordCommandHandler(
+public sealed class ChangePasswordCommandHandler(
     UserManager<AppUser> userManager,
     ITokenService tokenService) : IRequestHandler<ChangePasswordCommand>
 {

@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sharing.CreateShareLink;
 
-public record CreateShareLinkCommand(
+public sealed record CreateShareLinkCommand(
     string    CallerId,
     string    ResourceType,
     string    ResourceId,

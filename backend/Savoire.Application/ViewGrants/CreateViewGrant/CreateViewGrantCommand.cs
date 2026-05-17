@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.ViewGrants.CreateViewGrant;
 
-public record CreateViewGrantCommand(
+public sealed record CreateViewGrantCommand(
     string? CallerId,
     string? ShareToken,
     string? VaultId,

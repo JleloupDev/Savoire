@@ -5,7 +5,7 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Folders.CreateFolder;
 
-public record CreateFolderCommand(string CallerId, string VaultId, string Path)
+public sealed record CreateFolderCommand(string CallerId, string VaultId, string Path)
     : IRequest<FolderDto>, IRequiresVaultAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;

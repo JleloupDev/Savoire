@@ -8,4 +8,4 @@ namespace Savoire.Application.Sharing.AccessShareLink;
 /// <summary>
 /// Exchanges a share link token for a scoped JWT.
 /// </summary>
-public record AccessShareLinkQuery(string Token) : IRequest<ShareLinkAccessDto>;
+public sealed record AccessShareLinkQuery(string Token) : IRequest<ShareLinkAccessDto>;

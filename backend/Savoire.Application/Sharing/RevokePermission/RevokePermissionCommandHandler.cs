@@ -9,7 +9,7 @@ using Savoire.Domain.Services;
 
 namespace Savoire.Application.Sharing.RevokePermission;
 
-public class RevokePermissionCommandHandler(
+public sealed class RevokePermissionCommandHandler(
     IVaultRepository              vaults,
     IDocumentRepository           documents,
     IResourcePermissionRepository permissions,

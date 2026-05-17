@@ -9,7 +9,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.RenameDocument;
 
-public class RenameDocumentCommandHandler(
+public sealed class RenameDocumentCommandHandler(
     IVaultRepository    vaults,
     IDocumentRepository documents,
     IPublisher          publisher)

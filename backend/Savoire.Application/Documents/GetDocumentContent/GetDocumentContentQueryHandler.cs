@@ -9,7 +9,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.GetDocumentContent;
 
-public class GetDocumentContentQueryHandler(
+public sealed class GetDocumentContentQueryHandler(
     IDocumentRepository  documents,
     IShareLinkRepository shareLinks,
     IContentStore        contentStore)

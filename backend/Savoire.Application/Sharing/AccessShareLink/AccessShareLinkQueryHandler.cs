@@ -10,7 +10,7 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sharing.AccessShareLink;
 
-public class AccessShareLinkQueryHandler(
+public sealed class AccessShareLinkQueryHandler(
     IShareLinkRepository shareLinks,
     IDocumentRepository  documents,
     ITokenService        tokenService)
