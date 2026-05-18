@@ -3,5 +3,6 @@ packages:
   - "../packages/*"
   - "../packages/plugins/*"
   - "../tests/frontend/unit/*"
+  - "../tests/frontend/integration/*"
 allowBuilds:
   esbuild: set this to true or false
