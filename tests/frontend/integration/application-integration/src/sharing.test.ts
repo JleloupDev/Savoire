@@ -6,7 +6,7 @@ import { makeAppRoot } from './helpers/makeAppRoot'
 const ADMIN_EMAIL = 'admin@local.dev'
 const ADMIN_PASSWORD = 'Admin1234!'
 const GUEST_EMAIL = `test-sharing-${Date.now()}@local.dev`
-const GUEST_PASSWORD = 'Guest1234!'
+const GUEST_PASSWORD = 'Guest12345!'
 
 describe('Sharing — via Application layer', () => {
   let adminToken = ''

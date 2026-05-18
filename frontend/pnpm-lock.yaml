@@ -886,6 +886,9 @@ importers:
 
   ../tests/frontend/integration/application-integration:
     dependencies:
+      '@microsoft/signalr':
+        specifier: ^8.0.17
+        version: 8.0.17
       '@savoire/application':
         specifier: workspace:*
         version: link:../../../../packages/application
@@ -895,6 +898,9 @@ importers:
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../../../packages/platform
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
     devDependencies:
       typescript:
         specifier: ^5.4.0

@@ -10,7 +10,9 @@
   "dependencies": {
     "@savoire/application": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
-    "@savoire/platform": "workspace:*"
+    "@savoire/platform": "workspace:*",
+    "@microsoft/signalr": "^8.0.17",
+    "yjs": "^13.6.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
