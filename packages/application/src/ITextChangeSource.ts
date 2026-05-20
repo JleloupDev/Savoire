@@ -3,7 +3,7 @@
 import type { ICollaborativeText } from '@savoire/domain-index'
 
 // Port: source of live CRDT text changes.
-// Implemented by YjsIndexBridge in infrastructure-sync.
+// Implemented by an adapter in the composition root (wired to ICRDT.onTextChange).
 // Consumed by RealtimeIndexingService to drive anchor-based contributors.
 export interface ITextChangeSource {
   subscribe(handler: (docId: string, text: ICollaborativeText) => void): () => void

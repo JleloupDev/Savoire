@@ -373,9 +373,6 @@ importers:
       '@codemirror/view':
         specifier: ^6.24.0
         version: 6.40.0
-      '@microsoft/signalr':
-        specifier: ^8.0.0
-        version: 8.0.17
       '@milkdown/crepe':
         specifier: ^7.19.0
         version: 7.20.0(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)(prosemirror-view@1.41.7)(typescript@5.9.3)
@@ -415,15 +412,6 @@ importers:
       marked:
         specifier: ^9.0.0
         version: 9.1.6
-      y-codemirror.next:
-        specifier: ^0.3.0
-        version: 0.3.5(@codemirror/state@6.6.0)(@codemirror/view@6.40.0)(yjs@13.6.30)
-      y-protocols:
-        specifier: ^1.0.7
-        version: 1.0.7(yjs@13.6.30)
-      yjs:
-        specifier: ^13.6.0
-        version: 13.6.30
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -4162,13 +4150,6 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
-
-  y-codemirror.next@0.3.5:
-    resolution: {integrity: sha512-VluNu3e5HfEXybnypnsGwKAj+fKLd4iAnR7JuX1Sfyydmn1jCBS5wwEL/uS04Ch2ib0DnMAOF6ZRR/8kK3wyGw==}
-    peerDependencies:
-      '@codemirror/state': ^6.0.0
-      '@codemirror/view': ^6.0.0
-      yjs: ^13.5.6
 
   y-protocols@1.0.7:
     resolution: {integrity: sha512-YSVsLoXxO67J6eE/nV4AtFtT3QEotZf5sK5BHxFBXso7VDUT3Tx07IfA6hsu5Q5OmBdMkQVmFZ9QOA7fikWvnw==}
@@ -8258,13 +8239,6 @@ snapshots:
   ws@7.5.10: {}
 
   ws@8.19.0: {}
-
-  y-codemirror.next@0.3.5(@codemirror/state@6.6.0)(@codemirror/view@6.40.0)(yjs@13.6.30):
-    dependencies:
-      '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.40.0
-      lib0: 0.2.117
-      yjs: 13.6.30
 
   y-protocols@1.0.7(yjs@13.6.30):
     dependencies:

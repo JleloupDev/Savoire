@@ -19,7 +19,7 @@ import { createHashtagsPlugin } from '@savoire/plugin-hashtags'
 import { createMetadataPlugin } from '@savoire/plugin-metadata'
 import { createGraphPlugin } from '@savoire/plugin-graph'
 import { createSearchPlugin } from '@savoire/plugin-search'
-import type { VaultAPI, VaultPlugin, IEditorHostAPI } from '@savoire/plugin-api'
+import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI } from '@savoire/plugin-api'
 import {
   BlockRegistryImpl,
   CommandRegistryImpl,
@@ -40,11 +40,9 @@ import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import type { VaultSummary } from './types'
-import type { DocumentRoomClient } from '@savoire/infrastructure-sync'
-
 interface PluginBootstrapOptions {
-  /** The shared DocumentRoomClient instance (stable, created once). */
-  roomClient: DocumentRoomClient
+  /** The shared SyncAPI instance (stable, created once). */
+  roomClient: SyncAPI
   /** Stable VaultAPI proxy that always delegates to the active vault. */
   vaultProxy: VaultAPI
   /** Ref to the WorkspaceManagerImpl — populated by WorkspaceRoot.onReady. */

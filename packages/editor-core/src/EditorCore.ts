@@ -178,7 +178,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     })()
     const ctx = { editorView: null as unknown }
 
-    // see ADR-004
     let lastCursorLine = -1
 
     const crdtMode = options.crdt !== undefined
@@ -482,7 +481,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     this.commands.execute(id, context)
   }
 
-  // see ADR-004
   toggleFormat(format: MarkdownFormat): void {
     toggleMarkdownFormat(this.view, format)
   }
