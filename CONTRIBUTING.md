@@ -47,6 +47,13 @@ Example:
 - Scope: generated unit tests and a simple mapper implementation
 - Human validation: reviewed manually, adjusted naming, and added edge-case tests
 
+For AI-assisted commits, add both the human contributor and Claude as co-authors using the Git trailer format:
+
+```
+Co-Authored-By: Your Name <your@email.com>
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
 ## License and provenance
 
 This project uses automated license scanning tools such as ScanCode Toolkit, and may also use FOSSology in CI.

@@ -63,6 +63,15 @@ When proposing code, clearly state:
 
 If the request is ambiguous, ask for clarification instead of guessing.
 
+## Co-authorship
+
+Every AI-assisted commit must include both the human contributor and Claude as co-authors:
+
+```
+Co-Authored-By: Your Name <your@email.com>
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
 ## Licensing and provenance
 
 Do not reproduce third-party code verbatim.
