@@ -8,6 +8,8 @@ import {
   applyAwarenessUpdate,
   removeAwarenessStates,
 } from 'y-protocols/awareness'
+import { yCollab } from 'y-codemirror.next'
+import type { Extension } from '@codemirror/state'
 import type { ICRDT } from '@savoire/plugin-api'
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 import { YjsCollaborativeText } from './YjsCollaborativeText'
@@ -92,6 +94,10 @@ export class YjsCrdtAdapter implements ICRDT {
     let clock = 0
     for (const c of (Y_.decodeStateVector(Y_.encodeStateVector(this.ydoc)) as Map<number, number>).values()) clock += c
     return { clock }
+  }
+
+  getExtensions(): Extension[] {
+    return [yCollab(this.ytext, this.awareness)]
   }
 
   dispose(): void {

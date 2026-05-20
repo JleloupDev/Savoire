@@ -5,6 +5,8 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
+import { YjsCrdtAdapter, SignalRTransport } from '@savoire/infrastructure-sync'
+import { CollabOrchestrator } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
@@ -85,6 +87,14 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current?.()
     unsubPluginLoadedRef.current = null
 
+    const crdt = new YjsCrdtAdapter()
+    const transport = new SignalRTransport({
+      serverUrl: '',
+      userId,
+      getToken: () => refs.token.current,
+    })
+    const orchestrator = new CollabOrchestrator(crdt, transport)
+
     const view = new DocumentView({
       path: doc.path,
       container,
@@ -96,16 +106,17 @@ function DocumentPanelHost({
       pluginAPI: refs.pluginAPI.current ?? undefined,
       defaultPlugins: refs.defaultPlugins.current,
       pluginRegistry,
-      serverUrl: '',
+      crdt,
+      getTransportState: () => transport.getState(),
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
-      getToken: () => refs.token.current,
       onFileContentStabilized: (docId, path, shadowMarkdown) => {
         void refs.contentIndexingService.current?.indexNow(docId, path, shadowMarkdown)
       },
     })
     view.mount()
+    void transport.join(vaultId, doc.id)
     viewRef.current = view
 
     const ctrl = view.controller
@@ -124,6 +135,8 @@ function DocumentPanelHost({
     return () => {
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
+      orchestrator.dispose()
+      void transport.disconnect()
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)

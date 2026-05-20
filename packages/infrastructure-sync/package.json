@@ -24,6 +24,8 @@
     "@savoire/domain-index": "workspace:*",
     "@savoire/domain-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
+    "@codemirror/state": "^6.4.0",
+    "y-codemirror.next": "^0.3.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.0"
   },

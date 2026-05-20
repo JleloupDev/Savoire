@@ -117,7 +117,6 @@ export function ViewGrantPage() {
         pluginAPI: pluginApi,
         defaultPlugins,
         pluginRegistry,
-        serverUrl: '',
       })
       view.mount()
     }

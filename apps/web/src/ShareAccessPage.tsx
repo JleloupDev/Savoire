@@ -79,7 +79,6 @@ function VaultShareView({ access }: { access: AppShareLinkAccess }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const vaultApi = createShareVaultApi(access.resourceId, access.accessToken, () => docs ?? [])
-  const getToken = () => access.accessToken
 
   useEffect(() => {
     api.listDocuments(access.resourceId, access.accessToken)
@@ -124,13 +123,10 @@ function VaultShareView({ access }: { access: AppShareLinkAccess }) {
           ? (
             <Editor
               key={selected.id}
-              serverUrl=""
-              vaultId={access.resourceId}
               docId={selected.id}
               userId="share"
               readOnly={ro}
               vault={vaultApi}
-              getToken={getToken}
               pluginRegistry={pluginRegistry}
               defaultPlugins={SHARE_DEFAULT_PLUGINS}
               style={{ height: '100%' }}
@@ -149,7 +145,6 @@ function VaultShareEmbedView({ access, embedPath }: { access: AppShareLinkAccess
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const vaultApi = createShareVaultApi(access.resourceId, access.accessToken, () => docs ?? [])
-  const getToken = () => access.accessToken
 
   useEffect(() => {
     api.listDocuments(access.resourceId, access.accessToken)
@@ -173,13 +168,10 @@ function VaultShareEmbedView({ access, embedPath }: { access: AppShareLinkAccess
     <div style={{ height: '100vh', overflow: 'hidden' }}>
       <Editor
         key={selected.id}
-        serverUrl=""
-        vaultId={access.resourceId}
         docId={selected.id}
         userId="share"
         readOnly={ro}
         vault={vaultApi}
-        getToken={getToken}
         pluginRegistry={pluginRegistry}
         defaultPlugins={SHARE_DEFAULT_PLUGINS}
         style={{ height: '100%' }}
@@ -194,20 +186,16 @@ function DocumentShareView({ access, embedded = false }: { access: AppShareLinkA
   const vaultId = access.vaultId ?? ''
   const docs = [{ id: access.resourceId, path: `doc-${access.resourceId}.md`, title: null, hash: '', sizeBytes: 0, createdAt: '', updatedAt: '' }] satisfies DocumentDto[]
   const vaultApi = createShareVaultApi(vaultId, access.accessToken, () => docs)
-  const getToken = () => access.accessToken
   const ro = readOnly(access.permission)
 
   return (
     <div style={{ height: embedded ? '100vh' : 'calc(100vh - 56px)' }}>
       <Editor
         key={access.resourceId}
-        serverUrl=""
-        vaultId={vaultId}
         docId={access.resourceId}
         userId="share"
         readOnly={ro}
         vault={vaultApi}
-        getToken={getToken}
         pluginRegistry={pluginRegistry}
         defaultPlugins={SHARE_DEFAULT_PLUGINS}
         style={{ height: '100%' }}
