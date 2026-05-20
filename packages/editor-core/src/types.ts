@@ -68,6 +68,7 @@ import type { ICRDT, VaultAPI, NoteScope } from '@savoire/plugin-api'
 
 export interface ICodeMirrorCRDT extends ICRDT {
   getExtensions(): Extension[]
+  setLocalUser(cursorId: string): void
 }
 
 export interface EditorCoreOptions {

@@ -29,6 +29,10 @@ export class YjsCrdtAdapter implements ICRDT {
     this.awareness = new Awareness(this.ydoc)
   }
 
+  setLocalUser(cursorId: string): void {
+    this.awareness.setLocalStateField('user', { id: cursorId })
+  }
+
   onLocalOp(cb: (op: Uint8Array) => void): () => void {
     const handler = (update: Uint8Array, origin: unknown) => {
       if (origin !== 'remote') cb(update)

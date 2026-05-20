@@ -169,6 +169,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     this.activeFile = options.filePath ?? null
     // see ADR-008
     this.pluginAPI = options.pluginAPI ?? createNoopHostAPI()
+    if (options.crdt && options.userId) {
+      options.crdt.setLocalUser(options.userId)
+    }
     void (async () => {
       await new Promise<void>(resolve => setTimeout(resolve, 0))
       console.log(`[perf] after setTimeout(0) — +${(performance.now() - tConstruct).toFixed(0)} ms (timer fired / still alive)`)
