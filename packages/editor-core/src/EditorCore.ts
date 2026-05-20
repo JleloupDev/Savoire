@@ -5,10 +5,6 @@ import { EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import * as Y from 'yjs'
-import { yCollab } from 'y-codemirror.next'
-import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
-import { HubConnectionBuilder, HubConnection, HubConnectionState, HttpTransportType, LogLevel } from '@microsoft/signalr'
 
 import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand } from './types'
 import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader } from '@savoire/plugin-api'
@@ -18,7 +14,7 @@ import { toggleMarkdownFormat } from './FormattingService'
 import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
-import { createLivePreviewExtension, pluginsLoadedEffect, setRemoteCursorPositions } from './LivePreview'
+import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
 
 // Detects a list item line: optional leading whitespace + bullet or ordered marker
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
@@ -44,12 +40,6 @@ function dedentListLine(view: EditorView): boolean {
   return true
 }
 
-// see ADR-004
-function userColor(userId: string): string {
-  let h = 0
-  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0
-  return `hsl(${h % 360}, 70%, 50%)`
-}
 
 // ── Noop host API — used when no PluginAPIImpl is provided (standalone / playground) ──
 
@@ -155,11 +145,6 @@ async function loadScopedPlugin(
 
 export class EditorCore implements EditorController, EditorPositionAPI {
   private view: EditorView
-  private ydoc: Y.Doc
-  private awareness: Awareness
-  private connection: HubConnection | null = null
-  private connectTimer: ReturnType<typeof setTimeout> | null = null
-  private destroyed = false
   private events = new EventBus()
   private activeFile: string | null = null
 
@@ -188,23 +173,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       await new Promise<void>(resolve => setTimeout(resolve, 0))
       console.log(`[perf] after setTimeout(0) — +${(performance.now() - tConstruct).toFixed(0)} ms (timer fired / still alive)`)
     })()
-    this.ydoc = new Y.Doc()
-    this.awareness = new Awareness(this.ydoc)
-    const yText = this.ydoc.getText('codemirror')
-
-    const userId = options.userId ?? 'anon'
-    this.awareness.setLocalStateField('user', {
-      name: userId,
-      color: userColor(userId),
-      colorLight: userColor(userId).replace('50%', '80%'),
-    })
-
     const ctx = { editorView: null as unknown }
 
     // see ADR-004
     let lastCursorLine = -1
 
-    const crdtMode = options.serverUrl !== undefined && options.serverUrl !== null
+    const crdtMode = options.crdt !== undefined
     const offlineDoc = crdtMode ? '' : (options.initialContent ?? '')
     const startState = EditorState.create({
       doc: offlineDoc,
@@ -224,7 +198,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         ),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
-        yCollab(yText, this.awareness),
+        ...(options.crdt?.getExtensions() ?? []),
         ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys())),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
@@ -248,8 +222,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               const content = update.view.state.doc.toString()
               const docId = this.options.docId ?? ''
               const path  = this.activeFile ?? ''
-              let clock = 0
-              for (const c of Y.decodeStateVector(Y.encodeStateVector(this.ydoc)).values()) clock += c
+              const clock = this.options.crdt?.getVersion().clock ?? 0
               this.pluginAPI.hooks.runDocumentStabilized(docId, path, content, { clock })
             }, 2000)
           }
@@ -297,14 +270,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
     this.loadPlugins()
 
-    // see ADR-025
-    // see ADR-009
-    if (options.serverUrl !== undefined && options.serverUrl !== null) {
-      this.connectTimer = setTimeout(() => {
-        this.connectTimer = null
-        void this.connectSignalR()
-      }, 0)
-    }
   }
 
   private async loadPlugins(): Promise<void> {
@@ -499,94 +464,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     for (const cmd of toolbarCmds) toolbar.register(cmd)
   }
 
-  private async connectSignalR() {
-    const { serverUrl, vaultId = 'default', docId = 'default', userId = 'anon' } = this.options
-    const t0 = performance.now()
-    console.log(`[perf] connectSignalR start — docId=${docId}`)
-
-    const { getToken } = this.options
-    this.connection = new HubConnectionBuilder()
-      .withUrl(`${serverUrl}/hubs/sync?userId=${encodeURIComponent(userId)}`, {
-        transport: HttpTransportType.WebSockets,
-        ...(getToken ? { accessTokenFactory: () => getToken() ?? '' } : {}),
-      })
-      .configureLogging(LogLevel.None)
-      .withAutomaticReconnect()
-      .build()
-
-    this.connection.on('InitDocument', (_docId: string, ops: string[]) => {
-      console.log(`[perf] InitDocument received — ${ops.length} ops — +${(performance.now() - t0).toFixed(0)} ms`)
-      ops.forEach((op) => {
-        const update = Uint8Array.from(atob(op), (c) => c.charCodeAt(0))
-        Y.applyUpdate(this.ydoc, update)
-      })
-      console.log(`[perf] Yjs applied — +${(performance.now() - t0).toFixed(0)} ms`)
-      requestAnimationFrame(() => {
-        const v = this.view
-        if (v && !v.hasFocus) {
-          v.dispatch({ selection: { anchor: v.state.doc.length } })
-        }
-      })
-
-      const COMPACT_THRESHOLD = 100
-      if (ops.length > COMPACT_THRESHOLD && this.connection?.state === HubConnectionState.Connected) {
-        const snapshot = Y.encodeStateAsUpdate(this.ydoc)
-        const snapshotBase64 = btoa(String.fromCharCode(...snapshot))
-        void this.connection.invoke('SnapshotDocument', vaultId, _docId, snapshotBase64)
-          .then(() => console.log(`[perf] SnapshotDocument envoyé (${ops.length} ops → 1 snapshot)`))
-          .catch(console.error)
-      }
-    })
-
-    this.connection.on('ReceiveOperation', (_docId: string, _clientId: string, base64: string) => {
-      const update = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-      Y.applyUpdate(this.ydoc, update)
-    })
-
-    // Awareness: receive cursor states from other editors
-    this.connection.on('AwarenessUpdated', (_docId: string, base64: string) => {
-      const update = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-      applyAwarenessUpdate(this.awareness, update, 'server')
-      // Sync remote positions into CM6 so live preview does not replace blocks
-      // that contain a peer's cursor.
-      this.syncRemoteCursorsToView()
-    })
-
-    this.ydoc.on('update', (update: Uint8Array) => {
-      // Only push if the connection is actually up — avoids spam when offline
-      if (this.connection?.state !== HubConnectionState.Connected) return
-      const base64 = btoa(String.fromCharCode(...update))
-      this.connection
-        .invoke('PushOperation', vaultId, docId, this.options.clientId ?? 'anon', base64)
-        .catch(console.error)
-    })
-
-    // Awareness: send local cursor changes to other editors
-    const awarenessHandler = ({ added, updated, removed }: { added: number[], updated: number[], removed: number[] }) => {
-      if (this.connection?.state !== HubConnectionState.Connected) return
-      const changed = [...added, ...updated, ...removed]
-      const update = encodeAwarenessUpdate(this.awareness, changed)
-      const base64 = btoa(String.fromCharCode(...update))
-      this.connection.invoke('UpdateAwareness', vaultId, docId, base64).catch(console.error)
-    }
-    this.awareness.on('update', awarenessHandler)
-
-    try {
-      await this.connection.start()
-      if (this.destroyed) return
-      console.log(`[perf] WS connected — +${(performance.now() - t0).toFixed(0)} ms`)
-      await this.connection.invoke('JoinDocument', vaultId, docId)
-      if (this.destroyed) return
-      console.log(`[perf] JoinDocument ack — +${(performance.now() - t0).toFixed(0)} ms`)
-      // Immediately announce our local state to other peers.
-      const initialUpdate = encodeAwarenessUpdate(this.awareness, [this.ydoc.clientID])
-      const base64 = btoa(String.fromCharCode(...initialUpdate))
-      void this.connection.invoke('UpdateAwareness', vaultId, docId, base64)
-    } catch {
-      if (!this.destroyed) console.debug('[EditorCore] SignalR unavailable — offline mode')
-    }
-  }
-
   async openFile(path: string): Promise<void> {
     this.activeFile = path
     this.events.emit('fileOpened', path)
@@ -616,13 +493,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
   getConnectionStatus(): 'connected' | 'connecting' | 'disconnected' {
-    if (!this.connection) return 'disconnected'
-    switch (this.connection.state) {
-      case HubConnectionState.Connected:    return 'connected'
-      case HubConnectionState.Connecting:
-      case HubConnectionState.Reconnecting: return 'connecting'
-      default:                              return 'disconnected'
-    }
+    return this.options.getTransportState?.() ?? 'disconnected'
   }
 
   exportMarkdown(): string {
@@ -729,37 +600,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     return [...this.activationMap.values()]
   }
 
-  // see ADR-005
-  private syncRemoteCursorsToView(): void {
-    const positions: number[] = []
-    for (const [clientId, state] of this.awareness.getStates()) {
-      if (clientId === this.ydoc.clientID) continue
-      const cursor = (state as { cursor?: { anchor: unknown; head: unknown } }).cursor
-      if (!cursor) continue
-      const anchorAbs = Y.createAbsolutePositionFromRelativePosition(
-        cursor.anchor as Y.RelativePosition, this.ydoc,
-      )
-      const headAbs = Y.createAbsolutePositionFromRelativePosition(
-        cursor.head as Y.RelativePosition, this.ydoc,
-      )
-      if (anchorAbs !== null) positions.push(anchorAbs.index)
-      if (headAbs !== null) positions.push(headAbs.index)
-    }
-    this.view.dispatch({ effects: setRemoteCursorPositions.of(positions) })
-  }
-
   destroy(): void {
-    this.destroyed = true
-    if (this.connectTimer !== null) clearTimeout(this.connectTimer)
     if (this.scopeDebounceTimer !== null) clearTimeout(this.scopeDebounceTimer)
     if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)
-    // Remove our cursor from awareness before disconnecting
-    removeAwarenessStates(this.awareness, [this.ydoc.clientID], 'local')
-    if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
-      void this.connection.stop()
-    }
+    this.options.crdt?.dispose()
     this.view.destroy()
-    this.ydoc.destroy()
     this.events.destroy()
   }
 }

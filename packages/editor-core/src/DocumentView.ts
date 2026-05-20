@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorCore } from './EditorCore'
 import { RichMarkdownEditor } from './RichMarkdownEditor'
-import type { EditorController } from './types'
+import type { EditorController, ICodeMirrorCRDT } from './types'
 import type {
   FileContext,
   FileTypeRegistry,
@@ -26,13 +26,11 @@ export interface DocumentViewOptions {
   pluginAPI?: import('@savoire/plugin-api').IEditorHostAPI
   defaultPlugins?: VaultPlugin[]
   pluginRegistry?: Record<string, () => Promise<VaultPlugin>>
-  serverUrl?: string
-  clientId?: string
+  crdt?: ICodeMirrorCRDT
+  getTransportState?: () => 'connected' | 'connecting' | 'disconnected'
   editorMode?: 'source' | 'rich'
   /** Factory for the per-document plugin loader — injected so editor-core stays free of plugin-runtime. */
   createPluginLoader?: () => IPluginLoader
-  /** JWT token factory for authenticated SignalR hubs. */
-  getToken?: () => string | null
   /**
    * Appelé quand un FileView non-Markdown stabilise son contenu.
    * Le contenu est déjà converti en shadow Markdown via contentExtractor.toShadowDocument().
@@ -98,17 +96,15 @@ export class DocumentView {
 
     this.editorController = new EditorCore({
       container: this.options.container,
-      serverUrl: this.options.serverUrl,
-      vaultId: this.options.vaultId,
+      crdt: this.options.crdt,
+      getTransportState: this.options.getTransportState,
       docId: this.options.docId,
       userId: this.options.userId,
-      clientId: this.options.clientId,
       vault: this.options.vault,
       readOnly: this.options.readOnly,
       filePath: this.options.path,
       pluginRegistry: this.options.pluginRegistry,
       defaultPlugins: this.options.defaultPlugins,
-      getToken: this.options.getToken,
       pluginAPI: this.options.pluginAPI,
       createPluginLoader: this.options.createPluginLoader,
     })
