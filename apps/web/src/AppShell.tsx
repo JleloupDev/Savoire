@@ -287,6 +287,7 @@ export function AppShell() {
     getGraphContributor,
     pluginLoaderRef,
     triggersRef,
+    onCrdtTextChangeRef,
   } = usePluginBootstrap({
     roomClient: roomClient,
     vaultProxy,
@@ -316,6 +317,7 @@ export function AppShell() {
     contentIndexingService: contentIndexingServiceRef,
     createPluginLoader: () => new PluginLoader(),
     isReadOnly: isReadOnlyRef,
+    onCrdtTextChange: onCrdtTextChangeRef,
   }
 
   // ── Create VaultClient and notify workspace of vault change ────────────────

@@ -1064,6 +1064,37 @@ importers:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
 
+  ../tests/frontend/unit/realtime-index-tests:
+    dependencies:
+      '@savoire/application':
+        specifier: workspace:*
+        version: link:../../../../packages/application
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../../../../packages/domain-index
+      '@savoire/infrastructure-sync':
+        specifier: workspace:*
+        version: link:../../../../packages/infrastructure-sync
+      '@savoire/plugin-hashtags':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-hashtags
+      '@savoire/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-runtime
+      '@savoire/plugin-wikilinks':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-wikilinks
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+
   ../tests/frontend/unit/workspace-tests:
     dependencies:
       '@savoire/plugin-api':

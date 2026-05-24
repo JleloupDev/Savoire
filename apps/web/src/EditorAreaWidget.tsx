@@ -10,6 +10,7 @@ import { CollabOrchestrator } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
+import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
@@ -42,6 +43,8 @@ export interface EditorAreaRefs {
   createPluginLoader: () => IPluginLoader
   /** True when the active vault/document grants read-only access to the current user. */
   isReadOnly: React.MutableRefObject<boolean>
+  /** Emit a CRDT text change to RealtimeIndexingService — wired by usePluginBootstrap. */
+  onCrdtTextChange: React.MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
 }
 
 interface EditorPanelParams {
@@ -117,6 +120,7 @@ function DocumentPanelHost({
     })
     view.mount()
     void transport.join(vaultId, doc.id)
+    const unsubCrdtIndex = crdt.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
     viewRef.current = view
 
     const ctrl = view.controller
@@ -135,6 +139,7 @@ function DocumentPanelHost({
     return () => {
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
+      unsubCrdtIndex()
       orchestrator.dispose()
       void transport.disconnect()
       view.destroy()

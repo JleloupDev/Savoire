@@ -1,0 +1,17 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/infrastructure-sync": ["../../../../packages/infrastructure-sync/src/index.ts"],
+      "@savoire/domain-index": ["../../../../packages/domain-index/src/index.ts"],
+      "@savoire/application": ["../../../../packages/application/src/index.ts"],
+      "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
+      "@savoire/plugin-wikilinks": ["../../../../packages/plugins/plugin-wikilinks/src/index.ts"],
+      "@savoire/plugin-hashtags": ["../../../../packages/plugins/plugin-hashtags/src/index.ts"],
+      "@savoire/plugin-runtime": ["../../../../packages/plugin-runtime/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
