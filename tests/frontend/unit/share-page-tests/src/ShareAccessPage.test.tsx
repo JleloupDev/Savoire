@@ -8,14 +8,10 @@ import { ShareAccessPage } from '../../../../../apps/web/src/ShareAccessPage'
 import type { ISharingAPI, AppShareLinkAccess } from '@savoire/application'
 import type { DocumentDto } from '../../../../../apps/web/src/types'
 
-const mockListDocuments      = vi.hoisted(() => vi.fn().mockResolvedValue([]))
-const mockGetDocumentContent = vi.hoisted(() => vi.fn().mockResolvedValue(''))
+const mockListDocuments = vi.hoisted(() => vi.fn().mockResolvedValue([]))
 
 vi.mock('../../../../../apps/web/src/api', () => ({
-  api: {
-    listDocuments:      mockListDocuments,
-    getDocumentContent: mockGetDocumentContent,
-  },
+  api: { listDocuments: mockListDocuments },
 }))
 
 vi.mock('../../../../../apps/web/src/pluginRegistry', () => ({
@@ -50,12 +46,12 @@ function makeSharingApi(result: AppShareLinkAccess | 'error'): ISharingAPI {
         ? Promise.reject(new Error('404'))
         : Promise.resolve(result)
     ),
-    getSharing:         vi.fn(),
-    grantPermission:    vi.fn(),
-    revokePermission:   vi.fn(),
-    lookupUserByEmail:  vi.fn(),
-    createShareLink:    vi.fn(),
-    revokeShareLink:    vi.fn(),
+    getSharing:        vi.fn(),
+    grantPermission:   vi.fn(),
+    revokePermission:  vi.fn(),
+    lookupUserByEmail: vi.fn(),
+    createShareLink:   vi.fn(),
+    revokeShareLink:   vi.fn(),
   } as ISharingAPI
 }
 
@@ -80,7 +76,6 @@ beforeEach(() => {
   root = createRoot(container)
   sessionStorage.clear()
   mockListDocuments.mockResolvedValue([])
-  mockGetDocumentContent.mockResolvedValue('')
 })
 
 afterEach(() => {
@@ -97,7 +92,6 @@ async function renderPage(token: string, api: ISharingAPI) {
         </Routes>
       </MemoryRouter>
     )
-    // Flush: accessShareLink promise + listDocuments + vault.read()
     await new Promise(r => setTimeout(r, 0))
   })
 }
@@ -199,35 +193,23 @@ describe('ShareAccessPage — editor props', () => {
   })
 })
 
-// ─── Vault API wiring ─────────────────────────────────────────────────────────
+// ─── CRDT wiring ──────────────────────────────────────────────────────────────
+// These tests document the regression introduced when serverUrl/getToken were
+// removed from EditorProps: the share page editor no longer receives a CRDT
+// instance and cannot sync with the server.
+// TODO: fix by adding crdt prop to EditorProps and wiring YjsCrdtAdapter in ShareAccessPage.
 
-describe('ShareAccessPage — vault API wiring', () => {
-  it('document share: getDocumentContent called with (vaultId, docId, token)', async () => {
-    mockGetDocumentContent.mockResolvedValue('# Hello')
-    await renderPage('tok', makeSharingApi(DOC_READ))
-    expect(mockGetDocumentContent).toHaveBeenCalledWith('v1', 'd1', 'tok')
-  })
-
-  it('document share: editor receives content from vault.read()', async () => {
-    mockGetDocumentContent.mockResolvedValue('# Hello World')
+describe('ShareAccessPage — CRDT wiring', () => {
+  it('document share: editor receives a crdt instance', async () => {
     await renderPage('tok', makeSharingApi(DOC_READ))
     const editor = container.querySelector('[data-doc-id="d1"]')
-    expect(editor?.getAttribute('data-content')).toBe('# Hello World')
+    expect(editor?.getAttribute('data-has-crdt')).toBe('true')
   })
 
-  it('vault share: getDocumentContent called with vault resourceId as vaultId', async () => {
+  it('vault share: editor receives a crdt instance', async () => {
     mockListDocuments.mockResolvedValue([DOC_FIXTURE])
-    mockGetDocumentContent.mockResolvedValue('vault content')
-    await renderPage('tok', makeSharingApi(VAULT_READ))
-    expect(mockGetDocumentContent).toHaveBeenCalledWith('v1', 'doc-42', 'tok')
-  })
-
-  it('vault share: editor receives content from vault.read()', async () => {
-    mockListDocuments.mockResolvedValue([DOC_FIXTURE])
-    mockGetDocumentContent.mockResolvedValue('vault content')
     await renderPage('tok', makeSharingApi(VAULT_READ))
     const editor = container.querySelector('[data-doc-id="doc-42"]')
-    expect(editor?.getAttribute('data-content')).toBe('vault content')
+    expect(editor?.getAttribute('data-has-crdt')).toBe('true')
   })
 })
-

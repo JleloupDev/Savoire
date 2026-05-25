@@ -200,6 +200,9 @@ importers:
       '@savoire/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../../packages/domain-index
       '@savoire/editor-core':
         specifier: workspace:*
         version: link:../../packages/editor-core
@@ -1088,6 +1091,40 @@ importers:
         specifier: ^13.6.0
         version: 13.6.30
     devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@25.3.5)(happy-dom@20.8.3)
+
+  ../tests/frontend/unit/share-page-tests:
+    dependencies:
+      '@savoire/application':
+        specifier: workspace:*
+        version: link:../../../../packages/application
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-api
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+      react-router-dom:
+        specifier: ^6.22.0
+        version: 6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.2.0
+        version: 18.3.7(@types/react@18.3.28)
+      happy-dom:
+        specifier: '*'
+        version: 20.8.3
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

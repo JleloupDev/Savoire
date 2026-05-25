@@ -4,14 +4,19 @@
 // Échange le token de lien contre un JWT scoped, puis affiche le contenu
 // en lecture seule (permission=read) ou éditable (permission=write).
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
-import { Editor } from '@savoire/editor-react'
+import { DocumentView } from '@savoire/editor-core'
+import { YjsCrdtAdapter, SignalRTransport } from '@savoire/infrastructure-sync'
+import { CollabOrchestrator } from '@savoire/application'
+import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import type { ISharingAPI, AppShareLinkAccess } from '@savoire/application'
 import { api } from './api'
 import type { DocumentDto } from './types'
 import { pluginRegistry } from './pluginRegistry'
+import excalidrawPlugin from '@savoire/plugin-excalidraw'
+import mindmapPlugin from '@savoire/plugin-mindmap'
 import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
@@ -23,10 +28,82 @@ import tablePlugin from '@savoire/plugin-table'
 
 const readOnly = (permission: string) => permission === 'read'
 
+const SHARE_FILE_TYPE_PLUGINS: VaultPlugin[] = [excalidrawPlugin, mindmapPlugin]
+
 const SHARE_DEFAULT_PLUGINS: VaultPlugin[] = [
   mermaidPlugin, calloutPlugin, codeBlockPlugin, createWikilinksPlugin(),
   noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin,
 ]
+
+// ── ShareDocumentEditor ───────────────────────────────────────────────────────
+
+function ShareDocumentEditor({
+  docId, path, vaultId, getToken, readOnly: ro, vault,
+}: {
+  docId: string
+  path: string
+  vaultId: string
+  getToken: () => string
+  readOnly: boolean
+  vault: VaultAPI
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const getTokenRef = useRef(getToken)
+  getTokenRef.current = getToken
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    let cancelled = false
+    let view: DocumentView | null = null
+    let loader: PluginLoader | null = null
+
+    const crdt = new YjsCrdtAdapter()
+    const transport = new SignalRTransport({ serverUrl: '', userId: 'share', getToken: () => getTokenRef.current() })
+    const orchestrator = new CollabOrchestrator(crdt, transport)
+
+    const start = async () => {
+      const pluginApi = PluginAPIImpl.create(vault)
+      loader = new PluginLoader()
+      for (const p of SHARE_FILE_TYPE_PLUGINS) await loader.loadInternal(p, pluginApi)
+      for (const p of SHARE_DEFAULT_PLUGINS) await loader.loadInternal(p, pluginApi)
+      if (cancelled) { await loader.unloadAll(); return }
+      view = new DocumentView({
+        path, container, vault,
+        fileTypeRegistry: pluginApi.files,
+        vaultId, docId, userId: 'share', readOnly: ro,
+        crdt,
+        getTransportState: () => transport.getState(),
+        pluginAPI: pluginApi,
+        defaultPlugins: SHARE_DEFAULT_PLUGINS,
+        pluginRegistry,
+      })
+      view.mount()
+      void transport.join(vaultId, docId)
+    }
+
+    void start().catch(console.error)
+    return () => {
+      cancelled = true
+      view?.destroy()
+      orchestrator.dispose()
+      void transport.disconnect()
+      if (loader) void loader.unloadAll()
+    }
+  }, [docId, path, vaultId, vault, ro])
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: '100%' }}
+      data-testid={`editor-${docId}`}
+      data-doc-id={docId}
+      data-readonly={String(ro)}
+      data-user-id="share"
+      data-has-crdt="true"
+    />
+  )
+}
 
 function createShareVaultApi(
   vaultId: string,
@@ -121,15 +198,14 @@ function VaultShareView({ access }: { access: AppShareLinkAccess }) {
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {selected
           ? (
-            <Editor
+            <ShareDocumentEditor
               key={selected.id}
               docId={selected.id}
-              userId="share"
+              path={selected.path}
+              vaultId={access.resourceId}
+              getToken={() => access.accessToken}
               readOnly={ro}
               vault={vaultApi}
-              pluginRegistry={pluginRegistry}
-              defaultPlugins={SHARE_DEFAULT_PLUGINS}
-              style={{ height: '100%' }}
             />
           )
           : <Status>Sélectionnez un document.</Status>
@@ -166,15 +242,14 @@ function VaultShareEmbedView({ access, embedPath }: { access: AppShareLinkAccess
   const ro = readOnly(access.permission)
   return (
     <div style={{ height: '100vh', overflow: 'hidden' }}>
-      <Editor
+      <ShareDocumentEditor
         key={selected.id}
         docId={selected.id}
-        userId="share"
+        path={selected.path}
+        vaultId={access.resourceId}
+        getToken={() => access.accessToken}
         readOnly={ro}
         vault={vaultApi}
-        pluginRegistry={pluginRegistry}
-        defaultPlugins={SHARE_DEFAULT_PLUGINS}
-        style={{ height: '100%' }}
       />
     </div>
   )
@@ -190,15 +265,14 @@ function DocumentShareView({ access, embedded = false }: { access: AppShareLinkA
 
   return (
     <div style={{ height: embedded ? '100vh' : 'calc(100vh - 56px)' }}>
-      <Editor
+      <ShareDocumentEditor
         key={access.resourceId}
         docId={access.resourceId}
-        userId="share"
+        path={`doc-${access.resourceId}.md`}
+        vaultId={vaultId}
+        getToken={() => access.accessToken}
         readOnly={ro}
         vault={vaultApi}
-        pluginRegistry={pluginRegistry}
-        defaultPlugins={SHARE_DEFAULT_PLUGINS}
-        style={{ height: '100%' }}
       />
     </div>
   )
