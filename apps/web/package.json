@@ -11,6 +11,7 @@
   "dependencies": {
     "@microsoft/signalr": "^8.0.17",
     "@savoire/application": "workspace:*",
+    "@savoire/domain-index": "workspace:*",
     "@savoire/i18n": "workspace:*",
     "@savoire/notifications": "workspace:*",
     "@savoire/editor-core": "workspace:*",
