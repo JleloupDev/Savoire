@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorCore } from './EditorCore'
 import { RichMarkdownEditor } from './RichMarkdownEditor'
-import type { EditorController, ICodeMirrorCRDT } from './types'
+import type { EditorController } from './types'
 import type {
   FileContext,
   FileTypeRegistry,
@@ -26,15 +26,15 @@ export interface DocumentViewOptions {
   pluginAPI?: import('@savoire/plugin-api').IEditorHostAPI
   defaultPlugins?: VaultPlugin[]
   pluginRegistry?: Record<string, () => Promise<VaultPlugin>>
-  crdt?: ICodeMirrorCRDT
+  crdt?: import('@savoire/plugin-api').ICRDT
   getTransportState?: () => 'connected' | 'connecting' | 'disconnected'
   editorMode?: 'source' | 'rich'
   /** Factory for the per-document plugin loader — injected so editor-core stays free of plugin-runtime. */
   createPluginLoader?: () => IPluginLoader
   /**
-   * Appelé quand un FileView non-Markdown stabilise son contenu.
-   * Le contenu est déjà converti en shadow Markdown via contentExtractor.toShadowDocument().
-   * Branché sur ContentIndexingService.indexNow() par l'app layer.
+   * Called when a non-Markdown FileView has stabilised its content.
+   * Content is already converted to shadow Markdown via contentExtractor.toShadowDocument().
+   * Wired to ContentIndexingService.indexNow() by the app layer.
    */
   onFileContentStabilized?: (docId: string, path: string, shadowMarkdown: string) => void
 }
@@ -96,7 +96,7 @@ export class DocumentView {
 
     this.editorController = new EditorCore({
       container: this.options.container,
-      crdt: this.options.crdt,
+      crdt: this.options.crdt as import('./types').ICodeMirrorCRDT | undefined,
       getTransportState: this.options.getTransportState,
       docId: this.options.docId,
       userId: this.options.userId,

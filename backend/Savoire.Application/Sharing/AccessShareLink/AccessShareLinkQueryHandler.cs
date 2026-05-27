@@ -26,17 +26,19 @@ public sealed class AccessShareLinkQueryHandler(
 
         string jwt = tokenService.GenerateShareLinkAccessToken(link);
 
-        // For a link on a document, resolve the vaultId so the client
-        // can build the content URL without knowing the vault upfront.
+        // For a link on a document, resolve vaultId and path so the client
+        // can build the content URL and select the right editor without knowing the vault upfront.
         string? vaultId = null;
+        string? path    = null;
         if (link.ResourceType == ResourceType.Document)
         {
             var doc = await documents.GetByIdAsync(link.ResourceId, ct);
             vaultId = doc?.VaultId;
+            path    = doc?.Path;
         }
 
         return new ShareLinkAccessDto(
             jwt, link.ResourceType.ToApiString(), link.ResourceId,
-            link.Permission.ToApiString(), link.ExpiresAt, vaultId);
+            link.Permission.ToApiString(), link.ExpiresAt, vaultId, path);
     }
 }

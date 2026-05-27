@@ -164,18 +164,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   readonly pluginAPI: IEditorHostAPI
 
   constructor(private options: EditorCoreOptions) {
-    const tConstruct = performance.now()
-    console.log(`[perf] EditorCore constructor — docId=${options.docId ?? 'none'}`)
     this.activeFile = options.filePath ?? null
     // see ADR-008
     this.pluginAPI = options.pluginAPI ?? createNoopHostAPI()
     if (options.crdt && options.userId) {
       options.crdt.setLocalUser(options.userId)
     }
-    void (async () => {
-      await new Promise<void>(resolve => setTimeout(resolve, 0))
-      console.log(`[perf] after setTimeout(0) — +${(performance.now() - tConstruct).toFixed(0)} ms (timer fired / still alive)`)
-    })()
     const ctx = { editorView: null as unknown }
 
     let lastCursorLine = -1

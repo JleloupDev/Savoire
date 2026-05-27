@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { readFileSync, readdirSync, statSync } from 'fs'
-import { resolve, relative, dirname, join } from 'path'
+import { resolve, relative, dirname, join, basename } from 'path'
 import { fileURLToPath } from 'url'
 
 const ROOT       = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -32,7 +32,7 @@ function walkTs(dir, acc = []) {
     const full = join(dir, e.name)
     if (e.isDirectory() && e.name !== 'node_modules' && e.name !== 'dist') {
       walkTs(full, acc)
-    } else if (e.isFile() && e.name.endsWith('.ts') && !e.name.endsWith('.d.ts')) {
+    } else if (e.isFile() && (e.name.endsWith('.ts') || e.name.endsWith('.tsx')) && !e.name.endsWith('.d.ts')) {
       acc.push(full)
     }
   }
@@ -47,7 +47,6 @@ function extractImports(file) {
   const text = readFileSync(file, 'utf-8')
   return [...text.matchAll(/^(?:import|export)\s[^'"]*from\s['"]([^'"]+)['"]/gm)]
     .map(m => m[1])
-    .filter(s => !s.startsWith('.'))
 }
 
 const pkg = (name) => `@savoire/${name}`
@@ -181,6 +180,16 @@ const RULES = [
     allowedSavoire: [pkg('plugin-api'), pkg('module-bridge')],
   },
 
+  // ── apps/web — must not import ./api directly ─────────────────────────────
+  {
+    label: 'apps/web — pages must not import ./api directly (use app-layer service)',
+    files: src(`${APPS}/web`)
+      .filter(f => !/\/api\.ts$/.test(f) && !/(createWebAppRoot)\.ts$/.test(f)),
+    bannedRelativeBasenames: [
+      { name: 'api', message: 'Use an app-layer service (ISharingAPI, IDocumentsAPI…) instead.' },
+    ],
+  },
+
   // ── apps — must not bypass application layer ──────────────────────────────
   {
     label: 'apps — must not import domain-sync directly',
@@ -238,6 +247,14 @@ for (const rule of RULES) {
       // Banned npm prefixes
       for (const ban of rule.bannedNpm ?? []) {
         if (imp === ban.prefix || imp.startsWith(ban.prefix + '/') || imp.startsWith(ban.prefix + '@')) {
+          console.error(`  ✖ ${label}\n    imports "${imp}" — ${ban.message}\n    rule: ${rule.label}`)
+          violations++
+        }
+      }
+
+      // Banned relative imports by filename
+      for (const ban of rule.bannedRelativeBasenames ?? []) {
+        if (imp.startsWith('.') && basename(imp) === ban.name) {
           console.error(`  ✖ ${label}\n    imports "${imp}" — ${ban.message}\n    rule: ${rule.label}`)
           violations++
         }

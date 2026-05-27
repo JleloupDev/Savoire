@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type {
-  ISharingAPI, ISharingBackend,
+  ISharingAPI, ISharingBackend, SharedDocumentHandle,
   AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
 } from './contracts'
+import { CollabOrchestrator } from './CollabOrchestrator'
 
 export class SharingService implements ISharingAPI {
   constructor(private readonly backend: ISharingBackend) {}
@@ -34,5 +35,18 @@ export class SharingService implements ISharingAPI {
 
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess> {
     return this.backend.accessShareLink(shareToken)
+  }
+
+  async openSharedDocument(shareToken: string): Promise<SharedDocumentHandle> {
+    const raw = await this.backend.openSharedDocument(shareToken)
+    const orchestrator = new CollabOrchestrator(raw.crdt, raw.transport)
+    return {
+      ...raw,
+      dispose() {
+        orchestrator.dispose()
+        raw.crdt.dispose()
+        void raw.transport.disconnect()
+      },
+    }
   }
 }

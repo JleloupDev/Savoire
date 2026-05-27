@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { DocumentStore, IDocumentMeta, IVaultStorage, VaultClient } from '@savoire/platform'
-import type { VaultAPI } from '@savoire/plugin-api'
+import type { ICRDT, ITransport, SyncAPI, VaultAPI } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
   id: string
@@ -37,9 +37,9 @@ export interface VaultHubLike {
   createDocument(path: string): Promise<IDocumentMeta>
   renameDocument(documentId: string, newPath: string): Promise<void>
   deleteDocument(documentId: string): Promise<void>
-  /** Envoie une op d'index au serveur. Retourne le seq assigné, ou null si offline. */
+  /** Pushes an index op to the server. Returns the assigned seq, or null if offline. */
   pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
-  /** Subscribe aux ops d'index reçues des autres clients. */
+  /** Subscribes to index ops received from other clients. */
   onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
 }
 
@@ -186,6 +186,21 @@ export interface AppShareLinkAccess {
   permission: string
   expiresAt: string | null
   vaultId?: string
+  path?: string
+}
+
+export interface SharedDocumentHandle {
+  crdt: ICRDT
+  transport: ITransport
+  /** SyncAPI for snapshot-based plugins (excalidraw, mindmap). */
+  sync: SyncAPI
+  docId: string
+  vaultId: string
+  path: string
+  filename: string
+  permission: 'read' | 'write'
+  accessToken: string
+  dispose(): void
 }
 
 export interface AppUserLookup {
@@ -201,6 +216,7 @@ export interface ISharingBackend {
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+  openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
 }
 
 export interface ISharingAPI {
@@ -211,6 +227,7 @@ export interface ISharingAPI {
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+  openSharedDocument(shareToken: string): Promise<SharedDocumentHandle>
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

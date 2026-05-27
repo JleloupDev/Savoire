@@ -303,7 +303,7 @@ export function usePluginBootstrap({
         contentIndexingServiceRef.current?.setOnIndexed((docId, path) => {
           managerRef.current?.notifyDocumentIndexed(docId, path)
         })
-        // restore() est appelé à chaque activation de vault (dans EditorPage), pas ici — pas de vaultId disponible.
+        // restore() is called on each vault activation (in EditorPage), not here — no vaultId available.
         contentIndexingServiceRef.current?.init()
       })()
     }

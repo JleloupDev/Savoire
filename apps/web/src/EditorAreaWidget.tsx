@@ -28,16 +28,16 @@ export interface EditorAreaRefs {
   activeAccount: React.MutableRefObject<AccountEntry | null>
   vaultAPI: React.MutableRefObject<VaultClient | undefined>
   onControllerReady: React.MutableRefObject<(ctrl: EditorController | null) => void>
-  /** Registre des types de fichiers — peuplé par les plugins dans onBeforeReady. */
+  /** File type registry — populated by plugins in onBeforeReady. */
   fileTypeRegistry: React.MutableRefObject<FileTypeRegistry | null>
-  /** Plugins actifs par défaut pour toutes les notes — peuplé dans onBeforeReady. */
+  /** Default plugins active for all notes — populated in onBeforeReady. */
   defaultPlugins: React.MutableRefObject<VaultPlugin[]>
-  /** PluginAPIImpl partagé créé dans onBeforeReady — transmis à EditorCore pour éviter
-   *  de recharger les plugins à chaque ouverture d'onglet. */
+  /** Shared PluginAPIImpl created in onBeforeReady — passed to EditorCore to avoid
+   *  reloading plugins on every tab open. */
   pluginAPI: React.MutableRefObject<import('@savoire/plugin-api').IEditorHostAPI | null>
-  /** Mode markdown: source (CM6) ou rich (editor riche interne). */
+  /** Markdown editor mode: source (CM6) or rich (internal rich editor). */
   markdownEditorMode: React.MutableRefObject<'source' | 'rich'>
-  /** ContentIndexingService — pour indexer les fichiers non-Markdown via shadow documents. */
+  /** ContentIndexingService — indexes non-Markdown files via shadow documents. */
   contentIndexingService: React.MutableRefObject<import('@savoire/application').ContentIndexingService | null>
   /** Factory for per-document plugin loaders (note-scoped plugins). */
   createPluginLoader: () => IPluginLoader

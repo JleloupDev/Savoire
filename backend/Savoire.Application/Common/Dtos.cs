@@ -133,7 +133,9 @@ public record ShareLinkAccessDto(
     string    Permission,
     DateTime? ExpiresAt,
     /// <summary>Populated for ResourceType=document so the client can load the content.</summary>
-    string?   VaultId = null
+    string?   VaultId = null,
+    /// <summary>Document path (e.g. "notes/hello.excalidraw") — drives editor type selection on the client.</summary>
+    string?   Path = null
 );
 
 // ── View grants (iframe bootstrap) ──────────────────────────────────────────

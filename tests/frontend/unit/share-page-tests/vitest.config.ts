@@ -27,8 +27,8 @@ export default defineConfig({
       '@savoire/plugin-module':      mock('plugin-stub.ts'),
       '@savoire/plugin-mermaid':     mock('plugin-stub.ts'),
       '@savoire/plugin-table':       mock('plugin-stub.ts'),
-      '@savoire/plugin-excalidraw':  mock('plugin-stub.ts'),
-      '@savoire/plugin-mindmap':     mock('plugin-stub.ts'),
+      '@savoire/plugin-excalidraw':  mock('plugin-excalidraw-stub.ts'),
+      '@savoire/plugin-mindmap':     mock('plugin-mindmap-stub.ts'),
     },
   },
   test: {

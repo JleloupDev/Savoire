@@ -20,6 +20,8 @@ import { YjsCollaborativeText } from './YjsCollaborativeText'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Y_ = Y as Record<string, any>
 
+const REMOTE_ORIGIN = 'remote'
+
 export class YjsCrdtAdapter implements ICRDT {
   private readonly ydoc: ReturnType<typeof Y_.Doc>
   private readonly ytext: ReturnType<typeof Y_.Text>
@@ -37,14 +39,14 @@ export class YjsCrdtAdapter implements ICRDT {
 
   onLocalOp(cb: (op: Uint8Array) => void): () => void {
     const handler = (update: Uint8Array, origin: unknown) => {
-      if (origin !== 'remote') cb(update)
+      if (origin !== REMOTE_ORIGIN) cb(update)
     }
     this.ydoc.on('update', handler)
     return () => this.ydoc.off('update', handler)
   }
 
   applyRemoteOp(op: Uint8Array): void {
-    Y_.applyUpdate(this.ydoc, op, 'remote')
+    Y_.applyUpdate(this.ydoc, op, REMOTE_ORIGIN)
   }
 
   getSnapshot(): Uint8Array {
@@ -63,8 +65,12 @@ export class YjsCrdtAdapter implements ICRDT {
     const positions: number[] = []
     for (const [clientId, state] of this.awareness.getStates()) {
       if (clientId === this.ydoc.clientID) continue
-      const anchor = (state as { cursor?: { anchor?: number } })?.cursor?.anchor
-      if (typeof anchor === 'number') positions.push(anchor)
+      const cursor = (state as { cursor?: { anchor?: unknown; head?: unknown } })?.cursor
+      if (!cursor) continue
+      const anchorAbs = Y_.createAbsolutePositionFromRelativePosition(cursor.anchor, this.ydoc)
+      const headAbs = Y_.createAbsolutePositionFromRelativePosition(cursor.head, this.ydoc)
+      if (anchorAbs !== null) positions.push(anchorAbs.index)
+      if (headAbs !== null) positions.push(headAbs.index)
     }
     return positions
   }
