@@ -4,6 +4,7 @@ import type {
   ISharingAPI, ISharingBackend, SharedDocumentHandle,
   AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
 } from './contracts'
+import type { IIdentityProvider } from '@savoire/plugin-api'
 import { CollabOrchestrator } from './CollabOrchestrator'
 
 export class SharingService implements ISharingAPI {
@@ -37,9 +38,9 @@ export class SharingService implements ISharingAPI {
     return this.backend.accessShareLink(shareToken)
   }
 
-  async openSharedDocument(shareToken: string): Promise<SharedDocumentHandle> {
+  async openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle> {
     const raw = await this.backend.openSharedDocument(shareToken)
-    const orchestrator = new CollabOrchestrator(raw.crdt, raw.transport)
+    const orchestrator = new CollabOrchestrator(raw.crdt, raw.transport, identity)
     return {
       ...raw,
       dispose() {

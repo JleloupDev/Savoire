@@ -318,6 +318,7 @@ export function AppShell() {
     createPluginLoader: () => new PluginLoader(),
     isReadOnly: isReadOnlyRef,
     onCrdtTextChange: onCrdtTextChangeRef,
+    identity: appRootRef.current.identityProvider,
   }
 
   // ── Create VaultClient and notify workspace of vault change ────────────────

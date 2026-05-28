@@ -10,6 +10,7 @@ import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
+import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
@@ -117,7 +118,9 @@ export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
     let disposed = false
     let activeHandle: SharedDocumentHandle | null = null
 
-    sharingApi.openSharedDocument(token)
+    const keyProvider = new LocalKeyProvider()
+    keyProvider.init()
+      .then(() => sharingApi.openSharedDocument(token, keyProvider))
       .then(h => {
         if (disposed) { h.dispose(); return }
         activeHandle = h
@@ -126,10 +129,7 @@ export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
 
-    return () => {
-      disposed = true
-      activeHandle?.dispose()
-    }
+    return () => { disposed = true; activeHandle?.dispose() }
   }, [token, sharingApi])
 
   if (loading) return <FullPage><Status>Vérification du lien…</Status></FullPage>

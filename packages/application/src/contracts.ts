@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { DocumentStore, IDocumentMeta, IVaultStorage, VaultClient } from '@savoire/platform'
-import type { ICRDT, ITransport, SyncAPI, VaultAPI } from '@savoire/plugin-api'
+import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
   id: string
@@ -227,7 +227,7 @@ export interface ISharingAPI {
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
-  openSharedDocument(shareToken: string): Promise<SharedDocumentHandle>
+  openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle>
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

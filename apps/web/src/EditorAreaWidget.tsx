@@ -9,7 +9,7 @@ import { YjsCrdtAdapter, SignalRTransport } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
-import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
+import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin, IIdentityProvider } from '@savoire/plugin-api'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -45,6 +45,7 @@ export interface EditorAreaRefs {
   isReadOnly: React.MutableRefObject<boolean>
   /** Emit a CRDT text change to RealtimeIndexingService — wired by usePluginBootstrap. */
   onCrdtTextChange: React.MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
+  identity: IIdentityProvider | undefined
 }
 
 interface EditorPanelParams {
@@ -96,7 +97,9 @@ function DocumentPanelHost({
       userId,
       getToken: () => refs.token.current,
     })
-    const orchestrator = new CollabOrchestrator(crdt, transport)
+    const identity = refs.identity
+    if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
+    const orchestrator = new CollabOrchestrator(crdt, transport, identity)
 
     const view = new DocumentView({
       path: doc.path,

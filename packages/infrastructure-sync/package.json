@@ -18,13 +18,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@codemirror/state": "^6.4.0",
     "@microsoft/signalr": "^8.0.17",
+    "@noble/ed25519": "^3.1.0",
     "@savoire/application": "workspace:*",
-    "@savoire/plugin-api": "workspace:*",
     "@savoire/domain-index": "workspace:*",
     "@savoire/domain-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
-    "@codemirror/state": "^6.4.0",
+    "@savoire/plugin-api": "workspace:*",
     "y-codemirror.next": "^0.3.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.0"

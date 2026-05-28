@@ -75,3 +75,5 @@ export { AnchorIndex, resolveEntry, validateEntry, anchorKey } from './indexing'
 
 export type { ICRDT } from './crdt'
 export type { ITransport } from './transport'
+export type { IIdentityProvider } from './identity'
+export { encodeSignedOp, decodeSignedOp, toHex, fromHex } from './identity'

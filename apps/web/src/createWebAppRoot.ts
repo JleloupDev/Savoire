@@ -7,7 +7,7 @@ import {
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
   HttpAdminBackend, HttpAuthBackend, HttpSharingBackend, HttpVaultsBackend,
-  RestDocumentFetcher, RestVaultStorage,
+  RestDocumentFetcher, RestVaultStorage, ServerKeyProvider,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
 import type { VaultAPI } from '@savoire/plugin-api'
@@ -63,6 +63,7 @@ function makeHubFactory(
 }
 
 export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {
+  const identityProvider = new ServerKeyProvider({ getToken: params.getToken })
   return new AppRoot({
     adminBackend,
     authBackend,
@@ -70,6 +71,7 @@ export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {
     backend,
     hubFactory: makeHubFactory(params.getToken, params.onConnectionChange),
     documentStore: params.documentStore,
+    identityProvider,
   })
 }
 

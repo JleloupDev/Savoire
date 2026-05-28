@@ -462,6 +462,9 @@ importers:
       '@microsoft/signalr':
         specifier: ^8.0.17
         version: 8.0.17
+      '@noble/ed25519':
+        specifier: ^3.1.0
+        version: 3.1.0
       '@savoire/application':
         specifier: workspace:*
         version: link:../application
@@ -968,12 +971,18 @@ importers:
       '@microsoft/signalr':
         specifier: ^8.0.17
         version: 8.0.17
+      '@noble/ed25519':
+        specifier: ^3.1.0
+        version: 3.1.0
       '@savoire/domain-sync':
         specifier: workspace:*
         version: link:../../../../packages/domain-sync
       '@savoire/infrastructure-sync':
         specifier: workspace:*
         version: link:../../../../packages/infrastructure-sync
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-api
       yjs:
         specifier: ^13.6.0
         version: 13.6.30
@@ -1667,6 +1676,9 @@ packages:
 
   '@milkdown/utils@7.20.0':
     resolution: {integrity: sha512-ciEhtLKhIW/Kaz/NRE5DUXVoMCdenn7S4mClrO7sZ/nXtmObnk3okJzSDnamQoDOcLOIbpOu1V3E1Btkvc5x9w==}
+
+  '@noble/ed25519@3.1.0':
+    resolution: {integrity: sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -5143,6 +5155,8 @@ snapshots:
       nanoid: 5.1.7
     transitivePeerDependencies:
       - supports-color
+
+  '@noble/ed25519@3.1.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
