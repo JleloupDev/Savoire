@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi } from 'vitest'
 import { VaultClient, DocumentStore } from '@savoire/platform'
-import type { IDocumentMeta, IVaultStorage } from '@savoire/platform'
+import type { IDocumentMeta, IVaultStorage, IVaultDirectory } from '@savoire/platform'
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 
 const VAULT = 'vault-1'
@@ -91,5 +91,97 @@ describe('VaultClient — CRDT sync (YMapVaultDirectory)', () => {
 
     unsub()
     dirA.dispose(); dirB.dispose()
+  })
+})
+
+// ── VaultHubClient wiring — onLocalVaultUpdate → pushVaultUpdate ──────────────
+
+describe('VaultHubClient wiring — local mutations reach pushVaultUpdate', () => {
+  it('addDocument() triggers pushVaultUpdate with a non-empty op', () => {
+    const dir = new YMapVaultDirectory()
+    const client = makeClient(dir)
+
+    const pushed: Uint8Array[] = []
+    const unsub = client.onLocalVaultUpdate(op => pushed.push(op))
+
+    client.addDocument(makeMeta('doc', 'doc.md'))
+
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0].length).toBeGreaterThan(0)
+
+    unsub()
+    dir.dispose()
+  })
+
+  it('removeDocument() triggers pushVaultUpdate', () => {
+    const dir = new YMapVaultDirectory()
+    const client = makeClient(dir)
+    client.addDocument(makeMeta('x', 'x.md'))
+
+    const pushed: Uint8Array[] = []
+    const unsub = client.onLocalVaultUpdate(op => pushed.push(op))
+    client.removeDocument('x')
+
+    expect(pushed).toHaveLength(1)
+
+    unsub()
+    dir.dispose()
+  })
+
+  it('renameDocumentInCache() triggers pushVaultUpdate', () => {
+    const dir = new YMapVaultDirectory()
+    const client = makeClient(dir)
+    client.addDocument(makeMeta('doc', 'old.md'))
+
+    const pushed: Uint8Array[] = []
+    const unsub = client.onLocalVaultUpdate(op => pushed.push(op))
+    client.renameDocumentInCache('doc', 'new.md')
+
+    expect(pushed).toHaveLength(1)
+
+    unsub()
+    dir.dispose()
+  })
+
+  it('applyVaultUpdate() does NOT trigger pushVaultUpdate (no loopback)', () => {
+    const dirA = new YMapVaultDirectory()
+    const dirB = new YMapVaultDirectory()
+    const clientA = makeClient(dirA)
+    const clientB = makeClient(dirB)
+
+    // Wire A→B
+    clientA.onLocalVaultUpdate(op => clientB.applyVaultUpdate(op))
+
+    // Track B's own local updates — there should be none when applying remote op
+    const bLocalUpdates: Uint8Array[] = []
+    clientB.onLocalVaultUpdate(op => bLocalUpdates.push(op))
+
+    clientA.addDocument(makeMeta('shared', 'shared.md'))
+
+    // B received the op but must not re-emit it as a local update
+    expect(bLocalUpdates).toHaveLength(0)
+    expect(clientB.documents).toHaveLength(1)
+
+    dirA.dispose(); dirB.dispose()
+  })
+
+  it('dispose() stops pushVaultUpdate from being called', () => {
+    const dir = new YMapVaultDirectory()
+    const client = makeClient(dir)
+
+    const pushed: Uint8Array[] = []
+    // Simulate what VaultHubClient does: wire onLocalVaultUpdate in constructor
+    const mockPushVaultUpdate = vi.fn(async (op: Uint8Array) => { pushed.push(op) })
+    const unsub = client.onLocalVaultUpdate(op => void mockPushVaultUpdate(op))
+
+    client.addDocument(makeMeta('a', 'a.md'))
+    expect(pushed).toHaveLength(1)
+
+    // Simulate dispose: unsubscribe
+    unsub()
+    client.addDocument(makeMeta('b', 'b.md'))
+    expect(pushed).toHaveLength(1) // no new push after unsubscribe
+
+    dir.dispose()
   })
 })

@@ -42,6 +42,7 @@ export class VaultHubClient {
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
   private indexOpCallbacks: ((evt: IndexOpAppliedEvent) => void)[] = []
+  private unsubLocalVaultUpdate: (() => void) | null = null
 
   constructor(
     private readonly serverUrl: string,
@@ -50,7 +51,11 @@ export class VaultHubClient {
     private readonly onChanged: () => void,
     private readonly getToken: () => string | null = () => null,
     private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
-  ) {}
+  ) {
+    this.unsubLocalVaultUpdate = this.vaultClient.onLocalVaultUpdate(
+      (update) => void this.pushVaultUpdate(update),
+    )
+  }
 
   async connect(): Promise<void> {
     if (this.disposed) return
@@ -198,6 +203,8 @@ export class VaultHubClient {
   async dispose(): Promise<void> {
     this.disposed = true
     this.disposing = true
+    this.unsubLocalVaultUpdate?.()
+    this.unsubLocalVaultUpdate = null
     this.pendingCreates.clear()
     if (this.connection) {
       try { await this.connection.stop() } catch { /* ignore */ }
