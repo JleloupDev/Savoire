@@ -129,8 +129,7 @@ public static class ServiceCollectionExtensions
 
         // Existing repositories (scoped — depend on DbContext)
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
-        services.AddScoped<IDocumentRepository,  EfDocumentRepository>();
-        services.AddScoped<IFolderRepository,    EfFolderRepository>();
+        services.AddScoped<IFolderRepository, EfFolderRepository>();
         services.AddScoped<ICrdtOpRepository, EfCrdtOpRepository>();
 
         // Auth repositories

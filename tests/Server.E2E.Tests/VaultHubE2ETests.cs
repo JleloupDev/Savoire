@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Tests E2E - VaultHub (vault + file operations)
+// Tests E2E - VaultHub (vault CRDT relay)
 //
 // Scenarios couverts :
 //   VH-02  JoinVault vault vide → InitVault avec ops vides
-//   VH-04  VaultHub.CreateDocument → retourne VaultDocumentItem
 //   VH-05  PushVaultOperation → relaie VaultOperationReceived aux autres
 //   VH-06  Op stockee → retournee dans InitVault au prochain join
-//   VH-07  Deux clients dans le meme vault → les deux recoivent les ops
-//   VH-08  Client dans un autre vault → ne recoit pas les ops
 //   VH-09  VaultHub sans token → refus 401
-//   VH-10  Cycle CRUD : create → rename → delete
 
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -27,7 +23,6 @@ public class VaultHubE2ETests : IAsyncLifetime
 {
     private AppFactory _server = null!;
     private HttpClient _clientA = null!;
-    private HttpClient _clientB = null!;
     private string     _userIdA = null!;
     private string     _tokenA  = null!;
     private string     _tokenB  = null!;
@@ -79,24 +74,6 @@ public class VaultHubE2ETests : IAsyncLifetime
         await hub.WaitForInitVaultAsync();
 
         hub.InitVaultEvents[0].Ops.Should().BeEmpty();
-    }
-
-    // ── VH-04 : CreateDocument → retourne VaultDocumentItem ──────────────────
-
-    [Fact]
-    public async Task VH04_CreateDocument_ReturnsVaultDocumentItem()
-    {
-        var vault = await CreateVaultAsync(_userIdA, "Vault Create");
-
-        await using var hub = HubA();
-        await hub.ConnectAsync();
-        await hub.JoinVaultAsync(vault.Id);
-        await hub.WaitForInitVaultAsync();
-
-        var item = await hub.CreateDocumentAsync(vault.Id, "hub-created.md");
-
-        item.Path.Should().Be("hub-created.md");
-        item.Id.Should().NotBeNullOrEmpty();
     }
 
     // ── VH-05 : PushVaultOperation → VaultOperationReceived aux autres ────────
@@ -162,28 +139,5 @@ public class VaultHubE2ETests : IAsyncLifetime
             .Build();
 
         await Assert.ThrowsAnyAsync<Exception>(() => hubNoAuth.StartAsync());
-    }
-
-    // ── VH-10 : Cycle CRUD ────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task VH10_FullCrudLifecycle_WorksWithoutErrors()
-    {
-        var vault = await CreateVaultAsync(_userIdA, "Vault Lifecycle");
-
-        await using var hub = HubA();
-        await hub.ConnectAsync();
-        await hub.JoinVaultAsync(vault.Id);
-        await hub.WaitForInitVaultAsync();
-
-        var item = await hub.CreateDocumentAsync(vault.Id, "lifecycle.md");
-        item.Id.Should().NotBeNullOrEmpty();
-
-        await hub.RenameDocumentAsync(item.Id, "lifecycle-renamed.md");
-        await hub.DeleteDocumentAsync(item.Id);
-
-        var resp = await _clientA.GetAsync($"/api/v1/vaults/{vault.Id}/documents");
-        var docs = await resp.Content.ReadFromJsonAsync<DocumentDto[]>();
-        docs!.Should().NotContain(d => d.Id == item.Id);
     }
 }

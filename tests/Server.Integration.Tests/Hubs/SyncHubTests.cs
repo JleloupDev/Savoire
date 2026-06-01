@@ -40,20 +40,8 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         vaultResp.EnsureSuccessStatusCode();
         _vaultId = (await vaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
 
-        // Créer un document de test via VaultHub
-        await using var hub = new HubConnectionBuilder()
-            .WithUrl("http://localhost/hubs/vault", options =>
-            {
-                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-                options.AccessTokenProvider = () => Task.FromResult<string?>(_token);
-            })
-            .Build();
-        await hub.StartAsync();
-        await hub.InvokeAsync("JoinVault", _vaultId);
-        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultDocumentItem>(
-            "CreateDocument", _vaultId, "test-doc.md", null);
-        _docId = doc.Id;
+        // Documents are CRDT-only — the docId is a client-generated identifier.
+        _docId = Guid.NewGuid().ToString();
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -103,8 +91,8 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         result.ops.Should().NotBeNull();
     }
 
-    [Fact(DisplayName = "JoinDocument — document inexistant est auto-créé et retourne InitDocument vide")]
-    public async Task JoinDocument_NonExistentDoc_AutoCreatesAndReceivesEmptyInitDocument()
+    [Fact(DisplayName = "JoinDocument — document sans ops retourne InitDocument vide")]
+    public async Task JoinDocument_NonExistentDoc_ReceivesEmptyInitDocument()
     {
         var newDocId = Guid.NewGuid().ToString();
         await using var conn = CreateConnection();

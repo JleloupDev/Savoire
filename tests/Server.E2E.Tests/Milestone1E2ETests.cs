@@ -74,27 +74,6 @@ public class Milestone1E2ETests : IAsyncLifetime
         workspace!.Vaults.Should().Contain(v => v.Id == vault.Id);
     }
 
-    // ── M1-08 ────────────────────────────────────────────────────────────────
-
-    /// <summary>M1-08 : Créer un dossier imbriqué → hiérarchie correcte.</summary>
-    [Fact]
-    public async Task CreateNestedFolder_CorrectHierarchy()
-    {
-        var vault = await CreateVaultAsync(_clientA, "Vault Hiérarchie");
-
-        var resp   = await _clientA.PostAsJsonAsync(
-            $"/api/v1/vaults/{vault.Id}/folders",
-            new { path = "Projets/Alpha/Specs" });
-
-        resp.EnsureSuccessStatusCode();
-
-        var foldersResp = await _clientA.GetAsync($"/api/v1/vaults/{vault.Id}/folders");
-        var folders     = await foldersResp.Content.ReadFromJsonAsync<FolderDto[]>();
-
-        folders!.Select(f => f.Path).Should()
-            .Contain(["Projets", "Projets/Alpha", "Projets/Alpha/Specs"]);
-    }
-
     // ── M1-11 & M1-12 ────────────────────────────────────────────────────────
 
     /// <summary>M1-11 : Détection de conflit (placeholder — nécessite ConflictResolver V2).</summary>

@@ -3,27 +3,19 @@
 using MediatR;
 using Savoire.Application.Abstractions;
 using Savoire.Application.Sharing;
-using Savoire.Domain.Aggregates;
-using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Documents.GetDocumentContent;
 
 public sealed class GetDocumentContentQueryHandler(
-    IDocumentRepository  documents,
     IShareLinkRepository shareLinks,
     IContentStore        contentStore)
     : IRequestHandler<GetDocumentContentQuery, Stream>
 {
     public async Task<Stream> Handle(GetDocumentContentQuery q, CancellationToken ct)
     {
-        // VaultAccessBehavior handles normal callers.
-        // ShareLink/View callers are excluded from the behavior — document-level check here.
         if (ShareLinkGuard.IsShareLinkCaller(q.CallerId) || ShareLinkGuard.IsViewCaller(q.CallerId))
             await ShareLinkGuard.RequireDocumentReadAsync(q.CallerId, q.VaultId, q.DocId, shareLinks, ct);
-
-        Document? doc = await documents.GetByIdAsync(q.DocId, ct);
-        if (doc is null || doc.VaultId != q.VaultId) throw new DocumentNotFoundException(q.DocId);
 
         Stream? stream = await contentStore.ReadDocumentAsync(q.VaultId, q.DocId, ct);
         return stream ?? new MemoryStream();

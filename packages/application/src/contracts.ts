@@ -35,9 +35,6 @@ export interface AppWorkspace {
 export interface VaultHubLike {
   connect(): Promise<void>
   dispose(): Promise<void>
-  createDocument(path: string): Promise<IDocumentMeta>
-  renameDocument(documentId: string, newPath: string): Promise<void>
-  deleteDocument(documentId: string): Promise<void>
   /** Pushes an index op to the server. Returns the assigned seq, or null if offline. */
   pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
   /** Subscribes to index ops received from other clients. */

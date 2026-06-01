@@ -11,7 +11,6 @@ namespace Savoire.Application.Sharing.RevokePermission;
 
 public sealed class RevokePermissionCommandHandler(
     IVaultRepository              vaults,
-    IDocumentRepository           documents,
     IResourcePermissionRepository permissions,
     IPublisher                    publisher)
     : IRequestHandler<RevokePermissionCommand>
@@ -22,13 +21,13 @@ public sealed class RevokePermissionCommandHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, resourceType, cmd.ResourceId,
-            vaults, documents, permissions, ct);
+            vaults, permissions, ct);
 
         var perm = await permissions.GetAsync(
             resourceType, cmd.ResourceId, SubjectType.User, cmd.TargetUserId, ct);
 
         if (perm is null) throw new AccessDeniedException(
-            $"Aucune permission trouvée pour {cmd.TargetUserId} sur {cmd.ResourceType}/{cmd.ResourceId}.");
+            $"Aucune permission trouvee pour {cmd.TargetUserId} sur {cmd.ResourceType}/{cmd.ResourceId}.");
 
         await permissions.DeleteAsync(perm.Id, ct);
 

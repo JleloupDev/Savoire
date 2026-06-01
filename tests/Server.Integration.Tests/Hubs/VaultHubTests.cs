@@ -144,37 +144,6 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         ops.Should().Contain(fakeOp);
     }
 
-    // ── CreateDocument ────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task CreateDocument_ReturnsVaultDocumentItem()
-    {
-        await using HubConnection conn = CreateConnection();
-        await conn.StartAsync();
-        await conn.InvokeAsync("JoinVault", _vaultId);
-
-        var path = $"doc-{Guid.NewGuid():N}.md";
-        var item = await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
-
-        item.Should().NotBeNull();
-        item.Path.Should().Be(path);
-        item.Id.Should().NotBeNullOrEmpty();
-    }
-
-    [Fact]
-    public async Task CreateDocument_DuplicatePath_ThrowsHubException409()
-    {
-        await using HubConnection conn = CreateConnection();
-        await conn.StartAsync();
-        await conn.InvokeAsync("JoinVault", _vaultId);
-
-        var path = $"dup-{Guid.NewGuid():N}.md";
-        await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
-
-        var act = () => conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
-        await act.Should().ThrowAsync<Exception>().WithMessage("*409*");
-    }
-
     // ── Auth ──────────────────────────────────────────────────────────────────
 
     [Fact(DisplayName = "VaultHub — connexion sans token est refusee (401)")]
@@ -201,8 +170,7 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        var doc = await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, "index-seq.md", null);
-        var dto = new PushIndexOpDto(_vaultId, doc.Id, doc.Path, "# Hello index");
+        var dto = new PushIndexOpDto(_vaultId, Guid.NewGuid().ToString(), "index-seq.md", "# Hello index");
         long seq = await conn.InvokeAsync<long>("PushIndexOp", dto);
 
         seq.Should().BePositive();

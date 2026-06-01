@@ -25,8 +25,6 @@ public sealed class VaultHubTestClient : IAsyncDisposable
         get { lock (_gate) return _vaultOpsReceived.ToArray(); }
     }
 
-    public record VaultDocumentItem(string Id, string Path);
-
     public VaultHubTestClient(
         WebApplicationFactory<Program> factory,
         string jwtToken,
@@ -56,15 +54,6 @@ public sealed class VaultHubTestClient : IAsyncDisposable
 
     public Task JoinVaultAsync(string vaultId)
         => _connection.InvokeAsync("JoinVault", vaultId);
-
-    public Task<VaultDocumentItem> CreateDocumentAsync(string vaultId, string path, string? title = null)
-        => _connection.InvokeAsync<VaultDocumentItem>("CreateDocument", vaultId, path, title);
-
-    public Task RenameDocumentAsync(string documentId, string newPath)
-        => _connection.InvokeAsync("RenameDocument", documentId, newPath);
-
-    public Task DeleteDocumentAsync(string documentId)
-        => _connection.InvokeAsync("DeleteDocument", documentId);
 
     public Task PushVaultOperationAsync(string vaultId, string opBase64)
         => _connection.InvokeAsync("PushVaultOperation", vaultId, opBase64);

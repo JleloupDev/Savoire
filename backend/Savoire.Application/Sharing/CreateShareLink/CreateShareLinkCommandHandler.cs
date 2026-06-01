@@ -11,7 +11,6 @@ namespace Savoire.Application.Sharing.CreateShareLink;
 
 public sealed class CreateShareLinkCommandHandler(
     IVaultRepository              vaults,
-    IDocumentRepository           documents,
     IResourcePermissionRepository permissions,
     IShareLinkRepository          shareLinks)
     : IRequestHandler<CreateShareLinkCommand, ShareLinkDto>
@@ -22,11 +21,11 @@ public sealed class CreateShareLinkCommandHandler(
         ResourceType resourceType = cmd.ResourceType.ParseResourceType();
 
         if (permission == Permission.Admin)
-            throw new ArgumentException("Permission invalide : 'admin' n'est pas autorisé sur un lien de partage.");
+            throw new ArgumentException("Permission invalide : 'admin' n'est pas autorise sur un lien de partage.");
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, resourceType, cmd.ResourceId,
-            vaults, documents, permissions, ct);
+            vaults, permissions, ct);
 
         ShareLink link = ShareLink.Create(
             resourceType, cmd.ResourceId,

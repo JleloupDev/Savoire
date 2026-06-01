@@ -2,14 +2,12 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
 using Savoire.Domain.Aggregates;
-using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sharing.RevokeShareLink;
 
 public sealed class RevokeShareLinkCommandHandler(
     IVaultRepository              vaults,
-    IDocumentRepository           documents,
     IResourcePermissionRepository permissions,
     IShareLinkRepository          shareLinks)
     : IRequestHandler<RevokeShareLinkCommand>
@@ -17,11 +15,11 @@ public sealed class RevokeShareLinkCommandHandler(
     public async Task Handle(RevokeShareLinkCommand cmd, CancellationToken ct)
     {
         ShareLink? link = await shareLinks.GetByIdAsync(cmd.LinkId, ct);
-        if (link is null) return;   // idempotent
+        if (link is null) return;
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, link.ResourceType, link.ResourceId,
-            vaults, documents, permissions, ct);
+            vaults, permissions, ct);
 
         link.Revoke();
         await shareLinks.UpdateAsync(link, ct);

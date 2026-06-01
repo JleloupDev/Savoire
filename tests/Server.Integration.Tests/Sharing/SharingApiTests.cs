@@ -246,38 +246,24 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
     }
 
     [Fact]
-    public async Task GET_share_access_DocumentLink_Returns_Path()
+    public async Task GET_share_access_DocumentLink_Returns_ResourceId()
     {
-        // Create a document via VaultHub (as _owner)
-        await using var hub = new HubConnectionBuilder()
-            .WithUrl("http://localhost/hubs/vault", options =>
-            {
-                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-                options.AccessTokenProvider = () => Task.FromResult<string?>(_ownerToken);
-            })
-            .Build();
-        await hub.StartAsync();
-        await hub.InvokeAsync("JoinVault", _vaultId);
-        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultDocumentItem>(
-            "CreateDocument", _vaultId, "diagram.excalidraw", null);
+        var docId = Guid.NewGuid().ToString();
 
-        // Create a document-level share link
+        // Create a document-level share link (docId is a CRDT identifier)
         var linkResp = await _owner.PostAsJsonAsync(
-            $"/api/v1/documents/{doc.Id}/sharing/links",
+            $"/api/v1/documents/{docId}/sharing/links",
             new { permission = "read" });
         linkResp.EnsureSuccessStatusCode();
         var link = await linkResp.Content.ReadFromJsonAsync<ShareLinkDto>();
 
-        // Exchange token anonymously
         var resp = await _anon.GetAsync($"/api/v1/share/{link!.Token}/access");
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var access = await resp.Content.ReadFromJsonAsync<ShareLinkAccessDto>();
         access.Should().NotBeNull();
         access!.ResourceType.Should().Be("document");
-        access.ResourceId.Should().Be(doc.Id);
-        access.Path.Should().Be("diagram.excalidraw");
+        access.ResourceId.Should().Be(docId);
     }
 
 }

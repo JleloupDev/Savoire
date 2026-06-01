@@ -135,24 +135,18 @@ describe('createFile()', () => {
     expect(stubStorage.createDocument).not.toHaveBeenCalled()
   })
 
-  it('deduplicates concurrent create requests for same path', async () => {
-    let resolveCreate: (meta: IDocumentMeta) => void = () => {
-      throw new Error('createDocument did not start')
-    }
-    vi.mocked(stubStorage.createDocument).mockImplementationOnce(
-      async (_vaultId, _path) => new Promise<IDocumentMeta>((resolve) => {
-        resolveCreate = resolve
-      }),
-    )
+  it('deduplicates concurrent create requests for same path via optimistic add', async () => {
     const client = makeClient(makeFetcher({}))
 
     const p1 = client.createFile('dup.md')
     const p2 = client.createFile('dup.md')
-    expect(stubStorage.createDocument).toHaveBeenCalledTimes(1)
 
-    resolveCreate({ id: 'dup-id', path: 'dup.md' })
     await Promise.all([p1, p2])
-    expect(client.documents).toEqual([makeMeta('dup-id', 'dup.md')])
+
+    // Second call returns early because the first optimistic add already added the doc
+    expect(stubStorage.createDocument).toHaveBeenCalledTimes(1)
+    expect(client.documents).toHaveLength(1)
+    expect(client.documents[0].path).toBe('dup.md')
   })
 
   it('treats 409 conflict as idempotent success', async () => {
@@ -164,16 +158,19 @@ describe('createFile()', () => {
 })
 
 describe('renameFile()', () => {
-  it('delegates to IVaultStorage.renameDocument', async () => {
+  it('updates CRDT directory (no storage call)', async () => {
     const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('id-1', 'original.md'))
     await client.renameFile('id-1', 'renamed.md')
-    expect(stubStorage.renameDocument).toHaveBeenCalledWith(VAULT, 'id-1', 'renamed.md', TOKEN)
+    expect(client.documents.find(d => d.id === 'id-1')?.path).toBe('renamed.md')
+    expect(stubStorage.renameDocument).not.toHaveBeenCalled()
   })
 
   it('appends .md when missing on target path', async () => {
     const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('id-1', 'original.md'))
     await client.renameFile('id-1', 'renamed')
-    expect(stubStorage.renameDocument).toHaveBeenCalledWith(VAULT, 'id-1', 'renamed.md', TOKEN)
+    expect(client.documents.find(d => d.id === 'id-1')?.path).toBe('renamed.md')
   })
 })
 

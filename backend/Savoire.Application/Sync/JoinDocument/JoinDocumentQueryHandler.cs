@@ -7,21 +7,11 @@ using Savoire.Domain.Repositories;
 namespace Savoire.Application.Sync.JoinDocument;
 
 public sealed class JoinDocumentQueryHandler(
-    IDocumentRepository  docs,
     ICrdtOpRepository ops,
-    IVaultRepository     vaults) : IRequestHandler<JoinDocumentQuery, JoinDocumentResult>
+    IVaultRepository  vaults) : IRequestHandler<JoinDocumentQuery, JoinDocumentResult>
 {
     public async Task<JoinDocumentResult> Handle(JoinDocumentQuery q, CancellationToken ct)
     {
-        // Access check delegated to VaultAccessBehavior (IRequiresDocumentAccess).
-
-        Document? existing = await docs.GetByIdAsync(q.DocId, ct);
-        if (existing is null)
-        {
-            Document newDoc = Document.Create(q.VaultId, q.DocId, null, 0, "");
-            await docs.AddAsync(newDoc, ct);
-        }
-
         IReadOnlyList<Operation> history =
             await ops.GetAllAsync(CrdtResourceType.Document, q.DocId, ct);
 

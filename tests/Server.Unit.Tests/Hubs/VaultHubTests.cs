@@ -6,12 +6,10 @@ using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Savoire.Application.Common;
-using Savoire.Application.Documents.CreateDocument;
-using Savoire.Application.Documents.DeleteDocument;
-using Savoire.Application.Documents.RenameDocument;
 using Savoire.Application.Sync.Common;
 using Savoire.Application.Sync.JoinVault;
+using Savoire.Application.Sync.PushVaultOperation;
+using Savoire.Application.Sync.SnapshotVault;
 using Savoire.Server.Hubs;
 
 namespace Savoire.Server.Unit.Tests.Hubs;
@@ -107,60 +105,46 @@ public class VaultHubTests
         ((string[])capturedArgs![1]!).Should().HaveCount(2);
     }
 
-    // ── CreateDocument ────────────────────────────────────────────────────────
+    // ── PushVaultOperation ────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDocument_SendsCreateDocumentCommand_ReturnsVaultDocumentItem()
+    public async Task PushVaultOperation_SendsCommand_AndRelaysToOthers()
     {
-        var dto = new DocumentDto("doc-1", "ideas/spark.md", null, "", 0, DateTime.UtcNow, DateTime.UtcNow);
-        _mediator.Send(Arg.Any<CreateDocumentCommand>(), Arg.Any<CancellationToken>())
-                 .Returns(dto);
+        var othersProxy = Substitute.For<IClientProxy>();
+        _clients.OthersInGroup(VaultId).Returns(othersProxy);
 
-        var result = await _hub.CreateDocument(VaultId, "ideas/spark.md", null);
+        var op = Convert.ToBase64String([1, 2, 3]);
+        await _hub.PushVaultOperation(VaultId, op);
 
         await _mediator.Received(1).Send(
-            Arg.Is<CreateDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.VaultId  == VaultId &&
-                c.Path     == "ideas/spark.md"),
+            Arg.Is<PushVaultOperationCommand>(c => c.VaultId == VaultId),
             Arg.Any<CancellationToken>());
 
-        result.Id.Should().Be("doc-1");
-        result.Path.Should().Be("ideas/spark.md");
-    }
-
-    // ── RenameDocument ────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task RenameDocument_SendsRenameDocumentCommand()
-    {
-        var dto = new DocumentDto("doc-1", "new-name.md", null, "", 0, DateTime.UtcNow, DateTime.UtcNow);
-        _mediator.Send(Arg.Any<RenameDocumentCommand>(), Arg.Any<CancellationToken>())
-                 .Returns(dto);
-
-        await _hub.RenameDocument("doc-1", "new-name.md");
-
-        await _mediator.Received(1).Send(
-            Arg.Is<RenameDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.DocId    == "doc-1" &&
-                c.NewPath  == "new-name.md" &&
-                c.VaultId  == "__resolve__"),
+        await othersProxy.Received(1).SendCoreAsync(
+            "VaultOperationReceived",
+            Arg.Any<object?[]>(),
             Arg.Any<CancellationToken>());
     }
 
-    // ── DeleteDocument ────────────────────────────────────────────────────────
+    [Fact]
+    public async Task PushVaultOperation_InvalidBase64_DoesNotSendCommand()
+    {
+        await _hub.PushVaultOperation(VaultId, "!!!not-base64!!!");
+
+        await _mediator.DidNotReceive().Send(
+            Arg.Any<PushVaultOperationCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── SnapshotVault ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task DeleteDocument_SendsDeleteDocumentCommand()
+    public async Task SnapshotVault_SendsCommand()
     {
-        await _hub.DeleteDocument("doc-1");
+        var snapshot = Convert.ToBase64String([9, 9, 9]);
+        await _hub.SnapshotVault(VaultId, snapshot);
 
         await _mediator.Received(1).Send(
-            Arg.Is<DeleteDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.DocId    == "doc-1" &&
-                c.VaultId  == "__resolve__"),
+            Arg.Is<SnapshotVaultCommand>(c => c.VaultId == VaultId),
             Arg.Any<CancellationToken>());
     }
 }

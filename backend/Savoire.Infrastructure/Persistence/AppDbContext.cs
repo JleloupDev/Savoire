@@ -19,7 +19,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefSyncChangeTypeEntity> RefSyncChangeTypes => Set<RefSyncChangeTypeEntity>();
     public DbSet<VaultEntity>             Vaults             => Set<VaultEntity>();
     public DbSet<VaultMemberEntity> VaultMembers => Set<VaultMemberEntity>();
-    public DbSet<DocumentEntity>    Documents   => Set<DocumentEntity>();
     public DbSet<FolderEntity>      Folders     => Set<FolderEntity>();
     public DbSet<OperationEntity>  Operations  => Set<OperationEntity>();
     public DbSet<SyncVectorEntity> SyncVectors => Set<SyncVectorEntity>();
@@ -89,27 +88,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .HasForeignKey(m => m.Role)
              .HasPrincipalKey(r => r.Value)
              .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        modelBuilder.Entity<DocumentEntity>(e =>
-        {
-            e.ToTable("documents");
-            e.HasKey(d => d.Id);
-            e.Property(d => d.Id).HasColumnName("id");
-            e.Property(d => d.VaultId).HasColumnName("vault_id").IsRequired();
-            e.Property(d => d.Path).HasColumnName("path").IsRequired();
-            e.Property(d => d.Title).HasColumnName("title");
-            e.Property(d => d.SizeBytes).HasColumnName("size_bytes").HasDefaultValue(0L);
-            e.Property(d => d.Hash).HasColumnName("hash").HasDefaultValue("").IsRequired();
-            e.Property(d => d.CreatedAt).HasColumnName("created_at").IsRequired();
-            e.Property(d => d.UpdatedAt).HasColumnName("updated_at").IsRequired();
-            e.Property(d => d.DeletedAt).HasColumnName("deleted_at");
-            e.HasIndex(d => new { d.VaultId, d.Path }).IsUnique();
-            e.HasIndex(d => new { d.VaultId, d.DeletedAt }).HasDatabaseName("idx_documents_vault");
-            e.HasOne(d => d.Vault)
-             .WithMany(v => v.Documents)
-             .HasForeignKey(d => d.VaultId)
-             .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<FolderEntity>(e =>

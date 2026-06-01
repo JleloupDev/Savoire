@@ -17,11 +17,6 @@ interface IndexOpAppliedEvent {
   markdownContent: string
 }
 
-interface VaultDocumentItem {
-  id: string
-  path: string
-}
-
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
   const chunk = 8192
@@ -142,42 +137,6 @@ export class VaultHubClient {
     }
   }
 
-  // ── Document CRUD ─────────────────────────────────────────────────────────
-
-  async createDocument(path: string, title?: string | null): Promise<IDocumentMeta> {
-    const connection = await this._ensureConnected()
-    const normalizedPath = this._normalizePath(path)
-    const existing = this.pendingCreates.get(normalizedPath)
-    if (existing) return existing
-
-    const request = (async () => {
-      try {
-        const created = await connection.invoke<VaultDocumentItem>(
-          'CreateDocument',
-          this.vaultId,
-          normalizedPath,
-          title ?? this._defaultTitle(normalizedPath),
-        )
-        return { id: created.id, path: created.path }
-      } finally {
-        this.pendingCreates.delete(normalizedPath)
-      }
-    })()
-
-    this.pendingCreates.set(normalizedPath, request)
-    return request
-  }
-
-  async renameDocument(documentId: string, newPath: string): Promise<void> {
-    const connection = await this._ensureConnected()
-    await connection.invoke('RenameDocument', documentId, this._normalizePath(newPath))
-  }
-
-  async deleteDocument(documentId: string): Promise<void> {
-    const connection = await this._ensureConnected()
-    await connection.invoke('DeleteDocument', documentId)
-  }
-
   // ── Index ops ─────────────────────────────────────────────────────────────
 
   async pushIndexOp(docId: string, path: string, markdownContent: string): Promise<number | null> {
@@ -230,12 +189,4 @@ export class VaultHubClient {
       void this.connection.stop().catch(() => {})
   }
 
-  private _normalizePath(path: string): string {
-    return path.includes('.') ? path : `${path}.md`
-  }
-
-  private _defaultTitle(path: string): string | null {
-    const fileName = path.split('/').at(-1)?.replace(/\.[^.]+$/, '').trim()
-    return fileName ? fileName : null
-  }
 }

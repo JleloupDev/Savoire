@@ -53,22 +53,6 @@ public record WorkspaceDto(
     IReadOnlyList<SharedNoteDto>   SharedWithMe
 );
 
-// ── Documents ──────────────────────────────────────────────────────────────
-
-public record DocumentDto(
-    string   Id,
-    string   Path,
-    string?  Title,
-    string   Hash,
-    long     SizeBytes,
-    DateTime CreatedAt,
-    DateTime UpdatedAt
-)
-{
-    public static DocumentDto FromDomain(Document d) =>
-        new(d.Id, d.Path, d.Title, d.Hash, d.SizeBytes, d.CreatedAt, d.UpdatedAt);
-}
-
 // ── Folders ────────────────────────────────────────────────────────────────
 
 public record FolderDto(string Id, string Path, DateTime CreatedAt)

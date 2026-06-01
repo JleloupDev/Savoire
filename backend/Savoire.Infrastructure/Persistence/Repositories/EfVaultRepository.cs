@@ -52,17 +52,10 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
 
     public async Task<VaultStats> GetStatsAsync(string vaultId, CancellationToken ct = default)
     {
-        int docCount = await db.Documents.CountAsync(d => d.VaultId == vaultId && d.DeletedAt == null, ct);
+        // Document count and size are not available without SQL projection.
+        // TODO(P4): derive from CRDT vault directory.
         int folderCount = await db.Folders.CountAsync(f => f.VaultId == vaultId, ct);
-        DateTime? lastModified = await db.Documents
-            .Where(d => d.VaultId == vaultId && d.DeletedAt == null)
-            .OrderByDescending(d => d.UpdatedAt)
-            .Select(d => (DateTime?)d.UpdatedAt)
-            .FirstOrDefaultAsync(ct);
-        long sizeBytes = await db.Documents
-            .Where(d => d.VaultId == vaultId && d.DeletedAt == null)
-            .SumAsync(d => d.SizeBytes, ct);
-        return new VaultStats(docCount, folderCount, lastModified, sizeBytes);
+        return new VaultStats(0, folderCount, null, 0);
     }
 
     public async Task AddAsync(Vault vault, CancellationToken ct = default)

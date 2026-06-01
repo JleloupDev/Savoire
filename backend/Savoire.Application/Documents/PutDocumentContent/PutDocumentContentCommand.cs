@@ -6,7 +6,7 @@ using Savoire.Application.Common;
 namespace Savoire.Application.Documents.PutDocumentContent;
 
 public sealed record PutDocumentContentCommand(string CallerId, string VaultId, string DocId, string Body)
-    : IRequest<DocumentDto>, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

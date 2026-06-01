@@ -17,7 +17,6 @@ import type { DocumentStore } from './DocumentStore'
 export class VaultClient implements VaultAPI {
   // see ADR-010
   private readonly _explicitFolders = new Set<string>()
-  private _pendingFileCreates = new Map<string, Promise<void>>()
 
   constructor(
     private readonly vaultId: string,
@@ -149,29 +148,19 @@ export class VaultClient implements VaultAPI {
     const normalizedPath = path.includes('.') ? path : `${path}.md`
     if (this._findDocumentByPath(path) || this._findDocumentByPath(normalizedPath)) return
 
-    const pending = this._pendingFileCreates.get(normalizedPath)
-    if (pending) return pending
+    const id = crypto.randomUUID()
+    const doc = { id, path: normalizedPath }
 
-    const request = (async () => {
-      try {
-        const doc = await this.storage.createDocument(this.vaultId, path, this.token)
-        // Optimistic update — server will broadcast VaultUpdate to other clients
-        this.addDocument(doc)
-      } catch (err) {
-        // Idempotent create: "already exists" is not a hard failure.
-        if (this._isConflictError(err)) {
-          const existing = this.resolveDoc(path) ?? this.resolveDoc(normalizedPath)
-          if (existing) this.addDocument(existing)
-          return
-        }
-        throw err
-      } finally {
-        this._pendingFileCreates.delete(normalizedPath)
-      }
-    })()
+    // Optimistic: add to CRDT immediately so peers see it before the server round-trip
+    this.addDocument(doc)
 
-    this._pendingFileCreates.set(normalizedPath, request)
-    return request
+    try {
+      await this.storage.createDocument(this.vaultId, normalizedPath, this.token, id)
+    } catch (err) {
+      if (this._isConflictError(err)) return
+      this.removeDocument(id)
+      throw err
+    }
   }
 
   async createFolder(path: string): Promise<void> {
@@ -212,14 +201,10 @@ export class VaultClient implements VaultAPI {
 
   async renameDocument(documentId: string, newPath: string): Promise<void> {
     const normalizedNewPath = newPath.includes('.') ? newPath : `${newPath}.md`
-    await this.storage.renameDocument(this.vaultId, documentId, normalizedNewPath, this.token)
-    // Optimistic update
     this.renameDocumentInCache(documentId, normalizedNewPath)
   }
 
   async deleteDocument(documentId: string): Promise<void> {
-    await this.storage.deleteDocument(this.vaultId, documentId, this.token)
-    // Optimistic update
     this.removeDocument(documentId)
   }
 

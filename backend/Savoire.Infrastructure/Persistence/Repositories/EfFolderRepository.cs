@@ -32,12 +32,8 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
         return entities.Select(e => e.ToDomain()).ToList();
     }
 
-    public async Task<bool> HasDocumentsAsync(string vaultId, string folderPath, CancellationToken ct = default)
-    {
-        string prefix = folderPath.TrimEnd('/') + "/";
-        return await db.Documents.AnyAsync(
-            d => d.VaultId == vaultId && d.Path.StartsWith(prefix) && d.DeletedAt == null, ct);
-    }
+    public Task<bool> HasDocumentsAsync(string vaultId, string folderPath, CancellationToken ct = default)
+        => Task.FromResult(false); // Documents are CRDT-only — no SQL projection available
 
     public async Task AddAsync(Folder folder, CancellationToken ct = default)
     {
@@ -54,21 +50,7 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            // Idempotence en concurrence: un autre flux a pu creer le meme dossier juste avant.
-        }
-    }
-
-    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
-    {
-        // SQLite unique violation codes: 19 (constraint), 2067 (unique constraint).
-        if (ex.InnerException is SqliteException sqlite)
-            return sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067;
-
-        var msg = ex.InnerException?.Message ?? ex.Message;
-        return msg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
-               || msg.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex)) { }
     }
 
     public async Task<(int MovedFolders, int MovedDocuments)> MoveAsync(
@@ -77,8 +59,7 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
         Folder? folder = await GetByIdAsync(folderId, ct);
         if (folder is null) return (0, 0);
 
-        string oldPath   = folder.Path;
-        string oldPrefix = oldPath + "/";
+        string oldPrefix = folder.Path + "/";
         string newPrefix = newPath + "/";
 
         await db.Folders.Where(f => f.Id == folderId)
@@ -91,19 +72,8 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
         foreach (FolderEntity sub in subFolders)
             sub.Path = newPrefix + sub.Path[oldPrefix.Length..];
 
-        List<DocumentEntity> docs = await db.Documents
-            .Where(d => d.VaultId == folder.VaultId && d.Path.StartsWith(oldPrefix) && d.DeletedAt == null)
-            .ToListAsync(ct);
-
-        DateTime now = DateTime.UtcNow;
-        foreach (DocumentEntity doc in docs)
-        {
-            doc.Path = newPrefix + doc.Path[oldPrefix.Length..];
-            doc.UpdatedAt = now;
-        }
-
         await db.SaveChangesAsync(ct);
-        return (subFolders.Count + 1, docs.Count);
+        return (subFolders.Count + 1, 0); // documents moved via CRDT
     }
 
     public async Task<int> DeleteRecursiveAsync(string folderId, DateTime deletedAt, CancellationToken ct = default)
@@ -113,16 +83,19 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
 
         string prefix = folder.Path + "/";
 
-        int deleted = await db.Documents
-            .Where(d => d.VaultId == folder.VaultId
-                && (d.Path.StartsWith(prefix) || d.Path == folder.Path)
-                && d.DeletedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(d => d.DeletedAt, deletedAt), ct);
-
         await db.Folders
             .Where(f => f.VaultId == folder.VaultId && (f.Id == folderId || f.Path.StartsWith(prefix)))
             .ExecuteDeleteAsync(ct);
 
-        return deleted;
+        return 0; // documents deleted via CRDT
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        if (ex.InnerException is SqliteException sqlite)
+            return sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067;
+        var msg = ex.InnerException?.Message ?? ex.Message;
+        return msg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+               || msg.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
     }
 }

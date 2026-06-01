@@ -25,29 +25,16 @@ export class DocumentsService implements IDocumentsAPI {
   }): Promise<ActivatedVault> {
     await this.disposeActiveVault()
 
-    let hubRef: ActivatedVault['hub'] | null = null
     const s = params.storage
     const storageWithHub: IVaultStorage = {
-      readFile:       (v, p, t)    => s.readFile(v, p, t),
-      writeFile:      (v, p, c, t) => s.writeFile(v, p, c, t),
-      resolveFileUrl: (v, p)       => s.resolveFileUrl(v, p),
-      listDocuments:  (v, t)       => s.listDocuments(v, t),
-      createFolder:   (v, p, t)    => s.createFolder(v, p, t),
-      deleteFolder:   (v, p, t)    => s.deleteFolder(v, p, t),
-      createDocument: async (_vaultId: string, path: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        return hubRef.createDocument(path)
-      },
-      renameDocument: async (_vaultId: string, docId: string, path: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        await hubRef.renameDocument(docId, path)
-      },
-      deleteDocument: async (_vaultId: string, docId: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        await hubRef.deleteDocument(docId)
-      },
-      uploadAttachment: (v, f, t) => s.uploadAttachment(v, f, t),
-      listFolders: (v, t) => s.listFolders(v, t),
+      readFile:         (v, p, t)    => s.readFile(v, p, t),
+      writeFile:        (v, p, c, t) => s.writeFile(v, p, c, t),
+      resolveFileUrl:   (v, p)       => s.resolveFileUrl(v, p),
+      listDocuments:    (v, t)       => s.listDocuments(v, t),
+      createFolder:     (v, p, t)    => s.createFolder(v, p, t),
+      deleteFolder:     (v, p, t)    => s.deleteFolder(v, p, t),
+      uploadAttachment: (v, f, t)    => s.uploadAttachment(v, f, t),
+      listFolders:      (v, t)       => s.listFolders(v, t),
     }
 
     const client = new VaultClient(
@@ -59,7 +46,6 @@ export class DocumentsService implements IDocumentsAPI {
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
-    hubRef = hub
     void client.loadFolders()
 
     const active: ActiveContext = {
