@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { VaultClient, DocumentStore } from '@savoire/platform'
+import { InMemoryVaultDirectory } from './InMemoryVaultDirectory'
 import type { IDocumentFetcher, IVaultStorage, IDocumentMeta } from '@savoire/platform'
 
 function makeMeta(id: string, path: string): IDocumentMeta {
@@ -40,7 +41,7 @@ const TOKEN = 'tok'
 
 function makeClient(fetcher: IDocumentFetcher, docs = DOCS): VaultClient {
   const store = new DocumentStore(fetcher)
-  return new VaultClient(VAULT, TOKEN, stubStorage, store, (path) =>
+  return new VaultClient(VAULT, TOKEN, stubStorage, store, new InMemoryVaultDirectory(), (path) =>
     docs.find(d => d.path === path || d.path === path + '.md'),
   )
 }
@@ -181,4 +182,56 @@ describe('resolveAttachmentUrl()', () => {
     const client = makeClient(makeFetcher({}))
     expect(client.resolveAttachmentUrl('img.png')).toBe('/attachments/img.png')
   })
+})
+
+// ── Group 4 — VaultClient ↔ IVaultDirectory wiring ───────────────────────────
+
+describe('VaultClient — directory wiring', () => {
+  it('documents getter reflects directory state', () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    directory.add(makeMeta('id-1', 'note.md'))
+    expect(client.documents).toEqual([makeMeta('id-1', 'note.md')])
+  })
+
+  it('addDocument() triggers onChange on client', () => {
+    const client = makeClient(makeFetcher({}))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.addDocument(makeMeta('new', 'new.md'))
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+  it('removeDocument() triggers onChange on client', () => {
+    const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('x', 'x.md'))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.removeDocument('x')
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+  it('renameDocumentInCache() triggers onChange', () => {
+    const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('x', 'old.md'))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.renameDocumentInCache('x', 'new.md')
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+  it('setSnapshot() does NOT fire onLocalVaultUpdate', () => {
+    const client = makeClient(makeFetcher({}))
+    const updates: Uint8Array[] = []
+    const unsub = client.onLocalVaultUpdate(u => updates.push(u))
+    client.setSnapshot([makeMeta('a', 'a.md'), makeMeta('b', 'b.md')])
+    expect(updates).toHaveLength(0)
+    unsub()
+  })
+
 })

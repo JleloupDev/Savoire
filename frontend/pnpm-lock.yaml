@@ -980,6 +980,9 @@ importers:
       '@savoire/infrastructure-sync':
         specifier: workspace:*
         version: link:../../../../packages/infrastructure-sync
+      '@savoire/platform':
+        specifier: workspace:*
+        version: link:../../../../packages/platform
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../../../packages/plugin-api

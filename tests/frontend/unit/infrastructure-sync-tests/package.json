@@ -11,6 +11,7 @@
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/domain-sync": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/platform": "workspace:*",
     "@microsoft/signalr": "^8.0.17",
     "@noble/ed25519": "^3.1.0",
     "yjs": "^13.6.0"

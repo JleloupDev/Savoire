@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 /**
- * Platform ports — interfaces définies par la couche platform.
+ * Platform ports - interfaces définies par la couche platform.
  *
  *
  * IDocumentMeta est intentionnellement minimal : la platform ne connaît pas DocumentDto
@@ -10,7 +10,7 @@
 
 // ── Document meta ─────────────────────────────────────────────────────────────
 
-/** Interface minimale requise par la platform — sous-ensemble de DocumentDto. */
+/** Interface minimale requise par la platform - sous-ensemble de DocumentDto. */
 export interface IDocumentMeta {
   id: string
   path: string
@@ -37,6 +37,37 @@ export interface ILocalIndexStorage {
   loadSnapshot(namespace: string): Promise<{ data: string; seq: number } | null>
   /** Persiste un snapshot pour un namespace. */
   saveSnapshot(namespace: string, data: string, seq: number): Promise<void>
+}
+
+// ── Vault directory port ──────────────────────────────────────────────────────
+
+/**
+ * Port : liste des documents d'un vault.
+ *
+ * Abstrait la structure de données sous-jacente (Y.Map aujourd'hui, DAG demain).
+ * La frontière binaire (Uint8Array) rend le transport aveugle au CRDT choisi.
+ */
+export interface IVaultDirectory {
+  getAll(): readonly IDocumentMeta[]
+  getById(id: string): IDocumentMeta | undefined
+  add(doc: IDocumentMeta): void
+  remove(id: string): void
+  rename(id: string, newPath: string): void
+  /**
+   * Remplace l'état depuis une liste serveur (ex. VaultSnapshot JSON).
+   * N'émet PAS d'update local - l'état serveur ne doit pas être re-poussé.
+   * À supprimer quand le serveur parlera Yjs binaire directement.
+   */
+  applyServerState(docs: IDocumentMeta[]): void
+  /** État complet encodé - utilisé pour le join initial et pour envoyer à un pair. */
+  encodeFullState(): Uint8Array
+  /** Applique un update distant (join initial ou diff incrémental). */
+  applyUpdate(update: Uint8Array): void
+  /** Notifie des updates produits localement - pour les pousser vers les pairs. */
+  onLocalUpdate(cb: (update: Uint8Array) => void): () => void
+  /** Notifie tout changement de la liste - pour le rendu UI. */
+  onChange(cb: () => void): () => void
+  dispose(): void
 }
 
 /** Port : lecture/écriture de fichiers dans un vault (attachments, notes). */

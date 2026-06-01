@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
 export interface IIdentityProvider {
+  init(): Promise<void>
   getPublicKey(): Uint8Array
   sign(message: Uint8Array): Promise<Uint8Array>
 }

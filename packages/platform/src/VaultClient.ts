@@ -11,15 +11,12 @@
  * Les plugins ![[...]] et @[[...]] ne savent rien de cette logique.
  */
 import type { VaultAPI } from '@savoire/plugin-api'
-import type { IDocumentMeta, IVaultStorage } from './ports'
+import type { IDocumentMeta, IVaultDirectory, IVaultStorage } from './ports'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
   // see ADR-010
-  private readonly _documentsById = new Map<string, IDocumentMeta>()
-  // see ADR-010
   private readonly _explicitFolders = new Set<string>()
-  private _onChangeCallbacks: (() => void)[] = []
   private _pendingFileCreates = new Map<string, Promise<void>>()
 
   constructor(
@@ -27,6 +24,7 @@ export class VaultClient implements VaultAPI {
     private token: string,
     private readonly storage: IVaultStorage,
     private readonly documentStore: DocumentStore,
+    private readonly directory: IVaultDirectory,
     /** Résout un chemin relatif en IDocumentMeta — fourni par l'app layer. */
     private readonly resolveDoc: (path: string) => IDocumentMeta | undefined,
   ) {}
@@ -36,55 +34,53 @@ export class VaultClient implements VaultAPI {
     this.token = token
   }
 
-  // ── Cache management (called by VaultHubClient or after REST mutations) ──
+  // ── Directory management ──────────────────────────────────────────────────
 
-  /** Replace the entire cache — called on VaultHub snapshot. */
+  /** Seed depuis un snapshot serveur JSON — ne génère pas d'ops locales. */
   setSnapshot(docs: IDocumentMeta[]): void {
-    this._documentsById.clear()
-    for (const doc of docs) this._documentsById.set(doc.id, doc)
-    this._notifyChange()
+    this.directory.applyServerState(docs)
   }
 
-  /** Add a document to the cache (optimistic or from hub event). */
   addDocument(doc: IDocumentMeta): void {
-    // Deduplicate: if doc already exists, skip
-    if (this._documentsById.has(doc.id)) return
-    this._documentsById.set(doc.id, doc)
-    this._notifyChange()
+    this.directory.add(doc)
   }
 
-  /** Remove a document from the cache by id. */
   removeDocument(id: string): void {
-    if (this._documentsById.delete(id)) this._notifyChange()
+    this.directory.remove(id)
   }
 
-  /** Rename a document in the cache. */
   renameDocumentInCache(id: string, newPath: string): void {
-    const doc = this._documentsById.get(id)
-    if (!doc) return
-    this._documentsById.set(id, { ...doc, path: newPath })
-    this._notifyChange()
+    this.directory.rename(id, newPath)
   }
 
-  /** Subscribe to cache changes — returns unsubscribe function. */
+  /** Subscribe to document list changes — returns unsubscribe function. */
   onChange(cb: () => void): () => void {
-    this._onChangeCallbacks.push(cb)
-    return () => {
-      this._onChangeCallbacks = this._onChangeCallbacks.filter(c => c !== cb)
-    }
+    return this.directory.onChange(cb)
   }
 
-  /** Get current cached documents. */
+  /** Get current document list. */
   get documents(): readonly IDocumentMeta[] {
-    return Array.from(this._documentsById.values())
+    return this.directory.getAll()
   }
 
-  private _notifyChange(): void {
-    for (const cb of this._onChangeCallbacks) cb()
+  // ── CRDT sync (wired by VaultHubClient when the server supports binary ops) ──
+
+  applyVaultUpdate(update: Uint8Array): void {
+    this.directory.applyUpdate(update)
   }
+
+  encodeVaultState(): Uint8Array {
+    return this.directory.encodeFullState()
+  }
+
+  onLocalVaultUpdate(cb: (update: Uint8Array) => void): () => void {
+    return this.directory.onLocalUpdate(cb)
+  }
+
+  // ── VaultAPI ──────────────────────────────────────────────────────────────
 
   async read(documentId: string): Promise<string> {
-    const meta = this._documentsById.get(documentId)
+    const meta = this.directory.getById(documentId)
     return this.documentStore.readContent(this.vaultId, documentId, this.token, meta)
   }
 
@@ -100,8 +96,8 @@ export class VaultClient implements VaultAPI {
   }
 
   async write(documentId: string, content: string): Promise<void> {
-    const doc = this._documentsById.get(documentId)
-    if (!doc) throw new Error(`Document not found: ${documentId}`)
+    const meta = this.directory.getById(documentId)
+    if (!meta) throw new Error(`Document not found: ${documentId}`)
     await this.documentStore.writeContent(this.vaultId, documentId, content, this.token)
   }
 
@@ -109,7 +105,7 @@ export class VaultClient implements VaultAPI {
   async list(dir?: string): Promise<string[]> {
     const prefix = !dir ? '' : dir.endsWith('/') ? dir : dir + '/'
     const result = new Set<string>()
-    for (const doc of this._documentsById.values()) {
+    for (const doc of this.directory.getAll()) {
       if (!doc.path.startsWith(prefix)) continue
       const rest = doc.path.slice(prefix.length)
       const slashIdx = rest.indexOf('/')
@@ -131,7 +127,7 @@ export class VaultClient implements VaultAPI {
     try {
       const paths = await this.storage.listFolders(this.vaultId, this.token)
       for (const p of paths) this._explicitFolders.add(p.endsWith('/') ? p : p + '/')
-      this._notifyChange()
+      // No _notifyChange needed: directory.onChange handles reactivity
     } catch {
       // Folder list failure is non-fatal: folders with documents remain visible via their documents.
     }
@@ -163,7 +159,7 @@ export class VaultClient implements VaultAPI {
     const request = (async () => {
       try {
         const doc = await this.storage.createDocument(this.vaultId, path, this.token)
-        // Optimistic cache update — VaultHub event from other clients handled separately
+        // Optimistic update — server will broadcast VaultUpdate to other clients
         this.addDocument(doc)
       } catch (err) {
         // Idempotent create: "already exists" is not a hard failure.
@@ -186,7 +182,6 @@ export class VaultClient implements VaultAPI {
     await this.storage.createFolder(this.vaultId, path, this.token)
     const normalized = path.endsWith('/') ? path : path + '/'
     this._explicitFolders.add(normalized)
-    this._notifyChange()
   }
 
   async renameFile(documentId: string, newPath: string): Promise<void> {
@@ -203,7 +198,6 @@ export class VaultClient implements VaultAPI {
     for (const f of this._explicitFolders) {
       if (f === prefix || f.startsWith(prefix)) this._explicitFolders.delete(f)
     }
-    this._notifyChange()
   }
 
   async uploadAttachment(file: File): Promise<string> {
@@ -223,13 +217,13 @@ export class VaultClient implements VaultAPI {
   async renameDocument(documentId: string, newPath: string): Promise<void> {
     const normalizedNewPath = newPath.includes('.') ? newPath : `${newPath}.md`
     await this.storage.renameDocument(this.vaultId, documentId, normalizedNewPath, this.token)
-    // Optimistic cache update
+    // Optimistic update
     this.renameDocumentInCache(documentId, normalizedNewPath)
   }
 
   async deleteDocument(documentId: string): Promise<void> {
     await this.storage.deleteDocument(this.vaultId, documentId, this.token)
-    // Optimistic cache update
+    // Optimistic update
     this.removeDocument(documentId)
   }
 
@@ -240,13 +234,15 @@ export class VaultClient implements VaultAPI {
 
   private _resolveDocumentByPath(path: string): IDocumentMeta | undefined {
     const normalizedPath = path.includes('.') ? path : `${path}.md`
-    const doc = this.resolveDoc(path) ?? this.resolveDoc(normalizedPath)
-    if (doc) this._documentsById.set(doc.id, doc)
-    return doc
+    // Check directory first, then fall back to external resolver
+    for (const doc of this.directory.getAll()) {
+      if (doc.path === path || doc.path === normalizedPath) return doc
+    }
+    return this.resolveDoc(path) ?? this.resolveDoc(normalizedPath)
   }
 
   private _findDocumentByPath(path: string): IDocumentMeta | undefined {
-    for (const doc of this._documentsById.values()) {
+    for (const doc of this.directory.getAll()) {
       if (doc.path === path) return doc
     }
     return undefined

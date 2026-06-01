@@ -34,15 +34,15 @@ afterEach(() => {
 describe('ServerKeyProvider', () => {
   it('throws when getToken() returns null', async () => {
     const provider = new ServerKeyProvider({ getToken: () => null })
-    await expect(provider.sign(new Uint8Array([1]))).rejects.toThrow('no auth token')
+    await expect(provider.init()).rejects.toThrow('no auth token')
   })
 
-  it('fetches identity key on first sign() call', async () => {
+  it('fetches identity key on init()', async () => {
     const fetch = mockFetch({ privateKey: privHex() })
     vi.stubGlobal('fetch', fetch)
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await provider.sign(new Uint8Array([1]))
+    await provider.init()
 
     expect(fetch).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(
@@ -51,25 +51,21 @@ describe('ServerKeyProvider', () => {
     )
   })
 
-  it('does not re-fetch on subsequent sign() calls', async () => {
+  it('does not re-fetch on second init() call', async () => {
     vi.stubGlobal('fetch', mockFetch({ privateKey: privHex() }))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await provider.sign(new Uint8Array([1]))
-    await provider.sign(new Uint8Array([2]))
+    await provider.init()
+    await provider.init()
 
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce()
   })
 
-  it('deduplicates concurrent init requests', async () => {
+  it('deduplicates concurrent init() calls', async () => {
     vi.stubGlobal('fetch', mockFetch({ privateKey: privHex() }))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await Promise.all([
-      provider.sign(new Uint8Array([1])),
-      provider.sign(new Uint8Array([2])),
-      provider.sign(new Uint8Array([3])),
-    ])
+    await Promise.all([provider.init(), provider.init(), provider.init()])
 
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce()
   })
@@ -78,30 +74,30 @@ describe('ServerKeyProvider', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network error') }))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await expect(provider.sign(new Uint8Array([1]))).rejects.toThrow()
+    await expect(provider.init()).rejects.toThrow()
 
     // retry with a working fetch
     vi.stubGlobal('fetch', mockFetch({ privateKey: privHex() }))
-    await expect(provider.sign(new Uint8Array([1]))).resolves.toBeDefined()
+    await expect(provider.init()).resolves.toBeUndefined()
   })
 
   it('throws on HTTP error status', async () => {
     vi.stubGlobal('fetch', mockFetch({ error: 'Unauthorized' }, 401))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await expect(provider.sign(new Uint8Array([1]))).rejects.toThrow('401')
+    await expect(provider.init()).rejects.toThrow('401')
   })
 
-  it('getPublicKey() throws before sign() is called', () => {
+  it('getPublicKey() throws before init() is called', () => {
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
     expect(() => provider.getPublicKey()).toThrow('not initialised')
   })
 
-  it('getPublicKey() returns a 32-byte key after sign() resolves', async () => {
+  it('getPublicKey() returns a 32-byte key after init() resolves', async () => {
     vi.stubGlobal('fetch', mockFetch({ privateKey: privHex() }))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
-    await provider.sign(new Uint8Array([1]))
+    await provider.init()
 
     const pub = provider.getPublicKey()
     expect(pub).toBeInstanceOf(Uint8Array)
@@ -113,7 +109,7 @@ describe('ServerKeyProvider', () => {
     vi.stubGlobal('fetch', fetch)
 
     const provider = new ServerKeyProvider({ baseUrl: 'https://api.example.com', getToken: () => 'tok' })
-    await provider.sign(new Uint8Array([1]))
+    await provider.init()
 
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/identity/key',
@@ -121,13 +117,19 @@ describe('ServerKeyProvider', () => {
     )
   })
 
-  it('sign() returns a 64-byte signature', async () => {
+  it('sign() returns a 64-byte signature after init()', async () => {
     vi.stubGlobal('fetch', mockFetch({ privateKey: privHex() }))
 
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
+    await provider.init()
     const sig = await provider.sign(new Uint8Array([1, 2, 3]))
 
     expect(sig).toBeInstanceOf(Uint8Array)
     expect(sig.length).toBe(64)
+  })
+
+  it('sign() throws when not initialised', async () => {
+    const provider = new ServerKeyProvider({ getToken: () => 'tok' })
+    await expect(provider.sign(new Uint8Array([1]))).rejects.toThrow('not initialised')
   })
 })

@@ -7,11 +7,10 @@ import {
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
   HttpAdminBackend, HttpAuthBackend, HttpSharingBackend, HttpVaultsBackend,
-  RestDocumentFetcher, RestVaultStorage, ServerKeyProvider,
+  RestDocumentFetcher, RestVaultStorage, ServerKeyProvider, VaultHubClient,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
 import type { VaultAPI } from '@savoire/plugin-api'
-import { VaultHubClient } from './VaultHubClient'
 
 // ── Backends (singletons partagés entre services) ─────────────────────────────
 

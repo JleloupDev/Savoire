@@ -233,6 +233,22 @@ export class VaultHubClient {
     return () => { this.indexOpCallbacks = this.indexOpCallbacks.filter(x => x !== cb) }
   }
 
+  /**
+   * Push a binary vault CRDT update to other peers.
+   * TODO(P3-server): wire once VaultHub has a PushVaultUpdate endpoint.
+   */
+  async pushVaultUpdate(_update: Uint8Array): Promise<void> {
+    // No-op until server supports binary vault ops
+  }
+
+  /**
+   * Subscribe to binary vault CRDT updates from other peers.
+   * TODO(P3-server): wire once VaultHub broadcasts VaultUpdate events.
+   */
+  onVaultUpdate(_cb: (update: Uint8Array) => void): () => void {
+    return () => {}
+  }
+
   /** Cleanly disconnect from VaultHub. */
   async dispose(): Promise<void> {
     this.disposed = true

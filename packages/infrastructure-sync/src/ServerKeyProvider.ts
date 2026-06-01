@@ -13,11 +13,18 @@ export interface ServerKeyProviderOptions {
 export class ServerKeyProvider implements IIdentityProvider {
   private privateKey: Uint8Array | null = null
   private publicKey: Uint8Array | null = null
-  private pending: Promise<void> | null = null
 
   constructor(private readonly options: ServerKeyProviderOptions) {}
 
-  private async fetchKey(): Promise<void> {
+  private pending: Promise<void> | null = null
+
+  async init(): Promise<void> {
+    if (this.privateKey) return
+    this.pending ??= this._fetchKey().catch((e) => { this.pending = null; throw e })
+    await this.pending
+  }
+
+  private async _fetchKey(): Promise<void> {
     const token = this.options.getToken()
     if (!token) throw new Error('ServerKeyProvider: no auth token')
     const res = await fetch(`${this.options.baseUrl ?? ''}/api/v1/identity/key`, {
@@ -29,20 +36,14 @@ export class ServerKeyProvider implements IIdentityProvider {
     this.publicKey = await getPublicKey(this.privateKey)
   }
 
-  private async ensureReady(): Promise<void> {
-    if (this.privateKey) return
-    this.pending ??= this.fetchKey().catch((e) => { this.pending = null; throw e })
-    await this.pending
-  }
-
   getPublicKey(): Uint8Array {
-    if (!this.publicKey) throw new Error('ServerKeyProvider: not initialised')
+    if (!this.publicKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
     return this.publicKey
   }
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
-    await this.ensureReady()
-    return sign(message, this.privateKey!)
+    if (!this.privateKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
+    return sign(message, this.privateKey)
   }
 }
 

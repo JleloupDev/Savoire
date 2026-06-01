@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultStorage } from '@savoire/platform'
+import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultDirectory, type IVaultStorage } from '@savoire/platform'
 import type { ActivatedVault, AppDocumentSummary, IDocumentsAPI, IVaultsBackend, VaultHubLike } from './contracts'
 import { SyncOrchestrator } from './SyncOrchestrator'
 
@@ -19,6 +19,7 @@ export class DocumentsService implements IDocumentsAPI {
     token: string
     storage: IVaultStorage
     documentStore: DocumentStore
+    directory: IVaultDirectory
     resolveDoc: (path: string) => IDocumentMeta | undefined
     onChanged: () => void
   }): Promise<ActivatedVault> {
@@ -54,6 +55,7 @@ export class DocumentsService implements IDocumentsAPI {
       params.token,
       storageWithHub,
       params.documentStore,
+      params.directory,
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
@@ -85,6 +87,7 @@ export class DocumentsService implements IDocumentsAPI {
     doc: IDocumentMeta
     token: string
     documentStore: DocumentStore
+    directory: IVaultDirectory
     resolveDoc: (path: string) => IDocumentMeta | undefined
   }): Promise<ActivatedVault> {
     await this.disposeActiveVault()
@@ -110,6 +113,7 @@ export class DocumentsService implements IDocumentsAPI {
       params.token,
       stubStorage,
       params.documentStore,
+      params.directory,
       params.resolveDoc,
     )
     client.addDocument(d)

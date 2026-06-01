@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
+import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -354,6 +355,7 @@ export function AppShell() {
         token: tok,
         storage: vaultStorage,
         documentStore: documentStore,
+        directory: new YMapVaultDirectory(),
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
       })
@@ -496,6 +498,7 @@ export function AppShell() {
         doc: docStub,
         token,
         documentStore: sharedDocStore,
+        directory: new YMapVaultDirectory(),
         resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
       }).then(activated => {
         vaultAPIRef.current = activated.client

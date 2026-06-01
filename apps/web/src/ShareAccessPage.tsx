@@ -32,8 +32,8 @@ const SHARE_DEFAULT_PLUGINS: VaultPlugin[] = [
 
 function createShareVault(handle: SharedDocumentHandle): VaultAPI {
   return {
-    read:                () => Promise.resolve(''),
-    readDocumentByPath:  () => Promise.resolve(''),
+    read:                (id) => Promise.reject(new Error(`read(${id}) not supported on shared document: content is delivered via CRDT`)),
+    readDocumentByPath:  (path) => Promise.reject(new Error(`readDocumentByPath(${path}) not supported on shared document: only the shared file is accessible`)),
     write:               () => Promise.resolve(),
     list:                () => Promise.resolve([handle.path]),
     exists:              (id) => Promise.resolve(id === handle.docId),
