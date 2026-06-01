@@ -8,7 +8,7 @@ namespace Savoire.Application.Sync.JoinDocument;
 
 public sealed class JoinDocumentQueryHandler(
     IDocumentRepository  docs,
-    IOperationRepository ops,
+    ICrdtOpRepository ops,
     IVaultRepository     vaults) : IRequestHandler<JoinDocumentQuery, JoinDocumentResult>
 {
     public async Task<JoinDocumentResult> Handle(JoinDocumentQuery q, CancellationToken ct)
@@ -23,7 +23,7 @@ public sealed class JoinDocumentQueryHandler(
         }
 
         IReadOnlyList<Operation> history =
-            await ops.GetSinceAsync(q.DocId, DateTime.MinValue, ct);
+            await ops.GetAllAsync(CrdtResourceType.Document, q.DocId, ct);
 
         string[] opStrings = history.Select(op => Convert.ToBase64String(op.OpBytes)).ToArray();
 

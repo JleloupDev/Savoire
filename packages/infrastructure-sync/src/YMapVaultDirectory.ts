@@ -16,6 +16,7 @@ export class YMapVaultDirectory implements IVaultDirectory {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly map: any
   private readonly changeCallbacks: (() => void)[] = []
+  private disposed = false
 
   constructor() {
     this.doc = new Y_.Doc()
@@ -26,6 +27,7 @@ export class YMapVaultDirectory implements IVaultDirectory {
   }
 
   getAll(): readonly IDocumentMeta[] {
+    if (this.disposed) return []
     const result: IDocumentMeta[] = []
     this.map.forEach((entry: VaultEntry, id: string) => result.push({ id, path: entry.path }))
     return result
@@ -47,14 +49,6 @@ export class YMapVaultDirectory implements IVaultDirectory {
   rename(id: string, newPath: string): void {
     if (!this.map.has(id)) return
     this.map.set(id, { path: newPath })
-  }
-
-  applyServerState(docs: IDocumentMeta[]): void {
-    // origin='server' prevents onLocalUpdate from treating this as a local mutation
-    this.doc.transact(() => {
-      this.map.clear()
-      for (const doc of docs) this.map.set(doc.id, { path: doc.path })
-    }, 'server')
   }
 
   encodeFullState(): Uint8Array {
@@ -83,6 +77,8 @@ export class YMapVaultDirectory implements IVaultDirectory {
   }
 
   dispose(): void {
+    this.disposed = true
+    this.changeCallbacks.length = 0
     this.doc.destroy()
   }
 }

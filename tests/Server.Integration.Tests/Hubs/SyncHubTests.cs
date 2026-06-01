@@ -51,7 +51,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
             .Build();
         await hub.StartAsync();
         await hub.InvokeAsync("JoinVault", _vaultId);
-        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultSnapshotItem>(
+        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultDocumentItem>(
             "CreateDocument", _vaultId, "test-doc.md", null);
         _docId = doc.Id;
     }

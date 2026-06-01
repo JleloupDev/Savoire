@@ -259,7 +259,7 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
             .Build();
         await hub.StartAsync();
         await hub.InvokeAsync("JoinVault", _vaultId);
-        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultSnapshotItem>(
+        var doc = await hub.InvokeAsync<Savoire.Server.Hubs.VaultDocumentItem>(
             "CreateDocument", _vaultId, "diagram.excalidraw", null);
 
         // Create a document-level share link

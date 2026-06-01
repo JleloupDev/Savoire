@@ -21,8 +21,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<VaultMemberEntity> VaultMembers => Set<VaultMemberEntity>();
     public DbSet<DocumentEntity>    Documents   => Set<DocumentEntity>();
     public DbSet<FolderEntity>      Folders     => Set<FolderEntity>();
-    public DbSet<OperationEntity>   Operations  => Set<OperationEntity>();
-    public DbSet<SyncVectorEntity>  SyncVectors => Set<SyncVectorEntity>();
+    public DbSet<OperationEntity>  Operations  => Set<OperationEntity>();
+    public DbSet<SyncVectorEntity> SyncVectors => Set<SyncVectorEntity>();
     public DbSet<RefreshToken>              RefreshTokens       => Set<RefreshToken>();
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
@@ -133,20 +133,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.ToTable("operations_log");
             e.HasKey(o => o.Id);
             e.Property(o => o.Id).HasColumnName("id");
-            e.Property(o => o.DocumentId).HasColumnName("document_id").IsRequired();
+            e.Property(o => o.ResourceType).HasColumnName("resource_type").IsRequired();
+            e.Property(o => o.ResourceId).HasColumnName("resource_id").IsRequired();
             e.Property(o => o.ClientId).HasColumnName("client_id").IsRequired();
             e.Property(o => o.ProducedAt).HasColumnName("produced_at").IsRequired();
             e.Property(o => o.ReceivedAt).HasColumnName("received_at").IsRequired();
             e.Property(o => o.OpBytes).HasColumnName("op_bytes").IsRequired();
-            e.HasIndex(o => new { o.DocumentId, o.ReceivedAt })
-             .HasDatabaseName("idx_ops_document");
+            e.HasIndex(o => new { o.ResourceType, o.ResourceId, o.ReceivedAt })
+             .HasDatabaseName("idx_ops_resource");
         });
 
         modelBuilder.Entity<SyncVectorEntity>(e =>
         {
             e.ToTable("sync_vectors");
-            e.HasKey(s => new { s.DocumentId, s.ClientId });
-            e.Property(s => s.DocumentId).HasColumnName("document_id");
+            e.HasKey(s => new { s.ResourceId, s.ClientId });
+            e.Property(s => s.ResourceId).HasColumnName("resource_id");
             e.Property(s => s.ClientId).HasColumnName("client_id");
             e.Property(s => s.Vector).HasColumnName("vector").IsRequired();
             e.Property(s => s.UpdatedAt).HasColumnName("updated_at").IsRequired();

@@ -36,10 +36,6 @@ export class VaultClient implements VaultAPI {
 
   // ── Directory management ──────────────────────────────────────────────────
 
-  /** Seed depuis un snapshot serveur JSON — ne génère pas d'ops locales. */
-  setSnapshot(docs: IDocumentMeta[]): void {
-    this.directory.applyServerState(docs)
-  }
 
   addDocument(doc: IDocumentMeta): void {
     this.directory.add(doc)

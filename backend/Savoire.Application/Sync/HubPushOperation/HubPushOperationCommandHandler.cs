@@ -6,13 +6,13 @@ using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sync.HubPushOperation;
 
-public sealed class HubPushOperationCommandHandler(IOperationRepository ops)
+public sealed class HubPushOperationCommandHandler(ICrdtOpRepository ops)
     : IRequestHandler<HubPushOperationCommand>
 {
     public async Task Handle(HubPushOperationCommand cmd, CancellationToken ct)
     {
         // Access check delegated to VaultAccessBehavior (IRequiresDocumentAccess, Write).
-        Operation op = Operation.Create(cmd.DocId, cmd.ClientId, DateTime.UtcNow, cmd.OpBytes);
+        Operation op = Operation.Create(CrdtResourceType.Document, cmd.DocId, cmd.ClientId, DateTime.UtcNow, cmd.OpBytes);
         await ops.AppendAsync(op, ct);
     }
 }

@@ -88,26 +88,6 @@ describe('YMapVaultDirectory — basic mutations', () => {
     expect(() => dir.rename('missing', 'x.md')).not.toThrow()
   })
 
-  it('applyServerState() replaces entire state', () => {
-    dir.add(doc('x', 'x.md'))
-    dir.applyServerState([doc('a', 'a.md'), doc('b', 'b.md')])
-    const all = dir.getAll()
-    expect(all).toHaveLength(2)
-    expect(all.map(d => d.id).sort()).toEqual(['a', 'b'])
-  })
-
-  it('applyServerState([]) empties the directory', () => {
-    dir.add(doc('a', 'note.md'))
-    dir.applyServerState([])
-    expect(dir.getAll()).toHaveLength(0)
-  })
-
-  it('applyServerState() is idempotent for same data', () => {
-    const docs = [doc('a', 'a.md'), doc('b', 'b.md')]
-    dir.applyServerState(docs)
-    dir.applyServerState(docs)
-    expect(dir.getAll()).toHaveLength(2)
-  })
 })
 
 // ── Group 2 — Origin filtering ────────────────────────────────────────────────
@@ -152,11 +132,6 @@ describe('YMapVaultDirectory — origin filtering', () => {
     expect(localUpdates).toHaveLength(1)
   })
 
-  it('applyServerState() does NOT fire onLocalUpdate', () => {
-    dir.applyServerState([doc('a', 'note.md')])
-    expect(localUpdates).toHaveLength(0)
-  })
-
   it('applyUpdate() does NOT fire onLocalUpdate', () => {
     const remote = new YMapVaultDirectory()
     remote.add(doc('r', 'remote.md'))
@@ -169,11 +144,6 @@ describe('YMapVaultDirectory — origin filtering', () => {
 
   it('add() fires onChange', () => {
     dir.add(doc('a', 'note.md'))
-    expect(changeCount.n).toBeGreaterThan(0)
-  })
-
-  it('applyServerState() fires onChange', () => {
-    dir.applyServerState([doc('a', 'note.md')])
     expect(changeCount.n).toBeGreaterThan(0)
   })
 
@@ -407,6 +377,108 @@ describe('YMapVaultDirectory — multi-instance convergence', () => {
 
     const empty = a.encodeFullState()
     expect(() => b.applyUpdate(empty)).not.toThrow()
+
+    a.dispose(); b.dispose()
+  })
+})
+
+// ── Group 4 — Disconnection and reconnection ──────────────────────────────────
+
+describe('YMapVaultDirectory — disconnection and reconnection', () => {
+  it('peer accumulates ops offline then syncs: remote catches up', () => {
+    const { a, b } = makePair()
+
+    // A goes online-only first, B is offline
+    a.add(doc('a1', 'a1.md'))
+    a.add(doc('a2', 'a2.md'))
+
+    // B was offline: apply A full state on reconnect
+    b.applyUpdate(a.encodeFullState())
+
+    expect(b.getAll().map(d => d.id).sort()).toEqual(['a1', 'a2'])
+
+    a.dispose(); b.dispose()
+  })
+
+  it('both peers accumulate ops offline then exchange: full convergence', () => {
+    const { a, b, fullSync } = makePair()
+
+    // Both offline, independent mutations
+    a.add(doc('x', 'x.md'))
+    a.rename('x', 'x-renamed.md')
+    b.add(doc('y', 'y.md'))
+    b.add(doc('z', 'z.md'))
+    b.remove('z')
+
+    fullSync()
+
+    // Both converge: x-renamed + y, z was deleted before sync
+    const aIds = a.getAll().map(d => d.id).sort()
+    const bIds = b.getAll().map(d => d.id).sort()
+    expect(aIds).toEqual(bIds)
+    expect(aIds).toContain('x')
+    expect(aIds).toContain('y')
+    expect(aIds).not.toContain('z')
+    expect(a.getById('x')?.path).toBe('x-renamed.md')
+    expect(b.getById('x')?.path).toBe('x-renamed.md')
+
+    a.dispose(); b.dispose()
+  })
+
+  it('reconnect after disconnect: local ops not yet pushed are included in full state', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+
+    // Initial sync
+    a.add(doc('base', 'base.md'))
+
+    unwire() // A disconnects
+
+    // A accumulates offline ops
+    a.add(doc('offline-1', 'offline-1.md'))
+    a.add(doc('offline-2', 'offline-2.md'))
+    a.rename('base', 'base-renamed.md')
+
+    // A reconnects: sends full state to B
+    b.applyUpdate(a.encodeFullState())
+
+    expect(b.getAll().map(d => d.id).sort()).toEqual(['base', 'offline-1', 'offline-2'])
+    expect(b.getById('base')?.path).toBe('base-renamed.md')
+
+    a.dispose(); b.dispose()
+  })
+
+  it('dispose() then getAll() returns empty without throwing', () => {
+    const dir = new YMapVaultDirectory()
+    dir.add(doc('a', 'a.md'))
+    dir.dispose()
+
+    expect(() => dir.getAll()).not.toThrow()
+    expect(dir.getAll()).toHaveLength(0)
+  })
+
+  it('onChange unsubscribed before dispose does not throw on dispose', () => {
+    const dir = new YMapVaultDirectory()
+    const unsub = dir.onChange(() => {})
+    unsub()
+    expect(() => dir.dispose()).not.toThrow()
+  })
+
+  it('wire, unwire, re-wire: only ops after re-wire propagate', () => {
+    const { a, b, wire } = makePair()
+
+    const unwire1 = wire()
+    a.add(doc('pre', 'pre.md'))
+    unwire1()
+
+    // B does not receive ops during disconnect
+    const unwire2 = wire()
+    a.add(doc('post', 'post.md'))
+    unwire2()
+
+    // pre propagated during first wire, post during second
+    expect(b.getById('pre')).toBeDefined()
+    expect(b.getById('post')).toBeDefined()
 
     a.dispose(); b.dispose()
   })

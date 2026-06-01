@@ -106,7 +106,7 @@ describe('write()', () => {
   it('delegates to DocumentStore writer using document id', async () => {
     const fetcher = makeFetcher({})
     const client = makeClient(fetcher)
-    client.setSnapshot(DOCS)
+    DOCS.forEach(d => client.addDocument(d))
     await client.write('id-1', 'content')
     expect(fetcher.writeDocumentContent).toHaveBeenCalledWith(VAULT, 'id-1', 'content', TOKEN)
     expect(stubStorage.writeFile).not.toHaveBeenCalled()
@@ -128,7 +128,7 @@ describe('exists()', () => {
 describe('createFile()', () => {
   it('does not POST when document already exists in cache', async () => {
     const client = makeClient(makeFetcher({}))
-    client.setSnapshot([makeMeta('id-1', 'note.md')])
+    client.addDocument(makeMeta('id-1', 'note.md'))
 
     await client.createFile('note.md')
 
@@ -222,15 +222,6 @@ describe('VaultClient — directory wiring', () => {
     const unsub = client.onChange(() => { fired = true })
     client.renameDocumentInCache('x', 'new.md')
     expect(fired).toBe(true)
-    unsub()
-  })
-
-  it('setSnapshot() does NOT fire onLocalVaultUpdate', () => {
-    const client = makeClient(makeFetcher({}))
-    const updates: Uint8Array[] = []
-    const unsub = client.onLocalVaultUpdate(u => updates.push(u))
-    client.setSnapshot([makeMeta('a', 'a.md'), makeMeta('b', 'b.md')])
-    expect(updates).toHaveLength(0)
     unsub()
   })
 

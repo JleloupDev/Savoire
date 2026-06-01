@@ -131,7 +131,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
         services.AddScoped<IDocumentRepository,  EfDocumentRepository>();
         services.AddScoped<IFolderRepository,    EfFolderRepository>();
-        services.AddScoped<IOperationRepository, EfOperationRepository>();
+        services.AddScoped<ICrdtOpRepository, EfCrdtOpRepository>();
 
         // Auth repositories
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();

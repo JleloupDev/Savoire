@@ -36,12 +36,6 @@ export class InMemoryVaultDirectory implements IVaultDirectory {
     this._notify()
   }
 
-  applyServerState(docs: IDocumentMeta[]): void {
-    this.docs.clear()
-    for (const doc of docs) this.docs.set(doc.id, doc)
-    this._notify()
-  }
-
   encodeFullState(): Uint8Array {
     return new Uint8Array(0)
   }

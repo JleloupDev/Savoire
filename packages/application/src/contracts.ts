@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+
 import type { DocumentStore, IDocumentMeta, IVaultDirectory, IVaultStorage, VaultClient } from '@savoire/platform'
 import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider } from '@savoire/plugin-api'
 
@@ -41,10 +42,8 @@ export interface VaultHubLike {
   pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
   /** Subscribes to index ops received from other clients. */
   onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
-  /** Push a binary vault CRDT update to other peers (wired when server supports it). */
+  /** Push a binary vault CRDT update to the server (for relay to other peers). */
   pushVaultUpdate?(update: Uint8Array): Promise<void>
-  /** Subscribe to binary vault CRDT updates from other peers. */
-  onVaultUpdate?(cb: (update: Uint8Array) => void): () => void
 }
 
 export interface VaultHubFactoryParams {

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Tests d'intégration — VaultHub
-// Vérifie les événements SignalR de bout en bout sur le TestServer.
-
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
@@ -51,143 +48,136 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
             })
             .Build();
 
-    // ── JoinVault ─────────────────────────────────────────────────────────────
+    // ── JoinVault / InitVault ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task JoinVault_ReceivesVaultSnapshot()
+    public async Task JoinVault_ReceivesInitVault()
     {
         await using HubConnection conn = CreateConnection();
 
-        var tcs = new TaskCompletionSource<IEnumerable<VaultSnapshotItem>>();
-        conn.On<IEnumerable<VaultSnapshotItem>>("VaultSnapshot", items => tcs.TrySetResult(items));
+        var tcs = new TaskCompletionSource<(string vaultId, string[] ops)>();
+        conn.On<string, string[]>("InitVault", (vId, ops) => tcs.TrySetResult((vId, ops)));
 
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        var snapshot = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        snapshot.Should().NotBeNull();
+        var (vaultId, ops) = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        vaultId.Should().Be(_vaultId);
+        ops.Should().NotBeNull();
     }
 
     [Fact]
-    public async Task JoinVault_AfterDocumentCreated_SnapshotContainsThatDocument()
+    public async Task JoinVault_FreshVault_InitVaultHasNoOps()
     {
-        await using HubConnection setup = CreateConnection();
-        await setup.StartAsync();
-        await setup.InvokeAsync("JoinVault", _vaultId);
-        var existingDoc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "snapshot-check.md", null);
-
         await using HubConnection conn = CreateConnection();
 
-        var tcs = new TaskCompletionSource<IEnumerable<VaultSnapshotItem>>();
-        conn.On<IEnumerable<VaultSnapshotItem>>("VaultSnapshot", items => tcs.TrySetResult(items));
+        var tcs = new TaskCompletionSource<string[]>();
+        conn.On<string, string[]>("InitVault", (_, ops) => tcs.TrySetResult(ops));
 
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        var snapshot = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        snapshot.Should().Contain(item => item.Id == existingDoc.Id && item.Path == "snapshot-check.md");
+        var ops = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        ops.Should().BeEmpty();
+    }
+
+    // ── PushVaultOperation / VaultOperationReceived ───────────────────────────
+
+    [Fact]
+    public async Task PushVaultOperation_RelaysToOtherClientsInVault()
+    {
+        await using HubConnection sender   = CreateConnection();
+        await using HubConnection receiver = CreateConnection();
+
+        var tcs = new TaskCompletionSource<(string vaultId, string op)>();
+        receiver.On<string, string>("VaultOperationReceived", (vId, op) => tcs.TrySetResult((vId, op)));
+
+        await sender.StartAsync();
+        await receiver.StartAsync();
+        await sender.InvokeAsync("JoinVault", _vaultId);
+        await receiver.InvokeAsync("JoinVault", _vaultId);
+
+        var fakeOp = Convert.ToBase64String([1, 2, 3, 4]);
+        await sender.InvokeAsync("PushVaultOperation", _vaultId, fakeOp);
+
+        var (vaultId, received) = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        vaultId.Should().Be(_vaultId);
+        received.Should().Be(fakeOp);
+    }
+
+    [Fact]
+    public async Task PushVaultOperation_NotRelayedBackToSender()
+    {
+        await using HubConnection conn = CreateConnection();
+
+        bool senderReceived = false;
+        conn.On<string, string>("VaultOperationReceived", (_, _) => senderReceived = true);
+
+        await conn.StartAsync();
+        await conn.InvokeAsync("JoinVault", _vaultId);
+        await conn.InvokeAsync("PushVaultOperation", _vaultId, Convert.ToBase64String([9, 8, 7]));
+
+        await Task.Delay(200);
+        senderReceived.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PushVaultOperation_StoredAndReturnedOnNextJoin()
+    {
+        await using HubConnection writer = CreateConnection();
+        await writer.StartAsync();
+        await writer.InvokeAsync("JoinVault", _vaultId);
+
+        var fakeOp = Convert.ToBase64String([0xAB, 0xCD]);
+        await writer.InvokeAsync("PushVaultOperation", _vaultId, fakeOp);
+        await writer.StopAsync();
+
+        // New connection joins: should receive the stored op via InitVault
+        await using HubConnection reader = CreateConnection();
+        var tcs = new TaskCompletionSource<string[]>();
+        reader.On<string, string[]>("InitVault", (_, ops) => tcs.TrySetResult(ops));
+
+        await reader.StartAsync();
+        await reader.InvokeAsync("JoinVault", _vaultId);
+
+        var ops = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        ops.Should().Contain(fakeOp);
     }
 
     // ── CreateDocument ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDocument_BroadcastsDocumentCreated_ToAllClientsInVault()
-    {
-        await using HubConnection sender   = CreateConnection();
-        await using HubConnection receiver = CreateConnection();
-
-        var tcs = new TaskCompletionSource<DocumentCreatedEvent>();
-        receiver.On<DocumentCreatedEvent>("DocumentCreated", evt => tcs.TrySetResult(evt));
-
-        await sender.StartAsync();
-        await receiver.StartAsync();
-
-        await sender.InvokeAsync("JoinVault", _vaultId);
-        await receiver.InvokeAsync("JoinVault", _vaultId);
-
-        await sender.InvokeAsync("CreateDocument", _vaultId, "hub-created.md", "Hub Created");
-
-        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        evt.Path.Should().Be("hub-created.md");
-        evt.Title.Should().BeNull();
-        evt.VaultId.Should().Be(_vaultId);
-    }
-
-    [Fact]
-    public async Task CreateDocument_SenderAlsoReceivesDocumentCreated()
+    public async Task CreateDocument_ReturnsVaultDocumentItem()
     {
         await using HubConnection conn = CreateConnection();
-
-        var tcs = new TaskCompletionSource<DocumentCreatedEvent>();
-        conn.On<DocumentCreatedEvent>("DocumentCreated", evt => tcs.TrySetResult(evt));
-
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        await conn.InvokeAsync("CreateDocument", _vaultId, "self-notify.md", null);
+        var path = $"doc-{Guid.NewGuid():N}.md";
+        var item = await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
 
-        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        evt.Path.Should().Be("self-notify.md");
-        evt.Title.Should().BeNull();
+        item.Should().NotBeNull();
+        item.Path.Should().Be(path);
+        item.Id.Should().NotBeNullOrEmpty();
     }
 
-    // ── RenameDocument ────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task RenameDocument_BroadcastsDocumentRenamed_WithOldAndNewPath()
+    public async Task CreateDocument_DuplicatePath_ThrowsHubException409()
     {
-        await using HubConnection setup = CreateConnection();
-        await setup.StartAsync();
-        await setup.InvokeAsync("JoinVault", _vaultId);
-        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "before-rename.md", null);
-
         await using HubConnection conn = CreateConnection();
-
-        var tcs = new TaskCompletionSource<DocumentRenamedEvent>();
-        conn.On<DocumentRenamedEvent>("DocumentRenamed", evt => tcs.TrySetResult(evt));
-
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        await conn.InvokeAsync("RenameDocument", doc.Id, "after-rename.md");
+        var path = $"dup-{Guid.NewGuid():N}.md";
+        await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
 
-        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        evt.Id.Should().Be(doc.Id);
-        evt.OldPath.Should().Be("before-rename.md");
-        evt.NewPath.Should().Be("after-rename.md");
+        var act = () => conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, path, null);
+        await act.Should().ThrowAsync<Exception>().WithMessage("*409*");
     }
-
-    // ── DeleteDocument ────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task DeleteDocument_BroadcastsDocumentDeleted_WithDocumentPath()
-    {
-        await using HubConnection setup = CreateConnection();
-        await setup.StartAsync();
-        await setup.InvokeAsync("JoinVault", _vaultId);
-        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "to-delete.md", null);
-
-        await using HubConnection conn = CreateConnection();
-
-        var tcs = new TaskCompletionSource<DocumentDeletedEvent>();
-        conn.On<DocumentDeletedEvent>("DocumentDeleted", evt => tcs.TrySetResult(evt));
-
-        await conn.StartAsync();
-        await conn.InvokeAsync("JoinVault", _vaultId);
-
-        await conn.InvokeAsync("DeleteDocument", doc.Id);
-
-        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        evt.Id.Should().Be(doc.Id);
-        evt.Path.Should().Be("to-delete.md");
-        evt.DeletedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
-    }
-
-    // ── Isolation de groupe ───────────────────────────────────────────────────
 
     // ── Auth ──────────────────────────────────────────────────────────────────
 
-    [Fact(DisplayName = "VaultHub — connexion sans token est refusée (401)")]
+    [Fact(DisplayName = "VaultHub — connexion sans token est refusee (401)")]
     public async Task JoinVault_WithoutToken_ConnectionFails()
     {
         await using var conn = new HubConnectionBuilder()
@@ -202,107 +192,19 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await act.Should().ThrowAsync<Exception>();
     }
 
-    // ── CreateDocument — valeur de retour ─────────────────────────────────────
-
-    [Fact(DisplayName = "CreateDocument — retourne le VaultSnapshotItem créé")]
-    public async Task CreateDocument_ReturnsVaultSnapshotItem()
-    {
-        await using HubConnection conn = CreateConnection();
-        await conn.StartAsync();
-        await conn.InvokeAsync("JoinVault", _vaultId);
-
-        var path = $"ret-doc-{Guid.NewGuid():N}.md";
-        var item = await conn.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, path, null);
-
-        item.Should().NotBeNull();
-        item.Path.Should().Be(path);
-        item.Id.Should().NotBeNullOrEmpty();
-    }
-
-    [Fact(DisplayName = "CreateDocument — chemin dupliqué lève HubException avec préfixe 409")]
-    public async Task CreateDocument_DuplicatePath_ThrowsHubException409()
-    {
-        await using HubConnection conn = CreateConnection();
-        await conn.StartAsync();
-        await conn.InvokeAsync("JoinVault", _vaultId);
-
-        var path = $"dup-{Guid.NewGuid():N}.md";
-        await conn.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, path, null);
-
-        var act = () => conn.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, path, null);
-        await act.Should().ThrowAsync<Exception>().WithMessage("*409*");
-    }
-
     // ── PushIndexOp ───────────────────────────────────────────────────────────
 
-    [Fact(DisplayName = "PushIndexOp — retourne un numéro de séquence positif")]
+    [Fact(DisplayName = "PushIndexOp — retourne un numero de sequence positif")]
     public async Task PushIndexOp_ReturnsSequenceNumber()
     {
-        await using HubConnection setup = CreateConnection();
-        await setup.StartAsync();
-        await setup.InvokeAsync("JoinVault", _vaultId);
-        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "index-seq.md", null);
-
         await using HubConnection conn = CreateConnection();
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
+        var doc = await conn.InvokeAsync<VaultDocumentItem>("CreateDocument", _vaultId, "index-seq.md", null);
         var dto = new PushIndexOpDto(_vaultId, doc.Id, doc.Path, "# Hello index");
         long seq = await conn.InvokeAsync<long>("PushIndexOp", dto);
 
         seq.Should().BePositive();
-    }
-
-    [Fact(DisplayName = "PushIndexOp — diffuse IndexOpApplied aux autres clients du vault")]
-    public async Task PushIndexOp_BroadcastsIndexOpAppliedToOtherClients()
-    {
-        await using HubConnection setup = CreateConnection();
-        await setup.StartAsync();
-        await setup.InvokeAsync("JoinVault", _vaultId);
-        var doc = await setup.InvokeAsync<VaultSnapshotItem>("CreateDocument", _vaultId, "index-broadcast.md", null);
-
-        await using HubConnection sender   = CreateConnection();
-        await using HubConnection receiver = CreateConnection();
-
-        var tcs = new TaskCompletionSource<IndexOpAppliedEvent>();
-        receiver.On<IndexOpAppliedEvent>("IndexOpApplied", evt => tcs.TrySetResult(evt));
-
-        await sender.StartAsync();
-        await receiver.StartAsync();
-
-        await sender.InvokeAsync("JoinVault", _vaultId);
-        await receiver.InvokeAsync("JoinVault", _vaultId);
-
-        var dto = new PushIndexOpDto(_vaultId, doc.Id, doc.Path, "# Broadcast test");
-        await sender.InvokeAsync<long>("PushIndexOp", dto);
-
-        var evt = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        evt.DocId.Should().Be(doc.Id);
-        evt.MarkdownContent.Should().Be("# Broadcast test");
-        evt.Seq.Should().BePositive();
-    }
-
-    [Fact]
-    public async Task CreateDocument_ClientNotInVault_DoesNotReceiveEvent()
-    {
-        await using HubConnection sender    = CreateConnection();
-        await using HubConnection outsider  = CreateConnection();
-
-        bool outsiderReceived = false;
-        outsider.On<DocumentCreatedEvent>("DocumentCreated", _ => outsiderReceived = true);
-
-        await sender.StartAsync();
-        await outsider.StartAsync();
-
-        // outsider n'a accès à aucun vault — JoinVault avec un ID inconnu lève une exception
-        await sender.InvokeAsync("JoinVault", _vaultId);
-        try { await outsider.InvokeAsync("JoinVault", "other-vault-id"); }
-        catch { /* vault inexistant — attendu : outsider ne rejoint aucun groupe */ }
-
-        await sender.InvokeAsync("CreateDocument", _vaultId, "isolated.md", null);
-
-        // Attendre un court délai pour s'assurer qu'aucun événement ne fuite
-        await Task.Delay(300);
-        outsiderReceived.Should().BeFalse();
     }
 }

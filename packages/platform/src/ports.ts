@@ -53,12 +53,6 @@ export interface IVaultDirectory {
   add(doc: IDocumentMeta): void
   remove(id: string): void
   rename(id: string, newPath: string): void
-  /**
-   * Remplace l'état depuis une liste serveur (ex. VaultSnapshot JSON).
-   * N'émet PAS d'update local - l'état serveur ne doit pas être re-poussé.
-   * À supprimer quand le serveur parlera Yjs binaire directement.
-   */
-  applyServerState(docs: IDocumentMeta[]): void
   /** État complet encodé - utilisé pour le join initial et pour envoyer à un pair. */
   encodeFullState(): Uint8Array
   /** Applique un update distant (join initial ou diff incrémental). */

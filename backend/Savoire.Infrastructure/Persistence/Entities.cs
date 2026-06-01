@@ -65,20 +65,21 @@ public class FolderEntity
 
 public class OperationEntity
 {
-    public string   Id         { get; set; } = null!;
-    public string   DocumentId { get; set; } = null!;
-    public string   ClientId   { get; set; } = null!;
-    public DateTime ProducedAt { get; set; }
-    public DateTime ReceivedAt { get; set; }
-    public byte[]   OpBytes    { get; set; } = null!;
+    public string   Id           { get; set; } = null!;
+    public string   ResourceType { get; set; } = null!;
+    public string   ResourceId   { get; set; } = null!;
+    public string   ClientId     { get; set; } = null!;
+    public DateTime ProducedAt   { get; set; }
+    public DateTime ReceivedAt   { get; set; }
+    public byte[]   OpBytes      { get; set; } = null!;
 
     public Operation ToDomain() =>
-        Operation.Rehydrate(Id, DocumentId, ClientId, ProducedAt, ReceivedAt, OpBytes);
+        Operation.Rehydrate(Id, ResourceType, ResourceId, ClientId, ProducedAt, ReceivedAt, OpBytes);
 }
 
 public class SyncVectorEntity
 {
-    public string   DocumentId { get; set; } = null!;
+    public string   ResourceId { get; set; } = null!;
     public string   ClientId   { get; set; } = null!;
     public byte[]   Vector     { get; set; } = null!;
     public DateTime UpdatedAt  { get; set; }
@@ -151,3 +152,4 @@ public class ShareLinkEntity
             Permission.ParsePermission(),
             CreatedBy, CreatedAt, ExpiresAt, RevokedAt);
 }
+
