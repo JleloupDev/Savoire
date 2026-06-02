@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { AppDocumentSummary, AppVaultSummary, AppWorkspace, IVaultsBackend } from '@savoire/application'
+import type { AppVaultSummary, AppWorkspace, IVaultsBackend } from '@savoire/application'
 
 export interface HttpVaultsBackendOptions {
   baseUrl?: string
@@ -47,15 +47,6 @@ export class HttpVaultsBackend implements IVaultsBackend {
       { method: 'DELETE' },
     )
   }
-
-  listDocuments(vaultId: string, token: string): Promise<AppDocumentSummary[]> {
-    return this.requestJson<AppDocumentSummary[]>(
-      `/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`,
-      token,
-      { method: 'GET' },
-    ).then(list => list.map(d => ({ id: d.id, path: d.path })))
-  }
-
 
   private async requestJson<T>(path: string, token: string, init: RequestInit): Promise<T> {
     const res = await this.fetchFn(this.resolve(path), {

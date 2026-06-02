@@ -148,19 +148,10 @@ export class VaultClient implements VaultAPI {
     const normalizedPath = path.includes('.') ? path : `${path}.md`
     if (this._findDocumentByPath(path) || this._findDocumentByPath(normalizedPath)) return
 
+    // Documents are CRDT-only: adding to the directory emits a local vault op
+    // that the hub pushes to the server and relays to peers. No REST round-trip.
     const id = crypto.randomUUID()
-    const doc = { id, path: normalizedPath }
-
-    // Optimistic: add to CRDT immediately so peers see it before the server round-trip
-    this.addDocument(doc)
-
-    try {
-      await this.storage.createDocument(this.vaultId, normalizedPath, this.token, id)
-    } catch (err) {
-      if (this._isConflictError(err)) return
-      this.removeDocument(id)
-      throw err
-    }
+    this.addDocument({ id, path: normalizedPath })
   }
 
   async createFolder(path: string): Promise<void> {
@@ -188,9 +179,8 @@ export class VaultClient implements VaultAPI {
   async uploadAttachment(file: File): Promise<string> {
     const { storagePath } = await this.storage.uploadAttachment(this.vaultId, file, this.token)
     const docPath = `attachments/${storagePath}`
-    // Create a real document entry in the backend so the attachment persists across page refreshes.
-    const doc = await this.storage.createDocument(this.vaultId, docPath, this.token)
-    this.addDocument(doc)
+    // Register the attachment as a CRDT directory entry (emits a local vault op).
+    this.addDocument({ id: crypto.randomUUID(), path: docPath })
     return docPath
   }
 
@@ -206,11 +196,6 @@ export class VaultClient implements VaultAPI {
 
   async deleteDocument(documentId: string): Promise<void> {
     this.removeDocument(documentId)
-  }
-
-  private _isConflictError(err: unknown): boolean {
-    return err instanceof Error
-      && (err.message.startsWith('409') || /conflict/i.test(err.message))
   }
 
   private _resolveDocumentByPath(path: string): IDocumentMeta | undefined {

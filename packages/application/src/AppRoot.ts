@@ -33,7 +33,7 @@ export class AppRoot {
     const sharing = new SharingService(deps.sharingBackend)
     const vaults = new VaultsService(deps.backend)
     const sync = new SyncOrchestrator(deps.hubFactory)
-    const documents = new DocumentsService(deps.backend, sync)
+    const documents = new DocumentsService(sync)
     const documentSession = new DocumentSessionService(deps.documentStore)
     const workspace = new WorkspaceService()
     this.api = new ApplicationAPI(auth, admin, sharing, vaults, documents, documentSession, workspace)

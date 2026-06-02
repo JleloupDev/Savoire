@@ -174,7 +174,7 @@ export function AppShell() {
     () => tokenRef.current,
     () => activeAccountRef.current?.userId ?? 'reader',
   ))
-  const { documentFetcher, restFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
+  const { documentFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
   const managerRef = useRef<WorkspaceManagerImpl | null>(null)
 
   const appRootRef = useRef(createWebAppRoot({
@@ -430,8 +430,10 @@ export function AppShell() {
 
   refreshDocumentsRef.current = useCallback(async (): Promise<DocumentDto[]> => {
     if (!selectedVault || !token) return []
-    const docs = await application.documents.list(selectedVault.id, token)
-    const mapped = docs.map(toDocumentDto)
+    // Documents live in the CRDT vault directory (populated via InitVault / vault ops),
+    // not REST. Read the active client's current snapshot.
+    const client = application.documents.getActiveClient()
+    const mapped = (client?.documents ?? []).map(toDocumentDto)
     setDocuments(mapped)
     return mapped
   }, [selectedVault, token, application.documents])
@@ -488,11 +490,10 @@ export function AppShell() {
       docEventUnsubRef.current?.()
       docEventUnsubRef.current = null
 
-      // DECISION: shared documents use a REST-only DocumentStore (no CRDT fetcher).
-      // The CRDT fetcher connects to /hubs/sync with the user's JWT — which the
-      // server rejects (401) when the user is not a vault member. REST GET
-      // /documents/{id}/content accepts the user token via document-level ACL.
-      const sharedDocStore = new DocumentStore(restFetcher)
+      // Shared documents use the CRDT fetcher: JoinDocument(Read) accepts users
+      // holding a document-level permission, so non-vault-members can join the
+      // CRDT room and receive content via Yjs (no REST content endpoint needed).
+      const sharedDocStore = new DocumentStore(documentFetcher)
       void application.documents.activateSharedDocument({
         vaultId: note.vaultId,
         doc: docStub,

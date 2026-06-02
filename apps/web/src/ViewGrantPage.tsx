@@ -2,9 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useEffect, useRef, useState } from 'react'
 import { DocumentView } from '@savoire/editor-core'
-import { DirectVaultAPI, createDocumentRoomClient } from './createWebAppRoot'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
-import type { VaultPlugin } from '@savoire/plugin-api'
+import { YjsCrdtAdapter, SignalRTransport, DocumentRoomClient, LocalKeyProvider } from '@savoire/infrastructure-sync'
+import { CollabOrchestrator } from '@savoire/application'
+import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
 import mermaidPlugin from '@savoire/plugin-mermaid'
@@ -53,6 +54,20 @@ async function redeemGrant(grantToken: string): Promise<ViewAccessDto> {
   return res.json() as Promise<ViewAccessDto>
 }
 
+// VaultAPI minimale — le contenu est livré via le CRDT, pas via read()/write().
+function createViewVault(access: ViewAccessDto): VaultAPI {
+  return {
+    read:               (id) => Promise.reject(new Error(`read(${id}) not supported: content is delivered via CRDT`)),
+    readDocumentByPath: (p)  => Promise.reject(new Error(`readDocumentByPath(${p}) not supported on a view grant`)),
+    write:              () => Promise.resolve(),
+    list:               () => Promise.resolve([access.path]),
+    exists:             (id) => Promise.resolve(id === access.docId),
+    resolveDocumentId:  (p)  => p === access.path ? access.docId : undefined,
+    getVaultId:         () => access.vaultId,
+    getToken:           () => access.accessToken,
+  }
+}
+
 export function ViewGrantPage() {
   const params = new URLSearchParams(window.location.search)
   const grantToken = params.get('grant') ?? ''
@@ -72,6 +87,9 @@ export function ViewGrantPage() {
     let cancelled = false
     let view: DocumentView | null = null
     let loader: PluginLoader | null = null
+    let orchestrator: CollabOrchestrator | null = null
+    let crdt: YjsCrdtAdapter | null = null
+    let transport: SignalRTransport | null = null
 
     const start = async () => {
       setError(null)
@@ -81,44 +99,45 @@ export function ViewGrantPage() {
         throw new Error('Réponse de grant incomplète')
       }
 
-      const vault = new DirectVaultAPI(
-        access.vaultId,
-        access.accessToken,
-        access.docId,
-        access.path,
-      )
-      const sync = createDocumentRoomClient({ serverUrl: '', getToken: () => access.accessToken })
+      const ro = readOnlyParam || access.permission !== 'write'
 
+      // Build the CRDT pipeline (same path as ShareAccessPage).
+      crdt = new YjsCrdtAdapter()
+      transport = new SignalRTransport({
+        serverUrl: '',
+        userId: access.userId ?? 'view',
+        getToken: () => access.accessToken,
+      })
+      const sync = new DocumentRoomClient({ serverUrl: '', getToken: () => access.accessToken })
+      const identity = new LocalKeyProvider()
+      await identity.init()
+      orchestrator = new CollabOrchestrator(crdt, transport, identity)
+
+      const vault = createViewVault(access)
       const pluginApi = PluginAPIImpl.create(vault, sync)
       loader = new PluginLoader()
+      for (const plugin of fileTypePlugins) await loader.loadInternal(plugin, pluginApi)
+      for (const plugin of defaultPlugins) await loader.loadInternal(plugin, pluginApi)
 
-      for (const plugin of fileTypePlugins) {
-        await loader.loadInternal(plugin, pluginApi)
-      }
-      for (const plugin of defaultPlugins) {
-        await loader.loadInternal(plugin, pluginApi)
-      }
-
-      if (cancelled) {
-        await loader.unloadAll()
-        return
-      }
+      if (cancelled) { await loader.unloadAll(); return }
 
       view = new DocumentView({
         path: access.path,
         container,
         vault,
-        sync,
         fileTypeRegistry: pluginApi.files,
         vaultId: access.vaultId,
         docId: access.docId,
         userId: access.userId ?? 'view',
-        readOnly: readOnlyParam || access.permission !== 'write',
+        readOnly: ro,
+        crdt,
+        getTransportState: () => transport!.getState(),
         pluginAPI: pluginApi,
         defaultPlugins,
         pluginRegistry,
       })
       view.mount()
+      void transport.join(access.vaultId, access.docId)
     }
 
     void start().catch((err: unknown) => {
@@ -129,6 +148,9 @@ export function ViewGrantPage() {
     return () => {
       cancelled = true
       view?.destroy()
+      orchestrator?.dispose()
+      crdt?.dispose()
+      void transport?.disconnect()
       if (loader) void loader.unloadAll()
     }
   }, [grantToken, readOnlyParam])

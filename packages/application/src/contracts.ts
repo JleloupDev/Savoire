@@ -58,7 +58,6 @@ export interface IVaultsBackend {
   createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
-  listDocuments(vaultId: string, token: string): Promise<AppDocumentSummary[]>
 }
 
 export interface IVaultsAPI {
@@ -99,7 +98,6 @@ export interface IDocumentsAPI {
   activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault>
   getActiveClient(): VaultClient | undefined
   getActiveHub(): VaultHubLike | null
-  list(vaultId: string, token: string): Promise<AppDocumentSummary[]>
   disposeActiveVault(): Promise<void>
 }
 

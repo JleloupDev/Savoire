@@ -76,9 +76,10 @@ public class AccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task ACL10_Outsider_CannotAccessVaultDocuments_Returns404()
     {
-        // 404 intentionnel : on ne révèle pas l'existence du vault à un non-membre
+        // 404 intentionnel : on ne révèle pas l'existence du vault à un non-membre.
+        // L'endpoint index-snapshot est protégé par RequireReadAsync (membre vault).
         var resp = await _outsider.GetAsync(
-            $"/api/v1/vaults/{_vaultId}/documents/{Guid.NewGuid()}/content");
+            $"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks");
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -87,17 +88,20 @@ public class AccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task ACL11_RemoveMember_RevokesAccess()
     {
-        var docId = Guid.NewGuid().ToString();
+        // Owner seeds a snapshot so a member read returns 200 (not 404-empty).
+        await _owner.PutAsJsonAsync(
+            $"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks",
+            new SaveIndexSnapshotRequest("backlinks", 1, "{\"v\":1}"));
 
         // viewer peut lire avant le retrait (membre du vault)
-        var before = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/documents/{docId}/content");
+        var before = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks");
         before.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Owner retire viewer
         await _owner.DeleteAsync($"/api/v1/vaults/{_vaultId}/members/{_viewerId}");
 
-        // viewer n'a plus accès
-        var after = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/documents/{docId}/content");
+        // viewer n'a plus accès (404 : vault masqué pour un non-membre)
+        var after = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks");
         after.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         // Remettre viewer pour les autres tests

@@ -24,11 +24,10 @@ const stubStorage: IVaultStorage = {
   writeFile: vi.fn(async () => {}),
   resolveFileUrl: (_vaultId, path) => `/attachments/${path}`,
   listDocuments: vi.fn(async () => []),
-  createDocument: vi.fn(async (_vaultId, path) => ({ id: 'new-id', path })),
-  renameDocument: vi.fn(async () => {}),
-  deleteDocument: vi.fn(async () => {}),
   createFolder: vi.fn(async () => {}),
   deleteFolder: vi.fn(async () => {}),
+  listFolders: vi.fn(async () => []),
+  uploadAttachment: vi.fn(async (_vaultId, file) => ({ fileName: file.name, storagePath: 'sp' })),
 }
 
 const DOCS: IDocumentMeta[] = [
@@ -49,9 +48,6 @@ function makeClient(fetcher: IDocumentFetcher, docs = DOCS): VaultClient {
 beforeEach(() => {
   vi.mocked(stubStorage.readFile).mockClear()
   vi.mocked(stubStorage.writeFile).mockClear()
-  vi.mocked(stubStorage.createDocument).mockClear()
-  vi.mocked(stubStorage.renameDocument).mockClear()
-  vi.mocked(stubStorage.createDocument).mockImplementation(async (_vaultId, path) => ({ id: 'new-id', path }))
 })
 
 describe('readDocumentByPath() — document path', () => {
@@ -126,34 +122,23 @@ describe('exists()', () => {
 })
 
 describe('createFile()', () => {
-  it('does not POST when document already exists in cache', async () => {
+  it('adds a new document to the CRDT directory', async () => {
+    const client = makeClient(makeFetcher({}))
+    await client.createFile('fresh.md')
+    expect(client.documents.map(d => d.path)).toContain('fresh.md')
+  })
+
+  it('is a no-op when the document already exists', async () => {
     const client = makeClient(makeFetcher({}))
     client.addDocument(makeMeta('id-1', 'note.md'))
-
     await client.createFile('note.md')
-
-    expect(stubStorage.createDocument).not.toHaveBeenCalled()
+    expect(client.documents.filter(d => d.path === 'note.md')).toHaveLength(1)
   })
 
-  it('deduplicates concurrent create requests for same path via optimistic add', async () => {
+  it('appends .md when the path has no extension', async () => {
     const client = makeClient(makeFetcher({}))
-
-    const p1 = client.createFile('dup.md')
-    const p2 = client.createFile('dup.md')
-
-    await Promise.all([p1, p2])
-
-    // Second call returns early because the first optimistic add already added the doc
-    expect(stubStorage.createDocument).toHaveBeenCalledTimes(1)
-    expect(client.documents).toHaveLength(1)
-    expect(client.documents[0].path).toBe('dup.md')
-  })
-
-  it('treats 409 conflict as idempotent success', async () => {
-    vi.mocked(stubStorage.createDocument).mockRejectedValueOnce(new Error('409'))
-    const client = makeClient(makeFetcher({}), [makeMeta('id-existing', 'note.md')])
-
-    await expect(client.createFile('note.md')).resolves.toBeUndefined()
+    await client.createFile('todo')
+    expect(client.documents.map(d => d.path)).toContain('todo.md')
   })
 })
 
@@ -163,7 +148,6 @@ describe('renameFile()', () => {
     client.addDocument(makeMeta('id-1', 'original.md'))
     await client.renameFile('id-1', 'renamed.md')
     expect(client.documents.find(d => d.id === 'id-1')?.path).toBe('renamed.md')
-    expect(stubStorage.renameDocument).not.toHaveBeenCalled()
   })
 
   it('appends .md when missing on target path', async () => {

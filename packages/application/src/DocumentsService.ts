@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultDirectory, type IVaultStorage } from '@savoire/platform'
-import type { ActivatedVault, AppDocumentSummary, IDocumentsAPI, IVaultsBackend, VaultHubLike } from './contracts'
+import type { ActivatedVault, IDocumentsAPI, VaultHubLike } from './contracts'
 import { SyncOrchestrator } from './SyncOrchestrator'
 
 type ActiveContext = ActivatedVault
@@ -10,7 +10,6 @@ export class DocumentsService implements IDocumentsAPI {
   private active: ActiveContext | null = null
 
   constructor(
-    private readonly backend: IVaultsBackend,
     private readonly sync: SyncOrchestrator,
   ) {}
 
@@ -81,16 +80,13 @@ export class DocumentsService implements IDocumentsAPI {
     const d = params.doc
     const readOnly = async (): Promise<never> => { throw new Error('read-only shared document') }
     const stubStorage: IVaultStorage = {
-      listDocuments:   async ()       => [d],
-      listFolders:     async ()       => [],
-      readFile:        async ()       => '',
-      writeFile:       readOnly,
-      resolveFileUrl:  ()             => '',
-      createDocument:  readOnly,
-      renameDocument:  readOnly,
-      deleteDocument:  readOnly,
-      createFolder:    readOnly,
-      deleteFolder:    readOnly,
+      listDocuments:    async ()       => [d],
+      listFolders:      async ()       => [],
+      readFile:         async ()       => '',
+      writeFile:        readOnly,
+      resolveFileUrl:   ()             => '',
+      createFolder:     readOnly,
+      deleteFolder:     readOnly,
       uploadAttachment: readOnly,
     }
 
@@ -105,11 +101,8 @@ export class DocumentsService implements IDocumentsAPI {
     client.addDocument(d)
 
     const nullHub: VaultHubLike = {
-      connect:        async () => {},
-      dispose:        async () => {},
-      createDocument: readOnly,
-      renameDocument: readOnly,
-      deleteDocument: readOnly,
+      connect: async () => {},
+      dispose: async () => {},
     }
 
     const active: ActivatedVault = {
@@ -129,10 +122,6 @@ export class DocumentsService implements IDocumentsAPI {
 
   getActiveHub(): import('./contracts').VaultHubLike | null {
     return this.active?.hub ?? null
-  }
-
-  list(vaultId: string, token: string): Promise<AppDocumentSummary[]> {
-    return this.backend.listDocuments(vaultId, token)
   }
 
   async disposeActiveVault(): Promise<void> {

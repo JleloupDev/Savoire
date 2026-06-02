@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DocumentsService, SyncOrchestrator } from '@savoire/application'
-import type { IVaultsBackend, IVaultHubFactory, VaultHubLike, AppDocumentSummary } from '@savoire/application'
+import type { IVaultHubFactory, VaultHubLike } from '@savoire/application'
 import type { DocumentStore, IDocumentMeta, IVaultStorage } from '@savoire/platform'
 import type { OpenDocument } from '@savoire/platform'
 
@@ -12,24 +12,11 @@ function makeHub(): VaultHubLike {
   return {
     connect: vi.fn(async () => {}),
     dispose: vi.fn(async () => {}),
-    createDocument: vi.fn(async (path: string) => ({ id: `new-${path}`, path })),
-    renameDocument: vi.fn(async () => {}),
-    deleteDocument: vi.fn(async () => {}),
   }
 }
 
 function makeHubFactory(hub: VaultHubLike): IVaultHubFactory {
   return { create: vi.fn(() => hub) }
-}
-
-function makeBackend(docs: AppDocumentSummary[] = []): IVaultsBackend {
-  return {
-    listVaults: vi.fn(),
-    createVault: vi.fn(),
-    renameVault: vi.fn(),
-    deleteVault: vi.fn(),
-    listDocuments: vi.fn(async () => docs),
-  }
 }
 
 function makeStorage(): IVaultStorage {
@@ -38,11 +25,10 @@ function makeStorage(): IVaultStorage {
     writeFile: vi.fn(async () => {}),
     resolveFileUrl: vi.fn(() => '/url'),
     listDocuments: vi.fn(async () => []),
-    createDocument: vi.fn(async (_vaultId: string, path: string) => ({ id: 'new-id', path })),
-    renameDocument: vi.fn(async () => {}),
-    deleteDocument: vi.fn(async () => {}),
     createFolder: vi.fn(async () => {}),
     deleteFolder: vi.fn(async () => {}),
+    listFolders: vi.fn(async () => []),
+    uploadAttachment: vi.fn(async () => ({ fileName: 'f', storagePath: 'sp' })),
   }
 }
 
@@ -73,16 +59,13 @@ beforeEach(() => { vi.clearAllMocks() })
 
 describe('DocumentsService', () => {
   it('getActiveClient returns undefined before activateVault', () => {
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(makeHub())))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())))
     expect(svc.getActiveClient()).toBeUndefined()
   })
 
   it('activateVault returns ActivatedVault with client and hub', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(
-      makeBackend(),
-      new SyncOrchestrator(makeHubFactory(hub)),
-    )
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     const active = await svc.activateVault({
       vaultId: 'v1',
       token: 'tok',
@@ -99,7 +82,7 @@ describe('DocumentsService', () => {
 
   it('getActiveClient returns client after activateVault', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     await svc.activateVault({
       vaultId: 'v1',
       token: 'tok',
@@ -111,25 +94,16 @@ describe('DocumentsService', () => {
     expect(svc.getActiveClient()).toBeDefined()
   })
 
-  it('list delegates to backend.listDocuments', async () => {
-    const docs = [{ id: 'd1', path: 'note.md' }]
-    const backend = makeBackend(docs)
-    const svc = new DocumentsService(backend, new SyncOrchestrator(makeHubFactory(makeHub())))
-    const result = await svc.list('v1', 'tok')
-    expect(result).toEqual(docs)
-    expect(backend.listDocuments).toHaveBeenCalledWith('v1', 'tok')
-  })
-
   it('disposeActiveVault is a no-op when no active vault', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     await expect(svc.disposeActiveVault()).resolves.toBeUndefined()
     expect(hub.dispose).not.toHaveBeenCalled()
   })
 
   it('disposeActiveVault disposes hub and clears client', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     await svc.activateVault({
       vaultId: 'v1',
       token: 'tok',
@@ -148,7 +122,7 @@ describe('DocumentsService', () => {
     const hub2 = makeHub()
     let call = 0
     const factory: IVaultHubFactory = { create: vi.fn(() => call++ === 0 ? hub1 : hub2) }
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(factory))
+    const svc = new DocumentsService(new SyncOrchestrator(factory))
 
     await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
@@ -164,23 +138,19 @@ describe('DocumentsService', () => {
     expect(svc.getActiveClient()).toBeDefined()
   })
 
-  it('storageWithHub.createDocument throws if hub is not yet attached', async () => {
-    // This is an internal edge — we test by calling activateVault (hub IS attached).
-    // Verify createDocument on the returned client uses the hub.
+  it('activateVault connects the hub', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
-    const storage = makeStorage()
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage,
+      vaultId: 'v1', token: 'tok', storage: makeStorage(),
       documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(),
     })
-    // createDocument on storageWithHub should route to hub
     expect(hub.connect).toHaveBeenCalled()
   })
 
   it('active.dispose disposes the hub', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     const active = await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
       documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(),
@@ -191,7 +161,7 @@ describe('DocumentsService', () => {
 
   it('resolveDoc is passed correctly to VaultClient', async () => {
     const hub = makeHub()
-    const svc = new DocumentsService(makeBackend(), new SyncOrchestrator(makeHubFactory(hub)))
+    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)))
     const doc = makeMeta('doc-1', 'note.md')
     const resolveDoc = vi.fn(() => doc)
 
