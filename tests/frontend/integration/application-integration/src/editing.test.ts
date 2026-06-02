@@ -86,22 +86,20 @@ describe('Editing & Share Link — via Application layer', () => {
       readLinkToken = link.token
     })
 
-    let readVaultId = ''
-
     it('redeeming the link returns document-level metadata', async () => {
       const access = await adminRoot.api.sharing.accessShareLink(readLinkToken)
       expect(access.resourceType).toBe('document')
       expect(access.resourceId).toBe(docMeta.id)
       expect(access.permission).toBe('read')
-      expect(access.vaultId).toBe(vaultId)
       readAccessToken = access.accessToken
-      readVaultId = access.vaultId!
+      // A document link is addressed by docId: vaultId is not required for the
+      // CRDT path (content + access are docId-scoped). Resolving it is an ACL concern.
     })
 
     it('share link access token allows reading via CRDT path', async () => {
-      // End-to-end from the link holder's perspective: only what the link provides.
+      // End-to-end from the link holder's perspective: token + docId only, no vaultId.
       const anonCrdtRoot = makeCrdtAppRoot(() => readAccessToken, () => `share-link`)
-      const content = await anonCrdtRoot.api.documentSession.read(readVaultId, docMeta.id, readAccessToken)
+      const content = await anonCrdtRoot.api.documentSession.read('', docMeta.id, readAccessToken)
       expect(content).toBe('# Hello from Admin')
     })
 
@@ -114,7 +112,8 @@ describe('Editing & Share Link — via Application layer', () => {
       const access = await adminRoot.api.sharing.accessShareLink(link.token)
       expect(access.permission).toBe('write')
 
-      await writeYjsContent(access.vaultId!, writeDoc.id, '# Written via link', () => access.accessToken, 'share-link')
+      // Document link: write content by docId via the share token (no vaultId).
+      await writeYjsContent('', writeDoc.id, '# Written via link', () => access.accessToken, 'share-link')
 
       const adminCrdtRoot = makeCrdtAppRoot(() => adminToken, () => adminUserId)
       const content = await adminCrdtRoot.api.documentSession.read(vaultId, writeDoc.id, adminToken)
