@@ -15,15 +15,18 @@ export class YMapVaultDirectory implements IVaultDirectory {
   private readonly doc: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly map: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly folderMap: any
   private readonly changeCallbacks: (() => void)[] = []
   private disposed = false
 
   constructor() {
     this.doc = new Y_.Doc()
     this.map = this.doc.getMap('vault')
-    this.map.observe(() => {
-      for (const cb of this.changeCallbacks) cb()
-    })
+    this.folderMap = this.doc.getMap('folders')
+    const notify = (): void => { for (const cb of this.changeCallbacks) cb() }
+    this.map.observe(notify)
+    this.folderMap.observe(notify)
   }
 
   getAll(): readonly IDocumentMeta[] {
@@ -49,6 +52,21 @@ export class YMapVaultDirectory implements IVaultDirectory {
   rename(id: string, newPath: string): void {
     if (!this.map.has(id)) return
     this.map.set(id, { path: newPath })
+  }
+
+  addFolder(path: string): void {
+    this.folderMap.set(path, 1)
+  }
+
+  removeFolder(path: string): void {
+    this.folderMap.delete(path)
+  }
+
+  getFolders(): readonly string[] {
+    if (this.disposed) return []
+    const result: string[] = []
+    this.folderMap.forEach((_v: unknown, path: string) => result.push(path))
+    return result
   }
 
   encodeFullState(): Uint8Array {

@@ -483,3 +483,55 @@ describe('YMapVaultDirectory — disconnection and reconnection', () => {
     a.dispose(); b.dispose()
   })
 })
+
+// ── Group 4 — Folders are CRDT state too ──────────────────────────────────────
+
+describe('YMapVaultDirectory — folders (CRDT)', () => {
+  it('addFolder / getFolders / removeFolder', () => {
+    const dir = new YMapVaultDirectory()
+    dir.addFolder('Inbox/')
+    dir.addFolder('Projects/')
+    expect([...dir.getFolders()].sort()).toEqual(['Inbox/', 'Projects/'])
+    dir.removeFolder('Inbox/')
+    expect(dir.getFolders()).toEqual(['Projects/'])
+    dir.dispose()
+  })
+
+  it('folders sync to a peer over incremental updates', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+    a.addFolder('Shared/')
+    expect(b.getFolders()).toEqual(['Shared/'])
+    a.removeFolder('Shared/')
+    expect(b.getFolders()).toEqual([])
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('concurrent folder creation merges (no central authority)', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+    a.addFolder('A/')
+    b.addFolder('B/')
+    expect([...a.getFolders()].sort()).toEqual(['A/', 'B/'])
+    expect([...b.getFolders()].sort()).toEqual(['A/', 'B/'])
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('onChange fires on a folder mutation', () => {
+    const dir = new YMapVaultDirectory()
+    let fired = false
+    const unsub = dir.onChange(() => { fired = true })
+    dir.addFolder('X/')
+    expect(fired).toBe(true)
+    unsub(); dir.dispose()
+  })
+
+  it('encodeFullState carries folders (initial join)', () => {
+    const a = new YMapVaultDirectory()
+    a.addFolder('Docs/')
+    const b = new YMapVaultDirectory()
+    b.applyUpdate(a.encodeFullState())
+    expect(b.getFolders()).toEqual(['Docs/'])
+    a.dispose(); b.dispose()
+  })
+})

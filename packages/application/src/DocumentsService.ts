@@ -30,10 +30,7 @@ export class DocumentsService implements IDocumentsAPI {
       writeFile:        (v, p, c, t) => s.writeFile(v, p, c, t),
       resolveFileUrl:   (v, p)       => s.resolveFileUrl(v, p),
       listDocuments:    (v, t)       => s.listDocuments(v, t),
-      createFolder:     (v, p, t)    => s.createFolder(v, p, t),
-      deleteFolder:     (v, p, t)    => s.deleteFolder(v, p, t),
       uploadAttachment: (v, f, t)    => s.uploadAttachment(v, f, t),
-      listFolders:      (v, t)       => s.listFolders(v, t),
     }
 
     const client = new VaultClient(
@@ -45,7 +42,6 @@ export class DocumentsService implements IDocumentsAPI {
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
-    void client.loadFolders()
 
     const active: ActiveContext = {
       vaultId: params.vaultId,
@@ -81,12 +77,9 @@ export class DocumentsService implements IDocumentsAPI {
     const readOnly = async (): Promise<never> => { throw new Error('read-only shared document') }
     const stubStorage: IVaultStorage = {
       listDocuments:    async ()       => [d],
-      listFolders:      async ()       => [],
       readFile:         async ()       => '',
       writeFile:        readOnly,
       resolveFileUrl:   ()             => '',
-      createFolder:     readOnly,
-      deleteFolder:     readOnly,
       uploadAttachment: readOnly,
     }
 

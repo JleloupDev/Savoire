@@ -53,6 +53,10 @@ export interface IVaultDirectory {
   add(doc: IDocumentMeta): void
   remove(id: string): void
   rename(id: string, newPath: string): void
+  /** Dossiers explicites (potentiellement vides) - état CRDT, comme les documents. */
+  addFolder(path: string): void
+  removeFolder(path: string): void
+  getFolders(): readonly string[]
   /** État complet encodé - utilisé pour le join initial et pour envoyer à un pair. */
   encodeFullState(): Uint8Array
   /** Applique un update distant (join initial ou diff incrémental). */
@@ -70,9 +74,6 @@ export interface IVaultStorage {
   writeFile(vaultId: string, path: string, content: string, token: string): Promise<void>
   resolveFileUrl(vaultId: string, path: string): string
   listDocuments(vaultId: string, token: string): Promise<IDocumentMeta[]>
-  createFolder(vaultId: string, path: string, token: string): Promise<void>
-  deleteFolder(vaultId: string, path: string, token: string): Promise<void>
-  listFolders(vaultId: string, token: string): Promise<string[]>
   /** Upload a binary file; returns { fileName (original name), storagePath (GUID-based server path) }. */
   uploadAttachment(vaultId: string, file: File, token: string): Promise<{ fileName: string; storagePath: string }>
 }

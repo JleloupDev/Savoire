@@ -9,6 +9,7 @@ import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
  */
 export class InMemoryVaultDirectory implements IVaultDirectory {
   private readonly docs = new Map<string, IDocumentMeta>()
+  private readonly folders = new Set<string>()
   private readonly changeCallbacks: (() => void)[] = []
 
   getAll(): readonly IDocumentMeta[] {
@@ -36,6 +37,20 @@ export class InMemoryVaultDirectory implements IVaultDirectory {
     this._notify()
   }
 
+  addFolder(path: string): void {
+    if (this.folders.has(path)) return
+    this.folders.add(path)
+    this._notify()
+  }
+
+  removeFolder(path: string): void {
+    if (this.folders.delete(path)) this._notify()
+  }
+
+  getFolders(): readonly string[] {
+    return Array.from(this.folders)
+  }
+
   encodeFullState(): Uint8Array {
     return new Uint8Array(0)
   }
@@ -56,6 +71,7 @@ export class InMemoryVaultDirectory implements IVaultDirectory {
 
   dispose(): void {
     this.docs.clear()
+    this.folders.clear()
     this.changeCallbacks.length = 0
   }
 

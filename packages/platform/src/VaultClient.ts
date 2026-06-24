@@ -15,9 +15,6 @@ import type { IDocumentMeta, IVaultDirectory, IVaultStorage } from './ports'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
-  // see ADR-010
-  private readonly _explicitFolders = new Set<string>()
-
   constructor(
     private readonly vaultId: string,
     private token: string,
@@ -107,7 +104,7 @@ export class VaultClient implements VaultAPI {
       if (slashIdx === -1) result.add(prefix + rest)
       else result.add(prefix + rest.slice(0, slashIdx) + '/')
     }
-    for (const folderPath of this._explicitFolders) {
+    for (const folderPath of this.directory.getFolders()) {
       if (!folderPath.startsWith(prefix)) continue
       const rest = folderPath.slice(prefix.length)
       if (!rest) continue
@@ -115,17 +112,6 @@ export class VaultClient implements VaultAPI {
       result.add(slashIdx === -1 ? prefix + rest : prefix + rest.slice(0, slashIdx) + '/')
     }
     return Array.from(result).sort()
-  }
-
-  /** Charge les dossiers depuis le backend — appeler après activation du vault. */
-  async loadFolders(): Promise<void> {
-    try {
-      const paths = await this.storage.listFolders(this.vaultId, this.token)
-      for (const p of paths) this._explicitFolders.add(p.endsWith('/') ? p : p + '/')
-      // No _notifyChange needed: directory.onChange handles reactivity
-    } catch {
-      // Folder list failure is non-fatal: folders with documents remain visible via their documents.
-    }
   }
 
   async exists(documentId: string): Promise<boolean> {
@@ -155,9 +141,10 @@ export class VaultClient implements VaultAPI {
   }
 
   async createFolder(path: string): Promise<void> {
-    await this.storage.createFolder(this.vaultId, path, this.token)
+    // Folders are CRDT state: adding one emits a local vault op (pushed by the
+    // hub and merged peer-to-peer), exactly like documents. No REST round-trip.
     const normalized = path.endsWith('/') ? path : path + '/'
-    this._explicitFolders.add(normalized)
+    this.directory.addFolder(normalized)
   }
 
   async renameFile(documentId: string, newPath: string): Promise<void> {
@@ -169,10 +156,10 @@ export class VaultClient implements VaultAPI {
   }
 
   async deleteFolder(path: string): Promise<void> {
-    await this.storage.deleteFolder(this.vaultId, path, this.token)
+    // Remove the folder and any sub-folders from the CRDT directory.
     const prefix = path.endsWith('/') ? path : path + '/'
-    for (const f of this._explicitFolders) {
-      if (f === prefix || f.startsWith(prefix)) this._explicitFolders.delete(f)
+    for (const f of this.directory.getFolders()) {
+      if (f === prefix || f.startsWith(prefix)) this.directory.removeFolder(f)
     }
   }
 

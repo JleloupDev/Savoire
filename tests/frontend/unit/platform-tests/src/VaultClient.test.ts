@@ -24,9 +24,6 @@ const stubStorage: IVaultStorage = {
   writeFile: vi.fn(async () => {}),
   resolveFileUrl: (_vaultId, path) => `/attachments/${path}`,
   listDocuments: vi.fn(async () => []),
-  createFolder: vi.fn(async () => {}),
-  deleteFolder: vi.fn(async () => {}),
-  listFolders: vi.fn(async () => []),
   uploadAttachment: vi.fn(async (_vaultId, file) => ({ fileName: file.name, storagePath: 'sp' })),
 }
 
@@ -206,4 +203,29 @@ describe('VaultClient — directory wiring', () => {
     unsub()
   })
 
+})
+
+// ── Group 5 — Folders live in the CRDT directory, not REST storage ───────────
+
+describe('folders — CRDT directory', () => {
+  it('createFolder adds to the directory and surfaces in list()', async () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    await client.createFolder('Inbox')
+    expect(directory.getFolders()).toContain('Inbox/')
+    expect(await client.list()).toContain('Inbox/')
+  })
+
+  it('deleteFolder removes the folder and its sub-folders from the directory', async () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    await client.createFolder('Inbox')
+    await client.createFolder('Inbox/Sub')
+    await client.deleteFolder('Inbox')
+    expect(directory.getFolders()).toEqual([])
+  })
 })

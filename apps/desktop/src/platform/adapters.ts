@@ -55,22 +55,6 @@ export const desktopVaultStorage: IVaultStorage = {
     return listMarkdownDocs(vaultId)
   },
 
-  async createFolder(vaultId, path) {
-    const { createDir } = await import('@tauri-apps/api/fs')
-    const { join } = await import('@tauri-apps/api/path')
-    await createDir(await join(vaultId, path), { recursive: true })
-  },
-
-  async deleteFolder(vaultId, path) {
-    const { removeDir } = await import('@tauri-apps/api/fs')
-    const { join } = await import('@tauri-apps/api/path')
-    await removeDir(await join(vaultId, path), { recursive: true })
-  },
-
-  async listFolders() {
-    return []
-  },
-
   async uploadAttachment(_vaultId, file) {
     return { fileName: file.name, storagePath: file.name }
   },

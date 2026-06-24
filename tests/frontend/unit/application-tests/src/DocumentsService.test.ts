@@ -25,9 +25,6 @@ function makeStorage(): IVaultStorage {
     writeFile: vi.fn(async () => {}),
     resolveFileUrl: vi.fn(() => '/url'),
     listDocuments: vi.fn(async () => []),
-    createFolder: vi.fn(async () => {}),
-    deleteFolder: vi.fn(async () => {}),
-    listFolders: vi.fn(async () => []),
     uploadAttachment: vi.fn(async () => ({ fileName: 'f', storagePath: 'sp' })),
   }
 }
