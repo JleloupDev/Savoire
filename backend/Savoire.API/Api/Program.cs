@@ -86,6 +86,7 @@ builder.Services.AddSwaggerGen(options =>
 // 6. SignalR
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<Savoire.Application.Sync.Common.IndexOpSequencer>();
+builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 
 // 7. CORS — configurable via AllowedOrigins, fallback permissif en dev
 builder.Services.AddCors(options =>
@@ -176,6 +177,7 @@ app.MapControllers();
 app.MapHub<SyncHub>("/hubs/sync");
 app.MapHub<VaultHub>("/hubs/vault");
 app.MapHub<DocumentRoomHub>("/hubs/room");
+app.MapHub<EdgeSyncHub>("/hubs/edgesync");
 // DocumentHub removed — legacy hub replaced by VaultHub (MediatR)
 
 app.Run();

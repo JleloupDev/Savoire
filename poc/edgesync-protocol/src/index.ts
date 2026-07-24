@@ -6,6 +6,7 @@
 // storage) live in './node'.
 
 // Core (pure)
+export * from './core/codec'
 export * from './core/envelope'
 export * from './core/identity'
 export * from './core/keyring'
