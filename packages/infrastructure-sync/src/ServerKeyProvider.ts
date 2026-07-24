@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
-import { sign, getPublicKey } from '@noble/ed25519'
+// Async variants: they derive SHA-512 via WebCrypto (subtle.digest), so the
+// package's sync `hashes.sha512` hook does not need wiring. Both call sites
+// here are already async.
+import { signAsync, getPublicKeyAsync } from '@noble/ed25519'
 import type { IIdentityProvider } from '@savoire/plugin-api'
 import { fromHex } from '@savoire/plugin-api'
 
@@ -33,7 +36,7 @@ export class ServerKeyProvider implements IIdentityProvider {
     if (!res.ok) throw new Error(`ServerKeyProvider: ${res.status}`)
     const { privateKey } = await res.json() as { privateKey: string }
     this.privateKey = fromHex(privateKey)
-    this.publicKey = await getPublicKey(this.privateKey)
+    this.publicKey = await getPublicKeyAsync(this.privateKey)
   }
 
   getPublicKey(): Uint8Array {
@@ -43,7 +46,7 @@ export class ServerKeyProvider implements IIdentityProvider {
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
     if (!this.privateKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
-    return sign(message, this.privateKey)
+    return signAsync(message, this.privateKey)
   }
 
   /**

@@ -5,7 +5,7 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { YjsCrdtAdapter, SignalRTransport, EdgesyncDocSession } from '@savoire/infrastructure-sync'
+import { YjsCrdtAdapter, SignalRTransport, EdgesyncDocSession, GracePool } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
@@ -16,6 +16,19 @@ import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
+
+// One live edgesync bundle (Y.Doc adapter + protocol session) per document,
+// shared across effect remounts: destroying the key-holder session on every
+// remount would lose the vault keys (see GracePool).
+interface EdgeBundle {
+  crdt: YjsCrdtAdapter
+  session: Promise<EdgesyncDocSession>
+  current: EdgesyncDocSession | null
+}
+const edgePool = new GracePool<EdgeBundle>((b) => {
+  void b.session.then((s) => s.dispose()).catch(() => {})
+  b.crdt.dispose()
+})
 
 // ─── Refs injected from EditorPage (always current, never stale) ───────────
 
@@ -91,7 +104,6 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current?.()
     unsubPluginLoadedRef.current = null
 
-    const crdt = new YjsCrdtAdapter()
     const identity = refs.identity
     if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
 
@@ -99,32 +111,43 @@ function DocumentPanelHost({
     // protocol over the blind relay instead of the SignalR sync hub. Cursors/
     // presence are not carried on this path yet (no awareness channel).
     const useEdgesync = new URLSearchParams(window.location.search).has('edgesync')
-    let edgeSession: EdgesyncDocSession | null = null
+    let edgeLease: ReturnType<typeof edgePool.acquire> | null = null
     let signalR: { transport: SignalRTransport; orchestrator: CollabOrchestrator } | null = null
+    let crdt: YjsCrdtAdapter
 
     if (useEdgesync) {
-      void (async () => {
-        try {
+      const poolKey = `${vaultId}/${doc.id}`
+      edgeLease = edgePool.acquire(poolKey, () => {
+        const pooledCrdt = new YjsCrdtAdapter()
+        const bundle = { crdt: pooledCrdt, current: null } as EdgeBundle
+        bundle.session = (async () => {
           const provider = identity as IIdentityProvider & {
             init?: () => Promise<void>
             exportSecret?: () => Uint8Array
           }
           await provider.init?.()
           if (!provider.exportSecret) throw new Error('identity provider cannot export a seed')
-          edgeSession = await EdgesyncDocSession.open({
+          const session = await EdgesyncDocSession.open({
             vaultId,
             docId: doc.id,
             identitySeed: provider.exportSecret(),
-            doc: crdt.rawDoc,
+            doc: pooledCrdt.rawDoc,
             serverUrl: '',
             getToken: () => refs.token.current,
           })
-          console.info(`[EdgeSync] session open (owner=${edgeSession.isOwner})`)
-        } catch (err) {
+          bundle.current = session
+          console.info(`[EdgeSync] session open (owner=${session.isOwner})`)
+          return session
+        })()
+        bundle.session.catch((err) => {
           console.error('[EdgeSync] session open failed', err)
-        }
-      })()
+          edgePool.evict(poolKey, bundle)
+        })
+        return bundle
+      })
+      crdt = edgeLease.value.crdt
     } else {
+      crdt = new YjsCrdtAdapter()
       const transport = new SignalRTransport({
         serverUrl: '',
         userId,
@@ -146,7 +169,7 @@ function DocumentPanelHost({
       pluginRegistry,
       crdt,
       getTransportState: () =>
-        signalR ? signalR.transport.getState() : edgeSession ? 'connected' : 'connecting',
+        signalR ? signalR.transport.getState() : edgeLease?.value.current ? 'connected' : 'connecting',
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
@@ -178,8 +201,7 @@ function DocumentPanelHost({
       unsubCrdtIndex()
       signalR?.orchestrator.dispose()
       void signalR?.transport.disconnect()
-      edgeSession?.dispose()
-      edgeSession = null
+      edgeLease?.release()
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)

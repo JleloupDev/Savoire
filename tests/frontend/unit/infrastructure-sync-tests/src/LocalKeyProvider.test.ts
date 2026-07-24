@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 
 vi.mock('@noble/ed25519', () => ({
-  getPublicKey: vi.fn(async (priv: Uint8Array) => priv.map(b => b ^ 0xff)),
-  sign: vi.fn(async () => new Uint8Array(64).fill(0xcc)),
+  getPublicKeyAsync: vi.fn(async (priv: Uint8Array) => priv.map(b => b ^ 0xff)),
+  signAsync: vi.fn(async () => new Uint8Array(64).fill(0xcc)),
 }))
 
 const STORAGE_KEY = 'savoire:identity:privateKey'

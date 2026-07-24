@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
-import { sign, getPublicKey } from '@noble/ed25519'
+// Async variants derive SHA-512 via WebCrypto; no sync hash hook to wire.
+import { signAsync, getPublicKeyAsync } from '@noble/ed25519'
 import type { IIdentityProvider } from '@savoire/plugin-api'
 import { fromHex, toHex } from '@savoire/plugin-api'
 
@@ -19,7 +20,7 @@ export class LocalKeyProvider implements IIdentityProvider {
       this.privateKey = crypto.getRandomValues(new Uint8Array(32))
       localStorage.setItem(STORAGE_KEY, toHex(this.privateKey))
     }
-    this.publicKeyCache = await getPublicKey(this.privateKey)
+    this.publicKeyCache = await getPublicKeyAsync(this.privateKey)
   }
 
   getPublicKey(): Uint8Array {
@@ -29,7 +30,7 @@ export class LocalKeyProvider implements IIdentityProvider {
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
     if (!this.privateKey) throw new Error('LocalKeyProvider: not initialised — call init() first')
-    return sign(message, this.privateKey)
+    return signAsync(message, this.privateKey)
   }
 }
 

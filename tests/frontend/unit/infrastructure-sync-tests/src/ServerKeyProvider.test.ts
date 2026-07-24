@@ -4,11 +4,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ServerKeyProvider } from '@savoire/infrastructure-sync'
 
 vi.mock('@noble/ed25519', () => ({
-  getPublicKey: vi.fn(async (priv: Uint8Array) => {
-    // deterministic stub: flip every byte so pubkey is visibly distinct from privkey
-    return priv.map(b => b ^ 0xff)
-  }),
-  sign: vi.fn(async () => new Uint8Array(64).fill(0xaa)),
+  // deterministic stub: flip every byte so pubkey is visibly distinct from privkey
+  getPublicKeyAsync: vi.fn(async (priv: Uint8Array) => priv.map(b => b ^ 0xff)),
+  signAsync: vi.fn(async () => new Uint8Array(64).fill(0xaa)),
 }))
 
 function privHex(byte = 0x42): string {
