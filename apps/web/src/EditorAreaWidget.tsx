@@ -5,7 +5,7 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { YjsCrdtAdapter, SignalRTransport } from '@savoire/infrastructure-sync'
+import { YjsCrdtAdapter, SignalRTransport, EdgesyncDocSession } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
@@ -92,14 +92,46 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current = null
 
     const crdt = new YjsCrdtAdapter()
-    const transport = new SignalRTransport({
-      serverUrl: '',
-      userId,
-      getToken: () => refs.token.current,
-    })
     const identity = refs.identity
     if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
-    const orchestrator = new CollabOrchestrator(crdt, transport, identity)
+
+    // Opt-in vertical slice (?edgesync=1): collaborate through the edgesync
+    // protocol over the blind relay instead of the SignalR sync hub. Cursors/
+    // presence are not carried on this path yet (no awareness channel).
+    const useEdgesync = new URLSearchParams(window.location.search).has('edgesync')
+    let edgeSession: EdgesyncDocSession | null = null
+    let signalR: { transport: SignalRTransport; orchestrator: CollabOrchestrator } | null = null
+
+    if (useEdgesync) {
+      void (async () => {
+        try {
+          const provider = identity as IIdentityProvider & {
+            init?: () => Promise<void>
+            exportSecret?: () => Uint8Array
+          }
+          await provider.init?.()
+          if (!provider.exportSecret) throw new Error('identity provider cannot export a seed')
+          edgeSession = await EdgesyncDocSession.open({
+            vaultId,
+            docId: doc.id,
+            identitySeed: provider.exportSecret(),
+            doc: crdt.rawDoc,
+            serverUrl: '',
+            getToken: () => refs.token.current,
+          })
+          console.info(`[EdgeSync] session open (owner=${edgeSession.isOwner})`)
+        } catch (err) {
+          console.error('[EdgeSync] session open failed', err)
+        }
+      })()
+    } else {
+      const transport = new SignalRTransport({
+        serverUrl: '',
+        userId,
+        getToken: () => refs.token.current,
+      })
+      signalR = { transport, orchestrator: new CollabOrchestrator(crdt, transport, identity) }
+    }
 
     const view = new DocumentView({
       path: doc.path,
@@ -113,7 +145,8 @@ function DocumentPanelHost({
       defaultPlugins: refs.defaultPlugins.current,
       pluginRegistry,
       crdt,
-      getTransportState: () => transport.getState(),
+      getTransportState: () =>
+        signalR ? signalR.transport.getState() : edgeSession ? 'connected' : 'connecting',
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
@@ -122,7 +155,7 @@ function DocumentPanelHost({
       },
     })
     view.mount()
-    void transport.join(vaultId, doc.id)
+    if (signalR) void signalR.transport.join(vaultId, doc.id)
     const unsubCrdtIndex = crdt.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
     viewRef.current = view
 
@@ -143,8 +176,10 @@ function DocumentPanelHost({
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
       unsubCrdtIndex()
-      orchestrator.dispose()
-      void transport.disconnect()
+      signalR?.orchestrator.dispose()
+      void signalR?.transport.disconnect()
+      edgeSession?.dispose()
+      edgeSession = null
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)

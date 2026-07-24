@@ -36,6 +36,23 @@ describe('envelope — primitives pures', () => {
     expect(bob.unseal(sealed)).toEqual(secret)
   })
 
+  it('fromSignSeed : deterministe, cles distinctes, seal+sign fonctionnels', () => {
+    const seed = randomBytes(32)
+    const a = OwnIdentity.fromSignSeed(seed)
+    const b = OwnIdentity.fromSignSeed(seed)
+    // meme seed → meme identite (multi-appareils)
+    expect(a.signPub).toEqual(b.signPub)
+    expect(a.boxPub).toEqual(b.boxPub)
+    // les deux cles ne coincident pas (derivation one-way separee)
+    expect(a.signPub).not.toEqual(a.boxPub)
+    // signature et boite marchent comme pour generate()
+    const msg = randomBytes(16)
+    expect(verify(a.sign(msg), msg, a.signPub)).toBe(true)
+    const sealed = sealTo(a.public, msg)
+    expect(b.unseal(sealed)).toEqual(msg) // b = meme identite, peut ouvrir
+    expect(() => OwnIdentity.fromSignSeed(randomBytes(16))).toThrow()
+  })
+
   it('enveloppe : encode/decode roundtrip et region signee', () => {
     const rid = resourceId('vault-1')
     const epoch = 7

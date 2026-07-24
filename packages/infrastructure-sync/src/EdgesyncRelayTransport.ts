@@ -40,6 +40,11 @@ export class EdgesyncRelayTransport implements ITransport {
   private up: PeerHandler[] = []
   private down: PeerHandler[] = []
   private readonly present = new Set<string>()
+  // Frames can arrive between connect() and the Session's subscription (the
+  // owner rule needs the room inspected before the Session exists): buffer
+  // until the first onMessage subscriber, then flush in order.
+  private pending: { from: string; bytes: Uint8Array }[] = []
+  private static readonly MAX_PENDING = 256
 
   constructor(options: EdgesyncRelayTransportOptions) {
     this.conn = options.connection ?? buildConnection(options)
@@ -52,6 +57,11 @@ export class EdgesyncRelayTransport implements ITransport {
 
   onMessage(cb: MessageHandler): () => void {
     this.msg.push(cb)
+    if (this.pending.length > 0) {
+      const buffered = this.pending
+      this.pending = []
+      for (const { from, bytes } of buffered) cb(from, bytes)
+    }
     return () => { this.msg = this.msg.filter((h) => h !== cb) }
   }
 
@@ -73,6 +83,10 @@ export class EdgesyncRelayTransport implements ITransport {
       if (vid !== this.vaultId) return
       let bytes: Uint8Array
       try { bytes = fromBase64(frameBase64) } catch { return }
+      if (this.msg.length === 0) {
+        if (this.pending.length < EdgesyncRelayTransport.MAX_PENDING) this.pending.push({ from, bytes })
+        return
+      }
       for (const h of this.msg) h(from, bytes)
     })
     this.conn.on('PeerUp', (vid: string, peerId: string) => {
@@ -90,6 +104,17 @@ export class EdgesyncRelayTransport implements ITransport {
     const existing = await this.conn.invoke<string[]>('Join', vaultId)
     for (const peerId of existing) {
       this.present.add(peerId)
+      for (const h of this.up) h(peerId)
+    }
+  }
+
+  /**
+   * Re-announce every present peer to the onPeerUp handlers. A Session built
+   * AFTER connect() (owner rule needs to inspect the room first) would miss
+   * the initial PeerUp burst and never HELLO anyone — this replays it.
+   */
+  replayPeers(): void {
+    for (const peerId of this.present) {
       for (const h of this.up) h(peerId)
     }
   }

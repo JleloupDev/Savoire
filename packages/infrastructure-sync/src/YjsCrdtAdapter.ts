@@ -33,6 +33,14 @@ export class YjsCrdtAdapter implements ICRDT {
     this.awareness = new Awareness(this.ydoc)
   }
 
+  /**
+   * Underlying Y.Doc, for wrapping by another CRDT port over the SAME document
+   * (edgesync's YjsCrdt): two views, one state — the editor is untouched.
+   */
+  get rawDoc(): unknown {
+    return this.ydoc
+  }
+
   setLocalUser(cursorId: string): void {
     this.awareness.setLocalStateField('user', { id: cursorId })
   }

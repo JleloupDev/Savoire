@@ -45,5 +45,15 @@ export class ServerKeyProvider implements IIdentityProvider {
     if (!this.privateKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
     return sign(message, this.privateKey)
   }
+
+  /**
+   * Ed25519 seed for building the edgesync identity (OwnIdentity.fromSignSeed).
+   * The key already transits through the identity API (accepted v0 debt); this
+   * is the in-process bridge to the P2P protocol.
+   */
+  exportSecret(): Uint8Array {
+    if (!this.privateKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
+    return this.privateKey
+  }
 }
 

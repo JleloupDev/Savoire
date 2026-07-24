@@ -4,7 +4,11 @@
 // Peer identity: two keypairs, never one. Ed25519 signs (authenticity of the
 // author); X25519 wraps (confidentiality to a public key). Pure, no I/O.
 import { ed25519, x25519 } from '@noble/curves/ed25519'
+import { sha256 } from '@noble/hashes/sha2'
 import { randomBytes, seal, unseal, concat } from './envelope'
+
+// Domain separator for deriving the box seed from a signing seed (fromSignSeed).
+const BOX_DERIVE_TAG = new TextEncoder().encode('edgesync-box-v1')
 
 /** The public identity of a peer. */
 export interface PeerIdentity {
@@ -26,6 +30,19 @@ export class OwnIdentity implements PeerIdentity {
     const signPriv = randomBytes(32)
     const boxPriv = randomBytes(32)
     return new OwnIdentity(signPriv, boxPriv, ed25519.getPublicKey(signPriv), x25519.getPublicKey(boxPriv))
+  }
+
+  /**
+   * Deterministic identity from a single Ed25519 signing seed: the box seed is
+   * derived as sha256(seed ‖ tag). Lets an app that already provisions one
+   * signing key per user (e.g. a server-side key provider) obtain the SAME
+   * edgesync identity on every device. v0 trade-off: the box key is bound to
+   * the signing seed by a one-way hash instead of being stored separately.
+   */
+  static fromSignSeed(signSeed: Uint8Array): OwnIdentity {
+    if (signSeed.length !== 32) throw new Error('fromSignSeed: expected a 32-byte seed')
+    const boxPriv = sha256(concat(signSeed, BOX_DERIVE_TAG))
+    return new OwnIdentity(signSeed, boxPriv, ed25519.getPublicKey(signSeed), x25519.getPublicKey(boxPriv))
   }
 
   /** Serialize the private halves (signPriv ‖ boxPriv). A SECRET blob. */
