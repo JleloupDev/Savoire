@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Public surface of the P2P collaboration protocol.
+// Public surface of the P2P collaboration protocol. Browser-safe: no Node
+// builtins in this graph. Node-only adapters (WebSocket via 'ws', filesystem
+// storage) live in './node'.
 
 // Core (pure)
 export * from './core/envelope'
@@ -14,12 +16,10 @@ export type { ITransport, MessageHandler, PeerHandler } from './ports/transport'
 export { PeerStore, type KnownPeer, type PeerStatus } from './ports/peer-store'
 export type { IStorage } from './ports/storage'
 
-// Adapters
+// Adapters (browser-safe only)
 export { YjsCrdt } from './adapters/yjs-crdt'
 export { Bus, InProcessTransport } from './adapters/in-process-transport'
-export { WebSocketTransport } from './adapters/websocket-transport'
 export { InMemoryStorage } from './adapters/in-memory-storage'
-export { FileSystemStorage } from './adapters/filesystem-storage'
 
 // Protocol
 export * from './protocol/messages'

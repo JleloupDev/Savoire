@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "description": "POC: protocole P2P d'edition collaborative chiffree E2E et signee, agnostique au transport et au CRDT.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "test": "vitest run",

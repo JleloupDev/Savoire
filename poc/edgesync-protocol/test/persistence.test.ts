@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import {
   OwnIdentity, YjsCrdt, Bus, InProcessTransport, PeerStore, Session, Keyring, randomBytes,
   InMemoryStorage, FileSystemStorage, loadIdentity, loadKeyring, loadContent,
-} from '../src/index'
+} from '../src/node'
 
 const rand = () => randomBytes(32)
 const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms))

@@ -3,6 +3,7 @@
 //
 // Wire messages. Framed as [type:1][payload]. OP / SYNC_RESP payloads are raw
 // envelopes (binary); control messages (HELLO / KEY / SYNC_REQ) are JSON.
+import { toBase64, fromBase64 } from '../core/codec'
 
 export enum MsgType {
   Hello = 1,
@@ -26,8 +27,8 @@ export function unframe(bytes: Uint8Array): { type: MsgType; payload: Uint8Array
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
-const b64 = (u: Uint8Array): string => Buffer.from(u).toString('base64')
-const ub64 = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, 'base64'))
+const b64 = toBase64
+const ub64 = fromBase64
 
 export interface HelloMsg {
   signPub: Uint8Array

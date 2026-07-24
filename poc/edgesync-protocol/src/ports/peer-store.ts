@@ -5,6 +5,7 @@
 // of a peer is local, pinnable state. v0 policy is TOFU; S3/S4 only change the
 // policy on this same data, not its shape.
 import type { PeerIdentity } from '../core/identity'
+import { toBase64, fromBase64, toHex } from '../core/codec'
 
 export type PeerStatus = 'pinned' | 'verified-oob'
 
@@ -65,11 +66,9 @@ export class PeerStore {
   }
 }
 
-function hex(u: Uint8Array): string {
-  return Buffer.from(u).toString('hex')
-}
-const b64 = (u: Uint8Array): string => Buffer.from(u).toString('base64')
-const ub64 = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, 'base64'))
+const hex = toHex
+const b64 = toBase64
+const ub64 = fromBase64
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false

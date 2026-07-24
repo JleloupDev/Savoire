@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { OwnIdentity, YjsCrdt, WebSocketTransport, PeerStore, Session, Keyring } from '../src/index'
+import { OwnIdentity, YjsCrdt, WebSocketTransport, PeerStore, Session, Keyring } from '../src/node'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(here, '..', 'node_modules', '.bin', 'tsx')

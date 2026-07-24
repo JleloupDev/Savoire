@@ -8,6 +8,7 @@
 // without revealing K_vault. v0 advances the vault and doc epochs together;
 // independent per-note rotation is deferred.
 import { encrypt, decrypt } from './envelope'
+import { toBase64, fromBase64 } from './codec'
 
 export interface EpochKeys {
   epoch: number
@@ -142,5 +143,5 @@ export class Keyring {
   }
 }
 
-const b64 = (u: Uint8Array): string => Buffer.from(u).toString('base64')
-const ub64 = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, 'base64'))
+const b64 = toBase64
+const ub64 = fromBase64
