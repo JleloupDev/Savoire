@@ -22,6 +22,17 @@ const Y_ = Y as Record<string, any>
 
 const REMOTE_ORIGIN = 'remote'
 
+/**
+ * Deterministic color from a numeric seed. Keyed on the Yjs clientID (random
+ * per Y.Doc instance) rather than the account userId — two tabs signed into
+ * the SAME account are two distinct editing sessions and must still get
+ * visibly different cursor colors, same as two different accounts would.
+ */
+function colorForClient(clientId: number): { color: string; colorLight: string } {
+  const hue = clientId % 360
+  return { color: `hsl(${hue}, 70%, 50%)`, colorLight: `hsla(${hue}, 70%, 50%, 0.3)` }
+}
+
 export class YjsCrdtAdapter implements ICRDT {
   private readonly ydoc: ReturnType<typeof Y_.Doc>
   private readonly ytext: ReturnType<typeof Y_.Text>
@@ -42,7 +53,7 @@ export class YjsCrdtAdapter implements ICRDT {
   }
 
   setLocalUser(cursorId: string): void {
-    this.awareness.setLocalStateField('user', { id: cursorId })
+    this.awareness.setLocalStateField('user', { id: cursorId, ...colorForClient(this.ydoc.clientID) })
   }
 
   onLocalOp(cb: (op: Uint8Array) => void): () => void {
@@ -99,7 +110,9 @@ export class YjsCrdtAdapter implements ICRDT {
   }
 
   onTextChange(cb: (text: ICollaborativeText, version?: CrdtVersion) => void): () => void {
-    const handler = () => cb(new YjsCollaborativeText(this.ytext, this.ydoc), this.getVersion())
+    const handler = () => {
+      cb(new YjsCollaborativeText(this.ytext, this.ydoc), this.getVersion())
+    }
     this.ydoc.on('update', handler)
     return () => this.ydoc.off('update', handler)
   }

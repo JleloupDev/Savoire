@@ -5,7 +5,7 @@
 // package's sync `hashes.sha512` hook does not need wiring. Both call sites
 // here are already async.
 import { signAsync, getPublicKeyAsync } from '@noble/ed25519'
-import type { IIdentityProvider } from '@savoire/plugin-api'
+import type { ISeedExportingIdentityProvider } from '@savoire/plugin-api'
 import { fromHex } from '@savoire/plugin-api'
 
 export interface ServerKeyProviderOptions {
@@ -13,7 +13,7 @@ export interface ServerKeyProviderOptions {
   getToken: () => string | null
 }
 
-export class ServerKeyProvider implements IIdentityProvider {
+export class ServerKeyProvider implements ISeedExportingIdentityProvider {
   private privateKey: Uint8Array | null = null
   private publicKey: Uint8Array | null = null
 
@@ -54,7 +54,7 @@ export class ServerKeyProvider implements IIdentityProvider {
    * The key already transits through the identity API (accepted v0 debt); this
    * is the in-process bridge to the P2P protocol.
    */
-  exportSecret(): Uint8Array {
+  exportSignSeed(): Uint8Array {
     if (!this.privateKey) throw new Error('ServerKeyProvider: not initialised, call init() first')
     return this.privateKey
   }

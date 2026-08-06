@@ -9,10 +9,11 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
-  OwnIdentity, YjsCrdt, Bus, InProcessTransport, PeerStore, Session, Keyring, randomBytes,
+  OwnIdentity, YjsCrdt, Bus, InProcessTransport, PeerStore, Session, Keyring, randomBytes, resourceId, toHex,
   InMemoryStorage, FileSystemStorage, loadIdentity, loadKeyring, loadContent,
 } from '../src/node'
 
+const RID = resourceId('vault-1')
 const rand = () => randomBytes(32)
 const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms))
 
@@ -29,6 +30,7 @@ function containsSub(hay: Uint8Array, needle: Uint8Array): boolean {
 async function writeAndPersist(storage: InMemoryStorage | FileSystemStorage, text: string) {
   const identity = OwnIdentity.generate()
   const keyring = Keyring.genesis(rand)
+  keyring.mintDocKey(0, RID, rand)
   const crdt = new YjsCrdt()
   const transport = new InProcessTransport('A', new Bus())
   const session = new Session({ identity, crdt, keyring, peers: new PeerStore(), transport, resource: 'vault-1', granting: true, storage })
@@ -47,7 +49,7 @@ describe('persistence — IStorage, contenu chiffre au repos', () => {
     const signPubBefore = await writeAndPersist(storage, text)
 
     // le blob de contenu est du ciphertext
-    const contentBlob = await storage.get('open/content')
+    const contentBlob = await storage.get(`open/content/${toHex(RID)}`)
     expect(contentBlob).toBeDefined()
     expect(containsSub(contentBlob!, new TextEncoder().encode(text))).toBe(false)
 
@@ -59,7 +61,7 @@ describe('persistence — IStorage, contenu chiffre au repos', () => {
     expect(identity2!.signPub).toEqual(signPubBefore) // meme identite
 
     const crdt2 = new YjsCrdt()
-    await loadContent(storage, crdt2, keyring2!)
+    await loadContent(storage, RID, crdt2, keyring2!)
     expect(crdt2.text().toString()).toBe(text) // contenu restaure
   })
 
@@ -70,7 +72,7 @@ describe('persistence — IStorage, contenu chiffre au repos', () => {
     const signPubBefore = await writeAndPersist(storage, text)
 
     // le fichier de contenu ne contient pas le clair
-    const onDisk = new Uint8Array(await readFile(join(dir, 'open__content')))
+    const onDisk = new Uint8Array(await readFile(join(dir, `open__content__${toHex(RID)}`)))
     expect(containsSub(onDisk, new TextEncoder().encode(text))).toBe(false)
 
     // recharge depuis un nouveau storage sur le meme repertoire
@@ -78,7 +80,7 @@ describe('persistence — IStorage, contenu chiffre au repos', () => {
     const id2 = await loadIdentity(storage2)
     const kr2 = await loadKeyring(storage2)
     const crdt2 = new YjsCrdt()
-    await loadContent(storage2, crdt2, kr2!)
+    await loadContent(storage2, RID, crdt2, kr2!)
     expect(crdt2.text().toString()).toBe(text)
     expect(id2!.signPub).toEqual(signPubBefore)
 

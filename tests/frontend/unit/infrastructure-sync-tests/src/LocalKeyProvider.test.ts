@@ -117,4 +117,22 @@ describe('LocalKeyProvider', () => {
 
     expect(pub1).not.toEqual(pub2)
   })
+
+  it('exportSignSeed() throws before init()', () => {
+    const provider = new LocalKeyProvider()
+    expect(() => provider.exportSignSeed()).toThrow('not initialised')
+  })
+
+  it('exportSignSeed() returns the same 32-byte seed used to derive the public key', async () => {
+    const hexKey = '42'.repeat(32)
+    storage.setItem(STORAGE_KEY, hexKey)
+
+    const provider = new LocalKeyProvider()
+    await provider.init()
+
+    const seed = provider.exportSignSeed()
+    expect(seed).toBeInstanceOf(Uint8Array)
+    expect(seed.length).toBe(32)
+    expect(seed.every(b => b === 0x42)).toBe(true)
+  })
 })

@@ -130,4 +130,21 @@ describe('ServerKeyProvider', () => {
     const provider = new ServerKeyProvider({ getToken: () => 'tok' })
     await expect(provider.sign(new Uint8Array([1]))).rejects.toThrow('not initialised')
   })
+
+  it('exportSignSeed() throws before init()', () => {
+    const provider = new ServerKeyProvider({ getToken: () => 'tok' })
+    expect(() => provider.exportSignSeed()).toThrow('not initialised')
+  })
+
+  it('exportSignSeed() returns the fetched private key after init()', async () => {
+    vi.stubGlobal('fetch', mockFetch({ privateKey: privHex(0x7a) }))
+
+    const provider = new ServerKeyProvider({ getToken: () => 'tok' })
+    await provider.init()
+
+    const seed = provider.exportSignSeed()
+    expect(seed).toBeInstanceOf(Uint8Array)
+    expect(seed.length).toBe(32)
+    expect(seed.every(b => b === 0x7a)).toBe(true)
+  })
 })

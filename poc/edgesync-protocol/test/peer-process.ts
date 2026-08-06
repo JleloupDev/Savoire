@@ -4,7 +4,7 @@
 // A headless peer in its own OS process (assertion e). It listens, holds the
 // genesis keys, grants them to whoever connects, and seeds a message. This is a
 // *peer*, not a server: it runs the exact same protocol code as any client.
-import { OwnIdentity, YjsCrdt, WebSocketTransport, PeerStore, Session, Keyring, randomBytes } from '../src/node'
+import { OwnIdentity, YjsCrdt, WebSocketTransport, PeerStore, Session, Keyring, randomBytes, resourceId } from '../src/node'
 
 const port = Number(process.argv[2] ?? 0)
 const message = process.argv[3] ?? 'hello over ws'
@@ -13,7 +13,9 @@ async function main(): Promise<void> {
   const identity = OwnIdentity.generate()
   const crdt = new YjsCrdt()
   const transport = new WebSocketTransport('founder')
-  const keyring = Keyring.genesis(() => randomBytes(32))
+  const rand = () => randomBytes(32)
+  const keyring = Keyring.genesis(rand)
+  keyring.mintDocKey(0, resourceId('vault-1'), rand)
   // eslint-disable-next-line no-new
   new Session({ identity, crdt, keyring, transport, peers: new PeerStore(), resource: 'vault-1', granting: true })
 

@@ -26,7 +26,7 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
     public async Task<IActionResult> Create(
         string userId, [FromBody] CreateVaultRequest req, CancellationToken ct)
     {
-        VaultSummaryDto dto = await Mediator.Send(new CreateVaultCommand(userId, req.Name), ct);
+        VaultSummaryDto dto = await Mediator.Send(new CreateVaultCommand(userId, req.Name, req.IsManaged), ct);
         return StatusCode(201, dto);
     }
 

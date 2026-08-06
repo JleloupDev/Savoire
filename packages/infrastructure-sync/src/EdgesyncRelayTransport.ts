@@ -24,6 +24,10 @@ export interface RelayConnection {
   invoke<T = unknown>(methodName: string, ...args: unknown[]): Promise<T>
   start(): Promise<void>
   stop(): Promise<void>
+  /** SignalR auto-reconnect succeeded (with a fresh connection id): re-Join is needed. */
+  onreconnected?(cb: (connectionId?: string) => void): void
+  /** The connection gave up (or was intentionally stopped). */
+  onclose?(cb: (error?: Error) => void): void
 }
 
 export interface EdgesyncRelayTransportOptions {
@@ -106,6 +110,49 @@ export class EdgesyncRelayTransport implements ITransport {
       this.present.add(peerId)
       for (const h of this.up) h(peerId)
     }
+
+    // A SignalR auto-reconnect gets a fresh connection id and forgets room
+    // membership: re-Join and reconcile presence (fire PeerDown for anyone no
+    // longer in the room, PeerUp for anyone present — including a peer whose
+    // own id also changed, which existing Sessions need to re-HELLO).
+    this.conn.onreconnected?.(async () => {
+      let refreshed: string[]
+      try {
+        refreshed = await this.conn.invoke<string[]>('Join', this.vaultId)
+      } catch {
+        return
+      }
+      const stillPresent = new Set(refreshed)
+      for (const peerId of [...this.present]) {
+        if (!stillPresent.has(peerId)) {
+          this.present.delete(peerId)
+          for (const h of this.down) h(peerId)
+        }
+      }
+      for (const peerId of refreshed) {
+        if (!this.present.has(peerId)) {
+          this.present.add(peerId)
+          for (const h of this.up) h(peerId)
+        }
+      }
+    })
+    this.conn.onclose?.(() => {
+      for (const peerId of [...this.present]) {
+        this.present.delete(peerId)
+        for (const h of this.down) h(peerId)
+      }
+    })
+  }
+
+  /**
+   * Atomically claim the right to mint this vault's genesis key. The server
+   * arbitrates: at most one caller ever gets `true` for this room (until it
+   * empties and a fresh election can happen), removing the old client-side
+   * "peers().length === 0" race where two peers connecting close together
+   * could both self-elect and mint independent, unmergeable keys.
+   */
+  async claimOwner(): Promise<boolean> {
+    return this.conn.invoke<boolean>('ClaimOwner', this.vaultId)
   }
 
   /**

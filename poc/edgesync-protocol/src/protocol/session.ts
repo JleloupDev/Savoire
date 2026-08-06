@@ -73,7 +73,10 @@ export class Session {
    */
   async persist(): Promise<void> {
     if (!this.storage) return
-    await saveAll(this.storage, { identity: this.id, keyring: this.keyring, peers: this.peers, crdt: this.crdt })
+    await saveAll(this.storage, {
+      identity: this.id, keyring: this.keyring, peers: this.peers,
+      channels: [{ resourceId: this.resourceId, crdt: this.crdt }],
+    })
   }
 
   /** Rotate to a fresh epoch and deliver it to all peers except `exclude`. */
@@ -89,27 +92,32 @@ export class Session {
     this.rotate([peerId])
   }
 
-  /** Seal & send an epoch's key to a connected, identified peer. */
+  /** Seal & send an epoch's key (every known channel's K_doc) to a connected,
+   *  identified peer. Only meaningful on the vault-directory Session (§4.4):
+   *  its `resource` is the vault id, so this is the sole grant anchor. */
   grantPeer(peer: string, epoch = this.keyring.currentEpoch()): void {
     const identity = this.idByPeer.get(peer)
     if (!identity) return
     const d = this.keyring.delivery(epoch)
     if (!d) return
     const sealedVaultKey = seal(identity.boxPub, d.vaultKey)
-    // Authenticate the grant: sign over the channel, epoch, recipient and the
-    // sealed material, so a captured KEY cannot be replayed to another peer,
-    // another channel, or be forged by a peer who is not a key-holder.
-    const region = this.keyGrantRegion(epoch, identity.signPub, sealedVaultKey, d.docWrap)
+    // Authenticate the grant: sign over the vault, epoch, recipient, sealed
+    // vault key and the WHOLE batch of docWraps, so a captured KEY cannot be
+    // replayed to another peer/vault, forged by a non-key-holder, or have its
+    // docWraps batch tampered with (partial-recombination, cf. §4.3).
+    const region = this.keyGrantRegion(epoch, identity.signPub, sealedVaultKey, d.docWraps)
     const sig = this.id.sign(region)
     this.transport.send(peer, frame(MsgType.Key, encodeKey({
-      resource: this.resource, epoch, sealedVaultKey, docWrap: d.docWrap,
+      resource: this.resource, epoch, sealedVaultKey, docWraps: d.docWraps,
       grantorSignPub: this.id.signPub, recipientSignPub: identity.signPub, sig,
     })))
   }
 
-  /** Bytes a grantor signs in a KEY: channel ‖ epoch ‖ recipient ‖ sealed ‖ wrap. */
-  private keyGrantRegion(epoch: number, recipientSignPub: Uint8Array, sealedVaultKey: Uint8Array, docWrap: Uint8Array): Uint8Array {
-    return concat(this.resourceId, u32be(epoch), recipientSignPub, sealedVaultKey, docWrap)
+  /** Bytes a grantor signs in a KEY: vault ‖ epoch ‖ recipient ‖ sealed ‖ every (resourceId‖docWrap) in order. */
+  private keyGrantRegion(epoch: number, recipientSignPub: Uint8Array, sealedVaultKey: Uint8Array, docWraps: { resourceId: Uint8Array; docWrap: Uint8Array }[]): Uint8Array {
+    const parts = [this.resourceId, u32be(epoch), recipientSignPub, sealedVaultKey]
+    for (const d of docWraps) parts.push(d.resourceId, d.docWrap)
+    return concat(...parts)
   }
 
   // ── outbound ────────────────────────────────────────────────────────────
@@ -134,7 +142,7 @@ export class Session {
 
   private publishOp(update: Uint8Array): void {
     const epoch = this.keyring.currentEpoch()
-    const key = this.keyring.docKey(epoch)
+    const key = this.keyring.docKey(epoch, this.resourceId)
     if (!key) return // not keyed yet; peers will catch us up once we are
     const env = this.sealOp(epoch, key, update)
     for (const peer of this.transport.peers()) this.transport.send(peer, frame(MsgType.Op, env))
@@ -177,9 +185,21 @@ export class Session {
     const h = decodeHello(payload)
     if (!verify(h.sig, this.helloTranscript(h.signPub, h.boxPub, h.nonce), h.signPub)) return
     const identity: PeerIdentity = { signPub: h.signPub, boxPub: h.boxPub }
+    // A SyncReq only ever carries the SENDER's own state vector (it's "here's
+    // what I have, tell me what I'm missing") — it never causes the sender to
+    // learn what THEY are missing. If this Session existed long before `from`
+    // ever showed interest (typical: a document written well before another
+    // peer opens it), only ONE side's Hello would normally ever arrive here,
+    // so only ONE direction of SyncReq/SyncResp would ever fire and the other
+    // peer's already-written content would never reach us. Echoing our own
+    // HELLO back the first time we see a peer here (never again — idempotent
+    // via idByPeer, so this can't ping-pong) makes their onHello fire too,
+    // which sends THEIR SyncReq to us and completes the exchange both ways.
+    const firstTimeSeeingThisPeer = !this.idByPeer.has(from)
     this.peers.observe(from, identity) // TOFU
     this.idByPeer.set(from, identity)
     if (this.granting && this.keyring.currentEpoch() >= 0) this.grantPeer(from)
+    if (firstTimeSeeingThisPeer) this.transport.send(from, frame(MsgType.Hello, this.hello()))
     this.transport.send(from, frame(MsgType.SyncReq, encodeSyncReq({ resourceId: this.resourceId, stateVector: this.crdt.stateVector() })))
   }
 
@@ -199,7 +219,7 @@ export class Session {
     // the current epoch, so no exemption is needed — and exempting it was the
     // hole that let a revoked peer launder an old-epoch op via SYNC_RESP.
     if (env.epoch < this.keyring.currentEpoch()) return
-    const key = this.keyring.docKey(env.epoch)
+    const key = this.keyring.docKey(env.epoch, this.resourceId)
     if (!key) return // cannot read this epoch (revoked, or not yet keyed)
     let update: Uint8Array
     try {
@@ -218,13 +238,14 @@ export class Session {
     // ...issued by a peer we have pinned (in v0 any known key-holder may grant;
     // the ACL will later restrict this to authorized grantors)...
     if (!this.peers.knowsSigner(k.grantorSignPub)) return
-    // ...and actually signed by that grantor over this exact grant.
-    const region = this.keyGrantRegion(k.epoch, k.recipientSignPub, k.sealedVaultKey, k.docWrap)
+    // ...and actually signed by that grantor over this exact grant, INCLUDING
+    // every docWrap in the batch (partial-recombination is rejected here).
+    const region = this.keyGrantRegion(k.epoch, k.recipientSignPub, k.sealedVaultKey, k.docWraps)
     if (!verify(k.sig, region, k.grantorSignPub)) return
     const vaultKey = this.id.unseal(k.sealedVaultKey)
-    this.keyring.import(k.epoch, vaultKey, k.docWrap)
+    this.keyring.import(k.epoch, vaultKey, k.docWraps)
     const epoch = this.keyring.currentEpoch()
-    const key = this.keyring.docKey(epoch)
+    const key = this.keyring.docKey(epoch, this.resourceId)
     if (!key) return
     // Encrypt-at-send: now keyed, push our state under the new epoch and
     // re-request theirs (now decryptable).
@@ -239,7 +260,7 @@ export class Session {
     const { resourceId: rid, stateVector } = decodeSyncReq(payload)
     if (!eqBytes(rid, this.resourceId)) return // not our channel
     const epoch = this.keyring.currentEpoch()
-    const key = this.keyring.docKey(epoch)
+    const key = this.keyring.docKey(epoch, this.resourceId)
     if (!key) return
     const diff = this.crdt.diffSince(stateVector)
     this.transport.send(from, frame(MsgType.SyncResp, this.sealOp(epoch, key, diff)))

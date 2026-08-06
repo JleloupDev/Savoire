@@ -8,25 +8,11 @@ import {
 } from '@microsoft/signalr'
 import type { IDocumentMeta, VaultClient } from '@savoire/platform'
 
-const VAULT_COMPACT_THRESHOLD = 100
-
 interface IndexOpAppliedEvent {
   seq: number
   docId: string
   path: string
   markdownContent: string
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunk = 8192
-  for (let i = 0; i < bytes.length; i += chunk)
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  return btoa(binary)
-}
-
-function fromBase64(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
 }
 
 export class VaultHubClient {
@@ -37,20 +23,19 @@ export class VaultHubClient {
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
   private indexOpCallbacks: ((evt: IndexOpAppliedEvent) => void)[] = []
-  private unsubLocalVaultUpdate: (() => void) | null = null
 
   constructor(
     private readonly serverUrl: string,
     private readonly vaultId: string,
-    private readonly vaultClient: VaultClient,
-    private readonly onChanged: () => void,
+    // Kept for signature stability (callers still pass these); the vault CRDT
+    // now syncs via EdgesyncVaultSession instead — this hub only carries index
+    // ops, but JoinVault must still be called (it also gates the index-op
+    // broadcast group — see VaultHub.cs).
+    _vaultClient: VaultClient,
+    _onChanged: () => void,
     private readonly getToken: () => string | null = () => null,
     private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
-  ) {
-    this.unsubLocalVaultUpdate = this.vaultClient.onLocalVaultUpdate(
-      (update) => void this.pushVaultUpdate(update),
-    )
-  }
+  ) {}
 
   async connect(): Promise<void> {
     if (this.disposed) return
@@ -67,28 +52,19 @@ export class VaultHubClient {
         .withAutomaticReconnect()
         .build()
 
-      // ── Vault CRDT init (replaces VaultSnapshot) ──────────────────────────
-      this.connection.on('InitVault', (_vaultId: string, ops: string[]) => {
-        for (const op of ops) this.vaultClient.applyVaultUpdate(fromBase64(op))
-        if (ops.length > VAULT_COMPACT_THRESHOLD) {
-          const snapshot = toBase64(this.vaultClient.encodeVaultState())
-          void this.connection?.invoke('SnapshotVault', this.vaultId, snapshot).catch(console.error)
-        }
-        this.onChanged()
-      })
-
-      // ── Incremental vault CRDT updates ────────────────────────────────────
-      this.connection.on('VaultOperationReceived', (_vaultId: string, opBase64: string) => {
-        this.vaultClient.applyVaultUpdate(fromBase64(opBase64))
-        this.onChanged()
-      })
+      // Vault directory/document sync now goes through EdgesyncVaultSession
+      // (E2E-encrypted, shared per-vault Keyring) — this hub no longer drives
+      // it. 'InitVault'/'VaultOperationReceived' are intentionally not
+      // handled here any more; the server still emits them but nothing
+      // listens. JoinVault is still called below (it also gates the
+      // index-op broadcast group, see VaultHub.cs).
 
       // ── Index ops ─────────────────────────────────────────────────────────
       this.connection.on('IndexOpApplied', (evt: IndexOpAppliedEvent) => {
         for (const cb of this.indexOpCallbacks) cb(evt)
       })
 
-      // ── Reconnection: rejoin to get fresh vault CRDT state ────────────────
+      // ── Reconnection: rejoin (index-op group membership) ──────────────────
       this.connection.onreconnected(async () => {
         this.onConnectionChange?.('connected')
         try {
@@ -126,17 +102,6 @@ export class VaultHubClient {
     return this.connection?.state === HubConnectionState.Connected
   }
 
-  // ── Vault CRDT ────────────────────────────────────────────────────────────
-
-  async pushVaultUpdate(update: Uint8Array): Promise<void> {
-    if (!this.isConnected) return
-    try {
-      await this.connection!.invoke('PushVaultOperation', this.vaultId, toBase64(update))
-    } catch (err) {
-      console.warn('[VaultHub] pushVaultUpdate failed', err)
-    }
-  }
-
   // ── Index ops ─────────────────────────────────────────────────────────────
 
   async pushIndexOp(docId: string, path: string, markdownContent: string): Promise<number | null> {
@@ -162,8 +127,6 @@ export class VaultHubClient {
   async dispose(): Promise<void> {
     this.disposed = true
     this.disposing = true
-    this.unsubLocalVaultUpdate?.()
-    this.unsubLocalVaultUpdate = null
     this.pendingCreates.clear()
     if (this.connection) {
       try { await this.connection.stop() } catch { /* ignore */ }

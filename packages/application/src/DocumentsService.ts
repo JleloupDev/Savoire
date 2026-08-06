@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultDirectory, type IVaultStorage } from '@savoire/platform'
-import type { ActivatedVault, IDocumentsAPI, VaultHubLike } from './contracts'
+import type { ActivatedVault, ActivateVaultParams, IDocumentsAPI, IEdgesyncVaultSessionFactory, EdgesyncVaultSessionLike, VaultHubLike } from './contracts'
 import { SyncOrchestrator } from './SyncOrchestrator'
 
 type ActiveContext = ActivatedVault
@@ -11,17 +11,10 @@ export class DocumentsService implements IDocumentsAPI {
 
   constructor(
     private readonly sync: SyncOrchestrator,
+    private readonly edgesyncFactory: IEdgesyncVaultSessionFactory,
   ) {}
 
-  async activateVault(params: {
-    vaultId: string
-    token: string
-    storage: IVaultStorage
-    documentStore: DocumentStore
-    directory: IVaultDirectory
-    resolveDoc: (path: string) => IDocumentMeta | undefined
-    onChanged: () => void
-  }): Promise<ActivatedVault> {
+  async activateVault(params: ActivateVaultParams): Promise<ActivatedVault> {
     await this.disposeActiveVault()
 
     const s = params.storage
@@ -42,12 +35,27 @@ export class DocumentsService implements IDocumentsAPI {
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
+    const edgesyncVault = await this.edgesyncFactory.open({
+      vaultId: params.vaultId,
+      identitySeed: params.identitySeed,
+      directory: params.directory,
+      isManaged: params.isManaged,
+    })
+    // The directory's own CRDT observer is the source of truth for "the note
+    // list changed" — local edits AND remote ops applied via the edgesync
+    // Session both go through it. Previously VaultHubClient called onChanged
+    // after applying an incoming op; now that the directory syncs via
+    // EdgesyncVaultSession instead, nothing else fires it for remote changes.
+    const unsubDirectoryChange = params.directory.onChange(params.onChanged)
 
     const active: ActiveContext = {
       vaultId: params.vaultId,
       client,
       hub,
+      edgesyncVault,
       dispose: async () => {
+        unsubDirectoryChange()
+        await edgesyncVault.dispose()
         await hub.dispose()
       },
     }
@@ -117,9 +125,20 @@ export class DocumentsService implements IDocumentsAPI {
     return this.active?.hub ?? null
   }
 
+  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined {
+    return this.active?.edgesyncVault
+  }
+
   async disposeActiveVault(): Promise<void> {
     if (!this.active) return
+    const active = this.active
     this.active = null
+    // Close the edgesync vault session directly (not via active.dispose(),
+    // which also disposes the hub — that's sync.disposeActive()'s job below,
+    // and it additionally clears SyncOrchestrator's own bookkeeping). Awaited:
+    // a subsequent activateVault() must not race ahead of this connection
+    // actually closing.
+    await active.edgesyncVault?.dispose()
     await this.sync.disposeActive()
   }
 }

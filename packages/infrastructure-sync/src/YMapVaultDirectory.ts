@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import * as Y from 'yjs'
 import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
+import type { ICrdt } from 'edgesync-protocol'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain. Cast once; runtime behaviour is validated by tests.
@@ -10,7 +11,7 @@ const Y_ = Y as Record<string, any>
 
 type VaultEntry = { path: string }
 
-export class YMapVaultDirectory implements IVaultDirectory {
+export class YMapVaultDirectory implements IVaultDirectory, ICrdt {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly doc: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,6 +77,24 @@ export class YMapVaultDirectory implements IVaultDirectory {
   applyUpdate(update: Uint8Array): void {
     // origin='remote' prevents onLocalUpdate from re-broadcasting applied updates
     Y_.applyUpdate(this.doc, update, 'remote')
+  }
+
+  // ── ICrdt (edgesync-protocol) — lets a Session drive this same Y.Doc as its
+  // vault-directory channel, alongside the existing IVaultDirectory surface. ──
+  snapshot(): Uint8Array {
+    return this.encodeFullState()
+  }
+
+  applyRemote(update: Uint8Array): void {
+    this.applyUpdate(update)
+  }
+
+  stateVector(): Uint8Array {
+    return Y_.encodeStateVector(this.doc) as Uint8Array
+  }
+
+  diffSince(stateVector: Uint8Array): Uint8Array {
+    return Y_.encodeStateAsUpdate(this.doc, stateVector) as Uint8Array
   }
 
   onLocalUpdate(cb: (update: Uint8Array) => void): () => void {

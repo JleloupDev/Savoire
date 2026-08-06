@@ -22,6 +22,7 @@ const VAULT_SUMMARY: AppVaultSummary = {
   folderCount: 1,
   lastModifiedAt: '2026-01-01T00:00:00.000Z',
   sizeBytes: 1024,
+  isManaged: false,
 }
 
 describe('VaultsService', () => {
@@ -38,9 +39,9 @@ describe('VaultsService', () => {
     const backend = makeBackend()
     vi.mocked(backend.createVault).mockResolvedValue(VAULT_SUMMARY)
     const svc = new VaultsService(backend)
-    const result = await svc.create('user1', 'Main', 'token')
+    const result = await svc.create('user1', 'Main', 'token', false)
     expect(result).toEqual(VAULT_SUMMARY)
-    expect(backend.createVault).toHaveBeenCalledWith('user1', 'Main', 'token')
+    expect(backend.createVault).toHaveBeenCalledWith('user1', 'Main', 'token', false)
   })
 
   it('rename delegates to backend.renameVault', async () => {
@@ -72,6 +73,6 @@ describe('VaultsService', () => {
     const backend = makeBackend()
     vi.mocked(backend.createVault).mockRejectedValue(new Error('400'))
     const svc = new VaultsService(backend)
-    await expect(svc.create('u1', 'bad', 'tok')).rejects.toThrow('400')
+    await expect(svc.create('u1', 'bad', 'tok', false)).rejects.toThrow('400')
   })
 })

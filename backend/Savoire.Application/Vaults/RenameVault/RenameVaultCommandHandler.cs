@@ -23,6 +23,6 @@ public sealed class RenameVaultCommandHandler(IVaultRepository vaults)
 
         VaultStats stats = await vaults.GetStatsAsync(vault.Id, ct);
         return new VaultSummaryDto(vault.Id, vault.Name, "owner",
-            stats.DocumentCount, stats.FolderCount, stats.LastModifiedAt, stats.SizeBytes);
+            stats.DocumentCount, stats.FolderCount, stats.LastModifiedAt, stats.SizeBytes, vault.IsManaged);
     }
 }

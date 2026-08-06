@@ -12,6 +12,10 @@ export interface AppVaultSummary {
   folderCount: number
   lastModifiedAt: string | null
   sizeBytes: number
+  /** S2, decided once at creation: true if the server holds this vault's
+   *  Keyring directly (ManagedVaultKeyringSource) — no K_User ever needed to
+   *  open it. False = self-managed (S3, VaultKeyEscrow, per-account K_User). */
+  isManaged: boolean
 }
 
 export interface AppDocumentSummary {
@@ -53,16 +57,63 @@ export interface IVaultHubFactory {
   create(params: VaultHubFactoryParams): VaultHubLike
 }
 
+/**
+ * Abstract shape of EdgesyncVaultSession (@savoire/infrastructure-sync) — kept
+ * structural here (not imported) because infrastructure-sync depends on
+ * @savoire/application, so importing it back would create a cycle. Vault +
+ * documents share one E2E-encrypted edgesync Keyring; the server never reads
+ * either (it only relays opaque frames / signals WebRTC negotiation).
+ */
+/** Structural subset of @savoire/plugin-api's ICRDT presence methods —
+ *  satisfied today by YjsCrdtAdapter. Kept structural for the same
+ *  cycle-avoidance reason as EdgesyncVaultSessionLike itself. */
+export interface CrdtPresenceLike {
+  onLocalPresenceChanged(cb: (bytes: Uint8Array, changedClients: number[]) => void): () => void
+  applyRemotePresence(bytes: Uint8Array): void
+}
+
+export interface EdgesyncVaultSessionLike {
+  /** Fixed forever: was this peer the one whose genesis minted the vault. */
+  readonly isOwner: boolean
+  /** Dynamic: true once this peer actually possesses K_vault (may become true
+   *  for a non-owner too, once granted — see EdgesyncVaultSession). */
+  readonly isGranting: boolean
+  /** Start (or resume) live E2E-encrypted sync for one currently-open
+   *  document's Y.Doc. `presence`, if given, also wires peer cursors
+   *  (y-protocols/awareness) over the same channel — see
+   *  EdgesyncAwarenessChannel. */
+  openDocument(docId: string, doc: unknown, presence?: CrdtPresenceLike): void
+  /** Stop syncing a document whose editor panel closed. */
+  closeDocument(docId: string): void
+  /** Awaited by disposeActiveVault(): must fully close before a caller
+   *  switching to a different vault proceeds (see EdgesyncVaultSession). */
+  dispose(): Promise<void>
+}
+
+export interface EdgesyncVaultSessionFactoryParams {
+  vaultId: string
+  /** 32-byte Ed25519 seed (e.g. an ISeedExportingIdentityProvider's exportSignSeed()). */
+  identitySeed: Uint8Array
+  directory: IVaultDirectory
+  /** S2 vs S3 — see AppVaultSummary.isManaged. Determines which KeyringSource
+   *  the factory constructs (ManagedVaultKeyringSource vs VaultKeyEscrow). */
+  isManaged: boolean
+}
+
+export interface IEdgesyncVaultSessionFactory {
+  open(params: EdgesyncVaultSessionFactoryParams): Promise<EdgesyncVaultSessionLike>
+}
+
 export interface IVaultsBackend {
   listVaults(userId: string, token: string): Promise<AppWorkspace>
-  createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>
+  createVault(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary>
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
 }
 
 export interface IVaultsAPI {
   list(userId: string, token: string): Promise<AppWorkspace>
-  create(userId: string, name: string, token: string): Promise<AppVaultSummary>
+  create(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary>
   rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   delete(vaultId: string, token: string): Promise<void>
 }
@@ -71,6 +122,7 @@ export interface ActivatedVault {
   readonly vaultId: string
   readonly client: VaultClient
   readonly hub: VaultHubLike
+  readonly edgesyncVault?: EdgesyncVaultSessionLike
   dispose(): Promise<void>
 }
 
@@ -82,6 +134,11 @@ export interface ActivateVaultParams {
   directory: IVaultDirectory
   resolveDoc: (path: string) => IDocumentMeta | undefined
   onChanged: () => void
+  /** 32-byte Ed25519 seed for the vault's shared edgesync Keyring. */
+  identitySeed: Uint8Array
+  /** S2 vs S3 — see AppVaultSummary.isManaged. Threaded through to
+   *  IEdgesyncVaultSessionFactory.open(). */
+  isManaged: boolean
 }
 
 export interface ActivateSharedDocParams {
@@ -98,6 +155,7 @@ export interface IDocumentsAPI {
   activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault>
   getActiveClient(): VaultClient | undefined
   getActiveHub(): VaultHubLike | null
+  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined
   disposeActiveVault(): Promise<void>
 }
 

@@ -142,6 +142,15 @@ public static class ServiceCollectionExtensions
         // Index repositories
         services.AddScoped<IIndexSnapshotRepository,  EfIndexSnapshotRepository>();
 
+        // Edgesync blob repository (blind per-vault backup store, see ADR-022-style stance)
+        services.AddScoped<IEdgesyncBlobRepository, EfEdgesyncBlobRepository>();
+
+        // Vault key escrow (blind per-user key wraps — S3, see VaultKeyEscrow.ts)
+        services.AddScoped<IVaultKeyWrapRepository, EfVaultKeyWrapRepository>();
+
+        // Managed vault keyring (server-held Keyring in clear — S2, per vault, see ManagedVaultKeyringSource.ts)
+        services.AddScoped<IManagedVaultKeyringRepository, EfManagedVaultKeyringRepository>();
+
         // Domain Auth services
         services.AddScoped<ITokenService,      TokenService>();
         services.AddScoped<IUserService,       IdentityUserService>();

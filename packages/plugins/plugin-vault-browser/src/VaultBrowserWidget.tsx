@@ -9,6 +9,10 @@ export interface VaultSummaryLike {
   role: string
   documentCount: number
   folderCount: number
+  /** True when this vault can't be opened with whatever key the caller
+   *  currently holds — rendered as a lock badge, never blocks the row from
+   *  showing (see VaultBrowserPanel below). */
+  locked: boolean
 }
 
 export interface SharedNoteLike {
@@ -23,7 +27,7 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   vaults: React.MutableRefObject<TVault[]>
   selectedVaultId: React.MutableRefObject<string | null>
   onSelectVault: React.MutableRefObject<(vault: TVault) => void>
-  onCreateVault: React.MutableRefObject<(name: string) => Promise<void>>
+  onCreateVault: React.MutableRefObject<(name: string, isManaged: boolean) => Promise<void>>
   onRenameVault: React.MutableRefObject<(vault: TVault, name: string) => Promise<void>>
   onDeleteVault: React.MutableRefObject<(vault: TVault) => Promise<void>>
   onRefresh?: React.MutableRefObject<() => void>
@@ -128,6 +132,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [managed, setManaged] = useState(false)
   const [sharedNotes, setSharedNotes] = useState<SharedNoteLike[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -156,8 +161,8 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
     const n = newName.trim()
     if (!n) return
     try {
-      await refs.onCreateVault.current(n)
-      setCreating(false); setNewName('')
+      await refs.onCreateVault.current(n, managed)
+      setCreating(false); setNewName(''); setManaged(false)
       sync()
     } catch {}
   }
@@ -175,7 +180,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                 background: v.id === selectedId ? 'rgba(255,255,255,0.08)' : 'transparent',
               }}
               onMouseEnter={e => {
-                if (v.id !== selectedId) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'
+                if (v.id !== selectedId && !v.locked) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'
                 const btn = (e.currentTarget as HTMLElement).querySelector('.cfg-btn') as HTMLElement | null
                 if (btn) btn.style.opacity = '1'
               }}
@@ -187,9 +192,12 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
             >
               <button
                 onClick={() => handleSelect(v)}
-                style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
+                style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.locked ? 'var(--text-faint)' : v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
               >
-                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.name}</div>
+                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {v.locked && <span title="Clé requise pour ouvrir ce vault" style={{ fontSize: 10, flexShrink: 0 }}>🔒</span>}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
+                </div>
                 <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{v.role} · {v.documentCount} doc{v.documentCount !== 1 ? 's' : ''}</div>
               </button>
               <button
@@ -250,13 +258,17 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
               ref={inputRef}
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName('') } }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); setManaged(false) } }}
               placeholder="Nom du vault"
               style={S.inp}
             />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-faint)', padding: '2px 4px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} />
+              Géré par le serveur
+            </label>
             <div style={{ display: 'flex', gap: 4 }}>
               <button onClick={() => void handleCreate()} disabled={!newName.trim()} style={S.btn('var(--color-success, #4caf50)')}>OK</button>
-              <button onClick={() => { setCreating(false); setNewName('') }} style={S.btn('var(--color-danger, #f66)')}>Ann.</button>
+              <button onClick={() => { setCreating(false); setNewName(''); setManaged(false) }} style={S.btn('var(--color-danger, #f66)')}>Ann.</button>
             </div>
           </>
         ) : (

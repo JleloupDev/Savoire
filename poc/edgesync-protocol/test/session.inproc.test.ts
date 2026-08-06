@@ -10,8 +10,16 @@ import {
 } from '../src/index'
 
 const RESOURCE = 'vault-1'
+const RID = resourceId(RESOURCE)
 const rand = () => randomBytes(32)
 const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+
+/** Genesis + mint the one channel these single-channel tests exercise. */
+function genesisFor(): Keyring {
+  const kr = Keyring.genesis(rand)
+  kr.mintDocKey(0, RID, rand)
+  return kr
+}
 
 function makePeer(id: string, bus: Bus, keyring: Keyring, granting: boolean) {
   const identity = OwnIdentity.generate()
@@ -47,7 +55,7 @@ function containsSub(hay: Uint8Array, needle: Uint8Array): boolean {
 describe('session — P2P chiffre (in-process)', () => {
   it('a+b: le fil ne porte que du chiffre, et deux pairs convergent', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     await settle()
 
@@ -61,7 +69,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('c: merge a travers une rotation (pair offline re-key a la reconnexion)', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     await settle()
     a.crdt.text().insert(0, 'base ')
@@ -86,7 +94,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('d: pair revoque ne lit plus le futur et sa poussee perimee est rejetee', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     const c = makePeer('C', bus, Keyring.empty(), false)
     await settle()
@@ -111,7 +119,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('d2: une op forgee en SYNC_RESP sous une epoque perimee est rejetee (anti-contournement)', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     const c = makePeer('C', bus, Keyring.empty(), false)
     await settle()
@@ -123,7 +131,7 @@ describe('session — P2P chiffre (in-process)', () => {
     // B est a l'epoque 1 et garde la cle epoque 0 dans son historique ; C garde
     // aussi la cle epoque 0. C forge une op valide sous l'epoque 0 et l'encadre en
     // SYNC_RESP pour contourner le rejet d'epoque perimee.
-    const oldKey = c.keyring.docKey(0)!
+    const oldKey = c.keyring.docKey(0, RID)!
     const evil = new Y.Doc()
     evil.getText('message').insert(0, 'LAUNDERED')
     const update = Y.encodeStateAsUpdate(evil)
@@ -139,7 +147,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('f: un frame malforme est silencieusement rejete sans casser la session', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     await settle()
     a.crdt.text().insert(0, 'shared ')
@@ -162,7 +170,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('b1: une op signee par une identite inconnue est rejetee (utilisateur non epingle)', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     await settle()
     a.crdt.text().insert(0, 'shared ')
@@ -172,7 +180,7 @@ describe('session — P2P chiffre (in-process)', () => {
     // Z detient la cle de doc (fuite simulee) mais n'a jamais fait de handshake.
     const z = OwnIdentity.generate()
     const epoch = b.keyring.currentEpoch()
-    const key = b.keyring.docKey(epoch)!
+    const key = b.keyring.docKey(epoch, RID)!
     const evil = new Y.Doc()
     evil.getText('message').insert(0, 'INTRUS')
     const update = Y.encodeStateAsUpdate(evil)
@@ -188,7 +196,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('g (#2): une op valide mais pour un autre canal (resourceId) est rejetee', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     const b = makePeer('B', bus, Keyring.empty(), false)
     await settle()
     a.crdt.text().insert(0, 'shared ')
@@ -198,7 +206,7 @@ describe('session — P2P chiffre (in-process)', () => {
     // A (epingle) signe une op parfaitement valide AVEC la bonne cle, mais pour un
     // autre resourceId. Seul le canal differe : B doit la jeter au demux.
     const epoch = b.keyring.currentEpoch()
-    const key = b.keyring.docKey(epoch)!
+    const key = b.keyring.docKey(epoch, RID)!
     const otherRid = resourceId('autre-canal')
     const evil = new Y.Doc()
     evil.getText('message').insert(0, 'WRONGCHAN')
@@ -213,7 +221,7 @@ describe('session — P2P chiffre (in-process)', () => {
 
   it('h (#4): un HELLO dont le boxPub est substitue est rejete (pas de grant)', async () => {
     const bus = new Bus()
-    const a = makePeer('A', bus, Keyring.genesis(rand), true)
+    const a = makePeer('A', bus, genesisFor(), true)
     await settle()
 
     // M est un transport brut (pas de Session) qui forge un HELLO : il signe le
@@ -251,7 +259,8 @@ describe('session — P2P chiffre (in-process)', () => {
 
     const g = OwnIdentity.generate()
     m.send('X', frame(MsgType.Key, encodeKey({
-      resource: RESOURCE, epoch: 0, sealedVaultKey: randomBytes(48), docWrap: randomBytes(40),
+      resource: RESOURCE, epoch: 0, sealedVaultKey: randomBytes(48),
+      docWraps: [{ resourceId: RID, docWrap: randomBytes(72) }],
       grantorSignPub: g.signPub, recipientSignPub: x.identity.signPub, sig: randomBytes(64),
     })))
     await settle()

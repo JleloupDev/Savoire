@@ -21,6 +21,11 @@ public sealed class EdgeSyncRooms
 {
     public ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> Rooms { get; } = new();
     public ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> VaultsByConnection { get; } = new();
+
+    /// <summary>vaultId -> connectionId of whoever atomically won the right to
+    /// mint the vault's genesis key (see EdgeSyncHub.ClaimOwner). The server
+    /// only ever brokers WHO won this race, never the key itself.</summary>
+    public ConcurrentDictionary<string, string> Owners { get; } = new();
 }
 
 [Authorize]
@@ -49,6 +54,18 @@ public sealed class EdgeSyncHub(
         return existing;
     }
 
+    /// <summary>
+    /// Atomically claim the right to mint this vault's genesis key. At most one
+    /// caller ever gets `true` for a given vaultId (until the room empties and
+    /// a fresh election can happen) — replaces the old "peers().length === 0"
+    /// client-side heuristic, which let two peers connecting close together
+    /// both self-elect and mint independent, unmergeable keys. The server
+    /// arbitrates only WHO won; it never sees the key material itself, same
+    /// trust boundary as the presence/relay it already brokers.
+    /// </summary>
+    public bool ClaimOwner(string vaultId)
+        => rooms.Owners.TryAdd(vaultId, Context.ConnectionId);
+
     /// <summary>Forward one opaque frame to one peer of the same vault room.</summary>
     public Task Relay(string vaultId, string toPeer, string frameBase64)
     {
@@ -70,6 +87,21 @@ public sealed class EdgeSyncHub(
                 {
                     room.TryRemove(Context.ConnectionId, out _);
                     if (room.IsEmpty) rooms.Rooms.TryRemove(vaultId, out _);
+                }
+                // Release the claim as soon as the claimed connection itself goes
+                // away, even if other (possibly ghost) connections keep the room
+                // non-empty — otherwise a dead claim blocks the room forever: no
+                // one else can ever mint the genesis key, and no one who is
+                // waiting on a grant from that connection will ever get one.
+                // Accepted v0 gap: if the claimant dies after granting SOME but
+                // not all peers, a fresh claimant re-genesis-ing splits the vault
+                // (ungranted peers end up on a different K_vault than the ones
+                // already granted) — no client-side reconciliation for this today,
+                // same "not persisted, best-effort convergence" trade-off as the
+                // rest of the Keyring (see EdgesyncVaultSession doc comment).
+                if (rooms.Owners.TryGetValue(vaultId, out var ownerConnId) && ownerConnId == Context.ConnectionId)
+                {
+                    rooms.Owners.TryRemove(vaultId, out _);
                 }
                 await Clients.Group(Group(vaultId)).SendAsync("PeerDown", vaultId, Context.ConnectionId);
             }

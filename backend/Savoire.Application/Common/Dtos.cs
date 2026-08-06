@@ -23,7 +23,8 @@ public record VaultSummaryDto(
     int       DocumentCount,
     int       FolderCount,
     DateTime? LastModifiedAt,
-    long      SizeBytes
+    long      SizeBytes,
+    bool      IsManaged
 );
 
 public record VaultMemberDto(string UserId, string DisplayName, string Role);
@@ -62,7 +63,7 @@ public record FolderDto(string Id, string Path, DateTime CreatedAt)
 
 // ── API Request bodies ─────────────────────────────────────────────────────
 
-public record CreateVaultRequest(string Name);
+public record CreateVaultRequest(string Name, bool IsManaged);
 public record CreateFolderRequest(string Path);
 public record PatchVaultRequest(string Name);
 public record AddMemberRequest(string UserId, string Role);
@@ -181,6 +182,10 @@ public record SaveIndexSnapshotRequest(
     string Namespace,
     long   ProcessedSeq,
     string Data
+);
+
+public record EdgesyncBlobDto(
+    string BytesBase64
 );
 
 public record ViewAccessDto(

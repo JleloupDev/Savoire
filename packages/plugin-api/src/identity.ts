@@ -7,6 +7,17 @@ export interface IIdentityProvider {
   sign(message: Uint8Array): Promise<Uint8Array>
 }
 
+/**
+ * Optional capability: derive the 32-byte seed edgesync-protocol's
+ * OwnIdentity needs (OwnIdentity.fromSignSeed). Not every IIdentityProvider
+ * needs to support this — e.g. the anonymous share-link flow's LocalKeyProvider
+ * instances never open an edgesync vault. Check for it structurally
+ * ('exportSignSeed' in provider) rather than assuming every provider has it.
+ */
+export interface ISeedExportingIdentityProvider extends IIdentityProvider {
+  exportSignSeed(): Uint8Array
+}
+
 // ── SignedOp binary envelope ──────────────────────────────────────────────────
 // Layout: [ op bytes ][ signature: 64 bytes ][ pubKey: 32 bytes ]
 // Ed25519 signature and public key have fixed sizes, so no length prefix needed.

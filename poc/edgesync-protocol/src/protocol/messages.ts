@@ -46,11 +46,18 @@ export function decodeHello(p: Uint8Array): HelloMsg {
   return { signPub: ub64(o.signPub), boxPub: ub64(o.boxPub), nonce: ub64(o.nonce), sig: ub64(o.sig) }
 }
 
+export interface DocWrap {
+  resourceId: Uint8Array
+  docWrap: Uint8Array
+}
+
 export interface KeyMsg {
+  /** id of the VAULT (not a single document) — routes the grant to the vault-directory Session. */
   resource: string
   epoch: number
   sealedVaultKey: Uint8Array
-  docWrap: Uint8Array
+  /** Every channel's wrapped K_doc granted in this one message (whole-vault grant). */
+  docWraps: DocWrap[]
   /** Signing key of the grantor; must be a pinned peer on receipt. */
   grantorSignPub: Uint8Array
   /** Signing key of the intended recipient; binds the grant to one peer. */
@@ -61,7 +68,8 @@ export interface KeyMsg {
 
 export function encodeKey(m: KeyMsg): Uint8Array {
   return enc.encode(JSON.stringify({
-    resource: m.resource, epoch: m.epoch, sealedVaultKey: b64(m.sealedVaultKey), docWrap: b64(m.docWrap),
+    resource: m.resource, epoch: m.epoch, sealedVaultKey: b64(m.sealedVaultKey),
+    docWraps: m.docWraps.map((d) => ({ resourceId: b64(d.resourceId), docWrap: b64(d.docWrap) })),
     grantorSignPub: b64(m.grantorSignPub), recipientSignPub: b64(m.recipientSignPub), sig: b64(m.sig),
   }))
 }
@@ -69,7 +77,8 @@ export function encodeKey(m: KeyMsg): Uint8Array {
 export function decodeKey(p: Uint8Array): KeyMsg {
   const o = JSON.parse(dec.decode(p))
   return {
-    resource: o.resource, epoch: o.epoch, sealedVaultKey: ub64(o.sealedVaultKey), docWrap: ub64(o.docWrap),
+    resource: o.resource, epoch: o.epoch, sealedVaultKey: ub64(o.sealedVaultKey),
+    docWraps: o.docWraps.map((d: { resourceId: string; docWrap: string }) => ({ resourceId: ub64(d.resourceId), docWrap: ub64(d.docWrap) })),
     grantorSignPub: ub64(o.grantorSignPub), recipientSignPub: ub64(o.recipientSignPub), sig: ub64(o.sig),
   }
 }

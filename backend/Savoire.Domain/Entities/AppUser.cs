@@ -13,4 +13,11 @@ public class AppUser : IdentityUser
     /// <summary>Ed25519 private key (32 bytes) stored as hex. Generated on first key request.</summary>
     // TODO(P3): encrypt at rest before enabling P2P verification — plain-text private key is acceptable only while the server is the sole trusted party.
     public string? PrivateKeyHex { get; set; }
+
+    /// <summary>K_User (32 bytes) stored as hex. Generated lazily on the first
+    /// GET /api/v1/vault-key — only for an account that explicitly chose the
+    /// "let the server manage my key" mode (S2). See VaultKeyEscrow.ts for the
+    /// default S3 mode, where the server never sees K_User in clear.</summary>
+    // TODO(P3): encrypt at rest — same reservation as PrivateKeyHex above.
+    public string? VaultKeyHex { get; set; }
 }

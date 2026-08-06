@@ -213,6 +213,9 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("VaultKeyHex")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
@@ -262,6 +265,30 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("RefreshTokens");
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.EdgesyncBlobEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("key");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("bytes");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("VaultId", "Key");
+
+                    b.ToTable("edgesync_blobs", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
@@ -330,6 +357,26 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("idx_snapshots_vault_ns");
 
                     b.ToTable("index_snapshots", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.ManagedVaultKeyringEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<byte[]>("KeyringBytes")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("keyring_bytes");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("VaultId");
+
+                    b.ToTable("managed_vault_keyrings", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.OperationEntity", b =>
@@ -680,6 +727,10 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
+                    b.Property<bool>("IsManaged")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("is_managed");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -693,6 +744,30 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("vaults", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultKeyWrapEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.Property<byte[]>("WrappedKeyBytes")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("wrapped_key_bytes");
+
+                    b.HasKey("UserId", "VaultId");
+
+                    b.ToTable("vault_key_wraps", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultMemberEntity", b =>

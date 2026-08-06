@@ -32,5 +32,5 @@ public sealed class ListVaultsQueryHandler(
 
     private static VaultSummaryDto ToSummary(Vault vault, string role, VaultStats stats) =>
         new(vault.Id, vault.Name, role, stats.DocumentCount, stats.FolderCount,
-            stats.LastModifiedAt, stats.SizeBytes);
+            stats.LastModifiedAt, stats.SizeBytes, vault.IsManaged);
 }

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import { EdgesyncRelayTransport, type RelayConnection } from '@savoire/infrastructure-sync'
 import {
-  OwnIdentity, YjsCrdt, PeerStore, Session, Keyring, randomBytes, toBase64,
+  OwnIdentity, YjsCrdt, PeerStore, Session, Keyring, randomBytes, toBase64, resourceId,
 } from 'edgesync-protocol'
 import { FakeRelayServer } from './fakeRelay'
 
@@ -25,6 +25,9 @@ class FakeConnection implements RelayConnection {
   readonly handlers = new Map<string, Handler>()
   readonly invocations: { method: string; args: unknown[] }[] = []
   joinResult: string[] = []
+  claimOwnerResult = true
+  private reconnectedCb: ((connectionId?: string) => void) | null = null
+  private closeCb: ((error?: Error) => void) | null = null
 
   on(method: string, cb: (...args: never[]) => void): void {
     this.handlers.set(method, cb as Handler)
@@ -33,6 +36,7 @@ class FakeConnection implements RelayConnection {
   async invoke<T>(method: string, ...args: unknown[]): Promise<T> {
     this.invocations.push({ method, args })
     if (method === 'Join') return this.joinResult as T
+    if (method === 'ClaimOwner') return this.claimOwnerResult as T
     return undefined as T
   }
 
@@ -45,8 +49,24 @@ class FakeConnection implements RelayConnection {
     this.started = false
   }
 
+  onreconnected(cb: (connectionId?: string) => void): void {
+    this.reconnectedCb = cb
+  }
+
+  onclose(cb: (error?: Error) => void): void {
+    this.closeCb = cb
+  }
+
   fire(method: string, ...args: string[]): void {
     this.handlers.get(method)?.(...args)
+  }
+
+  fireReconnected(): void {
+    this.reconnectedCb?.()
+  }
+
+  fireClose(): void {
+    this.closeCb?.()
   }
 }
 
@@ -111,6 +131,46 @@ describe('EdgesyncRelayTransport — contrat', () => {
     const relay = conn.invocations.find((i) => i.method === 'Relay')
     expect(relay?.args).toEqual(['vault-1', 'p1', toBase64(new Uint8Array([9, 8]))])
   })
+
+  it('onreconnected : re-Join et reconcilie la presence (PeerDown pour les absents, PeerUp pour les nouveaux)', async () => {
+    const { conn, t } = await make(['p1', 'p2'])
+    const ups: string[] = []
+    const downs: string[] = []
+    t.onPeerUp((id) => ups.push(id))
+    t.onPeerDown((id) => downs.push(id))
+    await t.connect('vault-1')
+    expect(t.peers().sort()).toEqual(['p1', 'p2'])
+
+    // Apres reconnexion : p1 a disparu, p3 est nouveau, p2 est toujours la.
+    conn.joinResult = ['p2', 'p3']
+    conn.fireReconnected()
+    await settle(10)
+
+    expect(t.peers().sort()).toEqual(['p2', 'p3'])
+    expect(downs).toEqual(['p1'])
+    expect(ups).toEqual(['p1', 'p2', 'p3']) // p1,p2 du join initial, p3 du reconnect
+  })
+
+  it('claimOwner : invoque ClaimOwner sur le vault courant et renvoie le verdict du serveur', async () => {
+    const { conn, t } = await make()
+    await t.connect('vault-1')
+
+    conn.claimOwnerResult = false
+    await expect(t.claimOwner()).resolves.toBe(false)
+    expect(conn.invocations.at(-1)).toEqual({ method: 'ClaimOwner', args: ['vault-1'] })
+  })
+
+  it('onclose : tous les pairs presents sont annonces absents', async () => {
+    const { conn, t } = await make(['p1', 'p2'])
+    const downs: string[] = []
+    t.onPeerDown((id) => downs.push(id))
+    await t.connect('vault-1')
+
+    conn.fireClose()
+
+    expect(t.peers()).toEqual([])
+    expect(downs.sort()).toEqual(['p1', 'p2'])
+  })
 })
 
 // ── Part 2: deux Sessions REELLES du protocole a travers un faux relais ──────
@@ -123,8 +183,10 @@ describe('EdgesyncRelayTransport — deux Sessions protocole convergent via le r
     // A: fondateur (genesis, granting) — deja dans la room
     const crdtA = new YjsCrdt()
     const transportA = new EdgesyncRelayTransport({ connection: server.attach() })
+    const keyringA = Keyring.genesis(rand)
+    keyringA.mintDocKey(0, resourceId('vault-1/doc-1'), rand)
     new Session({
-      identity: OwnIdentity.generate(), crdt: crdtA, keyring: Keyring.genesis(rand),
+      identity: OwnIdentity.generate(), crdt: crdtA, keyring: keyringA,
       transport: transportA, peers: new PeerStore(), resource: 'vault-1/doc-1', granting: true,
     })
     await transportA.connect('vault-1')

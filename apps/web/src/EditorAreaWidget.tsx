@@ -5,11 +5,11 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { YjsCrdtAdapter, SignalRTransport, EdgesyncDocSession, GracePool } from '@savoire/infrastructure-sync'
-import { CollabOrchestrator } from '@savoire/application'
+import { YjsCrdtAdapter, GracePool } from '@savoire/infrastructure-sync'
+import type { EdgesyncVaultSessionLike } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
-import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin, IIdentityProvider } from '@savoire/plugin-api'
+import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -17,18 +17,14 @@ import type { DocumentDto, VaultSummary, AccountEntry } from './types'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
-// One live edgesync bundle (Y.Doc adapter + protocol session) per document,
-// shared across effect remounts: destroying the key-holder session on every
-// remount would lose the vault keys (see GracePool).
-interface EdgeBundle {
-  crdt: YjsCrdtAdapter
-  session: Promise<EdgesyncDocSession>
-  current: EdgesyncDocSession | null
-}
-const edgePool = new GracePool<EdgeBundle>((b) => {
-  void b.session.then((s) => s.dispose()).catch(() => {})
-  b.crdt.dispose()
-})
+// One live Y.Doc adapter per document, shared across effect remounts (React
+// StrictMode double-mount, editor-mode toggles): recreating it on every
+// remount would discard already-synced content and force a wasted resync.
+// Session lifecycle itself is owned by EdgesyncVaultSession (vault-scoped,
+// stable across these remounts) — unlike the old per-document model, closing
+// and reopening a document's Session on remount is cheap and never risks
+// losing keys (see EdgesyncVaultSession).
+const crdtPool = new GracePool<YjsCrdtAdapter>((crdt) => crdt.dispose())
 
 // ─── Refs injected from EditorPage (always current, never stale) ───────────
 
@@ -40,6 +36,8 @@ export interface EditorAreaRefs {
   token: React.MutableRefObject<string | null>
   activeAccount: React.MutableRefObject<AccountEntry | null>
   vaultAPI: React.MutableRefObject<VaultClient | undefined>
+  /** The active vault's shared edgesync session — one per vault (not per document). */
+  edgesyncVault: React.MutableRefObject<EdgesyncVaultSessionLike | undefined>
   onControllerReady: React.MutableRefObject<(ctrl: EditorController | null) => void>
   /** File type registry — populated by plugins in onBeforeReady. */
   fileTypeRegistry: React.MutableRefObject<FileTypeRegistry | null>
@@ -58,7 +56,6 @@ export interface EditorAreaRefs {
   isReadOnly: React.MutableRefObject<boolean>
   /** Emit a CRDT text change to RealtimeIndexingService — wired by usePluginBootstrap. */
   onCrdtTextChange: React.MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
-  identity: IIdentityProvider | undefined
 }
 
 interface EditorPanelParams {
@@ -104,57 +101,18 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current?.()
     unsubPluginLoadedRef.current = null
 
-    const identity = refs.identity
-    if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
-
-    // Opt-in vertical slice (?edgesync=1): collaborate through the edgesync
-    // protocol over the blind relay instead of the SignalR sync hub. Cursors/
-    // presence are not carried on this path yet (no awareness channel).
-    const useEdgesync = new URLSearchParams(window.location.search).has('edgesync')
-    let edgeLease: ReturnType<typeof edgePool.acquire> | null = null
-    let signalR: { transport: SignalRTransport; orchestrator: CollabOrchestrator } | null = null
-    let crdt: YjsCrdtAdapter
-
-    if (useEdgesync) {
-      const poolKey = `${vaultId}/${doc.id}`
-      edgeLease = edgePool.acquire(poolKey, () => {
-        const pooledCrdt = new YjsCrdtAdapter()
-        const bundle = { crdt: pooledCrdt, current: null } as EdgeBundle
-        bundle.session = (async () => {
-          const provider = identity as IIdentityProvider & {
-            init?: () => Promise<void>
-            exportSecret?: () => Uint8Array
-          }
-          await provider.init?.()
-          if (!provider.exportSecret) throw new Error('identity provider cannot export a seed')
-          const session = await EdgesyncDocSession.open({
-            vaultId,
-            docId: doc.id,
-            identitySeed: provider.exportSecret(),
-            doc: pooledCrdt.rawDoc,
-            serverUrl: '',
-            getToken: () => refs.token.current,
-          })
-          bundle.current = session
-          console.info(`[EdgeSync] session open (owner=${session.isOwner})`)
-          return session
-        })()
-        bundle.session.catch((err) => {
-          console.error('[EdgeSync] session open failed', err)
-          edgePool.evict(poolKey, bundle)
-        })
-        return bundle
-      })
-      crdt = edgeLease.value.crdt
-    } else {
-      crdt = new YjsCrdtAdapter()
-      const transport = new SignalRTransport({
-        serverUrl: '',
-        userId,
-        getToken: () => refs.token.current,
-      })
-      signalR = { transport, orchestrator: new CollabOrchestrator(crdt, transport, identity) }
-    }
+    // Every document collaborates through the edgesync protocol: vault +
+    // documents share one E2E-encrypted Keyring (EdgesyncVaultSession,
+    // activated once per vault in AppShell). Peer cursors ride the same
+    // channel (EdgesyncAwarenessChannel) — crdt already has its own
+    // y-protocols/awareness instance wired to CodeMirror (yCollab), we just
+    // hand it to edgesync so local moves get broadcast and remote ones applied.
+    const poolKey = `${vaultId}/${doc.id}`
+    const crdtLease = crdtPool.acquire(poolKey, () => new YjsCrdtAdapter())
+    const crdt = crdtLease.value
+    const edgesyncVault = refs.edgesyncVault.current
+    if (!edgesyncVault) console.warn('[EdgeSync] no active vault session — document will not sync', doc.id)
+    edgesyncVault?.openDocument(doc.id, crdt.rawDoc, crdt)
 
     const view = new DocumentView({
       path: doc.path,
@@ -168,8 +126,7 @@ function DocumentPanelHost({
       defaultPlugins: refs.defaultPlugins.current,
       pluginRegistry,
       crdt,
-      getTransportState: () =>
-        signalR ? signalR.transport.getState() : edgeLease?.value.current ? 'connected' : 'connecting',
+      getTransportState: () => (edgesyncVault ? 'connected' : 'connecting'),
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
@@ -178,7 +135,6 @@ function DocumentPanelHost({
       },
     })
     view.mount()
-    if (signalR) void signalR.transport.join(vaultId, doc.id)
     const unsubCrdtIndex = crdt.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
     viewRef.current = view
 
@@ -199,9 +155,8 @@ function DocumentPanelHost({
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
       unsubCrdtIndex()
-      signalR?.orchestrator.dispose()
-      void signalR?.transport.disconnect()
-      edgeLease?.release()
+      edgesyncVault?.closeDocument(doc.id)
+      crdtLease.release()
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)
@@ -265,6 +220,12 @@ function EditorAreaPanel({
 }) {
   const dockviewRef = useRef<DockviewApi | null>(null)
   const pendingOpenPathsRef = useRef<string[]>([])
+  // Guards against two near-simultaneous calls for the SAME path both racing
+  // past the Dockview panel-existence check before either has reached
+  // addPanel() — panelId/doc.id is only known after an async lookup
+  // (refreshDocuments / vaultAPI fallback below), so the check can't happen
+  // synchronously at entry.
+  const pendingOpensRef = useRef<Set<string>>(new Set())
   const [openError, setOpenError] = useState<string | null>(null)
   const [vaultTick, setVaultTick] = useState(0)
 
@@ -288,66 +249,70 @@ function EditorAreaPanel({
     const api = dockviewRef.current
     if (!vault || !token || !account) return
 
-    let doc = refs.documents.current.find(d => d.path === path || d.path === path + '.md')
-    if (!doc) {
-      const refreshed = await refs.refreshDocuments.current()
-      doc = refreshed.find(d => d.path === path || d.path === path + '.md')
-    }
-    // see ADR-010
-    if (!doc) {
-      const meta = refs.vaultAPI.current?.documents.find(d => d.path === path || d.path === path + '.md')
-      if (meta) {
-        const now = new Date().toISOString()
-        doc = { id: meta.id, path: meta.path, title: null, hash: '', sizeBytes: 0, createdAt: now, updatedAt: now }
-      }
-    }
-    if (!doc) return
-
-    const panelId = `doc-${doc.id}`
-
-    // First check — fast path (panel already open before async lookup)
-    const existing = api?.getPanel(panelId)
-    if (existing) {
-      existing.focus()
-      manager.notifyActiveDocument(doc.path)
-      return
-    }
-
-    const existingAfterAsync = api?.getPanel(panelId)
-    if (existingAfterAsync) {
-      existingAfterAsync.focus()
-      manager.notifyActiveDocument(doc.path)
-      return
-    }
-
-    const filename = doc.path.split('/').at(-1) ?? doc.path
-    const title = doc.title?.trim() || filename.replace(/\.md$/, '') || doc.path
+    // Reserved synchronously, before any await: a second concurrent call for
+    // the SAME path (e.g. two near-simultaneous openFile triggers right
+    // after creating a note) would otherwise race this one through the
+    // async doc/panelId resolution below and both reach addPanel() — the
+    // panelId-based existence checks further down can't catch that, since
+    // panelId itself isn't known until after the async gap.
+    if (pendingOpensRef.current.has(path)) return
+    pendingOpensRef.current.add(path)
     try {
-      const dirMap: Record<string, string> = {
-        top: 'above', bottom: 'below', left: 'left', right: 'right', center: 'within',
+      let doc = refs.documents.current.find(d => d.path === path || d.path === path + '.md')
+      if (!doc) {
+        const refreshed = await refs.refreshDocuments.current()
+        doc = refreshed.find(d => d.path === path || d.path === path + '.md')
       }
-      const splitDir = dropPosition ? dirMap[dropPosition] : undefined
-      api?.addPanel({
-        id: panelId,
-        component: 'doc-editor',
-        title,
-        params: {
-          doc,
-          refs,
-          vaultId: vault.id,
-          userId: account.userId,
-        } satisfies EditorPanelParams,
-        position: referenceId && splitDir
-          ? referenceIsGroup
-            ? { referenceGroup: referenceId, direction: splitDir as 'left' | 'right' | 'above' | 'below' | 'within' }
-            : { referencePanel: referenceId, direction: splitDir as 'left' | 'right' | 'above' | 'below' | 'within' }
-          : undefined,
-      })
-      setOpenError(null)
-      manager.notifyActiveDocument(doc.path)
-    } catch (err) {
-      setOpenError(`Impossible d'ouvrir "${path}"`)
-      console.error(err)
+      // see ADR-010
+      if (!doc) {
+        const meta = refs.vaultAPI.current?.documents.find(d => d.path === path || d.path === path + '.md')
+        if (meta) {
+          const now = new Date().toISOString()
+          doc = { id: meta.id, path: meta.path, title: null, hash: '', sizeBytes: 0, createdAt: now, updatedAt: now }
+        }
+      }
+      if (!doc) return
+
+      const panelId = `doc-${doc.id}`
+
+      const existing = api?.getPanel(panelId)
+      if (existing) {
+        existing.focus()
+        manager.notifyActiveDocument(doc.path)
+        return
+      }
+
+      const filename = doc.path.split('/').at(-1) ?? doc.path
+      const title = doc.title?.trim() || filename.replace(/\.md$/, '') || doc.path
+      try {
+        const dirMap: Record<string, string> = {
+          top: 'above', bottom: 'below', left: 'left', right: 'right', center: 'within',
+        }
+        const splitDir = dropPosition ? dirMap[dropPosition] : undefined
+        api?.addPanel({
+          id: panelId,
+          component: 'doc-editor',
+          title,
+          params: {
+            doc,
+            refs,
+            vaultId: vault.id,
+            userId: account.userId,
+          } satisfies EditorPanelParams,
+          position: referenceId && splitDir
+            ? referenceIsGroup
+              ? { referenceGroup: referenceId, direction: splitDir as 'left' | 'right' | 'above' | 'below' | 'within' }
+              : { referencePanel: referenceId, direction: splitDir as 'left' | 'right' | 'above' | 'below' | 'within' }
+            : undefined,
+        })
+        setOpenError(null)
+        manager.notifyActiveDocument(doc.path)
+      } catch (err) {
+        setOpenError(`Impossible d'ouvrir "${path}"`)
+        console.error(err)
+      }
+    } finally {
+      pendingOpensRef.current.delete(path)
     }
   }
 

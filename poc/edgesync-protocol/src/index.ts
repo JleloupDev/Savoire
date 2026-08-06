@@ -25,4 +25,4 @@ export { InMemoryStorage } from './adapters/in-memory-storage'
 // Protocol
 export * from './protocol/messages'
 export { Session, type SessionOpts } from './protocol/session'
-export { saveAll, loadIdentity, loadKeyring, loadPeers, loadContent, type PersistableParts } from './protocol/persistence'
+export { saveAll, loadIdentity, loadKeyring, loadPeers, loadContent, type PersistableParts, type PersistableChannel } from './protocol/persistence'

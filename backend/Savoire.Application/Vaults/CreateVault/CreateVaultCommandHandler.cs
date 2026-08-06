@@ -12,8 +12,8 @@ public sealed class CreateVaultCommandHandler(IVaultRepository vaults)
 {
     public async Task<VaultSummaryDto> Handle(CreateVaultCommand cmd, CancellationToken ct)
     {
-        Vault vault = Vault.Create(cmd.Name, cmd.OwnerId);
+        Vault vault = Vault.Create(cmd.Name, cmd.OwnerId, cmd.IsManaged);
         await vaults.AddAsync(vault, ct);
-        return new VaultSummaryDto(vault.Id, vault.Name, "owner", 0, 0, null, 0);
+        return new VaultSummaryDto(vault.Id, vault.Name, "owner", 0, 0, null, 0, vault.IsManaged);
     }
 }

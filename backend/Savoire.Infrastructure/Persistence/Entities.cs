@@ -13,11 +13,12 @@ public class VaultEntity
     public string   Name      { get; set; } = null!;
     public string   OwnerId   { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
+    public bool     IsManaged { get; set; }
 
     public ICollection<VaultMemberEntity> Members { get; set; } = [];
     public ICollection<FolderEntity>      Folders { get; set; } = [];
 
-    public Vault ToDomain() => Vault.Rehydrate(Id, Name, OwnerId, CreatedAt);
+    public Vault ToDomain() => Vault.Rehydrate(Id, Name, OwnerId, CreatedAt, IsManaged);
 }
 
 public class VaultMemberEntity
@@ -64,6 +65,32 @@ public class SyncVectorEntity
     public string   ClientId   { get; set; } = null!;
     public byte[]   Vector     { get; set; } = null!;
     public DateTime UpdatedAt  { get; set; }
+}
+
+public class EdgesyncBlobEntity
+{
+    public string   VaultId   { get; set; } = null!;
+    public string   Key       { get; set; } = null!;
+    public byte[]   Bytes     { get; set; } = null!;
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class VaultKeyWrapEntity
+{
+    public string   UserId          { get; set; } = null!;
+    public string   VaultId         { get; set; } = null!;
+    public byte[]   WrappedKeyBytes { get; set; } = null!;
+    public DateTime UpdatedAt       { get; set; }
+}
+
+// S2 pour un vault Managed : le Keyring en clair, cote serveur -- keye par
+// VaultId seul (pas UserId+VaultId comme VaultKeyWrapEntity), puisque c'est
+// LE vault qui a une cle server-side, pas un wrap par personne.
+public class ManagedVaultKeyringEntity
+{
+    public string   VaultId      { get; set; } = null!;
+    public byte[]   KeyringBytes { get; set; } = null!;
+    public DateTime UpdatedAt    { get; set; }
 }
 
 public class ResourcePermissionEntity
