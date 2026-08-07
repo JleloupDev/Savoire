@@ -54,6 +54,7 @@ import { EdgesyncWebRtcTransport } from './EdgesyncWebRtcTransport'
 import { EdgesyncAwarenessChannel, AWARENESS_TAG } from './EdgesyncAwarenessChannel'
 import { EdgesyncIndexChannel } from './EdgesyncIndexChannel'
 import type { YMapVaultDirectory } from './YMapVaultDirectory'
+import { bytesToBase64 } from './base64'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain — Y.Doc's declared type is missing the Observable mixin's
@@ -393,6 +394,48 @@ export class EdgesyncVaultSession {
       unsubRemote()
       awareness.dispose()
     }
+  }
+
+  /** Rotate K_vault to a fresh epoch: fresh K_vault, plus a fresh K_doc (not
+   *  a re-wrap of the old one) for every channel already known — see
+   *  Keyring.rotate(). Delivered live via the directory Session (the sole
+   *  grant anchor, §4.4) to every peer connected right now; a peer offline
+   *  at this exact moment only catches up on its next HELLO/KEY handshake or
+   *  via keyEscrow on its own next restore(). Every open document Session
+   *  shares this same Keyring instance, so subsequent local writes pick up
+   *  the new epoch automatically (publishOp() reads currentEpoch() live) —
+   *  nothing else needs to be touched.
+   *
+   *  This is the vault-wide primitive an eventual "revoke this member"
+   *  feature would build on: Session.rotate(exclude) already accepts an
+   *  excluded peer id (Session.revoke() is exactly rotate([peerId])) — this
+   *  method just never excludes anyone, since there's no "member" concept at
+   *  this layer yet. Re-escrows immediately (S2: plain, S3: wrapped under
+   *  K_User) so a reload recovers the new epoch instead of the stale one. */
+  async renewVaultKey(): Promise<void> {
+    if (!this.isGranting) throw new Error('renewVaultKey: this peer does not hold K_vault, cannot rotate')
+    this.dirSession.rotate()
+    await this.keyEscrow?.save(this.vaultId, this.keyring)
+  }
+
+  /** Dev/debug only: the current epoch's K_vault, base64-encoded, for a
+   *  key-inspection panel — never used by any production crypto path (the
+   *  real ones stay Uint8Array end to end). Undefined before this peer has
+   *  any key at all (joiner still awaiting its first grant). */
+  debugVaultKey(): { epoch: number; base64: string } | undefined {
+    const epoch = this.keyring.currentEpoch()
+    const key = this.keyring.vaultKey(epoch)
+    return key ? { epoch, base64: bytesToBase64(key) } : undefined
+  }
+
+  /** Dev/debug only: a currently-open document's K_doc at the current
+   *  epoch, base64-encoded. Undefined if the document was never opened in
+   *  this session or has no key yet (e.g. this peer isn't granting). */
+  debugDocKey(docId: string): string | undefined {
+    const epoch = this.keyring.currentEpoch()
+    const rid = resourceId(`${this.vaultId}/${docId}`)
+    const key = this.keyring.docKey(epoch, rid)
+    return key ? bytesToBase64(key) : undefined
   }
 
   closeDocument(docId: string): void {

@@ -45,7 +45,9 @@ function makeEdgesyncVaultSessionFactory(): IEdgesyncVaultSessionFactory {
   return {
     open: vi.fn(async () => ({
       isOwner: true, isGranting: true,
-      openDocument: vi.fn(), closeDocument: vi.fn(), dispose: vi.fn(async () => {}),
+      openDocument: vi.fn(), closeDocument: vi.fn(), renewVaultKey: vi.fn(async () => {}),
+      debugVaultKey: vi.fn(() => undefined), debugDocKey: vi.fn(() => undefined),
+      dispose: vi.fn(async () => {}),
     })),
   }
 }

@@ -25,6 +25,9 @@ function makeEdgesyncVaultSession(): EdgesyncVaultSessionLike {
     isGranting: true,
     openDocument: vi.fn(),
     closeDocument: vi.fn(),
+    renewVaultKey: vi.fn(async () => {}),
+    debugVaultKey: vi.fn(() => undefined),
+    debugDocKey: vi.fn(() => undefined),
     dispose: vi.fn(async () => {}),
   }
 }

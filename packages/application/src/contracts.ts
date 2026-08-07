@@ -85,6 +85,17 @@ export interface EdgesyncVaultSessionLike {
   openDocument(docId: string, doc: unknown, presence?: CrdtPresenceLike): void
   /** Stop syncing a document whose editor panel closed. */
   closeDocument(docId: string): void
+  /** Rotate K_vault to a fresh epoch (fresh key for every currently-known
+   *  channel too), delivered live to every peer connected right now. Throws
+   *  if `!isGranting`. Preamble to per-peer revocation (EdgesyncVaultSession
+   *  calls Session.rotate() with no exclusion; excluding one peer is what
+   *  revocation would do instead — see EdgesyncVaultSession.renewVaultKey). */
+  renewVaultKey(): Promise<void>
+  /** Dev/debug only: current epoch's K_vault, base64. Undefined before this
+   *  peer has any key (joiner awaiting its first grant). */
+  debugVaultKey(): { epoch: number; base64: string } | undefined
+  /** Dev/debug only: a currently-open document's K_doc, base64. */
+  debugDocKey(docId: string): string | undefined
   /** Awaited by disposeActiveVault(): must fully close before a caller
    *  switching to a different vault proceeds (see EdgesyncVaultSession). */
   dispose(): Promise<void>

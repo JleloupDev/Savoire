@@ -16,6 +16,7 @@ import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
 import { SharingPanel } from './SharingPanel'
+import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot, createWebInfrastructure } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
@@ -261,6 +262,7 @@ export function AppShell() {
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sharingOpen, setSharingOpen] = useState(false)
+  const [keyDebugOpen, setKeyDebugOpen] = useState(false)
   const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('source')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
@@ -806,6 +808,24 @@ export function AppShell() {
     navigate('/login')
   }
 
+  // Preamble to per-peer revocation: rotates K_vault to a fresh epoch (fresh
+  // K_doc per known channel too), delivered live to whoever's connected right
+  // now — see EdgesyncVaultSession.renewVaultKey(). Works identically for S2
+  // (Managed, re-escrowed in clear) and S3 (self-managed, re-escrowed wrapped
+  // under K_User) — this button never knows which, same as everything else
+  // downstream of KeyringSource.
+  async function handleRenewVaultKey() {
+    const vault = edgesyncVaultRef.current
+    if (!vault) return
+    try {
+      await vault.renewVaultKey()
+      notify('success', 'Clé du vault renouvelée', 'Nouvelle clé générée et propagée aux pairs connectés.')
+    } catch (err) {
+      console.error('[AppShell] renewVaultKey failed', err)
+      notify('danger', 'Échec du renouvellement', err instanceof Error ? err.message : String(err))
+    }
+  }
+
   // Called once VaultKeyGate has actually set a key (never on cancel/backdrop
   // click — those clear keyModalRequest directly). Resumes whatever the
   // modal interrupted so the user never has to reload the page or manually
@@ -898,6 +918,27 @@ export function AppShell() {
             </button>
           )}
 
+          {/* Renew vault key — preamble to revocation, see handleRenewVaultKey */}
+          {selectedVault && (
+            <button onClick={() => void handleRenewVaultKey()} title="Renouveler la clé du vault (rotation d'epoch, propagée aux pairs connectés)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>Renouveler la clé</span>
+            </button>
+          )}
+
+          {/* Debug: show the vault's/active document's decrypted key — see VaultKeyDebugPanel */}
+          {selectedVault && edgesyncVaultRef.current && (
+            <button onClick={() => setKeyDebugOpen(true)} title="Afficher les clés en clair (debug)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <span>Clés (debug)</span>
+            </button>
+          )}
+
           {/* Editor mode toggle */}
           <button onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))} title={t('app', 'topbar.editor.toggle')} style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
             {markdownEditorMode === 'source' ? t('app', 'topbar.editor.source') : t('app', 'topbar.editor.rich')}
@@ -959,6 +1000,15 @@ export function AppShell() {
           document={activeDoc}
           sharingApi={application.sharing}
           onClose={() => setSharingOpen(false)}
+        />
+      )}
+
+      {keyDebugOpen && selectedVault && edgesyncVaultRef.current && (
+        <VaultKeyDebugPanel
+          vaultName={selectedVault.name}
+          edgesyncVault={edgesyncVaultRef.current}
+          activeDoc={activeDoc ? { id: activeDoc.id, path: activeDoc.path } : null}
+          onClose={() => setKeyDebugOpen(false)}
         />
       )}
 
