@@ -6,12 +6,13 @@ import { useAuth } from './AuthContext'
 import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
-import { YMapVaultDirectory, WrongVaultKeyError, VaultKeyEscrow, ServerVaultKeyProvider } from '@savoire/infrastructure-sync'
+import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
+import { getVaultLockProbe } from './vaultLock'
 import type { EdgesyncVaultSessionLike } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
-import type { VaultAPI, ISeedExportingIdentityProvider } from '@savoire/plugin-api'
+import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
@@ -170,13 +171,13 @@ function toDocumentDto(doc: { id: string; path: string }): DocumentDto {
 type KeyModalRequest =
   | { kind: 'manage' }
   | { kind: 'open-vault'; vault: VaultSummary }
-  | { kind: 'create-vault'; name: string; isManaged: boolean }
+  | { kind: 'create-vault'; name: string }
 
 // ── Main editor page ──────────────────────────────────────────────────────────
 
 export function AppShell() {
   const { token, accounts, activeAccount, isReady, logout, switchAccount } = useAuth()
-  const { hasVaultKey, getVaultKey, setVaultKey, clearVaultKey, isServerManaged, keyVersion } = useVaultKey()
+  const { getVaultKey, clearVaultKey, keyVersion } = useVaultKey()
   const navigate = useNavigate()
 
   const tokenRef = useRef<string | null>(token)
@@ -207,44 +208,16 @@ export function AppShell() {
   }))
   const application = appRootRef.current.api
 
-  // Separate from appRootRef's own VaultKeyEscrow (used to actually open
-  // sessions) — this instance only ever probes fetch() to decide a vault's
-  // lock badge, never opens a WebRTC session. See the probe effect below.
-  const vaultKeyEscrowRef = useRef(new VaultKeyEscrow({
-    getToken: () => tokenRef.current,
-    getVaultKey: () => {
-      const userId = activeAccountRef.current?.userId
-      return userId ? getVaultKey(userId) : null
-    },
-  }))
-
-  // S2: fetches/creates the server-managed K_User for an account that opted
-  // into it (VaultKeyGate.tsx's ServerManaged mode, or the auto-fetch effect
-  // below). Separate instance, same reasoning as vaultKeyEscrowRef above.
-  const serverVaultKeyProviderRef = useRef(new ServerVaultKeyProvider({ getToken: () => tokenRef.current }))
+  // Profil EdgeSync uniquement : decide le badge « verrouille » d'un vault, sans
+  // jamais ouvrir de session. Undefined en profil serveur — voir vaultLock.ts.
+  const vaultLockProbeRef = useRef(getVaultLockProbe())
 
   // Single source of truth for "get me a usable K_User, or tell me there's
-  // none". S2 accounts must NEVER see the key modal (VaultKeyGate.tsx) — the
-  // whole point of choosing "let the server manage my key" is that it just
-  // works. Every call site that used to check hasVaultKey()/vault.locked and
-  // fall straight to the modal goes through this first instead; only a
-  // genuine S3 account with no key at all still falls through to null.
-  // fetchOrCreate() dedupes overlapping callers on its own (e.g. this being
-  // called from both the auto-fetch effect and a click at nearly the same
-  // time), so no extra guarding is needed here.
-  const resolveVaultKey = useCallback(async (userId: string): Promise<Uint8Array | null> => {
-    const existing = getVaultKey(userId)
-    if (existing) return existing
-    if (!isServerManaged(userId)) return null
-    try {
-      const key = await serverVaultKeyProviderRef.current.fetchOrCreate()
-      setVaultKey(userId, key)
-      return key
-    } catch (err) {
-      console.warn('[AppShell] auto-fetch cle serveur echoue', err)
-      return null
-    }
-  }, [getVaultKey, isServerManaged, setVaultKey])
+  // none". K_User is memory-only and user-held (VaultKeyGate.tsx): the server
+  // never has it, so there is nothing to fetch — an account with no key in
+  // memory falls through to null and the caller opens the key modal.
+  const resolveVaultKey = useCallback(async (userId: string): Promise<Uint8Array | null> =>
+    getVaultKey(userId), [getVaultKey])
 
   const [keyModalRequest, setKeyModalRequest] = useState<KeyModalRequest | null>(null)
 
@@ -287,6 +260,9 @@ export function AppShell() {
 
   const vaultAPIRef = useRef<VaultClient | undefined>(undefined)
   const edgesyncVaultRef = useRef<EdgesyncVaultSessionLike | undefined>(undefined)
+  // Profil serveur : CollabOrchestrator signe chaque op avec cette identité.
+  const identityProviderRef = useRef<IIdentityProvider | undefined>(undefined)
+  identityProviderRef.current = appRootRef.current.identityProvider
 
   const markdownEditorModeRef = useRef<'source' | 'rich'>(markdownEditorMode)
   markdownEditorModeRef.current = markdownEditorMode
@@ -319,7 +295,7 @@ export function AppShell() {
   const editorAreaRefsHolder = useRef<EditorAreaRefs | null>(null)
 
   const onSelectVaultRef = useRef<(vault: VaultSummary) => void>(() => {})
-  const onCreateVaultRef = useRef<(name: string, isManaged: boolean) => Promise<void>>(async () => {})
+  const onCreateVaultRef = useRef<(name: string) => Promise<void>>(async () => {})
   const onRenameVaultRef = useRef<(vault: VaultSummary, name: string) => Promise<void>>(async () => {})
   const onDeleteVaultRef = useRef<(vault: VaultSummary) => Promise<void>>(async () => {})
   const onRefreshRef = useRef<() => void>(() => {})
@@ -374,6 +350,7 @@ export function AppShell() {
     activeAccount: activeAccountRef,
     vaultAPI: vaultAPIRef,
     edgesyncVault: edgesyncVaultRef,
+    identity: identityProviderRef,
     onControllerReady: onControllerReadyRef,
     fileTypeRegistry: fileTypeRegistryRef,
     defaultPlugins: defaultPluginsRef,
@@ -437,7 +414,6 @@ export function AppShell() {
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
         identitySeed,
-        isManaged: vault.isManaged,
       })
       vaultAPIRef.current = active.client
       edgesyncVaultRef.current = active.edgesyncVault
@@ -462,7 +438,7 @@ export function AppShell() {
     }
 
     switchChainRef.current = switchChainRef.current.then(run).catch((err) => {
-      if (err instanceof WrongVaultKeyError) {
+      if (vaultLockProbeRef.current?.isWrongKeyError(err)) {
         // Distinct from "nothing escrowed yet" (which never throws — see
         // EdgesyncVaultSession.restore()): the server DOES have a wrapped
         // Keyring for this vault, but the K_User currently in memory does not
@@ -520,25 +496,19 @@ export function AppShell() {
   const vaultIdsKey = vaults.map(v => v.id).sort().join(',')
   useEffect(() => {
     if (!vaultIdsKey) return
+    // Profil serveur : pas de sonde, aucun vault n'est verrouille.
+    const probe = vaultLockProbeRef.current
+    if (!probe) return
     const generation = ++probeGenerationRef.current
-    // Managed vaults never depend on K_User — probing them via VaultKeyEscrow
-    // makes no sense and wastes a request; they stay `locked: false` forever.
-    const ids = vaultIdsKey.split(',').filter(id => !vaultsRef.current.find(v => v.id === id)?.isManaged)
-    if (ids.length === 0) return
+    const ids = vaultIdsKey.split(',')
     void (async () => {
       // Each entry always resolves (never rejects) — fetch()'s own errors are
       // caught right here, badge-relevant or not (see comment below).
       const results = await Promise.all(
         ids.map(async (id): Promise<[string, boolean]> => {
-          try {
-            await vaultKeyEscrowRef.current.fetch(id)
-            return [id, false]
-          } catch (err) {
-            // WrongVaultKeyError -> genuinely locked. Anything else (network
-            // blip, unexpected HTTP status) -> leave unlocked: the badge is
-            // only advisory, the real open attempt is still the authority.
-            return [id, err instanceof WrongVaultKeyError]
-          }
+          // isLocked() ne rejette jamais : un alea reseau rend `false`, le
+          // badge n'est qu'indicatif — l'ouverture reelle reste l'autorite.
+          return [id, await probe.isLocked(id)]
         }),
       )
       if (generation !== probeGenerationRef.current) return // a newer probe superseded this one
@@ -555,22 +525,6 @@ export function AppShell() {
   // the probe whenever any account's key changes (cheap enough not to scope
   // more precisely — see plan).
   }, [vaultIdsKey, keyVersion])
-
-  // ── S2: silent auto-fetch for accounts that already chose "server manages my key" ──
-  // Recupere K_User en silence pour un compte qui a deja choisi ce mode —
-  // jamais pour un compte S3 (isServerManaged garde cette distinction, voir
-  // ServerVaultKeyProvider.ts's doc comment on why this must never be blind).
-  const autoFetchedRef = useRef(new Set<string>())
-  useEffect(() => {
-    const userId = activeAccount?.userId
-    if (!token || !userId) return
-    if (hasVaultKey(userId) || !isServerManaged(userId)) return
-    if (autoFetchedRef.current.has(userId)) return
-    autoFetchedRef.current.add(userId)
-    void resolveVaultKey(userId).then(key => {
-      if (!key) autoFetchedRef.current.delete(userId) // permet un retry (ex: blip reseau transitoire)
-    })
-  }, [activeAccount?.userId, token, hasVaultKey, isServerManaged, resolveVaultKey])
 
   // ── loadDocument — fetches content, updates topbar ─────────────────────────
 
@@ -604,32 +558,25 @@ export function AppShell() {
 
   onSelectVaultRef.current = (vault: VaultSummary) => {
     if (!token || !activeAccount) return
-    // Managed vaults never involve K_User at all — always open directly, no
-    // lock check, no modal, regardless of account-level key state.
-    if (vault.isManaged || !vault.locked) { void switchToVault(vault, token); return }
-    // Locked doesn't necessarily mean "ask the user" — an S2 account should
-    // never see the modal at all (resolveVaultKey silently (re)fetches for
-    // it). Only a genuine S3 account with no usable key falls through.
+    if (!vault.locked) { void switchToVault(vault, token); return }
     void resolveVaultKey(activeAccount.userId).then(key => {
       if (key) void switchToVault(vault, token)
       else setKeyModalRequest({ kind: 'open-vault', vault })
     })
   }
 
-  onCreateVaultRef.current = async (name: string, isManaged: boolean) => {
+  onCreateVaultRef.current = async (name: string) => {
     if (!token || !activeAccount) return
     // A Keyring only survives a reload if SOME key is present to escrow it
     // under (VaultKeyEscrow.save() no-ops without one) — require a key
     // before creating rather than let a vault's content quietly become
     // unrecoverable. Still always "possible to create": the key modal
-    // resumes creation automatically once a key is set (handleKeyModalDone),
-    // and an S2 account never sees it at all (resolveVaultKey). A Managed
-    // vault needs no K_User at all — never gates on it.
-    if (!isManaged && !await resolveVaultKey(activeAccount.userId)) {
-      setKeyModalRequest({ kind: 'create-vault', name, isManaged })
+    // resumes creation automatically once a key is set (handleKeyModalDone).
+    if (!await resolveVaultKey(activeAccount.userId)) {
+      setKeyModalRequest({ kind: 'create-vault', name })
       return
     }
-    const vault = { ...await application.vaults.create(activeAccount.userId, name, token, isManaged), locked: false }
+    const vault = { ...await application.vaults.create(activeAccount.userId, name, token), locked: false }
     setVaults(v => [...v, vault])
     vaultsRef.current = [...vaultsRef.current, vault]
     await switchToVault(vault, token)
@@ -665,7 +612,6 @@ export function AppShell() {
         lastModifiedAt: null,
         sizeBytes: 0,
         locked: false, // shared-document flow never goes through EdgesyncVaultSession/K_User at all
-        isManaged: false,
       }
 
       if (activeDoc && selectedVaultRef.current)
@@ -837,7 +783,7 @@ export function AppShell() {
     setKeyModalRequest(null)
     if (!req || !token) return
     if (req.kind === 'open-vault') void switchToVault(req.vault, token)
-    else if (req.kind === 'create-vault') void onCreateVaultRef.current(req.name, req.isManaged)
+    else if (req.kind === 'create-vault') void onCreateVaultRef.current(req.name)
   }
 
   // ── Plugin unload on unmount ───────────────────────────────────────────────
@@ -987,7 +933,7 @@ export function AppShell() {
       {keyModalRequest && activeAccount && (
         <div onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-            <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} getToken={() => tokenRef.current} />
+            <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} />
             <button onClick={() => setKeyModalRequest(null)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
           </div>
         </div>

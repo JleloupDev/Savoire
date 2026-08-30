@@ -9,9 +9,9 @@
 // (AdminPage.tsx), so the server has no "first time" flag to key off.
 // onDone fires once a key is set (entered or generated), letting the caller
 // close the modal.
-import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { useVaultKey } from './VaultKeyContext'
-import { bytesToBase64, base64ToBytes, ServerVaultKeyProvider } from '@savoire/infrastructure-sync'
+import { bytesToBase64, base64ToBytes } from '@savoire/infrastructure-sync'
 
 const primaryBtn: CSSProperties = {
   padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none',
@@ -151,44 +151,8 @@ function GenerateKey({ userId, onBack, onDone }: { userId: string; onBack: () =>
   )
 }
 
-// S2 : bascule K_User d'auto-géré (S3, par défaut) à géré-par-le-serveur.
-function ServerManaged({ userId, onBack, onDone, getToken }: { userId: string; onBack: () => void; onDone: () => void; getToken: () => string | null }) {
-  const { setVaultKey, setServerManaged } = useVaultKey()
-  const providerRef = useRef(new ServerVaultKeyProvider({ getToken }))
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function confirm() {
-    setLoading(true)
-    setError(null)
-    try {
-      const key = await providerRef.current.fetchOrCreate()
-      setVaultKey(userId, key)
-      setServerManaged(userId)
-      onDone()
-    } catch {
-      setError('Impossible de récupérer la clé depuis le serveur.')
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ padding: '10px 14px', background: 'color-mix(in srgb, var(--color-danger) 10%, var(--bg-base))', borderRadius: 'var(--radius)', border: '1px solid color-mix(in srgb, var(--color-danger) 30%, var(--border))', color: 'var(--text)', fontSize: 12.5, lineHeight: 1.5 }}>
-        Dans ce mode, le serveur génère et conserve votre clé : il peut donc déchiffrer vos vaults.
-        En contrepartie, la clé est retrouvée automatiquement à chaque connexion — plus aucun risque de la perdre.
-      </div>
-      {error && <span style={{ fontSize: 12, color: 'var(--color-danger)' }}>{error}</span>}
-      <button onClick={() => void confirm()} disabled={loading} style={{ ...primaryBtn, opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
-        {loading ? 'Récupération...' : 'Confirmer'}
-      </button>
-      <button onClick={onBack} style={linkBtn}>← Retour</button>
-    </div>
-  )
-}
-
-export function VaultKeyGate({ userId, onDone, getToken }: { userId: string; onDone: () => void; getToken: () => string | null }) {
-  const [mode, setMode] = useState<'choose' | 'enter' | 'generate' | 'server'>('choose')
+export function VaultKeyGate({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [mode, setMode] = useState<'choose' | 'enter' | 'generate'>('choose')
 
   return (
     <div style={{ width: 440, padding: 32, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', fontFamily: 'var(--font-ui)' }}>
@@ -196,20 +160,18 @@ export function VaultKeyGate({ userId, onDone, getToken }: { userId: string; onD
         Clé de coffre
       </div>
       <div style={{ fontSize: 13.5, color: 'var(--text-faint)', lineHeight: 1.5, marginBottom: 24 }}>
-        Vos vaults sont chiffrés. Gardez le contrôle total de votre clé (le serveur ne peut alors jamais les lire), ou laissez le serveur la gérer pour plus de confort (il peut alors les déchiffrer).
+        Vos vaults sont chiffrés et le serveur ne peut jamais les lire : vous seul détenez la clé. Elle n'est gardée qu'en mémoire, et redemandée à chaque rechargement.
       </div>
 
       {mode === 'choose' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={() => setMode('enter')} style={primaryBtn}>J'ai déjà une clé</button>
           <button onClick={() => setMode('generate')} style={secondaryBtn}>Générer une nouvelle clé</button>
-          <button onClick={() => setMode('server')} style={secondaryBtn}>Laisser le serveur gérer ma clé</button>
         </div>
       )}
 
       {mode === 'enter' && <EnterKey userId={userId} onBack={() => setMode('choose')} onDone={onDone} />}
       {mode === 'generate' && <GenerateKey userId={userId} onBack={() => setMode('choose')} onDone={onDone} />}
-      {mode === 'server' && <ServerManaged userId={userId} onBack={() => setMode('choose')} onDone={onDone} getToken={getToken} />}
     </div>
   )
 }

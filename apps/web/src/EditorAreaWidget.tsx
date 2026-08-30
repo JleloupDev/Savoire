@@ -5,11 +5,12 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { YjsCrdtAdapter, GracePool } from '@savoire/infrastructure-sync'
+import { YjsCrdtAdapter, GracePool, SignalRTransport } from '@savoire/infrastructure-sync'
+import { CollabOrchestrator } from '@savoire/application'
 import type { EdgesyncVaultSessionLike } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
-import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
+import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin, IIdentityProvider } from '@savoire/plugin-api'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -36,8 +37,12 @@ export interface EditorAreaRefs {
   token: React.MutableRefObject<string | null>
   activeAccount: React.MutableRefObject<AccountEntry | null>
   vaultAPI: React.MutableRefObject<VaultClient | undefined>
-  /** The active vault's shared edgesync session — one per vault (not per document). */
+  /** Profil EdgeSync : session partagée du vault actif (une par vault, pas par
+   *  document). Undefined en profil serveur Savoire — les documents passent
+   *  alors par SignalRTransport + CollabOrchestrator. */
   edgesyncVault: React.MutableRefObject<EdgesyncVaultSessionLike | undefined>
+  /** Requis par CollabOrchestrator en profil serveur (signature des ops). */
+  identity: React.MutableRefObject<IIdentityProvider | undefined>
   onControllerReady: React.MutableRefObject<(ctrl: EditorController | null) => void>
   /** File type registry — populated by plugins in onBeforeReady. */
   fileTypeRegistry: React.MutableRefObject<FileTypeRegistry | null>
@@ -101,18 +106,28 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current?.()
     unsubPluginLoadedRef.current = null
 
-    // Every document collaborates through the edgesync protocol: vault +
-    // documents share one E2E-encrypted Keyring (EdgesyncVaultSession,
-    // activated once per vault in AppShell). Peer cursors ride the same
-    // channel (EdgesyncAwarenessChannel) — crdt already has its own
-    // y-protocols/awareness instance wired to CodeMirror (yCollab), we just
-    // hand it to edgesync so local moves get broadcast and remote ones applied.
+    // Deux profils de synchronisation, choisis par la présence d'une session
+    // EdgeSync sur le vault actif (AppShell) — jamais les deux à la fois :
+    //  - EdgeSync : vault + documents partagent un Keyring E2E ; les curseurs
+    //    pairs passent par le même canal (EdgesyncAwarenessChannel), d'où le
+    //    `crdt` passé en 3e argument.
+    //  - Serveur Savoire : ops relayées par SyncHub (SignalRTransport), signées
+    //    par CollabOrchestrator.
     const poolKey = `${vaultId}/${doc.id}`
     const crdtLease = crdtPool.acquire(poolKey, () => new YjsCrdtAdapter())
     const crdt = crdtLease.value
     const edgesyncVault = refs.edgesyncVault.current
-    if (!edgesyncVault) console.warn('[EdgeSync] no active vault session — document will not sync', doc.id)
-    edgesyncVault?.openDocument(doc.id, crdt.rawDoc, crdt)
+
+    let transport: SignalRTransport | null = null
+    let orchestrator: CollabOrchestrator | null = null
+    if (edgesyncVault) {
+      edgesyncVault.openDocument(doc.id, crdt.rawDoc, crdt)
+    } else {
+      const identity = refs.identity.current
+      if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
+      transport = new SignalRTransport({ serverUrl: '', userId, getToken: () => refs.token.current })
+      orchestrator = new CollabOrchestrator(crdt, transport, identity)
+    }
 
     const view = new DocumentView({
       path: doc.path,
@@ -126,7 +141,7 @@ function DocumentPanelHost({
       defaultPlugins: refs.defaultPlugins.current,
       pluginRegistry,
       crdt,
-      getTransportState: () => (edgesyncVault ? 'connected' : 'connecting'),
+      getTransportState: () => (transport ? transport.getState() : edgesyncVault ? 'connected' : 'connecting'),
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
@@ -135,6 +150,7 @@ function DocumentPanelHost({
       },
     })
     view.mount()
+    if (transport) void transport.join(vaultId, doc.id)
     const unsubCrdtIndex = crdt.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
     viewRef.current = view
 
@@ -156,6 +172,8 @@ function DocumentPanelHost({
       unsubPluginLoadedRef.current = null
       unsubCrdtIndex()
       edgesyncVault?.closeDocument(doc.id)
+      orchestrator?.dispose()
+      if (transport) void transport.disconnect()
       crdtLease.release()
       view.destroy()
       if (viewRef.current === view) viewRef.current = null

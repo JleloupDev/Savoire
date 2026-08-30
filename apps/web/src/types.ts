@@ -36,11 +36,6 @@ export interface VaultSummary {
    *  can't be decrypted with the K_User currently in memory (or none is set)
    *  — see AppShell.tsx's lock-probe effect and VaultKeyEscrow.ts. */
   locked: boolean
-  /** Real server data: true if this vault's Keyring is held in clear
-   *  server-side (S2, ManagedVaultKeyringSource), decided once at creation.
-   *  A Managed vault opens directly, never gates on K_User, never probed by
-   *  the lock-probe effect — see AppShell.tsx. */
-  isManaged: boolean
 }
 
 export interface SharedNote {
