@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
+using Savoire.Application.Notifications;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
@@ -11,7 +12,8 @@ namespace Savoire.Application.Vaults.AddVaultMember;
 
 public sealed class AddVaultMemberCommandHandler(
     IVaultRepository   vaults,
-    IUserLookupService users)
+    IUserLookupService users,
+    IPublisher         publisher)
     : IRequestHandler<AddVaultMemberCommand>
 {
     public async Task Handle(AddVaultMemberCommand cmd, CancellationToken ct)
@@ -30,5 +32,6 @@ public sealed class AddVaultMemberCommandHandler(
 
         var member = new VaultMember(cmd.VaultId, cmd.MemberId, cmd.Role.ParseVaultRole(), DateTime.UtcNow);
         await vaults.AddMemberAsync(member, ct);
+        await publisher.Publish(new VaultMembershipChangedNotification(cmd.VaultId), ct);
     }
 }

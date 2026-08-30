@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
 using Savoire.Application.Common;
+using Savoire.Application.Notifications;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
@@ -13,7 +14,8 @@ namespace Savoire.Application.Sharing.GrantPermission;
 public sealed class GrantPermissionCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
-    IUserLookupService            users)
+    IUserLookupService            users,
+    IPublisher                    publisher)
     : IRequestHandler<GrantPermissionCommand, ResourcePermissionDto>
 {
     public async Task<ResourcePermissionDto> Handle(
@@ -40,6 +42,7 @@ public sealed class GrantPermissionCommandHandler(
             VaultRole role = permission == Permission.Read ? VaultRole.Viewer : VaultRole.Editor;
             await vaults.AddMemberAsync(
                 new VaultMember(cmd.ResourceId, cmd.TargetUserId, role, DateTime.UtcNow), ct);
+            await publisher.Publish(new VaultMembershipChangedNotification(cmd.ResourceId), ct);
         }
 
         string? displayName = (await users.GetByIdAsync(cmd.TargetUserId, ct))?.DisplayName;

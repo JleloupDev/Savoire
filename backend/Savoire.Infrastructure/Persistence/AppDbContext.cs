@@ -28,7 +28,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<IndexSnapshotEntity>       IndexSnapshots      => Set<IndexSnapshotEntity>();
     public DbSet<EdgesyncBlobEntity>        EdgesyncBlobs       => Set<EdgesyncBlobEntity>();
     public DbSet<VaultKeyWrapEntity>        VaultKeyWraps       => Set<VaultKeyWrapEntity>();
-    public DbSet<ManagedVaultKeyringEntity> ManagedVaultKeyrings => Set<ManagedVaultKeyringEntity>();
+    public DbSet<VaultMemberIdentityEntity> VaultMemberIdentities => Set<VaultMemberIdentityEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,7 +72,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(v => v.Name).HasColumnName("name").IsRequired();
             e.Property(v => v.OwnerId).HasColumnName("owner_id").IsRequired();
             e.Property(v => v.CreatedAt).HasColumnName("created_at").IsRequired();
-            e.Property(v => v.IsManaged).HasColumnName("is_managed").IsRequired();
         });
 
         modelBuilder.Entity<VaultMemberEntity>(e =>
@@ -155,13 +154,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(w => w.UpdatedAt).HasColumnName("updated_at").IsRequired();
         });
 
-        modelBuilder.Entity<ManagedVaultKeyringEntity>(e =>
+        modelBuilder.Entity<VaultMemberIdentityEntity>(e =>
         {
-            e.ToTable("managed_vault_keyrings");
-            e.HasKey(k => k.VaultId);
+            e.ToTable("vault_member_identities");
+            e.HasKey(k => new { k.VaultId, k.SignPub });
             e.Property(k => k.VaultId).HasColumnName("vault_id");
-            e.Property(k => k.KeyringBytes).HasColumnName("keyring_bytes").IsRequired();
-            e.Property(k => k.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            e.Property(k => k.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(k => k.SignPub).HasColumnName("sign_pub");
+            e.Property(k => k.RegisteredAt).HasColumnName("registered_at").IsRequired();
+            e.HasIndex(k => new { k.VaultId, k.UserId });
         });
 
         modelBuilder.Entity<RefreshToken>(e =>

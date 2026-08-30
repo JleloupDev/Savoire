@@ -63,8 +63,7 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
         db.Vaults.Add(new VaultEntity
         {
             Id = vault.Id, Name = vault.Name,
-            OwnerId = vault.OwnerId, CreatedAt = vault.CreatedAt,
-            IsManaged = vault.IsManaged
+            OwnerId = vault.OwnerId, CreatedAt = vault.CreatedAt
         });
         await db.SaveChangesAsync(ct);
     }

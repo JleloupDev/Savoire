@@ -12,6 +12,7 @@ namespace Savoire.Application.Sharing.RevokePermission;
 public sealed class RevokePermissionCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
+    IVaultMemberIdentityRepository identities,
     IPublisher                    publisher)
     : IRequestHandler<RevokePermissionCommand>
 {
@@ -32,7 +33,11 @@ public sealed class RevokePermissionCommandHandler(
         await permissions.DeleteAsync(perm.Id, ct);
 
         if (resourceType == ResourceType.Vault)
+        {
             await vaults.RemoveMemberAsync(cmd.ResourceId, cmd.TargetUserId, ct);
+            await identities.RemoveForUserAsync(cmd.ResourceId, cmd.TargetUserId, ct);
+            await publisher.Publish(new VaultMembershipChangedNotification(cmd.ResourceId), ct);
+        }
 
         if (resourceType == ResourceType.Document)
             await publisher.Publish(new AccessRevokedNotification(cmd.ResourceId, cmd.TargetUserId), ct);

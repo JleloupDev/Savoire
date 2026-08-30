@@ -22,3 +22,13 @@ public record AccessRevokedNotification(
     string DocId,
     string TargetUserId
 ) : INotification;
+
+/// <summary>
+/// Published whenever a vault's membership changes (grant/revoke, add/remove
+/// member) -- pushed to connected edgesync peers so they refresh their
+/// authorized-signPub set without waiting for the polling fallback. See
+/// EdgeSyncHubMembershipChangedHandler and MembershipSource.ts.
+/// </summary>
+public record VaultMembershipChangedNotification(
+    string VaultId
+) : INotification;

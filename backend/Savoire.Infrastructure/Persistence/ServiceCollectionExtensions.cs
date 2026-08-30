@@ -148,8 +148,9 @@ public static class ServiceCollectionExtensions
         // Vault key escrow (blind per-user key wraps — S3, see VaultKeyEscrow.ts)
         services.AddScoped<IVaultKeyWrapRepository, EfVaultKeyWrapRepository>();
 
-        // Managed vault keyring (server-held Keyring in clear — S2, per vault, see ManagedVaultKeyringSource.ts)
-        services.AddScoped<IManagedVaultKeyringRepository, EfManagedVaultKeyringRepository>();
+
+        // Vault member identities (signPub bridge between ACL and edgesync protocol — see IVaultMemberIdentityRepository)
+        services.AddScoped<IVaultMemberIdentityRepository, EfVaultMemberIdentityRepository>();
 
         // Domain Auth services
         services.AddScoped<ITokenService,      TokenService>();

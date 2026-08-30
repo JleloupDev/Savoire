@@ -11,6 +11,7 @@ using Savoire.Application.Vaults.DeleteVault;
 using Savoire.Application.Vaults.ListVaults;
 using Savoire.Application.Vaults.RemoveVaultMember;
 using Savoire.Application.Vaults.RenameVault;
+using Savoire.Application.Sync.VaultMemberIdentity;
 
 namespace Savoire.Server.Controllers;
 
@@ -26,7 +27,7 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
     public async Task<IActionResult> Create(
         string userId, [FromBody] CreateVaultRequest req, CancellationToken ct)
     {
-        VaultSummaryDto dto = await Mediator.Send(new CreateVaultCommand(userId, req.Name, req.IsManaged), ct);
+        VaultSummaryDto dto = await Mediator.Send(new CreateVaultCommand(userId, req.Name), ct);
         return StatusCode(201, dto);
     }
 
@@ -61,4 +62,19 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
         await Mediator.Send(new RemoveVaultMemberCommand(GetCallerId(), vaultId, memberId), ct);
         return NoContent();
     }
+
+    // POST /api/v1/vaults/{vaultId}/members/identity
+    [HttpPost("api/v1/vaults/{vaultId}/members/identity")]
+    public async Task<IActionResult> RegisterMemberIdentity(
+        string vaultId, [FromBody] RegisterVaultMemberIdentityRequest req, CancellationToken ct)
+    {
+        byte[] signPub = Convert.FromBase64String(req.SignPubBase64);
+        await Mediator.Send(new RegisterVaultMemberIdentityCommand(vaultId, signPub, GetCallerId()), ct);
+        return NoContent();
+    }
+
+    // GET /api/v1/vaults/{vaultId}/members/identities
+    [HttpGet("api/v1/vaults/{vaultId}/members/identities")]
+    public async Task<IActionResult> GetMemberIdentities(string vaultId, CancellationToken ct)
+        => Ok(await Mediator.Send(new GetVaultMemberIdentitiesQuery(vaultId, GetCallerId()), ct));
 }

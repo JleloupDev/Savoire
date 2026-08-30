@@ -13,12 +13,11 @@ public class VaultEntity
     public string   Name      { get; set; } = null!;
     public string   OwnerId   { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
-    public bool     IsManaged { get; set; }
 
     public ICollection<VaultMemberEntity> Members { get; set; } = [];
     public ICollection<FolderEntity>      Folders { get; set; } = [];
 
-    public Vault ToDomain() => Vault.Rehydrate(Id, Name, OwnerId, CreatedAt, IsManaged);
+    public Vault ToDomain() => Vault.Rehydrate(Id, Name, OwnerId, CreatedAt);
 }
 
 public class VaultMemberEntity
@@ -83,14 +82,18 @@ public class VaultKeyWrapEntity
     public DateTime UpdatedAt       { get; set; }
 }
 
-// S2 pour un vault Managed : le Keyring en clair, cote serveur -- keye par
-// VaultId seul (pas UserId+VaultId comme VaultKeyWrapEntity), puisque c'est
-// LE vault qui a une cle server-side, pas un wrap par personne.
-public class ManagedVaultKeyringEntity
+// Identites edgesync (signPub Ed25519) qu'un compte a enregistrees pour un
+// vault -- le pont entre l'ACL classique (vault_members, indexee par
+// userId) et le protocole (qui ne connait que des signPub). Purement
+// publique, aucune cle privee ici. Un compte peut avoir plusieurs signPub
+// pour un meme vault (identite renouvelee) -- toutes restent valides tant
+// que le compte est membre.
+public class VaultMemberIdentityEntity
 {
     public string   VaultId      { get; set; } = null!;
-    public byte[]   KeyringBytes { get; set; } = null!;
-    public DateTime UpdatedAt    { get; set; }
+    public string   UserId       { get; set; } = null!;
+    public byte[]   SignPub      { get; set; } = null!;
+    public DateTime RegisteredAt { get; set; }
 }
 
 public class ResourcePermissionEntity

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Savoire.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Savoire.Infrastructure.Persistence;
 namespace Savoire.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260808184014_AddVaultMemberIdentities")]
+    partial class AddVaultMemberIdentities
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.3");
@@ -213,6 +216,9 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("VaultKeyHex")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
@@ -354,6 +360,26 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("idx_snapshots_vault_ns");
 
                     b.ToTable("index_snapshots", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.ManagedVaultKeyringEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<byte[]>("KeyringBytes")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("keyring_bytes");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("VaultId");
+
+                    b.ToTable("managed_vault_keyrings", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.OperationEntity", b =>
@@ -703,6 +729,10 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");
+
+                    b.Property<bool>("IsManaged")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("is_managed");
 
                     b.Property<string>("Name")
                         .IsRequired()

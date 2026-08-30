@@ -23,8 +23,7 @@ public record VaultSummaryDto(
     int       DocumentCount,
     int       FolderCount,
     DateTime? LastModifiedAt,
-    long      SizeBytes,
-    bool      IsManaged
+    long      SizeBytes
 );
 
 public record VaultMemberDto(string UserId, string DisplayName, string Role);
@@ -63,10 +62,11 @@ public record FolderDto(string Id, string Path, DateTime CreatedAt)
 
 // ── API Request bodies ─────────────────────────────────────────────────────
 
-public record CreateVaultRequest(string Name, bool IsManaged);
+public record CreateVaultRequest(string Name);
 public record CreateFolderRequest(string Path);
 public record PatchVaultRequest(string Name);
 public record AddMemberRequest(string UserId, string Role);
+public record RegisterVaultMemberIdentityRequest(string SignPubBase64);
 public record GrantPermissionRequest(string SubjectId, string Permission, DateTime? ExpiresAt);
 public record CreateShareLinkRequest(string Permission, DateTime? ExpiresAt);
 
