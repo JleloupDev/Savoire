@@ -38,7 +38,7 @@ describe('Index sync — fulltext propagation between clients', () => {
     vaultId = vault.id
 
     const hub = await makeVaultHub(vaultId, () => adminToken)
-    doc = await hub.hub.createDocument('indexed-note.md')
+    doc = await hub.createDocument('indexed-note.md')
     await hub.dispose()
 
     await adminRoot.api.sharing.grantPermission('vault', vaultId, guestUserId, 'read', adminToken)

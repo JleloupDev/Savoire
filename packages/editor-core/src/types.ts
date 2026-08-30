@@ -63,16 +63,22 @@ export interface EditorController {
   getActivePlugins(): ActivePluginInfo[]
 }
 
-import type { VaultAPI, NoteScope } from '@savoire/plugin-api'
+import type { Extension } from '@codemirror/state'
+import type { ICRDT, VaultAPI, NoteScope } from '@savoire/plugin-api'
+
+export interface ICodeMirrorCRDT extends ICRDT {
+  getExtensions(): Extension[]
+  setLocalUser(cursorId: string): void
+}
 
 export interface EditorCoreOptions {
   container: HTMLElement
-  /** Omit to run in offline mode (no CRDT sync) */
-  serverUrl?: string
-  vaultId?: string
+  /** Provide to enable collaborative editing — omit for offline mode. */
+  crdt?: ICodeMirrorCRDT
+  /** Delegate to the active ITransport.getState() for connection status reporting. */
+  getTransportState?: () => 'connected' | 'connecting' | 'disconnected'
   docId?: string
   userId?: string
-  clientId?: string
   initialContent?: string
   /** Vault implementation for plugins (read/write files). Defaults to no-op stub. */
   vault?: VaultAPI
@@ -116,6 +122,4 @@ export interface EditorCoreOptions {
    * Defaults to a noop loader when omitted (standalone / playground mode).
    */
   createPluginLoader?: () => import('@savoire/plugin-api').IPluginLoader
-  /** JWT token factory for authenticated SignalR hubs. */
-  getToken?: () => string | null
 }

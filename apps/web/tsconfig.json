@@ -5,14 +5,37 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@savoire/application": ["../../packages/application/src/index.ts"],
-      "@savoire/editor-core": ["../../packages/editor-core/src/index.ts"],
-      "@savoire/infrastructure-sync": ["../../packages/infrastructure-sync/src/index.ts"],
-      "@savoire/platform": ["../../packages/platform/src/index.ts"],
-      "@savoire/plugin-api": ["../../packages/plugin-api/src/index.ts"],
-      "@savoire/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"],
-      "@savoire/domain-index": ["../../packages/domain-index/src/index.ts"]
+      "@savoire/application": [
+        "../../packages/application/src/index.ts"
+      ],
+      "@savoire/editor-core": [
+        "../../packages/editor-core/src/index.ts"
+      ],
+      "@savoire/infrastructure-sync": [
+        "../../packages/infrastructure-sync/src/index.ts"
+      ],
+      "@savoire/infrastructure-edgesync": [
+        "../../packages/infrastructure-edgesync/src/index.ts"
+      ],
+      "@savoire/platform": [
+        "../../packages/platform/src/index.ts"
+      ],
+      "@savoire/plugin-api": [
+        "../../packages/plugin-api/src/index.ts"
+      ],
+      "@savoire/plugin-runtime": [
+        "../../packages/plugin-runtime/src/index.ts"
+      ],
+      "@savoire/domain-index": [
+        "../../packages/domain-index/src/index.ts"
+      ]
     }
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/edgesyncProfile.ts"
+  ],
+  "_comment_exclude": "edgesyncProfile.ts est exclu tant que @savoire/infrastructure-edgesync ne compile pas contre le depot EdgeSync voisin (API Keyring/Session modifiee apres la scission). Retirer cette ligne des que le connecteur est realigne : le profil serveur, lui, ne depend pas de ce fichier."
 }

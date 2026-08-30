@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultStorage } from '@savoire/platform'
-import type { ActivatedVault, AppDocumentSummary, IDocumentsAPI, IVaultsBackend, VaultHubLike } from './contracts'
+import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultDirectory, type IVaultStorage } from '@savoire/platform'
+import type { ActivatedVault, ActivateVaultParams, IDocumentsAPI, IEdgesyncVaultSessionFactory, EdgesyncVaultSessionLike, VaultHubLike } from './contracts'
 import { SyncOrchestrator } from './SyncOrchestrator'
 
 type ActiveContext = ActivatedVault
@@ -10,43 +10,20 @@ export class DocumentsService implements IDocumentsAPI {
   private active: ActiveContext | null = null
 
   constructor(
-    private readonly backend: IVaultsBackend,
     private readonly sync: SyncOrchestrator,
+    private readonly edgesyncFactory?: IEdgesyncVaultSessionFactory,
   ) {}
 
-  async activateVault(params: {
-    vaultId: string
-    token: string
-    storage: IVaultStorage
-    documentStore: DocumentStore
-    resolveDoc: (path: string) => IDocumentMeta | undefined
-    onChanged: () => void
-  }): Promise<ActivatedVault> {
+  async activateVault(params: ActivateVaultParams): Promise<ActivatedVault> {
     await this.disposeActiveVault()
 
-    let hubRef: ActivatedVault['hub'] | null = null
     const s = params.storage
     const storageWithHub: IVaultStorage = {
-      readFile:       (v, p, t)    => s.readFile(v, p, t),
-      writeFile:      (v, p, c, t) => s.writeFile(v, p, c, t),
-      resolveFileUrl: (v, p)       => s.resolveFileUrl(v, p),
-      listDocuments:  (v, t)       => s.listDocuments(v, t),
-      createFolder:   (v, p, t)    => s.createFolder(v, p, t),
-      deleteFolder:   (v, p, t)    => s.deleteFolder(v, p, t),
-      createDocument: async (_vaultId: string, path: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        return hubRef.createDocument(path)
-      },
-      renameDocument: async (_vaultId: string, docId: string, path: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        await hubRef.renameDocument(docId, path)
-      },
-      deleteDocument: async (_vaultId: string, docId: string) => {
-        if (!hubRef) throw new Error('Vault hub not attached')
-        await hubRef.deleteDocument(docId)
-      },
-      uploadAttachment: (v, f, t) => s.uploadAttachment(v, f, t),
-      listFolders: (v, t) => s.listFolders(v, t),
+      readFile:         (v, p, t)    => s.readFile(v, p, t),
+      writeFile:        (v, p, c, t) => s.writeFile(v, p, c, t),
+      resolveFileUrl:   (v, p)       => s.resolveFileUrl(v, p),
+      listDocuments:    (v, t)       => s.listDocuments(v, t),
+      uploadAttachment: (v, f, t)    => s.uploadAttachment(v, f, t),
     }
 
     const client = new VaultClient(
@@ -54,17 +31,30 @@ export class DocumentsService implements IDocumentsAPI {
       params.token,
       storageWithHub,
       params.documentStore,
+      params.directory,
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
-    hubRef = hub
-    void client.loadFolders()
+    // Profil EdgeSync uniquement. Sans factory, le répertoire et les documents
+    // sont relayés par le hub Savoire (VaultHubClient) — profil serveur.
+    const edgesyncVault = await this.edgesyncFactory?.open({
+      vaultId: params.vaultId,
+      identitySeed: params.identitySeed,
+      directory: params.directory,
+    })
+    // The directory's own CRDT observer is the source of truth for "the note
+    // list changed" — local edits AND remote ops both go through it, whichever
+    // profile applied them (hub relay or edgesync Session).
+    const unsubDirectoryChange = params.directory.onChange(params.onChanged)
 
     const active: ActiveContext = {
       vaultId: params.vaultId,
       client,
       hub,
+      edgesyncVault,
       dispose: async () => {
+        unsubDirectoryChange()
+        await edgesyncVault?.dispose()
         await hub.dispose()
       },
     }
@@ -85,6 +75,7 @@ export class DocumentsService implements IDocumentsAPI {
     doc: IDocumentMeta
     token: string
     documentStore: DocumentStore
+    directory: IVaultDirectory
     resolveDoc: (path: string) => IDocumentMeta | undefined
   }): Promise<ActivatedVault> {
     await this.disposeActiveVault()
@@ -92,16 +83,10 @@ export class DocumentsService implements IDocumentsAPI {
     const d = params.doc
     const readOnly = async (): Promise<never> => { throw new Error('read-only shared document') }
     const stubStorage: IVaultStorage = {
-      listDocuments:   async ()       => [d],
-      listFolders:     async ()       => [],
-      readFile:        async ()       => '',
-      writeFile:       readOnly,
-      resolveFileUrl:  ()             => '',
-      createDocument:  readOnly,
-      renameDocument:  readOnly,
-      deleteDocument:  readOnly,
-      createFolder:    readOnly,
-      deleteFolder:    readOnly,
+      listDocuments:    async ()       => [d],
+      readFile:         async ()       => '',
+      writeFile:        readOnly,
+      resolveFileUrl:   ()             => '',
       uploadAttachment: readOnly,
     }
 
@@ -110,16 +95,14 @@ export class DocumentsService implements IDocumentsAPI {
       params.token,
       stubStorage,
       params.documentStore,
+      params.directory,
       params.resolveDoc,
     )
     client.addDocument(d)
 
     const nullHub: VaultHubLike = {
-      connect:        async () => {},
-      dispose:        async () => {},
-      createDocument: readOnly,
-      renameDocument: readOnly,
-      deleteDocument: readOnly,
+      connect: async () => {},
+      dispose: async () => {},
     }
 
     const active: ActivatedVault = {
@@ -141,13 +124,20 @@ export class DocumentsService implements IDocumentsAPI {
     return this.active?.hub ?? null
   }
 
-  list(vaultId: string, token: string): Promise<AppDocumentSummary[]> {
-    return this.backend.listDocuments(vaultId, token)
+  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined {
+    return this.active?.edgesyncVault
   }
 
   async disposeActiveVault(): Promise<void> {
     if (!this.active) return
+    const active = this.active
     this.active = null
+    // Close the edgesync vault session directly (not via active.dispose(),
+    // which also disposes the hub — that's sync.disposeActive()'s job below,
+    // and it additionally clears SyncOrchestrator's own bookkeeping). Awaited:
+    // a subsequent activateVault() must not race ahead of this connection
+    // actually closing.
+    await active.edgesyncVault?.dispose()
     await this.sync.disposeActive()
   }
 }

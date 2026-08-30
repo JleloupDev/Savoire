@@ -1,0 +1,537 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jean Leloup
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
+import type { IDocumentMeta } from '@savoire/platform'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function doc(id: string, path: string): IDocumentMeta {
+  return { id, path }
+}
+
+/**
+ * Creates two wired YMapVaultDirectory instances.
+ * wire()  → incremental sync: each local update is immediately forwarded to the peer.
+ * fullSync() → full-state exchange: both apply each other's complete encoded state.
+ */
+function makePair() {
+  const a = new YMapVaultDirectory()
+  const b = new YMapVaultDirectory()
+
+  return {
+    a,
+    b,
+    wire(): () => void {
+      const u1 = a.onLocalUpdate(op => b.applyUpdate(op))
+      const u2 = b.onLocalUpdate(op => a.applyUpdate(op))
+      return () => { u1(); u2() }
+    },
+    fullSync() {
+      b.applyUpdate(a.encodeFullState())
+      a.applyUpdate(b.encodeFullState())
+    },
+  }
+}
+
+// ── Group 1 — Single instance: basic mutations ────────────────────────────────
+
+describe('YMapVaultDirectory — basic mutations', () => {
+  let dir: YMapVaultDirectory
+
+  beforeEach(() => { dir = new YMapVaultDirectory() })
+  afterEach(() => dir.dispose())
+
+  it('starts empty', () => {
+    expect(dir.getAll()).toHaveLength(0)
+  })
+
+  it('add() makes doc visible in getAll()', () => {
+    dir.add(doc('a', 'note.md'))
+    expect(dir.getAll()).toEqual([doc('a', 'note.md')])
+  })
+
+  it('add() same id twice does not duplicate', () => {
+    dir.add(doc('a', 'note.md'))
+    dir.add(doc('a', 'note.md'))
+    expect(dir.getAll()).toHaveLength(1)
+  })
+
+  it('getById() returns doc when present', () => {
+    dir.add(doc('a', 'note.md'))
+    expect(dir.getById('a')).toEqual(doc('a', 'note.md'))
+  })
+
+  it('getById() returns undefined when absent', () => {
+    expect(dir.getById('missing')).toBeUndefined()
+  })
+
+  it('remove() removes existing doc', () => {
+    dir.add(doc('a', 'note.md'))
+    dir.remove('a')
+    expect(dir.getAll()).toHaveLength(0)
+  })
+
+  it('remove() on unknown id is a no-op', () => {
+    dir.add(doc('a', 'note.md'))
+    expect(() => dir.remove('missing')).not.toThrow()
+    expect(dir.getAll()).toHaveLength(1)
+  })
+
+  it('rename() updates path', () => {
+    dir.add(doc('a', 'old.md'))
+    dir.rename('a', 'new.md')
+    expect(dir.getById('a')?.path).toBe('new.md')
+  })
+
+  it('rename() on unknown id is a no-op', () => {
+    expect(() => dir.rename('missing', 'x.md')).not.toThrow()
+  })
+
+})
+
+// ── Group 2 — Origin filtering ────────────────────────────────────────────────
+
+describe('YMapVaultDirectory — origin filtering', () => {
+  let dir: YMapVaultDirectory
+  const localUpdates: Uint8Array[] = []
+  const changeCount: { n: number } = { n: 0 }
+  let unsubLocal: () => void
+  let unsubChange: () => void
+
+  beforeEach(() => {
+    dir = new YMapVaultDirectory()
+    localUpdates.length = 0
+    changeCount.n = 0
+    unsubLocal = dir.onLocalUpdate(u => localUpdates.push(u))
+    unsubChange = dir.onChange(() => changeCount.n++)
+  })
+
+  afterEach(() => {
+    unsubLocal()
+    unsubChange()
+    dir.dispose()
+  })
+
+  it('add() fires onLocalUpdate', () => {
+    dir.add(doc('a', 'note.md'))
+    expect(localUpdates).toHaveLength(1)
+  })
+
+  it('remove() fires onLocalUpdate', () => {
+    dir.add(doc('a', 'note.md'))
+    localUpdates.length = 0
+    dir.remove('a')
+    expect(localUpdates).toHaveLength(1)
+  })
+
+  it('rename() fires onLocalUpdate', () => {
+    dir.add(doc('a', 'old.md'))
+    localUpdates.length = 0
+    dir.rename('a', 'new.md')
+    expect(localUpdates).toHaveLength(1)
+  })
+
+  it('applyUpdate() does NOT fire onLocalUpdate', () => {
+    const remote = new YMapVaultDirectory()
+    remote.add(doc('r', 'remote.md'))
+    const state = remote.encodeFullState()
+    remote.dispose()
+
+    dir.applyUpdate(state)
+    expect(localUpdates).toHaveLength(0)
+  })
+
+  it('add() fires onChange', () => {
+    dir.add(doc('a', 'note.md'))
+    expect(changeCount.n).toBeGreaterThan(0)
+  })
+
+  it('applyUpdate() fires onChange', () => {
+    const remote = new YMapVaultDirectory()
+    remote.add(doc('r', 'remote.md'))
+    const state = remote.encodeFullState()
+    remote.dispose()
+
+    dir.applyUpdate(state)
+    expect(changeCount.n).toBeGreaterThan(0)
+  })
+
+  it('onChange unsubscribe stops notifications', () => {
+    unsubChange()
+    changeCount.n = 0
+    dir.add(doc('z', 'z.md'))
+    expect(changeCount.n).toBe(0)
+  })
+
+  it('onLocalUpdate unsubscribe stops notifications', () => {
+    unsubLocal()
+    localUpdates.length = 0
+    dir.add(doc('z', 'z.md'))
+    expect(localUpdates).toHaveLength(0)
+  })
+})
+
+// ── Group 3 — Multi-instance convergence (real Yjs) ───────────────────────────
+
+describe('YMapVaultDirectory — multi-instance convergence', () => {
+  it('join: B applies A full state and sees all docs', () => {
+    const { a, b, fullSync } = makePair()
+
+    a.add(doc('1', 'alpha.md'))
+    a.add(doc('2', 'beta.md'))
+    a.add(doc('3', 'gamma.md'))
+
+    b.applyUpdate(a.encodeFullState())
+
+    expect(b.getAll().map(d => d.id).sort()).toEqual(['1', '2', '3'])
+
+    a.dispose(); b.dispose()
+    void fullSync // satisfy linter
+  })
+
+  it('incremental sync: A adds doc → B receives it', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+
+    a.add(doc('x', 'x.md'))
+    expect(b.getById('x')).toEqual(doc('x', 'x.md'))
+
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('incremental sync: A removes doc → B removes it too', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+
+    a.add(doc('x', 'x.md'))
+    expect(b.getById('x')).toBeDefined()
+
+    a.remove('x')
+    expect(b.getById('x')).toBeUndefined()
+
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('incremental sync: A renames doc → B sees new path', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+
+    a.add(doc('x', 'old.md'))
+    a.rename('x', 'new.md')
+    expect(b.getById('x')?.path).toBe('new.md')
+
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('concurrent adds converge: both instances see both docs after fullSync', () => {
+    const { a, b, fullSync } = makePair()
+
+    // No wiring — isolated mutations
+    a.add(doc('a-doc', 'from-a.md'))
+    b.add(doc('b-doc', 'from-b.md'))
+
+    fullSync()
+
+    const aIds = a.getAll().map(d => d.id).sort()
+    const bIds = b.getAll().map(d => d.id).sort()
+    expect(aIds).toEqual(['a-doc', 'b-doc'])
+    expect(bIds).toEqual(['a-doc', 'b-doc'])
+
+    a.dispose(); b.dispose()
+  })
+
+  it('concurrent rename: both converge to same path (Yjs LWW)', () => {
+    const { a, b, wire, fullSync } = makePair()
+    const unwire = wire()
+
+    // Seed both with same doc
+    a.add(doc('shared', 'original.md'))
+    // a→b sync already propagated via wire
+
+    unwire() // isolate
+
+    a.rename('shared', 'from-a.md')
+    b.rename('shared', 'from-b.md')
+
+    fullSync()
+
+    // Both must have converged to the same path (either value, but identical)
+    const pathA = a.getById('shared')?.path
+    const pathB = b.getById('shared')?.path
+    expect(pathA).toBe(pathB)
+    expect(['from-a.md', 'from-b.md']).toContain(pathA)
+
+    a.dispose(); b.dispose()
+  })
+
+  it('concurrent rename + delete: Yjs converges (set wins — new item survives tombstone)', () => {
+    const { a, b, wire, fullSync } = makePair()
+    const unwire = wire()
+
+    // Seed: both know doc 'z'
+    a.add(doc('z', 'z.md'))
+    // b also has it via wire
+
+    unwire() // isolate
+
+    // A renames, B deletes
+    a.rename('z', 'z-renamed.md')
+    b.remove('z')
+
+    fullSync()
+
+    // In Yjs YMap, a concurrent set creates a NEW item while delete tombstones
+    // the old one — the new item from the rename survives on both peers.
+    const pathA = a.getById('z')?.path
+    const pathB = b.getById('z')?.path
+    expect(pathA).toBe('z-renamed.md')
+    expect(pathB).toBe('z-renamed.md')
+
+    a.dispose(); b.dispose()
+  })
+
+  it('idempotency: applying same update twice has no side-effect', () => {
+    const { a, b } = makePair()
+
+    a.add(doc('dup', 'dup.md'))
+    const update = a.encodeFullState()
+
+    b.applyUpdate(update)
+    b.applyUpdate(update) // second application
+
+    expect(b.getAll()).toHaveLength(1)
+    expect(b.getById('dup')).toEqual(doc('dup', 'dup.md'))
+
+    a.dispose(); b.dispose()
+  })
+
+  it('commutativity: sync order does not affect final state', () => {
+    const a = new YMapVaultDirectory()
+    const b = new YMapVaultDirectory()
+    const c = new YMapVaultDirectory()
+
+    a.add(doc('a1', 'a1.md'))
+    b.add(doc('b1', 'b1.md'))
+
+    // Apply in different orders on c
+    c.applyUpdate(b.encodeFullState())
+    c.applyUpdate(a.encodeFullState())
+
+    const d = new YMapVaultDirectory()
+    d.applyUpdate(a.encodeFullState())
+    d.applyUpdate(b.encodeFullState())
+
+    const cIds = c.getAll().map(x => x.id).sort()
+    const dIds = d.getAll().map(x => x.id).sort()
+    expect(cIds).toEqual(dIds)
+
+    a.dispose(); b.dispose(); c.dispose(); d.dispose()
+  })
+
+  it('re-convergence: 5 isolated mutations on each side merge correctly', () => {
+    const { a, b, fullSync } = makePair()
+
+    for (let i = 0; i < 5; i++) a.add(doc(`a-${i}`, `a-${i}.md`))
+    for (let i = 0; i < 5; i++) b.add(doc(`b-${i}`, `b-${i}.md`))
+
+    fullSync()
+
+    const aCount = a.getAll().length
+    const bCount = b.getAll().length
+    expect(aCount).toBe(10)
+    expect(bCount).toBe(10)
+
+    // Both see the same set
+    const aIds = a.getAll().map(d => d.id).sort()
+    const bIds = b.getAll().map(d => d.id).sort()
+    expect(aIds).toEqual(bIds)
+
+    a.dispose(); b.dispose()
+  })
+
+  it('three-way convergence: A, B, C all isolate then sync pairwise', () => {
+    const a = new YMapVaultDirectory()
+    const b = new YMapVaultDirectory()
+    const c = new YMapVaultDirectory()
+
+    a.add(doc('a1', 'a.md'))
+    b.add(doc('b1', 'b.md'))
+    c.add(doc('c1', 'c.md'))
+
+    // Sync: A←→B, B←→C, then A←→C
+    b.applyUpdate(a.encodeFullState()); a.applyUpdate(b.encodeFullState())
+    c.applyUpdate(b.encodeFullState()); b.applyUpdate(c.encodeFullState())
+    a.applyUpdate(c.encodeFullState()); c.applyUpdate(a.encodeFullState())
+
+    const expected = ['a1', 'b1', 'c1']
+    for (const inst of [a, b, c]) {
+      expect(inst.getAll().map(d => d.id).sort()).toEqual(expected)
+    }
+
+    a.dispose(); b.dispose(); c.dispose()
+  })
+
+  it('encodeFullState on empty directory produces valid (applicable) update', () => {
+    const { a, b } = makePair()
+
+    const empty = a.encodeFullState()
+    expect(() => b.applyUpdate(empty)).not.toThrow()
+
+    a.dispose(); b.dispose()
+  })
+})
+
+// ── Group 4 — Disconnection and reconnection ──────────────────────────────────
+
+describe('YMapVaultDirectory — disconnection and reconnection', () => {
+  it('peer accumulates ops offline then syncs: remote catches up', () => {
+    const { a, b } = makePair()
+
+    // A goes online-only first, B is offline
+    a.add(doc('a1', 'a1.md'))
+    a.add(doc('a2', 'a2.md'))
+
+    // B was offline: apply A full state on reconnect
+    b.applyUpdate(a.encodeFullState())
+
+    expect(b.getAll().map(d => d.id).sort()).toEqual(['a1', 'a2'])
+
+    a.dispose(); b.dispose()
+  })
+
+  it('both peers accumulate ops offline then exchange: full convergence', () => {
+    const { a, b, fullSync } = makePair()
+
+    // Both offline, independent mutations
+    a.add(doc('x', 'x.md'))
+    a.rename('x', 'x-renamed.md')
+    b.add(doc('y', 'y.md'))
+    b.add(doc('z', 'z.md'))
+    b.remove('z')
+
+    fullSync()
+
+    // Both converge: x-renamed + y, z was deleted before sync
+    const aIds = a.getAll().map(d => d.id).sort()
+    const bIds = b.getAll().map(d => d.id).sort()
+    expect(aIds).toEqual(bIds)
+    expect(aIds).toContain('x')
+    expect(aIds).toContain('y')
+    expect(aIds).not.toContain('z')
+    expect(a.getById('x')?.path).toBe('x-renamed.md')
+    expect(b.getById('x')?.path).toBe('x-renamed.md')
+
+    a.dispose(); b.dispose()
+  })
+
+  it('reconnect after disconnect: local ops not yet pushed are included in full state', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+
+    // Initial sync
+    a.add(doc('base', 'base.md'))
+
+    unwire() // A disconnects
+
+    // A accumulates offline ops
+    a.add(doc('offline-1', 'offline-1.md'))
+    a.add(doc('offline-2', 'offline-2.md'))
+    a.rename('base', 'base-renamed.md')
+
+    // A reconnects: sends full state to B
+    b.applyUpdate(a.encodeFullState())
+
+    expect(b.getAll().map(d => d.id).sort()).toEqual(['base', 'offline-1', 'offline-2'])
+    expect(b.getById('base')?.path).toBe('base-renamed.md')
+
+    a.dispose(); b.dispose()
+  })
+
+  it('dispose() then getAll() returns empty without throwing', () => {
+    const dir = new YMapVaultDirectory()
+    dir.add(doc('a', 'a.md'))
+    dir.dispose()
+
+    expect(() => dir.getAll()).not.toThrow()
+    expect(dir.getAll()).toHaveLength(0)
+  })
+
+  it('onChange unsubscribed before dispose does not throw on dispose', () => {
+    const dir = new YMapVaultDirectory()
+    const unsub = dir.onChange(() => {})
+    unsub()
+    expect(() => dir.dispose()).not.toThrow()
+  })
+
+  it('wire, unwire, re-wire: only ops after re-wire propagate', () => {
+    const { a, b, wire } = makePair()
+
+    const unwire1 = wire()
+    a.add(doc('pre', 'pre.md'))
+    unwire1()
+
+    // B does not receive ops during disconnect
+    const unwire2 = wire()
+    a.add(doc('post', 'post.md'))
+    unwire2()
+
+    // pre propagated during first wire, post during second
+    expect(b.getById('pre')).toBeDefined()
+    expect(b.getById('post')).toBeDefined()
+
+    a.dispose(); b.dispose()
+  })
+})
+
+// ── Group 4 — Folders are CRDT state too ──────────────────────────────────────
+
+describe('YMapVaultDirectory — folders (CRDT)', () => {
+  it('addFolder / getFolders / removeFolder', () => {
+    const dir = new YMapVaultDirectory()
+    dir.addFolder('Inbox/')
+    dir.addFolder('Projects/')
+    expect([...dir.getFolders()].sort()).toEqual(['Inbox/', 'Projects/'])
+    dir.removeFolder('Inbox/')
+    expect(dir.getFolders()).toEqual(['Projects/'])
+    dir.dispose()
+  })
+
+  it('folders sync to a peer over incremental updates', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+    a.addFolder('Shared/')
+    expect(b.getFolders()).toEqual(['Shared/'])
+    a.removeFolder('Shared/')
+    expect(b.getFolders()).toEqual([])
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('concurrent folder creation merges (no central authority)', () => {
+    const { a, b, wire } = makePair()
+    const unwire = wire()
+    a.addFolder('A/')
+    b.addFolder('B/')
+    expect([...a.getFolders()].sort()).toEqual(['A/', 'B/'])
+    expect([...b.getFolders()].sort()).toEqual(['A/', 'B/'])
+    unwire(); a.dispose(); b.dispose()
+  })
+
+  it('onChange fires on a folder mutation', () => {
+    const dir = new YMapVaultDirectory()
+    let fired = false
+    const unsub = dir.onChange(() => { fired = true })
+    dir.addFolder('X/')
+    expect(fired).toBe(true)
+    unsub(); dir.dispose()
+  })
+
+  it('encodeFullState carries folders (initial join)', () => {
+    const a = new YMapVaultDirectory()
+    a.addFolder('Docs/')
+    const b = new YMapVaultDirectory()
+    b.applyUpdate(a.encodeFullState())
+    expect(b.getFolders()).toEqual(['Docs/'])
+    a.dispose(); b.dispose()
+  })
+})

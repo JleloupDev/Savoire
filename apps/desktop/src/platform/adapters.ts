@@ -55,44 +55,8 @@ export const desktopVaultStorage: IVaultStorage = {
     return listMarkdownDocs(vaultId)
   },
 
-  async createDocument(vaultId, path) {
-    const normalizedPath = path.endsWith('.md') ? path : `${path}.md`
-    const { writeTextFile, createDir } = await import('@tauri-apps/api/fs')
-    const { join, dirname } = await import('@tauri-apps/api/path')
-    const fullPath = await join(vaultId, normalizedPath)
-    await createDir(await dirname(fullPath), { recursive: true })
-    await writeTextFile(fullPath, '')
-    return { id: normalizedPath, path: normalizedPath }
-  },
-
-  async renameDocument(vaultId, docId, path) {
-    const normalizedPath = path.endsWith('.md') ? path : `${path}.md`
-    const { readTextFile, writeTextFile, removeFile, createDir } = await import('@tauri-apps/api/fs')
-    const { join, dirname } = await import('@tauri-apps/api/path')
-    const sourcePath = await join(vaultId, docId)
-    const targetPath = await join(vaultId, normalizedPath)
-    const content = await readTextFile(sourcePath)
-    await createDir(await dirname(targetPath), { recursive: true })
-    await writeTextFile(targetPath, content)
-    if (normSep(sourcePath) !== normSep(targetPath)) await removeFile(sourcePath)
-  },
-
-  async deleteDocument(vaultId, docId) {
-    const { removeFile } = await import('@tauri-apps/api/fs')
-    const { join } = await import('@tauri-apps/api/path')
-    await removeFile(await join(vaultId, docId))
-  },
-
-  async createFolder(vaultId, path) {
-    const { createDir } = await import('@tauri-apps/api/fs')
-    const { join } = await import('@tauri-apps/api/path')
-    await createDir(await join(vaultId, path), { recursive: true })
-  },
-
-  async deleteFolder(vaultId, path) {
-    const { removeDir } = await import('@tauri-apps/api/fs')
-    const { join } = await import('@tauri-apps/api/path')
-    await removeDir(await join(vaultId, path), { recursive: true })
+  async uploadAttachment(_vaultId, file) {
+    return { fileName: file.name, storagePath: file.name }
   },
 }
 

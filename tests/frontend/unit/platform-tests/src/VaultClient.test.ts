@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { VaultClient, DocumentStore } from '@savoire/platform'
+import { InMemoryVaultDirectory } from './InMemoryVaultDirectory'
 import type { IDocumentFetcher, IVaultStorage, IDocumentMeta } from '@savoire/platform'
 
 function makeMeta(id: string, path: string): IDocumentMeta {
@@ -23,11 +24,7 @@ const stubStorage: IVaultStorage = {
   writeFile: vi.fn(async () => {}),
   resolveFileUrl: (_vaultId, path) => `/attachments/${path}`,
   listDocuments: vi.fn(async () => []),
-  createDocument: vi.fn(async (_vaultId, path) => ({ id: 'new-id', path })),
-  renameDocument: vi.fn(async () => {}),
-  deleteDocument: vi.fn(async () => {}),
-  createFolder: vi.fn(async () => {}),
-  deleteFolder: vi.fn(async () => {}),
+  uploadAttachment: vi.fn(async (_vaultId, file) => ({ fileName: file.name, storagePath: 'sp' })),
 }
 
 const DOCS: IDocumentMeta[] = [
@@ -40,7 +37,7 @@ const TOKEN = 'tok'
 
 function makeClient(fetcher: IDocumentFetcher, docs = DOCS): VaultClient {
   const store = new DocumentStore(fetcher)
-  return new VaultClient(VAULT, TOKEN, stubStorage, store, (path) =>
+  return new VaultClient(VAULT, TOKEN, stubStorage, store, new InMemoryVaultDirectory(), (path) =>
     docs.find(d => d.path === path || d.path === path + '.md'),
   )
 }
@@ -48,9 +45,6 @@ function makeClient(fetcher: IDocumentFetcher, docs = DOCS): VaultClient {
 beforeEach(() => {
   vi.mocked(stubStorage.readFile).mockClear()
   vi.mocked(stubStorage.writeFile).mockClear()
-  vi.mocked(stubStorage.createDocument).mockClear()
-  vi.mocked(stubStorage.renameDocument).mockClear()
-  vi.mocked(stubStorage.createDocument).mockImplementation(async (_vaultId, path) => ({ id: 'new-id', path }))
 })
 
 describe('readDocumentByPath() — document path', () => {
@@ -105,7 +99,7 @@ describe('write()', () => {
   it('delegates to DocumentStore writer using document id', async () => {
     const fetcher = makeFetcher({})
     const client = makeClient(fetcher)
-    client.setSnapshot(DOCS)
+    DOCS.forEach(d => client.addDocument(d))
     await client.write('id-1', 'content')
     expect(fetcher.writeDocumentContent).toHaveBeenCalledWith(VAULT, 'id-1', 'content', TOKEN)
     expect(stubStorage.writeFile).not.toHaveBeenCalled()
@@ -125,54 +119,39 @@ describe('exists()', () => {
 })
 
 describe('createFile()', () => {
-  it('does not POST when document already exists in cache', async () => {
+  it('adds a new document to the CRDT directory', async () => {
     const client = makeClient(makeFetcher({}))
-    client.setSnapshot([makeMeta('id-1', 'note.md')])
+    await client.createFile('fresh.md')
+    expect(client.documents.map(d => d.path)).toContain('fresh.md')
+  })
 
+  it('is a no-op when the document already exists', async () => {
+    const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('id-1', 'note.md'))
     await client.createFile('note.md')
-
-    expect(stubStorage.createDocument).not.toHaveBeenCalled()
+    expect(client.documents.filter(d => d.path === 'note.md')).toHaveLength(1)
   })
 
-  it('deduplicates concurrent create requests for same path', async () => {
-    let resolveCreate: (meta: IDocumentMeta) => void = () => {
-      throw new Error('createDocument did not start')
-    }
-    vi.mocked(stubStorage.createDocument).mockImplementationOnce(
-      async (_vaultId, _path) => new Promise<IDocumentMeta>((resolve) => {
-        resolveCreate = resolve
-      }),
-    )
+  it('appends .md when the path has no extension', async () => {
     const client = makeClient(makeFetcher({}))
-
-    const p1 = client.createFile('dup.md')
-    const p2 = client.createFile('dup.md')
-    expect(stubStorage.createDocument).toHaveBeenCalledTimes(1)
-
-    resolveCreate({ id: 'dup-id', path: 'dup.md' })
-    await Promise.all([p1, p2])
-    expect(client.documents).toEqual([makeMeta('dup-id', 'dup.md')])
-  })
-
-  it('treats 409 conflict as idempotent success', async () => {
-    vi.mocked(stubStorage.createDocument).mockRejectedValueOnce(new Error('409'))
-    const client = makeClient(makeFetcher({}), [makeMeta('id-existing', 'note.md')])
-
-    await expect(client.createFile('note.md')).resolves.toBeUndefined()
+    await client.createFile('todo')
+    expect(client.documents.map(d => d.path)).toContain('todo.md')
   })
 })
 
 describe('renameFile()', () => {
-  it('delegates to IVaultStorage.renameDocument', async () => {
+  it('updates CRDT directory (no storage call)', async () => {
     const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('id-1', 'original.md'))
     await client.renameFile('id-1', 'renamed.md')
-    expect(stubStorage.renameDocument).toHaveBeenCalledWith(VAULT, 'id-1', 'renamed.md', TOKEN)
+    expect(client.documents.find(d => d.id === 'id-1')?.path).toBe('renamed.md')
   })
 
   it('appends .md when missing on target path', async () => {
     const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('id-1', 'original.md'))
     await client.renameFile('id-1', 'renamed')
-    expect(stubStorage.renameDocument).toHaveBeenCalledWith(VAULT, 'id-1', 'renamed.md', TOKEN)
+    expect(client.documents.find(d => d.id === 'id-1')?.path).toBe('renamed.md')
   })
 })
 
@@ -180,5 +159,73 @@ describe('resolveAttachmentUrl()', () => {
   it('delegates to IVaultStorage.resolveFileUrl', () => {
     const client = makeClient(makeFetcher({}))
     expect(client.resolveAttachmentUrl('img.png')).toBe('/attachments/img.png')
+  })
+})
+
+// ── Group 4 — VaultClient ↔ IVaultDirectory wiring ───────────────────────────
+
+describe('VaultClient — directory wiring', () => {
+  it('documents getter reflects directory state', () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    directory.add(makeMeta('id-1', 'note.md'))
+    expect(client.documents).toEqual([makeMeta('id-1', 'note.md')])
+  })
+
+  it('addDocument() triggers onChange on client', () => {
+    const client = makeClient(makeFetcher({}))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.addDocument(makeMeta('new', 'new.md'))
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+  it('removeDocument() triggers onChange on client', () => {
+    const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('x', 'x.md'))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.removeDocument('x')
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+  it('renameDocumentInCache() triggers onChange', () => {
+    const client = makeClient(makeFetcher({}))
+    client.addDocument(makeMeta('x', 'old.md'))
+    let fired = false
+    const unsub = client.onChange(() => { fired = true })
+    client.renameDocumentInCache('x', 'new.md')
+    expect(fired).toBe(true)
+    unsub()
+  })
+
+})
+
+// ── Group 5 — Folders live in the CRDT directory, not REST storage ───────────
+
+describe('folders — CRDT directory', () => {
+  it('createFolder adds to the directory and surfaces in list()', async () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    await client.createFolder('Inbox')
+    expect(directory.getFolders()).toContain('Inbox/')
+    expect(await client.list()).toContain('Inbox/')
+  })
+
+  it('deleteFolder removes the folder and its sub-folders from the directory', async () => {
+    const directory = new InMemoryVaultDirectory()
+    const store = new DocumentStore(makeFetcher({}))
+    const client = new VaultClient(VAULT, TOKEN, stubStorage, store, directory, () => undefined)
+
+    await client.createFolder('Inbox')
+    await client.createFolder('Inbox/Sub')
+    await client.deleteFolder('Inbox')
+    expect(directory.getFolders()).toEqual([])
   })
 })

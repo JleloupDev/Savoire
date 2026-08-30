@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { DocumentStore, IDocumentMeta, IVaultStorage, VaultClient } from '@savoire/platform'
-import type { VaultAPI } from '@savoire/plugin-api'
+
+import type { DocumentStore, IDocumentMeta, IVaultDirectory, IVaultStorage, VaultClient } from '@savoire/platform'
+import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
   id: string
@@ -34,13 +35,12 @@ export interface AppWorkspace {
 export interface VaultHubLike {
   connect(): Promise<void>
   dispose(): Promise<void>
-  createDocument(path: string): Promise<IDocumentMeta>
-  renameDocument(documentId: string, newPath: string): Promise<void>
-  deleteDocument(documentId: string): Promise<void>
-  /** Envoie une op d'index au serveur. Retourne le seq assigné, ou null si offline. */
+  /** Pushes an index op to the server. Returns the assigned seq, or null if offline. */
   pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
-  /** Subscribe aux ops d'index reçues des autres clients. */
+  /** Subscribes to index ops received from other clients. */
   onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
+  /** Push a binary vault CRDT update to the server (for relay to other peers). */
+  pushVaultUpdate?(update: Uint8Array): Promise<void>
 }
 
 export interface VaultHubFactoryParams {
@@ -53,12 +53,66 @@ export interface IVaultHubFactory {
   create(params: VaultHubFactoryParams): VaultHubLike
 }
 
+/**
+ * Abstract shape of EdgesyncVaultSession (@savoire/infrastructure-sync) — kept
+ * structural here (not imported) because infrastructure-sync depends on
+ * @savoire/application, so importing it back would create a cycle. Vault +
+ * documents share one E2E-encrypted edgesync Keyring; the server never reads
+ * either (it only relays opaque frames / signals WebRTC negotiation).
+ */
+/** Structural subset of @savoire/plugin-api's ICRDT presence methods —
+ *  satisfied today by YjsCrdtAdapter. Kept structural for the same
+ *  cycle-avoidance reason as EdgesyncVaultSessionLike itself. */
+export interface CrdtPresenceLike {
+  onLocalPresenceChanged(cb: (bytes: Uint8Array, changedClients: number[]) => void): () => void
+  applyRemotePresence(bytes: Uint8Array): void
+}
+
+export interface EdgesyncVaultSessionLike {
+  /** Fixed forever: was this peer the one whose genesis minted the vault. */
+  readonly isOwner: boolean
+  /** Dynamic: true once this peer actually possesses K_vault (may become true
+   *  for a non-owner too, once granted — see EdgesyncVaultSession). */
+  readonly isGranting: boolean
+  /** Start (or resume) live E2E-encrypted sync for one currently-open
+   *  document's Y.Doc. `presence`, if given, also wires peer cursors
+   *  (y-protocols/awareness) over the same channel — see
+   *  EdgesyncAwarenessChannel. */
+  openDocument(docId: string, doc: unknown, presence?: CrdtPresenceLike): void
+  /** Stop syncing a document whose editor panel closed. */
+  closeDocument(docId: string): void
+  /** Rotate K_vault to a fresh epoch (fresh key for every currently-known
+   *  channel too), delivered live to every peer connected right now. Throws
+   *  if `!isGranting`. Preamble to per-peer revocation (EdgesyncVaultSession
+   *  calls Session.rotate() with no exclusion; excluding one peer is what
+   *  revocation would do instead — see EdgesyncVaultSession.renewVaultKey). */
+  renewVaultKey(): Promise<void>
+  /** Dev/debug only: current epoch's K_vault, base64. Undefined before this
+   *  peer has any key (joiner awaiting its first grant). */
+  debugVaultKey(): { epoch: number; base64: string } | undefined
+  /** Dev/debug only: a currently-open document's K_doc, base64. */
+  debugDocKey(docId: string): string | undefined
+  /** Awaited by disposeActiveVault(): must fully close before a caller
+   *  switching to a different vault proceeds (see EdgesyncVaultSession). */
+  dispose(): Promise<void>
+}
+
+export interface EdgesyncVaultSessionFactoryParams {
+  vaultId: string
+  /** 32-byte Ed25519 seed (e.g. an ISeedExportingIdentityProvider's exportSignSeed()). */
+  identitySeed: Uint8Array
+  directory: IVaultDirectory
+}
+
+export interface IEdgesyncVaultSessionFactory {
+  open(params: EdgesyncVaultSessionFactoryParams): Promise<EdgesyncVaultSessionLike>
+}
+
 export interface IVaultsBackend {
   listVaults(userId: string, token: string): Promise<AppWorkspace>
   createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
-  listDocuments(vaultId: string, token: string): Promise<AppDocumentSummary[]>
 }
 
 export interface IVaultsAPI {
@@ -72,6 +126,7 @@ export interface ActivatedVault {
   readonly vaultId: string
   readonly client: VaultClient
   readonly hub: VaultHubLike
+  readonly edgesyncVault?: EdgesyncVaultSessionLike
   dispose(): Promise<void>
 }
 
@@ -80,8 +135,11 @@ export interface ActivateVaultParams {
   token: string
   storage: IVaultStorage
   documentStore: DocumentStore
+  directory: IVaultDirectory
   resolveDoc: (path: string) => IDocumentMeta | undefined
   onChanged: () => void
+  /** 32-byte Ed25519 seed for the vault's shared edgesync Keyring. */
+  identitySeed: Uint8Array
 }
 
 export interface ActivateSharedDocParams {
@@ -89,6 +147,7 @@ export interface ActivateSharedDocParams {
   doc: IDocumentMeta
   token: string
   documentStore: DocumentStore
+  directory: IVaultDirectory
   resolveDoc: (path: string) => IDocumentMeta | undefined
 }
 
@@ -97,7 +156,7 @@ export interface IDocumentsAPI {
   activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault>
   getActiveClient(): VaultClient | undefined
   getActiveHub(): VaultHubLike | null
-  list(vaultId: string, token: string): Promise<AppDocumentSummary[]>
+  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined
   disposeActiveVault(): Promise<void>
 }
 
@@ -186,6 +245,21 @@ export interface AppShareLinkAccess {
   permission: string
   expiresAt: string | null
   vaultId?: string
+  path?: string
+}
+
+export interface SharedDocumentHandle {
+  crdt: ICRDT
+  transport: ITransport
+  /** SyncAPI for snapshot-based plugins (excalidraw, mindmap). */
+  sync: SyncAPI
+  docId: string
+  vaultId: string
+  path: string
+  filename: string
+  permission: 'read' | 'write'
+  accessToken: string
+  dispose(): void
 }
 
 export interface AppUserLookup {
@@ -201,6 +275,7 @@ export interface ISharingBackend {
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+  openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
 }
 
 export interface ISharingAPI {
@@ -211,6 +286,7 @@ export interface ISharingAPI {
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
+  openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle>
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

@@ -16,30 +16,31 @@
 //
 // In-memory cache: last snapshot returned to any new joiner in the room.
 
-using System.Collections.Concurrent;
 using System.Security.Claims;
-using MediatR;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using Savoire.Application.Documents.PutDocumentContent;
+using Savoire.Domain.Aggregates;
+using Savoire.Domain.Repositories;
 
 namespace Savoire.Server.Hubs;
 
 [Authorize]
 public class DocumentRoomHub(
-    IMediator mediator,
+    ICrdtOpRepository ops,
     ILogger<DocumentRoomHub> logger) : Hub
 {
-    // In-memory cache — last known snapshot per docId.
-    private static readonly ConcurrentDictionary<string, string> LastSnapshots = new();
-
     // ── Methods called by the client ───────────────────────────────────────────
 
     public async Task JoinRoom(string vaultId, string docId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(docId));
 
-        LastSnapshots.TryGetValue(docId, out string? snapshot);
+        // The op log holds a single compacted snapshot per room (see PushSnapshot).
+        var history = await ops.GetAllAsync(CrdtResourceType.Room, docId);
+        string? snapshot = history.Count > 0
+            ? Encoding.UTF8.GetString(history[^1].OpBytes)
+            : null;
 
         logger.LogInformation(
             "[DocumentRoom] Client {Id} joined room {DocId} — snapshot {Status}",
@@ -58,13 +59,12 @@ public class DocumentRoomHub(
     {
         string userId = GetUserId();
 
-        // Update in-memory cache.
-        LastSnapshots[docId] = snapshotJson;
-
-        // Persist via MediatR (same pipeline as PUT /documents/{id}/content).
+        // Persist to the CRDT op log (compacted: one snapshot per room).
+        // TODO(perf): CompactAsync does delete-all + insert per push. For busy
+        // rooms (excalidraw), replace with a dedicated single-row upsert.
         try
         {
-            await mediator.Send(new PutDocumentContentCommand(userId, vaultId, docId, snapshotJson));
+            await ops.CompactAsync(CrdtResourceType.Room, docId, Encoding.UTF8.GetBytes(snapshotJson), force: true);
         }
         catch (Exception ex)
         {

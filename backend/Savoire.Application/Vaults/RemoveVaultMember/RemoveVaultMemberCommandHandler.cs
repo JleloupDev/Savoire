@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
+using Savoire.Application.Notifications;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Vaults.RemoveVaultMember;
 
-public sealed class RemoveVaultMemberCommandHandler(IVaultRepository vaults)
+public sealed class RemoveVaultMemberCommandHandler(
+    IVaultRepository vaults,
+    IVaultMemberIdentityRepository identities,
+    IPublisher publisher)
     : IRequestHandler<RemoveVaultMemberCommand>
 {
     public async Task Handle(RemoveVaultMemberCommand cmd, CancellationToken ct)
@@ -21,5 +25,7 @@ public sealed class RemoveVaultMemberCommandHandler(IVaultRepository vaults)
             throw new AccessDeniedException("Impossible de retirer l'owner d'un vault.");
 
         await vaults.RemoveMemberAsync(cmd.VaultId, cmd.MemberId, ct);
+        await identities.RemoveForUserAsync(cmd.VaultId, cmd.MemberId, ct);
+        await publisher.Publish(new VaultMembershipChangedNotification(cmd.VaultId), ct);
     }
 }

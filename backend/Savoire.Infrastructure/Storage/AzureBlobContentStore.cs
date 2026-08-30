@@ -22,36 +22,10 @@ public class AzureBlobContentStore(
 
     // ── Helpers — same naming conventions as LocalFileContentStore ──────────
 
-    private static string DocBlobName(string vaultId, string docId)
-        => $"{vaultId}/{docId}.md";
-
     private static string AttachBlobName(string vaultId, string storagePath)
         => $"{vaultId}/attachments/{storagePath}";
 
     // ── IContentStore ────────────────────────────────────────────────────
-
-    public async Task<Stream?> ReadDocumentAsync(
-        string vaultId, string docId, CancellationToken ct = default)
-    {
-        var blob = _container.GetBlobClient(DocBlobName(vaultId, docId));
-        if (!await blob.ExistsAsync(ct)) return null;
-        var response = await blob.DownloadStreamingAsync(cancellationToken: ct);
-        return response.Value.Content;
-    }
-
-    public async Task WriteDocumentAsync(
-        string vaultId, string docId, Stream content, CancellationToken ct = default)
-    {
-        var blob = _container.GetBlobClient(DocBlobName(vaultId, docId));
-        await blob.UploadAsync(content, overwrite: true, cancellationToken: ct);
-    }
-
-    public async Task DeleteDocumentAsync(
-        string vaultId, string docId, CancellationToken ct = default)
-    {
-        var docBlob = _container.GetBlobClient(DocBlobName(vaultId, docId));
-        await docBlob.DeleteIfExistsAsync(cancellationToken: ct);
-    }
 
     public async Task<Stream?> ReadAttachmentAsync(
         string vaultId, string storagePath, CancellationToken ct = default)

@@ -32,6 +32,10 @@ export interface VaultSummary {
   folderCount: number
   lastModifiedAt: string | null
   sizeBytes: number
+  /** Client-only, never from the API: true when this vault's escrowed Keyring
+   *  can't be decrypted with the K_User currently in memory (or none is set)
+   *  — see AppShell.tsx's lock-probe effect and VaultKeyEscrow.ts. */
+  locked: boolean
 }
 
 export interface SharedNote {

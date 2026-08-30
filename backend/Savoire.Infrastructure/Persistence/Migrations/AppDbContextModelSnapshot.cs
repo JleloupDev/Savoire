@@ -200,6 +200,9 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PrivateKeyHex")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("TEXT");
 
@@ -261,60 +264,28 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentEntity", b =>
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.EdgesyncBlobEntity", b =>
                 {
-                    b.Property<string>("Id")
+                    b.Property<string>("VaultId")
                         .HasColumnType("TEXT")
-                        .HasColumnName("id");
+                        .HasColumnName("vault_id");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<string>("Key")
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at");
+                        .HasColumnName("key");
 
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<string>("Hash")
+                    b.Property<byte[]>("Bytes")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("")
-                        .HasColumnName("hash");
-
-                    b.Property<string>("Path")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("path");
-
-                    b.Property<long>("SizeBytes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("size_bytes");
-
-                    b.Property<string>("Title")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("title");
+                        .HasColumnType("BLOB")
+                        .HasColumnName("bytes");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
-                    b.Property<string>("VaultId")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("vault_id");
+                    b.HasKey("VaultId", "Key");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("VaultId", "DeletedAt")
-                        .HasDatabaseName("idx_documents_vault");
-
-                    b.HasIndex("VaultId", "Path")
-                        .IsUnique();
-
-                    b.ToTable("documents", (string)null);
+                    b.ToTable("edgesync_blobs", (string)null);
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
@@ -396,11 +367,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("client_id");
 
-                    b.Property<string>("DocumentId")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("document_id");
-
                     b.Property<byte[]>("OpBytes")
                         .IsRequired()
                         .HasColumnType("BLOB")
@@ -414,10 +380,20 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("received_at");
 
+                    b.Property<string>("ResourceId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("resource_id");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("resource_type");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("DocumentId", "ReceivedAt")
-                        .HasDatabaseName("idx_ops_document");
+                    b.HasIndex("ResourceType", "ResourceId", "ReceivedAt")
+                        .HasDatabaseName("idx_ops_resource");
 
                     b.ToTable("operations_log", (string)null);
                 });
@@ -696,9 +672,9 @@ namespace Savoire.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.SyncVectorEntity", b =>
                 {
-                    b.Property<string>("DocumentId")
+                    b.Property<string>("ResourceId")
                         .HasColumnType("TEXT")
-                        .HasColumnName("document_id");
+                        .HasColumnName("resource_id");
 
                     b.Property<string>("ClientId")
                         .HasColumnType("TEXT")
@@ -713,7 +689,7 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("BLOB")
                         .HasColumnName("vector");
 
-                    b.HasKey("DocumentId", "ClientId");
+                    b.HasKey("ResourceId", "ClientId");
 
                     b.ToTable("sync_vectors", (string)null);
                 });
@@ -743,6 +719,30 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("vaults", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultKeyWrapEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.Property<byte[]>("WrappedKeyBytes")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("wrapped_key_bytes");
+
+                    b.HasKey("UserId", "VaultId");
+
+                    b.ToTable("vault_key_wraps", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultMemberEntity", b =>
                 {
                     b.Property<string>("VaultId")
@@ -767,6 +767,32 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.HasIndex("Role");
 
                     b.ToTable("vault_members", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultMemberIdentityEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<byte[]>("SignPub")
+                        .HasColumnType("BLOB")
+                        .HasColumnName("sign_pub");
+
+                    b.Property<DateTime>("RegisteredAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("registered_at");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("VaultId", "SignPub");
+
+                    b.HasIndex("VaultId", "UserId");
+
+                    b.ToTable("vault_member_identities", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -818,17 +844,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("Savoire.Infrastructure.Persistence.DocumentEntity", b =>
-                {
-                    b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", "Vault")
-                        .WithMany("Documents")
-                        .HasForeignKey("VaultId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Vault");
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
@@ -897,8 +912,6 @@ namespace Savoire.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultEntity", b =>
                 {
-                    b.Navigation("Documents");
-
                     b.Navigation("Folders");
 
                     b.Navigation("Members");

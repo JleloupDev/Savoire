@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultSummary, DocumentDto, FolderDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
+import type { VaultSummary, DocumentDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
 
 async function apiFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -72,21 +72,6 @@ export const api = {
 
   deleteVault: (vaultId: string, token: string): Promise<void> =>
     apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}`, token, { method: 'DELETE' }),
-
-  // ── Folders ──────────────────────────────────────────────────────────────
-  listFolders: (vaultId: string, token: string): Promise<FolderDto[]> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/folders`, token),
-
-  createFolder: (vaultId: string, path: string, token: string): Promise<FolderDto> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/folders`, token, {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }),
-
-  deleteFolder: (vaultId: string, folderId: string, token: string): Promise<void> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/folders/${encodeURIComponent(folderId)}`, token, {
-      method: 'DELETE',
-    }),
 
   // ── Documents ────────────────────────────────────────────────────────────
   listDocuments: (vaultId: string, token: string): Promise<DocumentDto[]> =>

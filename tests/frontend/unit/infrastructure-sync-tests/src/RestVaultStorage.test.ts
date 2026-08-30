@@ -81,112 +81,22 @@ describe('RestVaultStorage.listDocuments()', () => {
 })
 
 describe('RestVaultStorage.createDocument()', () => {
-  it('calls POST /documents with path and title', async () => {
-    const meta = { id: 'new-id', path: 'Inbox/note.md' }
-    const fetchFn = makeOk(meta)
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    const result = await storage.createDocument(V, 'Inbox/note.md', TOK)
-    expect(result).toEqual(meta)
-    expect(fetchFn).toHaveBeenCalledWith(
-      `/api/v1/vaults/${V}/documents`,
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.stringContaining('Inbox/note.md'),
-      }),
-    )
-  })
-
-  it('derives title from filename without .md extension', async () => {
-    const fetchFn = makeOk({ id: 'x', path: 'my-note.md' })
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.createDocument(V, 'my-note.md', TOK)
-    const body = JSON.parse((fetchFn.mock.calls[0][1] as RequestInit).body as string)
-    expect(body.title).toBe('my-note')
+  it('throws — must go through VaultHub', () => {
+    const storage = new RestVaultStorage({})
+    expect(() => storage.createDocument(V, 'note.md', TOK)).toThrow('VaultHub')
   })
 })
 
 describe('RestVaultStorage.renameDocument()', () => {
-  it('calls PATCH /documents/:id with new path and title', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 200 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.renameDocument(V, 'doc-1', 'renamed.md', TOK)
-    expect(fetchFn).toHaveBeenCalledWith(
-      `/api/v1/vaults/${V}/documents/doc-1`,
-      expect.objectContaining({ method: 'PATCH', body: expect.stringContaining('renamed.md') }),
-    )
-  })
-
-  it('throws on error', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: false, status: 404 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await expect(storage.renameDocument(V, 'x', 'y.md', TOK)).rejects.toThrow('404')
+  it('throws — must go through VaultHub', () => {
+    const storage = new RestVaultStorage({})
+    expect(() => storage.renameDocument(V, 'doc-1', 'renamed.md', TOK)).toThrow('VaultHub')
   })
 })
 
 describe('RestVaultStorage.deleteDocument()', () => {
-  it('calls DELETE /documents/:id', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 204 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.deleteDocument(V, 'doc-1', TOK)
-    expect(fetchFn).toHaveBeenCalledWith(
-      `/api/v1/vaults/${V}/documents/doc-1`,
-      expect.objectContaining({ method: 'DELETE' }),
-    )
-  })
-
-  it('accepts 204 No Content as success', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: false, status: 204 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await expect(storage.deleteDocument(V, 'doc-1', TOK)).resolves.toBeUndefined()
-  })
-})
-
-describe('RestVaultStorage.createFolder()', () => {
-  it('calls POST /folders with path', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 201 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.createFolder(V, 'Inbox', TOK)
-    expect(fetchFn).toHaveBeenCalledWith(
-      `/api/v1/vaults/${V}/folders`,
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ path: 'Inbox' }) }),
-    )
-  })
-
-  it('throws on error', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: false, status: 500 }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await expect(storage.createFolder(V, 'x', TOK)).rejects.toThrow('500')
-  })
-})
-
-describe('RestVaultStorage.deleteFolder()', () => {
-  it('is a no-op when folder is not in the list', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.deleteFolder(V, 'Missing', TOK)
-    expect(fetchFn).toHaveBeenCalledTimes(1) // only the GET
-  })
-
-  it('deletes the folder by id when found', async () => {
-    const folders = [{ id: 'f1', path: 'Inbox' }]
-    let callCount = 0
-    const fetchFn = vi.fn(async () => {
-      callCount++
-      if (callCount === 1) return { ok: true, status: 200, json: async () => folders }
-      return { ok: true, status: 204 }
-    })
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await storage.deleteFolder(V, 'Inbox', TOK)
-    expect(fetchFn).toHaveBeenCalledTimes(2)
-    expect(fetchFn).toHaveBeenNthCalledWith(2,
-      expect.stringContaining('f1'),
-      expect.objectContaining({ method: 'DELETE' }),
-    )
-  })
-
-  it('throws when the folder list fetch fails', async () => {
-    const fetchFn = vi.fn(async () => ({ ok: false, status: 503, json: async () => null }))
-    const storage = new RestVaultStorage({ fetchFn: fetchFn as never })
-    await expect(storage.deleteFolder(V, 'x', TOK)).rejects.toThrow('503')
+  it('throws — must go through VaultHub', () => {
+    const storage = new RestVaultStorage({})
+    expect(() => storage.deleteDocument(V, 'doc-1', TOK)).toThrow('VaultHub')
   })
 })

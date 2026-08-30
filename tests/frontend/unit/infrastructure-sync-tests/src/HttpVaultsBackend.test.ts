@@ -59,14 +59,6 @@ describe('HttpVaultsBackend', () => {
     )
   })
 
-  it('listDocuments maps each entry to id/path only', async () => {
-    const raw = [{ id: 'd1', path: 'note.md', extra: 'ignored' }]
-    const fetchFn = makeFetch(200, raw)
-    const backend = new HttpVaultsBackend({ fetchFn: fetchFn as never })
-    const result = await backend.listDocuments('v1', 'tok')
-    expect(result).toEqual([{ id: 'd1', path: 'note.md' }])
-  })
-
   it('throws on HTTP error status', async () => {
     const fetchFn = vi.fn(async () => ({ ok: false, status: 403, json: async () => null, text: async () => 'Forbidden' }))
     const backend = new HttpVaultsBackend({ fetchFn: fetchFn as never })

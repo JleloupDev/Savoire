@@ -40,8 +40,8 @@ describe('Resilience — connection interruption during collaboration', () => {
 
     // Create two documents
     const hub = await makeVaultHub(vaultId, () => adminToken)
-    docA = await hub.hub.createDocument('doc-a.md')
-    docB = await hub.hub.createDocument('doc-b.md')
+    docA = await hub.createDocument('doc-a.md')
+    docB = await hub.createDocument('doc-b.md')
     await hub.dispose()
 
     await adminRoot.api.sharing.grantPermission('vault', vaultId, guestUserId, 'write', adminToken)
@@ -74,7 +74,7 @@ describe('Resilience — connection interruption during collaboration', () => {
   it('client B disconnects mid-session — client A content still readable after reconnect', async () => {
     // Fresh doc so CRDT history is clean regardless of other tests
     const hub = await makeVaultHub(vaultId, () => adminToken)
-    const disconnectDoc = await hub.hub.createDocument('disconnect-test.md')
+    const disconnectDoc = await hub.createDocument('disconnect-test.md')
     await hub.dispose()
 
     await writeYjsContent(vaultId, disconnectDoc.id, '# Initial content', () => adminToken, adminUserId)
@@ -98,7 +98,7 @@ describe('Resilience — connection interruption during collaboration', () => {
   it('client B disconnects then reconnects — sees all ops including those written during absence', async () => {
     // Fresh doc for clean state
     const hub = await makeVaultHub(vaultId, () => adminToken)
-    const freshDoc = await hub.hub.createDocument('reconnect-test.md')
+    const freshDoc = await hub.createDocument('reconnect-test.md')
     await hub.dispose()
 
     // Admin writes initial content
@@ -123,7 +123,7 @@ describe('Resilience — connection interruption during collaboration', () => {
 
   it('concurrent writes from two clients on the SAME document are both preserved by CRDT', async () => {
     const hub = await makeVaultHub(vaultId, () => adminToken)
-    const sameDoc = await hub.hub.createDocument('same-doc-concurrent.md')
+    const sameDoc = await hub.createDocument('same-doc-concurrent.md')
     await hub.dispose()
 
     await Promise.all([

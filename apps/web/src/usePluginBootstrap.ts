@@ -19,7 +19,7 @@ import { createHashtagsPlugin } from '@savoire/plugin-hashtags'
 import { createMetadataPlugin } from '@savoire/plugin-metadata'
 import { createGraphPlugin } from '@savoire/plugin-graph'
 import { createSearchPlugin } from '@savoire/plugin-search'
-import type { VaultAPI, VaultPlugin, IEditorHostAPI } from '@savoire/plugin-api'
+import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI } from '@savoire/plugin-api'
 import {
   BlockRegistryImpl,
   CommandRegistryImpl,
@@ -32,7 +32,10 @@ import {
   PluginAPIImpl,
   PluginLoader,
 } from '@savoire/plugin-runtime'
-import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor } from '@savoire/application'
+import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService } from '@savoire/application'
+import type { ITextChangeSource } from '@savoire/application'
+import { IndexEngine } from '@savoire/domain-index'
+import type { ICollaborativeText, IndexContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
 import type { EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -40,11 +43,9 @@ import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import type { VaultSummary } from './types'
-import type { DocumentRoomClient } from '@savoire/infrastructure-sync'
-
 interface PluginBootstrapOptions {
-  /** The shared DocumentRoomClient instance (stable, created once). */
-  roomClient: DocumentRoomClient
+  /** The shared SyncAPI instance (stable, created once). */
+  roomClient: SyncAPI
   /** Stable VaultAPI proxy that always delegates to the active vault. */
   vaultProxy: VaultAPI
   /** Ref to the WorkspaceManagerImpl — populated by WorkspaceRoot.onReady. */
@@ -71,6 +72,8 @@ export interface PluginBootstrapResult {
   getGraphContributor: () => GraphIndexContributor | null
   pluginLoaderRef: MutableRefObject<PluginLoader>
   triggersRef: MutableRefObject<InstanceType<typeof TriggerRegistryImpl> | null>
+  /** Emit a CRDT text change event for the given document. Called per-document by EditorAreaWidget. */
+  onCrdtTextChangeRef: MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
 }
 
 /**
@@ -94,6 +97,7 @@ export function usePluginBootstrap({
   const pluginsBootstrapPromiseRef = useRef<Promise<void> | null>(null)
   const indexRegistryRef = useRef<IndexRegistryImpl | null>(null)
   const contentIndexingServiceRef = useRef<ContentIndexingService | null>(null)
+  const onCrdtTextChangeRef = useRef<((docId: string, text: ICollaborativeText) => void) | null>(null)
   const getGraphContributorRef = useRef<(() => GraphIndexContributor | null)>(() => null)
   const triggersRef = useRef<InstanceType<typeof TriggerRegistryImpl> | null>(null)
   const fileTypeRegistryRef = useRef<InstanceType<typeof FileTypeRegistryImpl> | null>(null)
@@ -272,10 +276,34 @@ export function usePluginBootstrap({
         triggers.register({ id: 'slash-command', character: '/', description: 'Palette de commandes' })
         pluginsBootstrappedRef.current = true
 
+        // Proxy contributor: delegates onTextChange to all current registry contributors.
+        // Using indexRegistry.getAll() at call time handles vault switch automatically.
+        const proxyContributor: IndexContributor = {
+          namespace: '__realtime__',
+          processedSeq: 0,
+          onOp: () => {},
+          restore: () => {},
+          snapshot: () => '{}',
+          onTextChange(text, docId, index) {
+            for (const c of indexRegistry.getAll()) c.onTextChange?.(text, docId, index)
+          },
+        }
+        const engine = new IndexEngine()
+        engine.register(proxyContributor)
+
+        const handlers = new Set<(docId: string, text: ICollaborativeText) => void>()
+        const source: ITextChangeSource = {
+          subscribe(h) { handlers.add(h); return () => handlers.delete(h) },
+        }
+        onCrdtTextChangeRef.current = (docId, text) => { for (const h of handlers) h(docId, text) }
+
+        const noopGateway = { broadcast: () => {}, onRemote: () => () => {} }
+        new RealtimeIndexingService(source, engine, noopGateway).start()
+
         contentIndexingServiceRef.current?.setOnIndexed((docId, path) => {
           managerRef.current?.notifyDocumentIndexed(docId, path)
         })
-        // restore() est appelé à chaque activation de vault (dans EditorPage), pas ici — pas de vaultId disponible.
+        // restore() is called on each vault activation (in EditorPage), not here — no vaultId available.
         contentIndexingServiceRef.current?.init()
       })()
     }
@@ -298,5 +326,6 @@ export function usePluginBootstrap({
     getGraphContributor: getGraphContributorRef.current,
     pluginLoaderRef,
     triggersRef,
+    onCrdtTextChangeRef,
   }
 }

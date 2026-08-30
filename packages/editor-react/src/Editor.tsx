@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { useEffect, useRef, useState, useId } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorCore } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
@@ -10,8 +10,6 @@ import { BubbleToolbar } from './BubbleToolbar'
 import { TriggerOverlay } from './TriggerOverlay'
 
 export interface EditorProps {
-  serverUrl?: string
-  vaultId?: string
   docId?: string
   userId?: string
   initialContent?: string
@@ -39,20 +37,17 @@ export interface EditorProps {
   /** Shared PluginAPIImpl from the app layer. When provided, EditorCore reuses it
    *  instead of creating its own — plugins are loaded once for all tabs. */
   pluginAPI?: import('@savoire/plugin-runtime').PluginAPIImpl
-  /** JWT token factory for authenticated SignalR hubs. */
-  getToken?: () => string | null
 }
 
 // see ADR-023
 export function Editor({
-  serverUrl, vaultId, docId, userId, initialContent, vault, style,
+  docId, userId, initialContent, vault, style,
   readOnly, showToolbar, showBubbleToolbar, showSlashMenu, showTriggerOverlay, onReady,
-  filePath, pluginRegistry, defaultPlugins, pluginAPI, getToken,
+  filePath, pluginRegistry, defaultPlugins, pluginAPI,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const coreRef = useRef<EditorController | null>(null)
   const [controller, setController] = useState<EditorController | null>(null)
-  const clientId = useId()
 
   useEffect(() => {
     const container = containerRef.current
@@ -60,11 +55,8 @@ export function Editor({
 
     const core = new EditorCore({
       container,
-      serverUrl,
-      vaultId,
       docId,
       userId,
-      clientId,
       initialContent,
       vault,
       readOnly,
@@ -72,7 +64,6 @@ export function Editor({
       pluginRegistry,
       defaultPlugins,
       pluginAPI,
-      getToken,
     })
 
     coreRef.current = core
@@ -85,7 +76,7 @@ export function Editor({
       setController(null)
       onReady?.(null)
     }
-  }, [serverUrl, vaultId, docId, userId, clientId, initialContent, vault, readOnly, filePath, pluginRegistry, defaultPlugins, pluginAPI])
+  }, [docId, userId, initialContent, vault, readOnly, filePath, pluginRegistry, defaultPlugins, pluginAPI])
 
   return (
     <EditorContext.Provider value={controller}>

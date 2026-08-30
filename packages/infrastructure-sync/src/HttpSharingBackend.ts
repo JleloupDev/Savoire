@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type {
-  ISharingBackend,
+  ISharingBackend, SharedDocumentHandle,
   AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
 } from '@savoire/application'
+import { YjsCrdtAdapter } from './YjsCrdtAdapter'
+import { SignalRTransport } from './SignalRTransport'
+import { DocumentRoomClient } from './DocumentRoomClient'
 
 export class HttpSharingBackend implements ISharingBackend {
   constructor(private readonly baseUrl: string = '') {}
@@ -69,5 +72,35 @@ export class HttpSharingBackend implements ISharingBackend {
     const res = await fetch(`${this.baseUrl}/api/v1/share/${encodeURIComponent(shareToken)}/access`)
     if (!res.ok) throw new Error(`${res.status}`)
     return res.json() as Promise<AppShareLinkAccess>
+  }
+
+  async openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>> {
+    const res = await fetch(`${this.baseUrl}/api/v1/share/${encodeURIComponent(shareToken)}/access`)
+    if (!res.ok) throw new Error(`${res.status}`)
+    const access = await res.json() as AppShareLinkAccess
+
+    const path = access.path ?? `doc-${access.resourceId}.md`
+    const crdt = new YjsCrdtAdapter()
+    const transport = new SignalRTransport({
+      serverUrl: this.baseUrl,
+      userId: 'share',
+      getToken: () => access.accessToken,
+    })
+    const sync = new DocumentRoomClient({
+      serverUrl: this.baseUrl,
+      getToken: () => access.accessToken,
+    })
+
+    return {
+      crdt,
+      transport,
+      sync,
+      docId: access.resourceId,
+      vaultId: access.vaultId ?? '',
+      path,
+      filename: path.split('/').at(-1) ?? path,
+      permission: access.permission as 'read' | 'write',
+      accessToken: access.accessToken,
+    }
   }
 }

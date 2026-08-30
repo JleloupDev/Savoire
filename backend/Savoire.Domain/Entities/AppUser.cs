@@ -10,4 +10,7 @@ public class AppUser : IdentityUser
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
     public bool IsAdmin { get; set; } = false;
+    /// <summary>Ed25519 private key (32 bytes) stored as hex. Generated on first key request.</summary>
+    // TODO(P3): encrypt at rest before enabling P2P verification — plain-text private key is acceptable only while the server is the sole trusted party.
+    public string? PrivateKeyHex { get; set; }
 }

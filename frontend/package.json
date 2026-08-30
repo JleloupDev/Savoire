@@ -16,10 +16,11 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "arch:check": "pnpm arch:check:core && pnpm arch:check:plugins",
-    "arch:check:core": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/infrastructure-sync/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src ../packages/module-bridge/src ../packages/domain-sync/src ../packages/ui-components/src --config .dependency-cruiser.cjs --output-type err-long",
-    "arch:check:plugins": "depcruise ../packages/plugins --config .dependency-cruiser.cjs --output-type err-long",
-    "arch:graph": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg"
+    "arch:check": "pnpm arch:check:imports && pnpm arch:check:cycles",
+    "arch:check:imports": "node arch-check-imports.mjs",
+    "arch:check:cycles": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/infrastructure-sync/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src ../packages/module-bridge/src ../packages/domain-sync/src ../packages/ui-components/src ../packages/plugins ../apps/web/src ../apps/view/src ../apps/desktop/src --config .dependency-cruiser.cjs --output-type err-long",
+    "arch:graph": "depcruise ../packages/plugin-api/src ../packages/plugin-runtime/src ../packages/platform/src ../packages/application/src ../packages/editor-core/src ../packages/editor-react/src ../packages/workspace/src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg",
+    "test:edgesync": "pnpm --filter @savoire/infrastructure-edgesync-tests test"
   },
   "devDependencies": {
     "@playwright/test": "^1.42.0",

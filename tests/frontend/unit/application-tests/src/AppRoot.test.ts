@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { AppRoot } from '@savoire/application'
-import type { IVaultsBackend, IVaultHubFactory, VaultHubLike } from '@savoire/application'
+import type { IVaultsBackend, IVaultHubFactory, VaultHubLike, IEdgesyncVaultSessionFactory } from '@savoire/application'
 import type { DocumentStore } from '@savoire/platform'
 import type { OpenDocument } from '@savoire/platform'
 
@@ -41,6 +41,17 @@ function makeHubFactory(): IVaultHubFactory {
   return { create: vi.fn(() => hub) }
 }
 
+function makeEdgesyncVaultSessionFactory(): IEdgesyncVaultSessionFactory {
+  return {
+    open: vi.fn(async () => ({
+      isOwner: true, isGranting: true,
+      openDocument: vi.fn(), closeDocument: vi.fn(), renewVaultKey: vi.fn(async () => {}),
+      debugVaultKey: vi.fn(() => undefined), debugDocKey: vi.fn(() => undefined),
+      dispose: vi.fn(async () => {}),
+    })),
+  }
+}
+
 function makeDocumentStore(): DocumentStore {
   const openDoc: OpenDocument = {
     docId: 'doc-1', path: 'note.md', content: '# Hello',
@@ -60,6 +71,7 @@ describe('AppRoot (integration)', () => {
     const root = new AppRoot({
       backend: makeBackend(),
       hubFactory: makeHubFactory(),
+      edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory(),
       documentStore: makeDocumentStore(),
     })
     expect(root.api.vaults).toBeDefined()
@@ -70,14 +82,14 @@ describe('AppRoot (integration)', () => {
 
   it('api.vaults.list delegates to backend', async () => {
     const backend = makeBackend()
-    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore() })
+    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
     await root.api.vaults.list('user1', 'tok')
     expect(backend.listVaults).toHaveBeenCalledWith('user1', 'tok')
   })
 
   it('api.vaults.create delegates to backend', async () => {
     const backend = makeBackend()
-    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore() })
+    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
     const result = await root.api.vaults.create('user1', 'New Vault', 'tok')
     expect(result.name).toBe('Main') // returns backend stub value
     expect(backend.createVault).toHaveBeenCalledWith('user1', 'New Vault', 'tok')
@@ -85,35 +97,35 @@ describe('AppRoot (integration)', () => {
 
   it('api.vaults.rename delegates to backend', async () => {
     const backend = makeBackend()
-    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore() })
+    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
     const result = await root.api.vaults.rename('v1', 'Renamed', 'tok')
     expect(result.name).toBe('Renamed')
   })
 
   it('api.vaults.delete delegates to backend', async () => {
     const backend = makeBackend()
-    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore() })
+    const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
     await root.api.vaults.delete('v1', 'tok')
     expect(backend.deleteVault).toHaveBeenCalledWith('v1', 'tok')
   })
 
   it('api.documents.getActiveClient returns undefined before activation', () => {
     const root = new AppRoot({
-      backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: makeDocumentStore(),
+      backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory(),
     })
     expect(root.api.documents.getActiveClient()).toBeUndefined()
   })
 
   it('api.documentSession.close is callable', () => {
     const store = makeDocumentStore()
-    const root = new AppRoot({ backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: store })
+    const root = new AppRoot({ backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: store, edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
     expect(() => root.api.documentSession.close('v1', 'doc-1')).not.toThrow()
     expect(store.close).toHaveBeenCalledWith('v1', 'doc-1')
   })
 
   it('api.workspace.createVaultProxy creates a working proxy', async () => {
     const root = new AppRoot({
-      backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: makeDocumentStore(),
+      backend: makeBackend(), hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory(),
     })
     const proxy = root.api.workspace.createVaultProxy(() => undefined, () => undefined)
     expect(await proxy.list()).toEqual([])

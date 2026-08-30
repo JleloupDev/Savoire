@@ -19,14 +19,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefSyncChangeTypeEntity> RefSyncChangeTypes => Set<RefSyncChangeTypeEntity>();
     public DbSet<VaultEntity>             Vaults             => Set<VaultEntity>();
     public DbSet<VaultMemberEntity> VaultMembers => Set<VaultMemberEntity>();
-    public DbSet<DocumentEntity>    Documents   => Set<DocumentEntity>();
     public DbSet<FolderEntity>      Folders     => Set<FolderEntity>();
-    public DbSet<OperationEntity>   Operations  => Set<OperationEntity>();
-    public DbSet<SyncVectorEntity>  SyncVectors => Set<SyncVectorEntity>();
+    public DbSet<OperationEntity>  Operations  => Set<OperationEntity>();
+    public DbSet<SyncVectorEntity> SyncVectors => Set<SyncVectorEntity>();
     public DbSet<RefreshToken>              RefreshTokens       => Set<RefreshToken>();
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
     public DbSet<IndexSnapshotEntity>       IndexSnapshots      => Set<IndexSnapshotEntity>();
+    public DbSet<EdgesyncBlobEntity>        EdgesyncBlobs       => Set<EdgesyncBlobEntity>();
+    public DbSet<VaultKeyWrapEntity>        VaultKeyWraps       => Set<VaultKeyWrapEntity>();
+    public DbSet<VaultMemberIdentityEntity> VaultMemberIdentities => Set<VaultMemberIdentityEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -91,27 +93,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .OnDelete(DeleteBehavior.Restrict);
         });
 
-        modelBuilder.Entity<DocumentEntity>(e =>
-        {
-            e.ToTable("documents");
-            e.HasKey(d => d.Id);
-            e.Property(d => d.Id).HasColumnName("id");
-            e.Property(d => d.VaultId).HasColumnName("vault_id").IsRequired();
-            e.Property(d => d.Path).HasColumnName("path").IsRequired();
-            e.Property(d => d.Title).HasColumnName("title");
-            e.Property(d => d.SizeBytes).HasColumnName("size_bytes").HasDefaultValue(0L);
-            e.Property(d => d.Hash).HasColumnName("hash").HasDefaultValue("").IsRequired();
-            e.Property(d => d.CreatedAt).HasColumnName("created_at").IsRequired();
-            e.Property(d => d.UpdatedAt).HasColumnName("updated_at").IsRequired();
-            e.Property(d => d.DeletedAt).HasColumnName("deleted_at");
-            e.HasIndex(d => new { d.VaultId, d.Path }).IsUnique();
-            e.HasIndex(d => new { d.VaultId, d.DeletedAt }).HasDatabaseName("idx_documents_vault");
-            e.HasOne(d => d.Vault)
-             .WithMany(v => v.Documents)
-             .HasForeignKey(d => d.VaultId)
-             .OnDelete(DeleteBehavior.Cascade);
-        });
-
         modelBuilder.Entity<FolderEntity>(e =>
         {
             e.ToTable("folders");
@@ -133,23 +114,55 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.ToTable("operations_log");
             e.HasKey(o => o.Id);
             e.Property(o => o.Id).HasColumnName("id");
-            e.Property(o => o.DocumentId).HasColumnName("document_id").IsRequired();
+            e.Property(o => o.ResourceType).HasColumnName("resource_type").IsRequired();
+            e.Property(o => o.ResourceId).HasColumnName("resource_id").IsRequired();
             e.Property(o => o.ClientId).HasColumnName("client_id").IsRequired();
             e.Property(o => o.ProducedAt).HasColumnName("produced_at").IsRequired();
             e.Property(o => o.ReceivedAt).HasColumnName("received_at").IsRequired();
             e.Property(o => o.OpBytes).HasColumnName("op_bytes").IsRequired();
-            e.HasIndex(o => new { o.DocumentId, o.ReceivedAt })
-             .HasDatabaseName("idx_ops_document");
+            e.HasIndex(o => new { o.ResourceType, o.ResourceId, o.ReceivedAt })
+             .HasDatabaseName("idx_ops_resource");
         });
 
         modelBuilder.Entity<SyncVectorEntity>(e =>
         {
             e.ToTable("sync_vectors");
-            e.HasKey(s => new { s.DocumentId, s.ClientId });
-            e.Property(s => s.DocumentId).HasColumnName("document_id");
+            e.HasKey(s => new { s.ResourceId, s.ClientId });
+            e.Property(s => s.ResourceId).HasColumnName("resource_id");
             e.Property(s => s.ClientId).HasColumnName("client_id");
             e.Property(s => s.Vector).HasColumnName("vector").IsRequired();
             e.Property(s => s.UpdatedAt).HasColumnName("updated_at").IsRequired();
+        });
+
+        modelBuilder.Entity<EdgesyncBlobEntity>(e =>
+        {
+            e.ToTable("edgesync_blobs");
+            e.HasKey(b => new { b.VaultId, b.Key });
+            e.Property(b => b.VaultId).HasColumnName("vault_id");
+            e.Property(b => b.Key).HasColumnName("key");
+            e.Property(b => b.Bytes).HasColumnName("bytes").IsRequired();
+            e.Property(b => b.UpdatedAt).HasColumnName("updated_at").IsRequired();
+        });
+
+        modelBuilder.Entity<VaultKeyWrapEntity>(e =>
+        {
+            e.ToTable("vault_key_wraps");
+            e.HasKey(w => new { w.UserId, w.VaultId });
+            e.Property(w => w.UserId).HasColumnName("user_id");
+            e.Property(w => w.VaultId).HasColumnName("vault_id");
+            e.Property(w => w.WrappedKeyBytes).HasColumnName("wrapped_key_bytes").IsRequired();
+            e.Property(w => w.UpdatedAt).HasColumnName("updated_at").IsRequired();
+        });
+
+        modelBuilder.Entity<VaultMemberIdentityEntity>(e =>
+        {
+            e.ToTable("vault_member_identities");
+            e.HasKey(k => new { k.VaultId, k.SignPub });
+            e.Property(k => k.VaultId).HasColumnName("vault_id");
+            e.Property(k => k.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(k => k.SignPub).HasColumnName("sign_pub");
+            e.Property(k => k.RegisteredAt).HasColumnName("registered_at").IsRequired();
+            e.HasIndex(k => new { k.VaultId, k.UserId });
         });
 
         modelBuilder.Entity<RefreshToken>(e =>

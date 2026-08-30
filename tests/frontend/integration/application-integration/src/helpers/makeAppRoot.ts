@@ -3,79 +3,63 @@
 import { AppRoot } from '@savoire/application'
 import type { IVaultHubFactory } from '@savoire/application'
 import { DocumentStore } from '@savoire/platform'
-import type { VaultClient } from '@savoire/platform'
 import {
   HttpAuthBackend,
   HttpAdminBackend,
   HttpSharingBackend,
   HttpVaultsBackend,
-  RestDocumentFetcher,
   CrdtDocumentFetcher,
   VaultHubClient,
 } from '@savoire/infrastructure-sync'
 
 const SERVER_URL = process.env.SERVER_URL ?? 'http://localhost:5000'
 
-// Stub hub — structural operations routed via REST, real-time sync not needed for these tests.
+// Stub hub — real-time sync not needed for non-document tests (auth, admin, sharing, vaults).
 function makeNullHubFactory(): IVaultHubFactory {
   return {
     create: ({ onChanged }) => ({
       connect: async () => { onChanged() },
       dispose: async () => {},
-      createDocument: async (path: string) => {
-        throw new Error(`createDocument("${path}") requires a real hub — use REST instead`)
-      },
-      renameDocument: async () => {},
-      deleteDocument: async () => {},
     }),
   }
 }
 
-export function makeAppRoot(getToken: () => string | null) {
-  const fetcher = new RestDocumentFetcher({ baseUrl: SERVER_URL })
-  const documentStore = new DocumentStore(fetcher)
-
-  return new AppRoot({
+function backends() {
+  return {
     authBackend:    new HttpAuthBackend(SERVER_URL),
     adminBackend:   new HttpAdminBackend(SERVER_URL),
     sharingBackend: new HttpSharingBackend(SERVER_URL),
     backend:        new HttpVaultsBackend({ baseUrl: SERVER_URL }),
-    hubFactory:     makeNullHubFactory(),
-    documentStore,
-  })
+  }
 }
 
-/**
- * AppRoot variant that reads document content via the CRDT path (SignalR /hubs/sync).
- * Use this to verify that content written by one client is visible to another via
- * the real collaboration channel.
- */
-export function makeCrdtAppRoot(getToken: () => string | null, getUserId: () => string) {
+/** Default AppRoot — content read via the CRDT path (SignalR /hubs/sync). */
+export function makeAppRoot(getToken: () => string | null, getUserId: () => string = () => 'test-user') {
   const fetcher = new CrdtDocumentFetcher({
     serverUrl: SERVER_URL,
     getToken:  () => getToken(),
     getUserId: () => getUserId(),
   })
-  const documentStore = new DocumentStore(fetcher)
-
   return new AppRoot({
-    authBackend:    new HttpAuthBackend(SERVER_URL),
-    adminBackend:   new HttpAdminBackend(SERVER_URL),
-    sharingBackend: new HttpSharingBackend(SERVER_URL),
-    backend:        new HttpVaultsBackend({ baseUrl: SERVER_URL }),
-    hubFactory:     makeNullHubFactory(),
-    documentStore,
+    ...backends(),
+    hubFactory:    makeNullHubFactory(),
+    documentStore: new DocumentStore(fetcher),
   })
 }
 
+/** Alias kept for tests that explicitly want the CRDT read path. */
+export const makeCrdtAppRoot = makeAppRoot
+
 /**
- * AppRoot variant wired with a real VaultHubClient factory.
- * Use this when you need to test activateVault / disposeActiveVault
- * and hub-driven document operations through the application layer.
+ * AppRoot wired with a real VaultHubClient factory.
+ * Use for activateVault / disposeActiveVault and hub-driven (CRDT) document ops.
  */
-export function makeRealAppRoot(getToken: () => string | null) {
-  const fetcher = new RestDocumentFetcher({ baseUrl: SERVER_URL })
-  const documentStore = new DocumentStore(fetcher)
+export function makeRealAppRoot(getToken: () => string | null, getUserId: () => string = () => 'test-user') {
+  const fetcher = new CrdtDocumentFetcher({
+    serverUrl: SERVER_URL,
+    getToken:  () => getToken(),
+    getUserId: () => getUserId(),
+  })
 
   const hubFactory: IVaultHubFactory = {
     create: ({ vaultId, vaultClient, onChanged }) =>
@@ -83,12 +67,9 @@ export function makeRealAppRoot(getToken: () => string | null) {
   }
 
   return new AppRoot({
-    authBackend:    new HttpAuthBackend(SERVER_URL),
-    adminBackend:   new HttpAdminBackend(SERVER_URL),
-    sharingBackend: new HttpSharingBackend(SERVER_URL),
-    backend:        new HttpVaultsBackend({ baseUrl: SERVER_URL }),
+    ...backends(),
     hubFactory,
-    documentStore,
+    documentStore: new DocumentStore(fetcher),
   })
 }
 

@@ -135,6 +135,18 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
   const leftToggleRef  = React.useRef<HTMLButtonElement>(null)
   const rightToggleRef = React.useRef<HTMLButtonElement>(null)
 
+  // StrictMode mounts, unmounts, and remounts every component once in dev to
+  // surface missing cleanup. onDockviewReady's continuation below is async
+  // (awaits onBeforeReady/plugin bootstrap) and touches the shared Dockview
+  // API and `onReady` callback — without this guard, a discarded first mount
+  // can still finish its async work after being unmounted and add a second,
+  // orphaned set of panels alongside the real one.
+  const mountedRef = React.useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
   useEffect(() => manager.subscribePaneState('left',  s => setLeftCollapsed(s.collapsed)),  [manager])
   useEffect(() => manager.subscribePaneState('right', s => setRightCollapsed(s.collapsed)), [manager])
 
@@ -164,6 +176,7 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
       // onBeforeReady may be async (plugin loading). Wait for it before opening panels.
       const setup = onBeforeReady?.(manager) ?? Promise.resolve()
       void Promise.resolve(setup).then(() => {
+        if (!mountedRef.current) return
         const ctx: ViewContext = { workspace: manager, vault, fileTypes: fileTypesRef?.current ?? noopFileTypeRegistry }
 
         // ── Resolve groupId for right/center panels ────────────────────────

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import type { IDocumentMeta } from '@savoire/platform'
 import { makeAppRoot } from './helpers/makeAppRoot'
+import { makeVaultHub } from './helpers/makeVaultHub'
 
 const ADMIN_EMAIL = 'admin@local.dev'
 const ADMIN_PASSWORD = 'Admin1234!'
@@ -14,6 +16,7 @@ describe('Security — unauthorized access', () => {
   let regularToken = ''
   let regularUserId = ''
   let vaultId = ''
+  let doc: IDocumentMeta
 
   const adminRoot   = makeAppRoot(() => adminToken)
   const regularRoot = makeAppRoot(() => regularToken)
@@ -32,6 +35,10 @@ describe('Security — unauthorized access', () => {
 
     const vault = await adminRoot.api.vaults.create(adminUserId, 'Security Test Vault', adminToken)
     vaultId = vault.id
+
+    const hub = await makeVaultHub(vaultId, () => adminToken)
+    doc = await hub.createDocument('secret.md')
+    await hub.dispose()
   })
 
   afterAll(async () => {
@@ -59,8 +66,10 @@ describe('Security — unauthorized access', () => {
 
   // ── Vault access without permission ─────────────────────────────────────────
 
-  it('user without vault permission cannot list documents', async () => {
-    await expect(regularRoot.api.documents.list(vaultId, regularToken)).rejects.toThrow()
+  it('user without vault permission cannot read a document (CRDT join denied)', async () => {
+    await expect(
+      regularRoot.api.documentSession.read(vaultId, doc.id, regularToken)
+    ).rejects.toThrow()
   })
 
   it('user without vault permission cannot delete vault', async () => {

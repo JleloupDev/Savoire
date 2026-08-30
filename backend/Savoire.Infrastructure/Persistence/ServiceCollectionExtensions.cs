@@ -129,9 +129,8 @@ public static class ServiceCollectionExtensions
 
         // Existing repositories (scoped — depend on DbContext)
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
-        services.AddScoped<IDocumentRepository,  EfDocumentRepository>();
-        services.AddScoped<IFolderRepository,    EfFolderRepository>();
-        services.AddScoped<IOperationRepository, EfOperationRepository>();
+        services.AddScoped<IFolderRepository, EfFolderRepository>();
+        services.AddScoped<ICrdtOpRepository, EfCrdtOpRepository>();
 
         // Auth repositories
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
@@ -142,6 +141,16 @@ public static class ServiceCollectionExtensions
 
         // Index repositories
         services.AddScoped<IIndexSnapshotRepository,  EfIndexSnapshotRepository>();
+
+        // Edgesync blob repository (blind per-vault backup store, see ADR-022-style stance)
+        services.AddScoped<IEdgesyncBlobRepository, EfEdgesyncBlobRepository>();
+
+        // Vault key escrow (blind per-user key wraps — S3, see VaultKeyEscrow.ts)
+        services.AddScoped<IVaultKeyWrapRepository, EfVaultKeyWrapRepository>();
+
+
+        // Vault member identities (signPub bridge between ACL and edgesync protocol — see IVaultMemberIdentityRepository)
+        services.AddScoped<IVaultMemberIdentityRepository, EfVaultMemberIdentityRepository>();
 
         // Domain Auth services
         services.AddScoped<ITokenService,      TokenService>();

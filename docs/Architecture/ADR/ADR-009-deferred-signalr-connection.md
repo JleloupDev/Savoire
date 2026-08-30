@@ -1,7 +1,7 @@
 # ADR-009 — Deferred SignalR Connection via setTimeout(0)
 
 ## Status
-Accepted
+Superseded by ADR-026
 
 ## Context
 React 18 StrictMode double-invokes effects in development. `EditorCore.init()` starts the SignalR connection in a `useEffect`. In StrictMode, the effect runs, then immediately runs the cleanup (dispose), then runs again. If the connection starts synchronously, the first connect + immediate disconnect leaves the SignalR client in an error state before the second mount completes.

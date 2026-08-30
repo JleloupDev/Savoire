@@ -1,23 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Tests unitaires — VaultHub (version MediatR)
-// Le hub délègue à IMediator. Les broadcasts sont déclenchés par les
-// INotificationHandler (hors scope de ces tests unitaires).
-// see ADR-001
-
 using System.Security.Claims;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Savoire.Application.Common;
-using Savoire.Application.Documents.CreateDocument;
-using Savoire.Application.Documents.DeleteDocument;
-using Savoire.Application.Documents.ListDocuments;
-using Savoire.Application.Documents.RenameDocument;
-// MediatR.Unit not needed — DeleteDocumentCommand returns void (IRequest)
 using Savoire.Application.Sync.Common;
+using Savoire.Application.Sync.JoinVault;
+using Savoire.Application.Sync.PushVaultOperation;
+using Savoire.Application.Sync.SnapshotVault;
 using Savoire.Server.Hubs;
 
 namespace Savoire.Server.Unit.Tests.Hubs;
@@ -46,9 +38,7 @@ public class VaultHubTests
         var context = Substitute.For<HubCallerContext>();
         context.ConnectionId.Returns(ConnectionId);
 
-        // Simule un utilisateur authentifié avec claim "sub"
-        var identity = new ClaimsIdentity(
-            [new Claim("sub", UserId)], "Bearer");
+        var identity = new ClaimsIdentity([new Claim("sub", UserId)], "Bearer");
         context.User.Returns(new ClaimsPrincipal(identity));
 
         _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>(), new IndexOpSequencer())
@@ -62,108 +52,99 @@ public class VaultHubTests
     // ── JoinVault ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task JoinVault_AddsConnectionToGroup_SendsVaultSnapshot()
+    public async Task JoinVault_AddsConnectionToGroup_SendsInitVault()
     {
-        // Arrange
-        var docs = new List<DocumentDto>
-        {
-            new("doc-1", "notes.md", "Notes", "", 0, DateTime.UtcNow, DateTime.UtcNow)
-        };
-        _mediator.Send(Arg.Any<ListDocumentsQuery>(), Arg.Any<CancellationToken>())
-                 .Returns(docs);
+        _mediator.Send(Arg.Any<JoinVaultQuery>(), Arg.Any<CancellationToken>())
+                 .Returns(new JoinVaultResult([]));
 
-        // Act
         await _hub.JoinVault(VaultId);
 
-        // Assert — groupe rejoint
         await _groups.Received(1)
             .AddToGroupAsync(ConnectionId, VaultId, Arg.Any<CancellationToken>());
 
-        // Assert — query correcte envoyée à MediatR
         await _mediator.Received(1).Send(
-            Arg.Is<ListDocumentsQuery>(q => q.VaultId == VaultId && q.CallerId == UserId),
+            Arg.Is<JoinVaultQuery>(q => q.VaultId == VaultId && q.CallerId == UserId),
             Arg.Any<CancellationToken>());
 
-        // Assert — snapshot envoyé au caller
         await _callerProxy.Received(1).SendCoreAsync(
-            "VaultSnapshot",
+            "InitVault",
             Arg.Any<object?[]>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task JoinVault_EmptyVault_SendsEmptySnapshot()
+    public async Task JoinVault_EmptyVault_SendsInitVaultWithEmptyOps()
     {
-        _mediator.Send(Arg.Any<ListDocumentsQuery>(), Arg.Any<CancellationToken>())
-                 .Returns(new List<DocumentDto>());
+        _mediator.Send(Arg.Any<JoinVaultQuery>(), Arg.Any<CancellationToken>())
+                 .Returns(new JoinVaultResult([]));
+
+        object?[]? capturedArgs = null;
+        await _callerProxy.SendCoreAsync(
+            Arg.Any<string>(), Arg.Do<object?[]>(a => capturedArgs = a), Arg.Any<CancellationToken>());
 
         await _hub.JoinVault(VaultId);
 
-        await _callerProxy.Received(1).SendCoreAsync(
-            "VaultSnapshot",
+        capturedArgs.Should().NotBeNull();
+        capturedArgs![0].Should().Be(VaultId);
+        ((string[])capturedArgs[1]!).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task JoinVault_WithExistingOps_SendsThemAll()
+    {
+        var ops = new[] { Convert.ToBase64String([1, 2, 3]), Convert.ToBase64String([4, 5, 6]) };
+        _mediator.Send(Arg.Any<JoinVaultQuery>(), Arg.Any<CancellationToken>())
+                 .Returns(new JoinVaultResult(ops));
+
+        object?[]? capturedArgs = null;
+        await _callerProxy.SendCoreAsync(
+            Arg.Any<string>(), Arg.Do<object?[]>(a => capturedArgs = a), Arg.Any<CancellationToken>());
+
+        await _hub.JoinVault(VaultId);
+
+        ((string[])capturedArgs![1]!).Should().HaveCount(2);
+    }
+
+    // ── PushVaultOperation ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PushVaultOperation_SendsCommand_AndRelaysToOthers()
+    {
+        var othersProxy = Substitute.For<IClientProxy>();
+        _clients.OthersInGroup(VaultId).Returns(othersProxy);
+
+        var op = Convert.ToBase64String([1, 2, 3]);
+        await _hub.PushVaultOperation(VaultId, op);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<PushVaultOperationCommand>(c => c.VaultId == VaultId),
+            Arg.Any<CancellationToken>());
+
+        await othersProxy.Received(1).SendCoreAsync(
+            "VaultOperationReceived",
             Arg.Any<object?[]>(),
             Arg.Any<CancellationToken>());
     }
 
-    // ── CreateDocument ────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task CreateDocument_SendsCreateDocumentCommand_ReturnsSnapshotItem()
+    public async Task PushVaultOperation_InvalidBase64_DoesNotSendCommand()
     {
-        // Arrange
-        var dto = new DocumentDto("doc-1", "ideas/spark.md", null, "", 0, DateTime.UtcNow, DateTime.UtcNow);
-        _mediator.Send(Arg.Any<CreateDocumentCommand>(), Arg.Any<CancellationToken>())
-                 .Returns(dto);
+        await _hub.PushVaultOperation(VaultId, "!!!not-base64!!!");
 
-        // Act
-        var result = await _hub.CreateDocument(VaultId, "ideas/spark.md", null);
-
-        // Assert — commande correcte envoyée
-        await _mediator.Received(1).Send(
-            Arg.Is<CreateDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.VaultId  == VaultId &&
-                c.Path     == "ideas/spark.md"),
-            Arg.Any<CancellationToken>());
-
-        // Assert — résultat mappé correctement
-        result.Id.Should().Be("doc-1");
-        result.Path.Should().Be("ideas/spark.md");
+        await _mediator.DidNotReceive().Send(
+            Arg.Any<PushVaultOperationCommand>(), Arg.Any<CancellationToken>());
     }
 
-    // ── RenameDocument ────────────────────────────────────────────────────────
+    // ── SnapshotVault ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task RenameDocument_SendsRenameDocumentCommand()
+    public async Task SnapshotVault_SendsCommand()
     {
-        var dto = new DocumentDto("doc-1", "new-name.md", null, "", 0, DateTime.UtcNow, DateTime.UtcNow);
-        _mediator.Send(Arg.Any<RenameDocumentCommand>(), Arg.Any<CancellationToken>())
-                 .Returns(dto);
-
-        await _hub.RenameDocument("doc-1", "new-name.md");
+        var snapshot = Convert.ToBase64String([9, 9, 9]);
+        await _hub.SnapshotVault(VaultId, snapshot);
 
         await _mediator.Received(1).Send(
-            Arg.Is<RenameDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.DocId    == "doc-1" &&
-                c.NewPath  == "new-name.md" &&
-                c.VaultId  == "__resolve__"),
-            Arg.Any<CancellationToken>());
-    }
-
-    // ── DeleteDocument ────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task DeleteDocument_SendsDeleteDocumentCommand()
-    {
-        // DeleteDocumentCommand : IRequest (returns MediatR.Unit) — pas de valeur de retour à mocker
-        await _hub.DeleteDocument("doc-1");
-
-        await _mediator.Received(1).Send(
-            Arg.Is<DeleteDocumentCommand>(c =>
-                c.CallerId == UserId &&
-                c.DocId    == "doc-1" &&
-                c.VaultId  == "__resolve__"),
+            Arg.Is<SnapshotVaultCommand>(c => c.VaultId == VaultId),
             Arg.Any<CancellationToken>());
     }
 }

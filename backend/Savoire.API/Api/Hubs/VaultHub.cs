@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// VaultHub — Hub SignalR à /hubs/vault.
+// VaultHub - Hub SignalR a /hubs/vault.
 // see ADR-001
 
 using System.Security.Claims;
@@ -8,13 +8,9 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Savoire.Application.Sync.Common;
-using Savoire.Application.Common;
-using Savoire.Application.Documents.CreateDocument;
-using Savoire.Application.Documents.DeleteDocument;
-using Savoire.Application.Documents.ListDocuments;
-using Savoire.Application.Documents.RenameDocument;
-using Savoire.Application.Documents.SyncDocumentTitle;
-using Savoire.Domain.Exceptions;
+using Savoire.Application.Sync.JoinVault;
+using Savoire.Application.Sync.PushVaultOperation;
+using Savoire.Application.Sync.SnapshotVault;
 
 namespace Savoire.Server.Hubs;
 
@@ -24,123 +20,71 @@ public sealed class VaultHub(
     ILogger<VaultHub> logger,
     IndexOpSequencer  sequencer) : Hub
 {
-    // ── Client → Server ───────────────────────────────────────────────────────
+    // ── Vault CRDT sync ───────────────────────────────────────────────────────
 
-    /// <summary>Joins the vault group and receives the current list of its documents.</summary>
     public async Task JoinVault(string vaultId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, vaultId);
 
-        string callerId = GetCallerId();
-        IReadOnlyList<DocumentDto> docs = await mediator.Send(
-            new ListDocumentsQuery(callerId, vaultId, null, false));
+        JoinVaultResult result = await mediator.Send(new JoinVaultQuery(GetCallerId(), vaultId));
 
-        IEnumerable<VaultSnapshotItem> items = docs
-            .Select(d => new VaultSnapshotItem(d.Id, d.Path, d.Title, d.UpdatedAt));
-
-        await Clients.Caller.SendAsync("VaultSnapshot", items);
+        await Clients.Caller.SendAsync("InitVault", vaultId, result.Ops);
 
         logger.LogInformation(
-            "Client {ConnectionId} joined vault {VaultId} — {Count} document(s)",
-            Context.ConnectionId, vaultId, docs.Count);
+            "Client {ConnectionId} joined vault {VaultId} - {Count} vault op(s)",
+            Context.ConnectionId, vaultId, result.Ops.Length);
     }
 
-    /// <summary>
-    /// Creates a document via the Application layer (MediatR).
-    /// The DocumentCreated broadcast is triggered by DocumentCreatedNotification.
-    /// </summary>
-    public async Task<VaultSnapshotItem> CreateDocument(string vaultId, string path, string? title)
+    public async Task PushVaultOperation(string vaultId, string opBase64)
     {
-        string callerId = GetCallerId();
-        try
+        byte[] opBytes;
+        try { opBytes = Convert.FromBase64String(opBase64); }
+        catch (FormatException ex)
         {
-            DocumentDto doc = await mediator.Send(
-                new CreateDocumentCommand(callerId, vaultId, path, null));
+            logger.LogWarning(ex, "Invalid vault opBase64 from {Id}", Context.ConnectionId);
+            return;
+        }
 
-            return new VaultSnapshotItem(doc.Id, doc.Path, doc.Title, doc.UpdatedAt);
-        }
-        catch (PathConflictException ex)
-        {
-            // 409 prefix: matched by VaultClient._isConflictError() for idempotent handling.
-            throw new HubException($"409: {ex.Message}");
-        }
-        catch (AccessDeniedException ex)
-        {
-            throw new HubException($"403: {ex.Message}");
-        }
-        catch (VaultNotFoundException ex)
-        {
-            throw new HubException($"404: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "CreateDocument failed for caller={CallerId} vault={VaultId} path={Path}",
-                callerId,
-                vaultId,
-                path);
+        await mediator.Send(new PushVaultOperationCommand(vaultId, opBytes));
 
-            // Keep a stable prefix for the UI while surfacing a useful detail.
-            throw new HubException($"500: CreateDocument failed: {ex.Message}");
-        }
+        await Clients.OthersInGroup(vaultId)
+            .SendAsync("VaultOperationReceived", vaultId, opBase64);
     }
 
-    /// <summary>Renames a document via MediatR. Broadcast triggered by DocumentRenamedNotification.</summary>
-    public async Task RenameDocument(string documentId, string newPath)
+    public async Task SnapshotVault(string vaultId, string snapshotBase64)
     {
-        string callerId = GetCallerId();
-
-        // Resolve vaultId from the document ID (not via ListDocuments — via GetById)
-        DocumentDto doc = await mediator.Send(
-            new RenameDocumentCommand(callerId, "__resolve__", documentId, newPath));
-
-        logger.LogInformation(
-            "Document {DocumentId} renommé → {NewPath}", documentId, newPath);
-
-        _ = doc; // result used by the handler to notify via IPublisher
-    }
-
-    /// <summary>Soft-deletes a document via MediatR. Broadcast triggered by DocumentDeletedNotification.</summary>
-    public async Task DeleteDocument(string documentId)
-    {
-        string callerId = GetCallerId();
-        await mediator.Send(new DeleteDocumentCommand(callerId, "__resolve__", documentId));
+        byte[] snapshotBytes;
+        try { snapshotBytes = Convert.FromBase64String(snapshotBase64); }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "SnapshotVault: invalid base64 for {VaultId}", vaultId);
+            return;
+        }
+        await mediator.Send(new SnapshotVaultCommand(vaultId, snapshotBytes));
+        logger.LogInformation("Vault {VaultId} compacted by {ConnectionId}", vaultId, Context.ConnectionId);
     }
 
     // ── Index ops ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Receives an index op from a client, assigns a sequence number, and broadcasts it
-    /// to other members of the vault group.
-    /// </summary>
     public async Task<long> PushIndexOp(PushIndexOpDto dto)
     {
         long seq = sequencer.Next();
 
-        await mediator.Send(new SyncDocumentTitleCommand(dto.DocId, dto.MarkdownContent));
-
         var evt = new IndexOpAppliedEvent(seq, dto.DocId, dto.Path, dto.MarkdownContent);
-
-        // Broadcast to other group members (not to the sender)
         await Clients.OthersInGroup(dto.VaultId).SendAsync("IndexOpApplied", evt);
 
-        logger.LogDebug(
-            "IndexOp seq={Seq} docId={DocId} path={Path} vault={VaultId}",
-            seq, dto.DocId, dto.Path, dto.VaultId);
+        logger.LogDebug("IndexOp seq={Seq} docId={DocId}", seq, dto.DocId);
 
         return seq;
     }
 
-    // ── Disconnection ─────────────────────────────────────────────────────────
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         logger.LogInformation("Client disconnected from VaultHub: {ConnectionId}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private string GetCallerId() =>
         Context.User?.FindFirstValue("sub")

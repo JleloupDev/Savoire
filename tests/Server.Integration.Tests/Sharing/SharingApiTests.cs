@@ -7,6 +7,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using Savoire.Application.Common;
 
 namespace Savoire.Server.Integration.Tests.Sharing;
@@ -19,6 +21,7 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
     // User 1 — propriétaire du vault
     private HttpClient _owner = null!;
     private string     _ownerId = null!;
+    private string     _ownerToken = null!;
 
     // User 2 — cible des opérations de partage
     private HttpClient _other = null!;
@@ -36,8 +39,9 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
         var uid = Guid.NewGuid().ToString("N")[..8];
 
         var (t1, u1) = await _factory.CreateUserAndGetTokenAsync($"share-owner-{uid}@test.com");
-        _ownerId = u1;
-        _owner   = _factory.CreateClient();
+        _ownerId    = u1;
+        _ownerToken = t1;
+        _owner      = _factory.CreateClient();
         _owner.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", t1);
 
         var (t2, u2) = await _factory.CreateUserAndGetTokenAsync($"share-other-{uid}@test.com");
@@ -239,6 +243,27 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
         // Try to exchange revoked token
         var resp = await _anon.GetAsync($"/api/v1/share/{link.Token}/access");
         resp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task GET_share_access_DocumentLink_Returns_ResourceId()
+    {
+        var docId = Guid.NewGuid().ToString();
+
+        // Create a document-level share link (docId is a CRDT identifier)
+        var linkResp = await _owner.PostAsJsonAsync(
+            $"/api/v1/documents/{docId}/sharing/links",
+            new { permission = "read" });
+        linkResp.EnsureSuccessStatusCode();
+        var link = await linkResp.Content.ReadFromJsonAsync<ShareLinkDto>();
+
+        var resp = await _anon.GetAsync($"/api/v1/share/{link!.Token}/access");
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var access = await resp.Content.ReadFromJsonAsync<ShareLinkAccessDto>();
+        access.Should().NotBeNull();
+        access!.ResourceType.Should().Be("document");
+        access.ResourceId.Should().Be(docId);
     }
 
 }

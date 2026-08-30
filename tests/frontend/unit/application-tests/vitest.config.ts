@@ -9,6 +9,7 @@ export default defineConfig({
       '@savoire/application': path.resolve(__dirname, '../../../../packages/application/src/index.ts'),
       '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
+      '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
     },
   },
   test: {

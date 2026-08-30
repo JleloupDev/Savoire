@@ -3,15 +3,21 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useVaultKey } from './VaultKeyContext'
+import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
+import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
+import { getVaultLockProbe } from './vaultLock'
+import type { EdgesyncVaultSessionLike } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
-import type { VaultAPI } from '@savoire/plugin-api'
+import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
 import { SharingPanel } from './SharingPanel'
+import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot, createWebInfrastructure } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
@@ -20,7 +26,6 @@ import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
 import type { Locale } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
-import { ToastContainer } from './ToastContainer'
 
 initTheme()
 
@@ -28,7 +33,7 @@ initTheme()
 
 import type { RibbonItem } from '@savoire/workspace'
 
-function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, onQuickOpen, activeAccount, accounts, onSwitchAccount, onAdmin, onLogout }: {
+function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, onQuickOpen, activeAccount, accounts, onSwitchAccount, onAdmin, onManageKey, onLogout }: {
   ribbonItems: RibbonItem[]
   activeViewId: string | null
   onRibbonClick: (item: RibbonItem) => void
@@ -38,6 +43,7 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
   accounts: AccountEntry[]
   onSwitchAccount: (acc: AccountEntry) => void
   onAdmin: () => void
+  onManageKey: () => void
   onLogout: () => void
 }) {
   const [avatarOpen, setAvatarOpen] = useState(false)
@@ -133,6 +139,7 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
                   </button>
                 ))}
                 <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                <button onClick={() => { onManageKey(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>🔑 Ma clé de chiffrement</button>
                 <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer' }}>⚙ Administration</button>
                 <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}>✕ Déconnexion</button>
               </div>
@@ -156,10 +163,21 @@ function toDocumentDto(doc: { id: string; path: string }): DocumentDto {
   }
 }
 
+// What to resume, if anything, once the key modal closes successfully — the
+// modal itself doesn't know or care why it was opened (VaultKeyGate.tsx),
+// this is purely AppShell's own bookkeeping so entering a working key
+// re-attempts the action that got blocked, instead of requiring a manual
+// second click (or, before this existed, a full page reload).
+type KeyModalRequest =
+  | { kind: 'manage' }
+  | { kind: 'open-vault'; vault: VaultSummary }
+  | { kind: 'create-vault'; name: string }
+
 // ── Main editor page ──────────────────────────────────────────────────────────
 
 export function AppShell() {
   const { token, accounts, activeAccount, isReady, logout, switchAccount } = useAuth()
+  const { getVaultKey, clearVaultKey, keyVersion } = useVaultKey()
   const navigate = useNavigate()
 
   const tokenRef = useRef<string | null>(token)
@@ -173,18 +191,35 @@ export function AppShell() {
     () => tokenRef.current,
     () => activeAccountRef.current?.userId ?? 'reader',
   ))
-  const { documentFetcher, restFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
+  const { documentFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
   const managerRef = useRef<WorkspaceManagerImpl | null>(null)
 
   const appRootRef = useRef(createWebAppRoot({
     documentStore: documentStore,
     getToken: () => tokenRef.current,
+    getVaultKey: () => {
+      const userId = activeAccountRef.current?.userId
+      return userId ? getVaultKey(userId) : null
+    },
     onConnectionChange: (state) => {
       if (state === 'disconnected') notify('warn', t('app', 'sync.disconnected'))
       else notify('success', t('app', 'sync.reconnected'))
     },
   }))
   const application = appRootRef.current.api
+
+  // Profil EdgeSync uniquement : decide le badge « verrouille » d'un vault, sans
+  // jamais ouvrir de session. Undefined en profil serveur — voir vaultLock.ts.
+  const vaultLockProbeRef = useRef(getVaultLockProbe())
+
+  // Single source of truth for "get me a usable K_User, or tell me there's
+  // none". K_User is memory-only and user-held (VaultKeyGate.tsx): the server
+  // never has it, so there is nothing to fetch — an account with no key in
+  // memory falls through to null and the caller opens the key modal.
+  const resolveVaultKey = useCallback(async (userId: string): Promise<Uint8Array | null> =>
+    getVaultKey(userId), [getVaultKey])
+
+  const [keyModalRequest, setKeyModalRequest] = useState<KeyModalRequest | null>(null)
 
   // ── Vault state ────────────────────────────────────────────────────────────
 
@@ -200,6 +235,7 @@ export function AppShell() {
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sharingOpen, setSharingOpen] = useState(false)
+  const [keyDebugOpen, setKeyDebugOpen] = useState(false)
   const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('source')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
@@ -223,6 +259,10 @@ export function AppShell() {
   selectedVaultIdRef.current = selectedVault?.id ?? null
 
   const vaultAPIRef = useRef<VaultClient | undefined>(undefined)
+  const edgesyncVaultRef = useRef<EdgesyncVaultSessionLike | undefined>(undefined)
+  // Profil serveur : CollabOrchestrator signe chaque op avec cette identité.
+  const identityProviderRef = useRef<IIdentityProvider | undefined>(undefined)
+  identityProviderRef.current = appRootRef.current.identityProvider
 
   const markdownEditorModeRef = useRef<'source' | 'rich'>(markdownEditorMode)
   markdownEditorModeRef.current = markdownEditorMode
@@ -287,6 +327,7 @@ export function AppShell() {
     getGraphContributor,
     pluginLoaderRef,
     triggersRef,
+    onCrdtTextChangeRef,
   } = usePluginBootstrap({
     roomClient: roomClient,
     vaultProxy,
@@ -308,6 +349,8 @@ export function AppShell() {
     token: tokenRef,
     activeAccount: activeAccountRef,
     vaultAPI: vaultAPIRef,
+    edgesyncVault: edgesyncVaultRef,
+    identity: identityProviderRef,
     onControllerReady: onControllerReadyRef,
     fileTypeRegistry: fileTypeRegistryRef,
     defaultPlugins: defaultPluginsRef,
@@ -316,6 +359,7 @@ export function AppShell() {
     contentIndexingService: contentIndexingServiceRef,
     createPluginLoader: () => new PluginLoader(),
     isReadOnly: isReadOnlyRef,
+    onCrdtTextChange: onCrdtTextChangeRef,
   }
 
   // ── Create VaultClient and notify workspace of vault change ────────────────
@@ -327,8 +371,14 @@ export function AppShell() {
 
     const run = async () => {
       if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay))
-      if (selectedVaultRef.current?.id === vault.id && vaultAPIRef.current) {
-        // see ADR-010
+      if (vaultAPIRef.current?.getVaultId() === vault.id) {
+        // see ADR-010. Checked against the CLIENT's own vault id, not
+        // selectedVaultRef — selectedVault is set optimistically below,
+        // before activateVault is attempted, so it's set to `vault` even
+        // when activation goes on to fail (WrongVaultKeyError). Keying off
+        // selectedVaultRef here would silently no-op a retry: the vault
+        // would look "already selected" while vaultAPIRef.current still
+        // points at whatever OTHER vault was last actually opened.
         vaultAPIRef.current.setToken(tok)
         return
       }
@@ -346,15 +396,27 @@ export function AppShell() {
         managerRef.current?.notifyVaultChange()
       }
 
+      // The vault's shared edgesync Keyring is derived from the same
+      // identity used elsewhere (EditorAreaWidget's per-document seam used
+      // to do this per-document; now done once per vault activation).
+      const provider = appRootRef.current.identityProvider as ISeedExportingIdentityProvider | undefined
+      if (!provider) throw new Error('activateVault requires an identity provider')
+      await provider.init()
+      if (!provider.exportSignSeed) throw new Error('identity provider cannot export a seed')
+      const identitySeed = provider.exportSignSeed()
+
       const active = await application.documents.activateVault({
         vaultId: vault.id,
         token: tok,
         storage: vaultStorage,
         documentStore: documentStore,
+        directory: new YMapVaultDirectory(),
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
+        identitySeed,
       })
       vaultAPIRef.current = active.client
+      edgesyncVaultRef.current = active.edgesyncVault
       onChanged()
 
       // Connect index sync to the new vault hub, then restore its persisted index snapshot.
@@ -376,6 +438,21 @@ export function AppShell() {
     }
 
     switchChainRef.current = switchChainRef.current.then(run).catch((err) => {
+      if (vaultLockProbeRef.current?.isWrongKeyError(err)) {
+        // Distinct from "nothing escrowed yet" (which never throws — see
+        // EdgesyncVaultSession.restore()): the server DOES have a wrapped
+        // Keyring for this vault, but the K_User currently in memory does not
+        // decrypt it. Mark ONLY this vault locked (a key can be right for
+        // some vaults and wrong for others — clearing the whole account's
+        // key here would be too broad, see plan Decision 6) — the lock-probe
+        // effect would reach the same conclusion on its own, this just
+        // reflects it immediately instead of waiting for the next probe.
+        setVaults(vs => vs.map(v => v.id === vault.id ? { ...v, locked: true } : v))
+        vaultsRef.current = vaultsRef.current.map(v => v.id === vault.id ? { ...v, locked: true } : v)
+        managerRef.current?.notifyVaultChange() // VaultBrowserPanel only re-syncs from vaultsRef on this notification
+        notify('danger', 'Vault verrouillé', 'Cette clé ne correspond pas à ce vault. Ouvre le cadenas pour en essayer une autre.')
+        return
+      }
       console.error('[EditorPage] switchToVault failed', err)
     })
     await switchChainRef.current
@@ -389,12 +466,16 @@ export function AppShell() {
     if (!token || !account) return
     try {
       const { vaults: list, sharedWithMe: shared } = await application.vaults.list(account.userId, token)
-      setVaults(list)
+      // locked starts false — the probe effect (below) fills it in once it
+      // has actually checked the server; AppVaultSummary (the API's own DTO
+      // shape) has no notion of it at all, see plan Part C.
+      const withLocked = list.map(v => ({ ...v, locked: false }))
+      setVaults(withLocked)
       setSharedWithMe(shared)
       sharedWithMeRef.current = shared
-      vaultsRef.current = list // sync ref before notify so VaultBrowserPanel.sync() reads fresh data
+      vaultsRef.current = withLocked // sync ref before notify so VaultBrowserPanel.sync() reads fresh data
       managerRef.current?.notifyVaultChange()
-      if (list.length === 1) void switchToVault(list[0], token)
+      if (list.length === 1) void switchToVault(withLocked[0], token)
     } catch (err) {
       console.error(err)
     }
@@ -404,6 +485,46 @@ export function AppShell() {
   useEffect(() => {
     void loadVaults()
   }, [loadVaults])
+
+  // ── Lock-probe: which vaults can THIS key actually open? ────────────────────
+  // Proactive (not just on click) so the list can show a lock badge before
+  // the user ever tries to open anything — see VaultKeyEscrow.fetch(), which
+  // already distinguishes "nothing escrowed" (undefined) from "escrowed but
+  // this key doesn't decrypt it" (WrongVaultKeyError, including when there's
+  // no key at all in memory).
+  const probeGenerationRef = useRef(0)
+  const vaultIdsKey = vaults.map(v => v.id).sort().join(',')
+  useEffect(() => {
+    if (!vaultIdsKey) return
+    // Profil serveur : pas de sonde, aucun vault n'est verrouille.
+    const probe = vaultLockProbeRef.current
+    if (!probe) return
+    const generation = ++probeGenerationRef.current
+    const ids = vaultIdsKey.split(',')
+    void (async () => {
+      // Each entry always resolves (never rejects) — fetch()'s own errors are
+      // caught right here, badge-relevant or not (see comment below).
+      const results = await Promise.all(
+        ids.map(async (id): Promise<[string, boolean]> => {
+          // isLocked() ne rejette jamais : un alea reseau rend `false`, le
+          // badge n'est qu'indicatif — l'ouverture reelle reste l'autorite.
+          return [id, await probe.isLocked(id)]
+        }),
+      )
+      if (generation !== probeGenerationRef.current) return // a newer probe superseded this one
+      const lockedById = new Map(results)
+      const applyLocks = (list: VaultSummary[]) =>
+        list.map(v => lockedById.has(v.id) ? { ...v, locked: lockedById.get(v.id)! } : v)
+      setVaults(applyLocks)
+      vaultsRef.current = applyLocks(vaultsRef.current)
+      managerRef.current?.notifyVaultChange() // VaultBrowserPanel only re-syncs from vaultsRef on this notification
+    })()
+  // vaultIdsKey (not `vaults`) is deliberate — this effect's own setVaults
+  // above only changes `locked`, never the id set, so depending on `vaults`
+  // directly would re-trigger this same effect forever. keyVersion re-runs
+  // the probe whenever any account's key changes (cheap enough not to scope
+  // more precisely — see plan).
+  }, [vaultIdsKey, keyVersion])
 
   // ── loadDocument — fetches content, updates topbar ─────────────────────────
 
@@ -425,8 +546,10 @@ export function AppShell() {
 
   refreshDocumentsRef.current = useCallback(async (): Promise<DocumentDto[]> => {
     if (!selectedVault || !token) return []
-    const docs = await application.documents.list(selectedVault.id, token)
-    const mapped = docs.map(toDocumentDto)
+    // Documents live in the CRDT vault directory (populated via InitVault / vault ops),
+    // not REST. Read the active client's current snapshot.
+    const client = application.documents.getActiveClient()
+    const mapped = (client?.documents ?? []).map(toDocumentDto)
     setDocuments(mapped)
     return mapped
   }, [selectedVault, token, application.documents])
@@ -434,13 +557,26 @@ export function AppShell() {
   // ── Vault CRUD callbacks ───────────────────────────────────────────────────
 
   onSelectVaultRef.current = (vault: VaultSummary) => {
-    if (!token) return
-    void switchToVault(vault, token)
+    if (!token || !activeAccount) return
+    if (!vault.locked) { void switchToVault(vault, token); return }
+    void resolveVaultKey(activeAccount.userId).then(key => {
+      if (key) void switchToVault(vault, token)
+      else setKeyModalRequest({ kind: 'open-vault', vault })
+    })
   }
 
   onCreateVaultRef.current = async (name: string) => {
     if (!token || !activeAccount) return
-    const vault = await application.vaults.create(activeAccount.userId, name, token)
+    // A Keyring only survives a reload if SOME key is present to escrow it
+    // under (VaultKeyEscrow.save() no-ops without one) — require a key
+    // before creating rather than let a vault's content quietly become
+    // unrecoverable. Still always "possible to create": the key modal
+    // resumes creation automatically once a key is set (handleKeyModalDone).
+    if (!await resolveVaultKey(activeAccount.userId)) {
+      setKeyModalRequest({ kind: 'create-vault', name })
+      return
+    }
+    const vault = { ...await application.vaults.create(activeAccount.userId, name, token), locked: false }
     setVaults(v => [...v, vault])
     vaultsRef.current = [...vaultsRef.current, vault]
     await switchToVault(vault, token)
@@ -475,6 +611,7 @@ export function AppShell() {
         folderCount: 0,
         lastModifiedAt: null,
         sizeBytes: 0,
+        locked: false, // shared-document flow never goes through EdgesyncVaultSession/K_User at all
       }
 
       if (activeDoc && selectedVaultRef.current)
@@ -483,19 +620,22 @@ export function AppShell() {
       docEventUnsubRef.current?.()
       docEventUnsubRef.current = null
 
-      // DECISION: shared documents use a REST-only DocumentStore (no CRDT fetcher).
-      // The CRDT fetcher connects to /hubs/sync with the user's JWT — which the
-      // server rejects (401) when the user is not a vault member. REST GET
-      // /documents/{id}/content accepts the user token via document-level ACL.
-      const sharedDocStore = new DocumentStore(restFetcher)
+      // Shared documents use the CRDT fetcher: JoinDocument(Read) accepts users
+      // holding a document-level permission, so non-vault-members can join the
+      // CRDT room and receive content via Yjs (no REST content endpoint needed).
+      const sharedDocStore = new DocumentStore(documentFetcher)
       void application.documents.activateSharedDocument({
         vaultId: note.vaultId,
         doc: docStub,
         token,
         documentStore: sharedDocStore,
+        directory: new YMapVaultDirectory(),
         resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
       }).then(activated => {
         vaultAPIRef.current = activated.client
+        // Shared-document access never gets an edgesync vault session (it's
+        // isolated by design — see ADR-027); clear any previous vault's stale ref.
+        edgesyncVaultRef.current = undefined
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
@@ -520,6 +660,7 @@ export function AppShell() {
             docEventUnsubRef.current?.()
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
+            edgesyncVaultRef.current = undefined
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -530,6 +671,7 @@ export function AppShell() {
             docEventUnsubRef.current?.()
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
+            edgesyncVaultRef.current = undefined
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -549,6 +691,7 @@ export function AppShell() {
     if (selectedVault?.id === vault.id) {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
+      edgesyncVaultRef.current = undefined
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
     }
@@ -597,6 +740,7 @@ export function AppShell() {
     if (ok) {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
+      edgesyncVaultRef.current = undefined
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
       managerRef.current?.notifyVaultChange()
@@ -604,7 +748,42 @@ export function AppShell() {
   }
 
   async function handleLogout() {
-    await logout(); navigate('/login')
+    const userId = activeAccount?.userId
+    await logout()
+    if (userId) clearVaultKey(userId)
+    navigate('/login')
+  }
+
+  // Preamble to per-peer revocation: rotates K_vault to a fresh epoch (fresh
+  // K_doc per known channel too), delivered live to whoever's connected right
+  // now — see EdgesyncVaultSession.renewVaultKey(). Works identically for S2
+  // (Managed, re-escrowed in clear) and S3 (self-managed, re-escrowed wrapped
+  // under K_User) — this button never knows which, same as everything else
+  // downstream of KeyringSource.
+  async function handleRenewVaultKey() {
+    const vault = edgesyncVaultRef.current
+    if (!vault) return
+    try {
+      await vault.renewVaultKey()
+      notify('success', 'Clé du vault renouvelée', 'Nouvelle clé générée et propagée aux pairs connectés.')
+    } catch (err) {
+      console.error('[AppShell] renewVaultKey failed', err)
+      notify('danger', 'Échec du renouvellement', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Called once VaultKeyGate has actually set a key (never on cancel/backdrop
+  // click — those clear keyModalRequest directly). Resumes whatever the
+  // modal interrupted so the user never has to reload the page or manually
+  // re-click to see the effect of the key they just entered — if it's still
+  // wrong, switchToVault's own WrongVaultKeyError handling takes over again
+  // exactly as if this were a fresh click.
+  function handleKeyModalDone() {
+    const req = keyModalRequest
+    setKeyModalRequest(null)
+    if (!req || !token) return
+    if (req.kind === 'open-vault') void switchToVault(req.vault, token)
+    else if (req.kind === 'create-vault') void onCreateVaultRef.current(req.name)
   }
 
   // ── Plugin unload on unmount ───────────────────────────────────────────────
@@ -620,6 +799,11 @@ export function AppShell() {
   }, [pluginLoaderRef])
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  // No gate here any more: the vault list belongs to the account, not to
+  // whether a K_User is currently in memory — it always renders. Only
+  // opening a specific vault depends on the key (per-row lock badge,
+  // VaultBrowserWidget.tsx), surfaced via the key modal below instead of a
+  // full-page takeover — see plan Context for why.
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}>
@@ -640,6 +824,7 @@ export function AppShell() {
         accounts={accounts}
         onSwitchAccount={(acc) => void handleSwitchAccount(acc)}
         onAdmin={() => void navigate('/admin')}
+        onManageKey={() => setKeyModalRequest({ kind: 'manage' })}
         onLogout={() => void handleLogout()}
       />
 
@@ -676,6 +861,27 @@ export function AppShell() {
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
               <span>{t('app', 'topbar.share')}</span>
+            </button>
+          )}
+
+          {/* Renew vault key — preamble to revocation, see handleRenewVaultKey */}
+          {selectedVault && (
+            <button onClick={() => void handleRenewVaultKey()} title="Renouveler la clé du vault (rotation d'epoch, propagée aux pairs connectés)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>Renouveler la clé</span>
+            </button>
+          )}
+
+          {/* Debug: show the vault's/active document's decrypted key — see VaultKeyDebugPanel */}
+          {selectedVault && edgesyncVaultRef.current && (
+            <button onClick={() => setKeyDebugOpen(true)} title="Afficher les clés en clair (debug)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <span>Clés (debug)</span>
             </button>
           )}
 
@@ -720,6 +926,19 @@ export function AppShell() {
         </div>
       )}
 
+      {/* ── Key modal — reachable any time via the avatar menu, or by clicking
+          a locked vault; VaultKeyGate supplies its own full card styling
+          (width/border/shadow), this wrapper only owns the dimmed backdrop
+          and the ✕ anchor, or the card would end up double-boxed. ── */}
+      {keyModalRequest && activeAccount && (
+        <div onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+            <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} />
+            <button onClick={() => setKeyModalRequest(null)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
+          </div>
+        </div>
+      )}
+
       {sharingOpen && token && selectedVault && (
         <SharingPanel
           token={token}
@@ -727,6 +946,15 @@ export function AppShell() {
           document={activeDoc}
           sharingApi={application.sharing}
           onClose={() => setSharingOpen(false)}
+        />
+      )}
+
+      {keyDebugOpen && selectedVault && edgesyncVaultRef.current && (
+        <VaultKeyDebugPanel
+          vaultName={selectedVault.name}
+          edgesyncVault={edgesyncVaultRef.current}
+          activeDoc={activeDoc ? { id: activeDoc.id, path: activeDoc.path } : null}
+          onClose={() => setKeyDebugOpen(false)}
         />
       )}
 
@@ -739,7 +967,6 @@ export function AppShell() {
         />
       )}
 
-      <ToastContainer />
       </div>
     </div>
   )

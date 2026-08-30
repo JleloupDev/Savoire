@@ -53,22 +53,6 @@ public record WorkspaceDto(
     IReadOnlyList<SharedNoteDto>   SharedWithMe
 );
 
-// ── Documents ──────────────────────────────────────────────────────────────
-
-public record DocumentDto(
-    string   Id,
-    string   Path,
-    string?  Title,
-    string   Hash,
-    long     SizeBytes,
-    DateTime CreatedAt,
-    DateTime UpdatedAt
-)
-{
-    public static DocumentDto FromDomain(Document d) =>
-        new(d.Id, d.Path, d.Title, d.Hash, d.SizeBytes, d.CreatedAt, d.UpdatedAt);
-}
-
 // ── Folders ────────────────────────────────────────────────────────────────
 
 public record FolderDto(string Id, string Path, DateTime CreatedAt)
@@ -82,6 +66,7 @@ public record CreateVaultRequest(string Name);
 public record CreateFolderRequest(string Path);
 public record PatchVaultRequest(string Name);
 public record AddMemberRequest(string UserId, string Role);
+public record RegisterVaultMemberIdentityRequest(string SignPubBase64);
 public record GrantPermissionRequest(string SubjectId, string Permission, DateTime? ExpiresAt);
 public record CreateShareLinkRequest(string Permission, DateTime? ExpiresAt);
 
@@ -133,7 +118,9 @@ public record ShareLinkAccessDto(
     string    Permission,
     DateTime? ExpiresAt,
     /// <summary>Populated for ResourceType=document so the client can load the content.</summary>
-    string?   VaultId = null
+    string?   VaultId = null,
+    /// <summary>Document path (e.g. "notes/hello.excalidraw") — drives editor type selection on the client.</summary>
+    string?   Path = null
 );
 
 // ── View grants (iframe bootstrap) ──────────────────────────────────────────
@@ -195,6 +182,10 @@ public record SaveIndexSnapshotRequest(
     string Namespace,
     long   ProcessedSeq,
     string Data
+);
+
+public record EdgesyncBlobDto(
+    string BytesBase64
 );
 
 public record ViewAccessDto(

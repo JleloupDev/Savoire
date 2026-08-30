@@ -2,6 +2,8 @@ packages:
   - "../apps/*"
   - "../packages/*"
   - "../packages/plugins/*"
+  # EdgeSync vit dans son propre depot, clone a cote de Savoire.
+  - "../../EdgeSync"
   - "../tests/frontend/unit/*"
   - "../tests/frontend/integration/*"
 allowBuilds:

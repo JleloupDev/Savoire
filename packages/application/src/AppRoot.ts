@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { DocumentStore } from '@savoire/platform'
-import type { IApplicationAPI, IAdminBackend, IAuthBackend, ISharingBackend, IVaultHubFactory, IVaultsBackend } from './contracts'
+import type { IIdentityProvider } from '@savoire/plugin-api'
+import type { IApplicationAPI, IAdminBackend, IAuthBackend, ISharingBackend, IVaultHubFactory, IVaultsBackend, IEdgesyncVaultSessionFactory } from './contracts'
 import { ApplicationAPI } from './ApplicationAPI'
 import { AuthService } from './AuthService'
 import { AdminService } from './AdminService'
@@ -18,11 +19,16 @@ export interface AppRootDeps {
   sharingBackend: ISharingBackend
   backend: IVaultsBackend
   hubFactory: IVaultHubFactory
+  /** Absent = profil serveur Savoire (le hub relaie le répertoire et les
+   *  documents). Présent = profil EdgeSync (P2P, E2E). Voir DocumentsService. */
+  edgesyncVaultSessionFactory?: IEdgesyncVaultSessionFactory
   documentStore: DocumentStore
+  identityProvider?: IIdentityProvider
 }
 
 export class AppRoot {
   public readonly api: IApplicationAPI
+  public readonly identityProvider: IIdentityProvider | undefined
 
   constructor(deps: AppRootDeps) {
     const auth = new AuthService(deps.authBackend)
@@ -30,9 +36,10 @@ export class AppRoot {
     const sharing = new SharingService(deps.sharingBackend)
     const vaults = new VaultsService(deps.backend)
     const sync = new SyncOrchestrator(deps.hubFactory)
-    const documents = new DocumentsService(deps.backend, sync)
+    const documents = new DocumentsService(sync, deps.edgesyncVaultSessionFactory)
     const documentSession = new DocumentSessionService(deps.documentStore)
     const workspace = new WorkspaceService()
     this.api = new ApplicationAPI(auth, admin, sharing, vaults, documents, documentSession, workspace)
+    this.identityProvider = deps.identityProvider
   }
 }

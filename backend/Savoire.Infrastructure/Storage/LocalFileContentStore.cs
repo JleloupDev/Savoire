@@ -9,9 +9,6 @@ namespace Savoire.Infrastructure.Storage;
 
 public class LocalFileContentStore(string storageRoot) : IContentStore
 {
-    private string DocPath(string vaultId, string docId)
-        => Path.Combine(storageRoot, vaultId, $"{docId}.md");
-
     private string AttachPath(string vaultId, string storagePath)
         => Path.Combine(storageRoot, vaultId, "attachments", storagePath);
 
@@ -28,22 +25,6 @@ public class LocalFileContentStore(string storageRoot) : IContentStore
             await fs.FlushAsync(ct);
         }
         File.Move(tmp, path, overwrite: true);
-    }
-
-    public Task<Stream?> ReadDocumentAsync(string vaultId, string docId, CancellationToken ct = default)
-    {
-        string path = DocPath(vaultId, docId);
-        return Task.FromResult<Stream?>(File.Exists(path) ? File.OpenRead(path) : null);
-    }
-
-    public Task WriteDocumentAsync(string vaultId, string docId, Stream content, CancellationToken ct = default)
-        => WriteAtomicAsync(DocPath(vaultId, docId), content, ct);
-
-    public Task DeleteDocumentAsync(string vaultId, string docId, CancellationToken ct = default)
-    {
-        string md = DocPath(vaultId, docId);
-        if (File.Exists(md)) File.Delete(md);
-        return Task.CompletedTask;
     }
 
     public Task<Stream?> ReadAttachmentAsync(string vaultId, string storagePath, CancellationToken ct = default)

@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-/**
- * VaultHubClient — SignalR client for /hubs/vault.
- *
- * Connects to VaultHub, receives snapshot on JoinVault, and listens for
- * real-time document events (created, renamed, deleted). Updates VaultClient's
- * in-memory cache so that vault.list() never hits the server.
- *
- * Lives in infrastructure-sync (not apps/web) so that any runtime — web, CLI,
- * desktop — can build an AppRoot with a real IVaultHubFactory without duplicating
- * this transport adapter.
- */
 import {
   HubConnectionBuilder,
   HubConnection,
@@ -19,35 +8,7 @@ import {
 } from '@microsoft/signalr'
 import type { IDocumentMeta, VaultClient } from '@savoire/platform'
 
-// ── Hub DTO types (match server VaultHubDtos.cs) ──────────────────────────────
-
-interface VaultSnapshotItem {
-  id: string
-  path: string
-  title: string | null
-  updatedAt: string // ISO 8601
-}
-
-interface DocumentCreatedEvent {
-  id: string
-  vaultId: string
-  path: string
-  title: string | null
-  createdAt: string
-}
-
-interface DocumentRenamedEvent {
-  id: string
-  oldPath: string
-  newPath: string
-  updatedAt: string
-}
-
-interface DocumentDeletedEvent {
-  id: string
-  path: string
-  deletedAt: string
-}
+const VAULT_COMPACT_THRESHOLD = 100
 
 interface IndexOpAppliedEvent {
   seq: number
@@ -56,7 +17,17 @@ interface IndexOpAppliedEvent {
   markdownContent: string
 }
 
-// ── Client ────────────────────────────────────────────────────────────────────
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 8192
+  for (let i = 0; i < bytes.length; i += chunk)
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  return btoa(binary)
+}
+
+function fromBase64(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+}
 
 export class VaultHubClient {
   private connection: HubConnection | null = null
@@ -66,17 +37,20 @@ export class VaultHubClient {
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
   private indexOpCallbacks: ((evt: IndexOpAppliedEvent) => void)[] = []
+  private unsubLocalVaultUpdate: (() => void) | null = null
 
   constructor(
     private readonly serverUrl: string,
     private readonly vaultId: string,
     private readonly vaultClient: VaultClient,
-    /** Called after any cache mutation so the UI can re-render (notifyVaultChange). */
     private readonly onChanged: () => void,
-    /** JWT Bearer token factory — required by the [Authorize] hub. */
     private readonly getToken: () => string | null = () => null,
     private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
-  ) {}
+  ) {
+    this.unsubLocalVaultUpdate = this.vaultClient.onLocalVaultUpdate(
+      (update) => void this.pushVaultUpdate(update),
+    )
+  }
 
   async connect(): Promise<void> {
     if (this.disposed) return
@@ -93,41 +67,29 @@ export class VaultHubClient {
         .withAutomaticReconnect()
         .build()
 
-      // ── Snapshot (received once after JoinVault) ──────────────────────────
-      this.connection.on('VaultSnapshot', (items: VaultSnapshotItem[]) => {
-        console.debug(`[VaultHub] Snapshot: ${items.length} document(s)`)
-        this.vaultClient.setSnapshot(
-          items.map(i => ({ id: i.id, path: i.path })),
-        )
+      // ── Vault CRDT init (replaces VaultSnapshot) ──────────────────────────
+      this.connection.on('InitVault', (_vaultId: string, ops: string[]) => {
+        for (const op of ops) this.vaultClient.applyVaultUpdate(fromBase64(op))
+        if (ops.length > VAULT_COMPACT_THRESHOLD) {
+          const snapshot = toBase64(this.vaultClient.encodeVaultState())
+          void this.connection?.invoke('SnapshotVault', this.vaultId, snapshot).catch(console.error)
+        }
         this.onChanged()
       })
 
-      // ── Real-time events ─────────────────────────────────────────────────
-      this.connection.on('DocumentCreated', (evt: DocumentCreatedEvent) => {
-        console.debug(`[VaultHub] DocumentCreated: ${evt.path}`)
-        this.vaultClient.addDocument({ id: evt.id, path: evt.path })
+      // ── Incremental vault CRDT updates ────────────────────────────────────
+      this.connection.on('VaultOperationReceived', (_vaultId: string, opBase64: string) => {
+        this.vaultClient.applyVaultUpdate(fromBase64(opBase64))
         this.onChanged()
       })
 
-      this.connection.on('DocumentRenamed', (evt: DocumentRenamedEvent) => {
-        console.debug(`[VaultHub] DocumentRenamed: ${evt.oldPath} → ${evt.newPath}`)
-        this.vaultClient.renameDocumentInCache(evt.id, evt.newPath)
-        this.onChanged()
-      })
-
-      this.connection.on('DocumentDeleted', (evt: DocumentDeletedEvent) => {
-        console.debug(`[VaultHub] DocumentDeleted: ${evt.path}`)
-        this.vaultClient.removeDocument(evt.id)
-        this.onChanged()
-      })
-
+      // ── Index ops ─────────────────────────────────────────────────────────
       this.connection.on('IndexOpApplied', (evt: IndexOpAppliedEvent) => {
         for (const cb of this.indexOpCallbacks) cb(evt)
       })
 
-      // ── Reconnection: rejoin vault to get fresh snapshot ─────────────────
+      // ── Reconnection: rejoin to get fresh vault CRDT state ────────────────
       this.connection.onreconnected(async () => {
-        console.debug('[VaultHub] Reconnected — rejoining vault')
         this.onConnectionChange?.('connected')
         try {
           await this.connection!.invoke('JoinVault', this.vaultId)
@@ -144,15 +106,11 @@ export class VaultHubClient {
     }
 
     this.connectPromise = (async () => {
-      // ── Start & join ───────────────────────────────────────────────────
       try {
-        if (this.connection!.state === HubConnectionState.Disconnected) {
+        if (this.connection!.state === HubConnectionState.Disconnected)
           await this.connection!.start()
-        }
-        if (this.connection!.state === HubConnectionState.Connected) {
+        if (this.connection!.state === HubConnectionState.Connected)
           await this.connection!.invoke('JoinVault', this.vaultId)
-          console.debug(`[VaultHub] Connected & joined vault ${this.vaultId}`)
-        }
       } catch (err) {
         if (this.isUnauthorizedError(err)) this.blockOnUnauthorized()
         console.warn('[VaultHub] Connection failed — filetree may be stale', err)
@@ -164,91 +122,59 @@ export class VaultHubClient {
     return this.connectPromise
   }
 
-  /** Whether the hub connection is currently up. */
   get isConnected(): boolean {
     return this.connection?.state === HubConnectionState.Connected
   }
 
-  async createDocument(path: string, title?: string | null): Promise<IDocumentMeta> {
-    const connection = await this._ensureConnected()
-    const normalizedPath = this._normalizePath(path)
-    const existing = this.pendingCreates.get(normalizedPath)
-    if (existing) return existing
+  // ── Vault CRDT ────────────────────────────────────────────────────────────
 
-    const request = (async () => {
-      try {
-        const created = await connection.invoke<VaultSnapshotItem>(
-          'CreateDocument',
-          this.vaultId,
-          normalizedPath,
-          title ?? this._defaultTitle(normalizedPath),
-        )
-        return { id: created.id, path: created.path }
-      } finally {
-        this.pendingCreates.delete(normalizedPath)
-      }
-    })()
-
-    this.pendingCreates.set(normalizedPath, request)
-    return request
+  async pushVaultUpdate(update: Uint8Array): Promise<void> {
+    if (!this.isConnected) return
+    try {
+      await this.connection!.invoke('PushVaultOperation', this.vaultId, toBase64(update))
+    } catch (err) {
+      console.warn('[VaultHub] pushVaultUpdate failed', err)
+    }
   }
 
-  async renameDocument(documentId: string, newPath: string): Promise<void> {
-    const connection = await this._ensureConnected()
-    await connection.invoke('RenameDocument', documentId, this._normalizePath(newPath))
-  }
+  // ── Index ops ─────────────────────────────────────────────────────────────
 
-  async deleteDocument(documentId: string): Promise<void> {
-    const connection = await this._ensureConnected()
-    await connection.invoke('DeleteDocument', documentId)
-  }
-
-  /**
-   * Envoie une op d'index au serveur. Retourne le seq assigné.
-   * Fire-and-forget si la connexion est indisponible (offline mode).
-   */
   async pushIndexOp(docId: string, path: string, markdownContent: string): Promise<number | null> {
     if (!this.isConnected) return null
     try {
       const connection = await this._ensureConnected()
-      const seq = await connection.invoke<number>('PushIndexOp', {
-        vaultId: this.vaultId,
-        docId,
-        path,
-        markdownContent,
+      return await connection.invoke<number>('PushIndexOp', {
+        vaultId: this.vaultId, docId, path, markdownContent,
       })
-      return seq
     } catch (err) {
-      console.warn('[VaultHub] pushIndexOp failed — offline?', err)
+      console.warn('[VaultHub] pushIndexOp failed', err)
       return null
     }
   }
 
-  /**
-   * Subscribe to IndexOpApplied events from other clients.
-   * Returns unsubscribe function.
-   */
   onIndexOpApplied(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void {
     this.indexOpCallbacks.push(cb)
     return () => { this.indexOpCallbacks = this.indexOpCallbacks.filter(x => x !== cb) }
   }
 
-  /** Cleanly disconnect from VaultHub. */
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
   async dispose(): Promise<void> {
     this.disposed = true
     this.disposing = true
+    this.unsubLocalVaultUpdate?.()
+    this.unsubLocalVaultUpdate = null
     this.pendingCreates.clear()
     if (this.connection) {
-      try { await this.connection.stop() } catch { /* POC: ignore */ }
+      try { await this.connection.stop() } catch { /* ignore */ }
       this.connection = null
     }
   }
 
   private async _ensureConnected(): Promise<HubConnection> {
     await this.connect()
-    if (!this.connection || this.connection.state !== HubConnectionState.Connected) {
+    if (!this.connection || this.connection.state !== HubConnectionState.Connected)
       throw new Error('VaultHub not connected')
-    }
     return this.connection
   }
 
@@ -258,20 +184,9 @@ export class VaultHubClient {
   }
 
   private blockOnUnauthorized(): void {
-    // Anti-thrash: pause reconnect attempts for a short window when token is invalid.
     this.authBlockedUntil = Date.now() + 60_000
-    if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
+    if (this.connection && this.connection.state !== HubConnectionState.Disconnected)
       void this.connection.stop().catch(() => {})
-    }
-  }
-
-  private _normalizePath(path: string): string {
-    return path.includes('.') ? path : `${path}.md`
-  }
-
-  private _defaultTitle(path: string): string | null {
-    const fileName = path.split('/').at(-1)?.replace(/\.[^.]+$/, '').trim()
-    return fileName ? fileName : null
   }
 
 }

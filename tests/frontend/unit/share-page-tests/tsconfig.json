@@ -1,0 +1,23 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/application": ["../../../../packages/application/src/index.ts"],
+      "@savoire/platform": ["../../../../packages/platform/src/index.ts"],
+      "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
+      "@savoire/editor-react": ["./src/__mocks__/editor-react.tsx"],
+      "@savoire/plugin-callout": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-code-block": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-task-list": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-note-embed": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-wikilinks": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-module": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-mermaid": ["./src/__mocks__/plugin-stub.ts"],
+      "@savoire/plugin-table": ["./src/__mocks__/plugin-stub.ts"]
+    }
+  },
+  "include": ["src"]
+}

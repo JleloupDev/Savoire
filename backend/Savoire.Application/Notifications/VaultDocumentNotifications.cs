@@ -1,35 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// MediatR notifications published by document handlers.
-// see ADR-001
-
 using MediatR;
 
 namespace Savoire.Application.Notifications;
-
-public record DocumentCreatedNotification(
-    string    DocId,
-    string    VaultId,
-    string    Path,
-    string?   Title,
-    DateTime  CreatedAt,
-    DateTime  UpdatedAt
-) : INotification;
-
-public record DocumentRenamedNotification(
-    string   DocId,
-    string   VaultId,
-    string   OldPath,
-    string   NewPath,
-    DateTime UpdatedAt
-) : INotification;
-
-public record DocumentDeletedNotification(
-    string   DocId,
-    string   VaultId,
-    string   Path,
-    DateTime DeletedAt
-) : INotification;
 
 /// <summary>
 /// Published after a document's content has been saved/indexed.
@@ -38,7 +11,7 @@ public record DocumentDeletedNotification(
 public record DocumentContentIndexedNotification(
     string DocId,
     string VaultId,
-    string MarkdownContent  // text extracted from the CRDT or the shadow doc
+    string MarkdownContent
 ) : INotification;
 
 /// <summary>
@@ -48,4 +21,14 @@ public record DocumentContentIndexedNotification(
 public record AccessRevokedNotification(
     string DocId,
     string TargetUserId
+) : INotification;
+
+/// <summary>
+/// Published whenever a vault's membership changes (grant/revoke, add/remove
+/// member) -- pushed to connected edgesync peers so they refresh their
+/// authorized-signPub set without waiting for the polling fallback. See
+/// EdgeSyncHubMembershipChangedHandler and MembershipSource.ts.
+/// </summary>
+public record VaultMembershipChangedNotification(
+    string VaultId
 ) : INotification;

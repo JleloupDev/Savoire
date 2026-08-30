@@ -11,7 +11,6 @@ namespace Savoire.Application.Sharing.GetResourceSharing;
 
 public sealed class GetResourceSharingQueryHandler(
     IVaultRepository              vaults,
-    IDocumentRepository           documents,
     IResourcePermissionRepository permissions,
     IShareLinkRepository          shareLinks,
     IUserLookupService            users)
@@ -24,7 +23,7 @@ public sealed class GetResourceSharingQueryHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             q.CallerId, resourceType, q.ResourceId,
-            vaults, documents, permissions, ct);
+            vaults, permissions, ct);
 
         IReadOnlyList<ResourcePermission> perms =
             await permissions.ListForResourceAsync(resourceType, q.ResourceId, ct);
@@ -32,7 +31,6 @@ public sealed class GetResourceSharingQueryHandler(
         IReadOnlyList<ShareLink> links =
             await shareLinks.ListForResourceAsync(resourceType, q.ResourceId, ct);
 
-        // Enrich permissions with display names
         var permDtos = new List<ResourcePermissionDto>();
         foreach (ResourcePermission p in perms)
         {

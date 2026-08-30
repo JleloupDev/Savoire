@@ -38,7 +38,7 @@ async function setupEditing() {
   vaultId = vault.id
 
   const vaultHub = await makeVaultHub(vaultId, () => adminToken)
-  docMeta = await vaultHub.hub.createDocument('collab-note.md')
+  docMeta = await vaultHub.createDocument('collab-note.md')
   await vaultHub.dispose()
 
   await writeYjsContent(vaultId, docMeta.id, '# Hello from Admin', () => adminToken, adminUserId)
@@ -67,9 +67,11 @@ describe('Editing & Share Link — via Application layer', () => {
       expect(content).toBe('# Hello from Admin')
     })
 
-    it('document appears in documents list after creation', async () => {
-      const docs = await guestRoot.api.documents.list(vaultId, guestToken)
-      expect(docs.some((d: { id: string }) => d.id === docMeta.id)).toBe(true)
+    it('document appears in the CRDT directory for a shared guest', async () => {
+      const guestHub = await makeVaultHub(vaultId, () => guestToken, guestUserId)
+      const seen = await guestHub.waitFor(docs => docs.some(d => d.id === docMeta.id))
+      expect(seen).toBe(true)
+      await guestHub.dispose()
     })
   })
 
@@ -88,27 +90,30 @@ describe('Editing & Share Link — via Application layer', () => {
       const access = await adminRoot.api.sharing.accessShareLink(readLinkToken)
       expect(access.resourceType).toBe('document')
       expect(access.resourceId).toBe(docMeta.id)
-      expect(access.vaultId).toBe(vaultId)
       expect(access.permission).toBe('read')
       readAccessToken = access.accessToken
+      // A document link is addressed by docId: vaultId is not required for the
+      // CRDT path (content + access are docId-scoped). Resolving it is an ACL concern.
     })
 
     it('share link access token allows reading via CRDT path', async () => {
+      // End-to-end from the link holder's perspective: token + docId only, no vaultId.
       const anonCrdtRoot = makeCrdtAppRoot(() => readAccessToken, () => `share-link`)
-      const content = await anonCrdtRoot.api.documentSession.read(vaultId, docMeta.id, readAccessToken)
+      const content = await anonCrdtRoot.api.documentSession.read('', docMeta.id, readAccessToken)
       expect(content).toBe('# Hello from Admin')
     })
 
     it('write share link allows pushing Yjs ops and content is readable', async () => {
       const vaultHub = await makeVaultHub(vaultId, () => adminToken)
-      writeDoc = await vaultHub.hub.createDocument('link-write-test.md')
+      writeDoc = await vaultHub.createDocument('link-write-test.md')
       await vaultHub.dispose()
 
       const link = await adminRoot.api.sharing.createShareLink('document', writeDoc.id, 'write', adminToken)
       const access = await adminRoot.api.sharing.accessShareLink(link.token)
       expect(access.permission).toBe('write')
 
-      await writeYjsContent(vaultId, writeDoc.id, '# Written via link', () => access.accessToken, 'share-link')
+      // Document link: write content by docId via the share token (no vaultId).
+      await writeYjsContent('', writeDoc.id, '# Written via link', () => access.accessToken, 'share-link')
 
       const adminCrdtRoot = makeCrdtAppRoot(() => adminToken, () => adminUserId)
       const content = await adminCrdtRoot.api.documentSession.read(vaultId, writeDoc.id, adminToken)

@@ -23,7 +23,9 @@ declare module '@microsoft/signalr' {
     stop(): Promise<void>
     invoke<T = unknown>(methodName: string, ...args: unknown[]): Promise<T>
     on(methodName: string, newMethod: (...args: any[]) => void): void
+    off(methodName: string, method?: (...args: any[]) => void): void
     onreconnected(callback: (connectionId?: string) => void): void
+    onclose(callback: (error?: Error) => void): void
   }
 
   export class HubConnectionBuilder {

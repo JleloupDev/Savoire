@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { AccountId, DocumentId, DocumentMeta, DocumentUpdate, UserId, VaultId, ApplyResult } from './types'
+import type { AccountId, DocumentId, DocumentMeta, DocumentUpdate, UserId, VaultId } from './types'
 import type { Account } from './Account'
 import type { Vault } from './Vault'
 import type { Document } from './Document'
@@ -44,17 +44,3 @@ export interface IDocumentSyncGateway {
   onRemoteUpdate(cb: (update: DocumentUpdate) => void): () => void
 }
 
-export interface IVaultIndexSyncGateway {
-  connect(vaultId: VaultId): Promise<void>
-  disconnect(vaultId: VaultId): Promise<void>
-  onSnapshot(cb: (docs: DocumentMeta[]) => void): () => void
-  onCreated(cb: (meta: DocumentMeta) => void): () => void
-  onRenamed(cb: (documentId: DocumentId, newPath: string) => void): () => void
-  onDeleted(cb: (documentId: DocumentId) => void): () => void
-}
-
-export interface ICollabDocumentEngine {
-  applyLocal(payload: Uint8Array): ApplyResult
-  applyRemote(payload: Uint8Array): ApplyResult
-  getText(): string
-}

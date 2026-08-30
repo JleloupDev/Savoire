@@ -9,6 +9,10 @@ export interface VaultSummaryLike {
   role: string
   documentCount: number
   folderCount: number
+  /** True when this vault can't be opened with whatever key the caller
+   *  currently holds — rendered as a lock badge, never blocks the row from
+   *  showing (see VaultBrowserPanel below). */
+  locked: boolean
 }
 
 export interface SharedNoteLike {
@@ -175,7 +179,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                 background: v.id === selectedId ? 'rgba(255,255,255,0.08)' : 'transparent',
               }}
               onMouseEnter={e => {
-                if (v.id !== selectedId) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'
+                if (v.id !== selectedId && !v.locked) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'
                 const btn = (e.currentTarget as HTMLElement).querySelector('.cfg-btn') as HTMLElement | null
                 if (btn) btn.style.opacity = '1'
               }}
@@ -187,9 +191,12 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
             >
               <button
                 onClick={() => handleSelect(v)}
-                style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
+                style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.locked ? 'var(--text-faint)' : v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
               >
-                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.name}</div>
+                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {v.locked && <span title="Clé requise pour ouvrir ce vault" style={{ fontSize: 10, flexShrink: 0 }}>🔒</span>}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
+                </div>
                 <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{v.role} · {v.documentCount} doc{v.documentCount !== 1 ? 's' : ''}</div>
               </button>
               <button

@@ -1,0 +1,27 @@
+{
+  "name": "edgesync-local-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Client local P2P (sans serveur) synchronisant un dossier de notes via edgesync-protocol. Voir docs/Architecture/edgesync-local-client-v0-spec.md.",
+  "bin": {
+    "edgesync-client": "./src/cli.ts"
+  },
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "edgesync-protocol": "file:../../../EdgeSync",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
