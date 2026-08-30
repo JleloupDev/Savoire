@@ -8,7 +8,7 @@ import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getVaultLockProbe } from './vaultLock'
-import type { EdgesyncVaultSessionLike } from '@savoire/application'
+import { isKeyManagedSession, type IVaultSyncSession } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -259,7 +259,7 @@ export function AppShell() {
   selectedVaultIdRef.current = selectedVault?.id ?? null
 
   const vaultAPIRef = useRef<VaultClient | undefined>(undefined)
-  const edgesyncVaultRef = useRef<EdgesyncVaultSessionLike | undefined>(undefined)
+  const vaultSessionRef = useRef<IVaultSyncSession | undefined>(undefined)
   // Profil serveur : CollabOrchestrator signe chaque op avec cette identité.
   const identityProviderRef = useRef<IIdentityProvider | undefined>(undefined)
   identityProviderRef.current = appRootRef.current.identityProvider
@@ -349,8 +349,7 @@ export function AppShell() {
     token: tokenRef,
     activeAccount: activeAccountRef,
     vaultAPI: vaultAPIRef,
-    edgesyncVault: edgesyncVaultRef,
-    identity: identityProviderRef,
+    vaultSession: vaultSessionRef,
     onControllerReady: onControllerReadyRef,
     fileTypeRegistry: fileTypeRegistryRef,
     defaultPlugins: defaultPluginsRef,
@@ -408,19 +407,20 @@ export function AppShell() {
       const active = await application.documents.activateVault({
         vaultId: vault.id,
         token: tok,
+        userId: activeAccountRef.current?.userId ?? '',
         storage: vaultStorage,
         documentStore: documentStore,
-        directory: new YMapVaultDirectory(),
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
         identitySeed,
+        identity: identityProviderRef.current,
       })
       vaultAPIRef.current = active.client
-      edgesyncVaultRef.current = active.edgesyncVault
+      vaultSessionRef.current = active.session
       onChanged()
 
-      // Connect index sync to the new vault hub, then restore its persisted index snapshot.
-      contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveHub())
+      // Branche la synchro d'index sur la session active, puis restaure son snapshot.
+      contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveSession())
       await contentIndexingServiceRef.current?.switchVault(new ServerIndexStorage(vault.id, () => tokenRef.current))
 
       const graphContributor = getGraphContributor()
@@ -629,13 +629,13 @@ export function AppShell() {
         doc: docStub,
         token,
         documentStore: sharedDocStore,
-        directory: new YMapVaultDirectory(),
+        directory: new YMapVaultDirectory(), // document isole : pas de session, repertoire local
         resolveDoc: (p) => (p === note.path || p === note.path.replace(/\.md$/, '')) ? docStub : undefined,
       }).then(activated => {
         vaultAPIRef.current = activated.client
-        // Shared-document access never gets an edgesync vault session (it's
-        // isolated by design — see ADR-027); clear any previous vault's stale ref.
-        edgesyncVaultRef.current = undefined
+        // Un document partage n'a jamais de session de vault (isole par
+        // construction, voir ADR-027) : purger la ref du vault precedent.
+        vaultSessionRef.current = undefined
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
@@ -660,7 +660,7 @@ export function AppShell() {
             docEventUnsubRef.current?.()
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
-            edgesyncVaultRef.current = undefined
+            vaultSessionRef.current = undefined
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -671,7 +671,7 @@ export function AppShell() {
             docEventUnsubRef.current?.()
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
-            edgesyncVaultRef.current = undefined
+            vaultSessionRef.current = undefined
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -691,7 +691,7 @@ export function AppShell() {
     if (selectedVault?.id === vault.id) {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
-      edgesyncVaultRef.current = undefined
+      vaultSessionRef.current = undefined
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
     }
@@ -740,7 +740,7 @@ export function AppShell() {
     if (ok) {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
-      edgesyncVaultRef.current = undefined
+      vaultSessionRef.current = undefined
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
       managerRef.current?.notifyVaultChange()
@@ -754,17 +754,14 @@ export function AppShell() {
     navigate('/login')
   }
 
-  // Preamble to per-peer revocation: rotates K_vault to a fresh epoch (fresh
-  // K_doc per known channel too), delivered live to whoever's connected right
-  // now — see EdgesyncVaultSession.renewVaultKey(). Works identically for S2
-  // (Managed, re-escrowed in clear) and S3 (self-managed, re-escrowed wrapped
-  // under K_User) — this button never knows which, same as everything else
-  // downstream of KeyringSource.
+  // Rotation de la cle du vault vers une nouvelle epoque, propagee aux pairs
+  // connectes. Propre aux profils a cles (EdgeSync aujourd'hui, Keyhive
+  // demain) : detecte structurellement, absent du profil serveur Savoire.
   async function handleRenewVaultKey() {
-    const vault = edgesyncVaultRef.current
-    if (!vault) return
+    const session = vaultSessionRef.current
+    if (!session || !isKeyManagedSession(session)) return
     try {
-      await vault.renewVaultKey()
+      await session.renewVaultKey()
       notify('success', 'Clé du vault renouvelée', 'Nouvelle clé générée et propagée aux pairs connectés.')
     } catch (err) {
       console.error('[AppShell] renewVaultKey failed', err)
@@ -876,7 +873,7 @@ export function AppShell() {
           )}
 
           {/* Debug: show the vault's/active document's decrypted key — see VaultKeyDebugPanel */}
-          {selectedVault && edgesyncVaultRef.current && (
+          {selectedVault && vaultSessionRef.current && (
             <button onClick={() => setKeyDebugOpen(true)} title="Afficher les clés en clair (debug)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -949,10 +946,11 @@ export function AppShell() {
         />
       )}
 
-      {keyDebugOpen && selectedVault && edgesyncVaultRef.current && (
+      {keyDebugOpen && selectedVault && vaultSessionRef.current
+        && isKeyManagedSession(vaultSessionRef.current) && (
         <VaultKeyDebugPanel
           vaultName={selectedVault.name}
-          edgesyncVault={edgesyncVaultRef.current}
+          session={vaultSessionRef.current}
           activeDoc={activeDoc ? { id: activeDoc.id, path: activeDoc.path } : null}
           onClose={() => setKeyDebugOpen(false)}
         />

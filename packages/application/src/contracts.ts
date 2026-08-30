@@ -32,80 +32,82 @@ export interface AppWorkspace {
   sharedWithMe: AppSharedNote[]
 }
 
-export interface VaultHubLike {
-  connect(): Promise<void>
-  dispose(): Promise<void>
-  /** Pushes an index op to the server. Returns the assigned seq, or null if offline. */
-  pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
-  /** Subscribes to index ops received from other clients. */
-  onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
-  /** Push a binary vault CRDT update to the server (for relay to other peers). */
-  pushVaultUpdate?(update: Uint8Array): Promise<void>
-}
-
-export interface VaultHubFactoryParams {
-  vaultId: string
-  vaultClient: VaultClient
-  onChanged: () => void
-}
-
-export interface IVaultHubFactory {
-  create(params: VaultHubFactoryParams): VaultHubLike
-}
-
-/**
- * Abstract shape of EdgesyncVaultSession (@savoire/infrastructure-sync) — kept
- * structural here (not imported) because infrastructure-sync depends on
- * @savoire/application, so importing it back would create a cycle. Vault +
- * documents share one E2E-encrypted edgesync Keyring; the server never reads
- * either (it only relays opaque frames / signals WebRTC negotiation).
- */
-/** Structural subset of @savoire/plugin-api's ICRDT presence methods —
- *  satisfied today by YjsCrdtAdapter. Kept structural for the same
- *  cycle-avoidance reason as EdgesyncVaultSessionLike itself. */
+/** Sous-ensemble structurel des methodes de presence d'ICRDT (@savoire/plugin-api),
+ *  satisfait par YjsCrdtAdapter. Garde structurel pour eviter un cycle de
+ *  dependances (infrastructure-sync depend deja de @savoire/application). */
 export interface CrdtPresenceLike {
   onLocalPresenceChanged(cb: (bytes: Uint8Array, changedClients: number[]) => void): () => void
   applyRemotePresence(bytes: Uint8Array): void
 }
 
-export interface EdgesyncVaultSessionLike {
-  /** Fixed forever: was this peer the one whose genesis minted the vault. */
-  readonly isOwner: boolean
-  /** Dynamic: true once this peer actually possesses K_vault (may become true
-   *  for a non-owner too, once granted — see EdgesyncVaultSession). */
-  readonly isGranting: boolean
-  /** Start (or resume) live E2E-encrypted sync for one currently-open
-   *  document's Y.Doc. `presence`, if given, also wires peer cursors
-   *  (y-protocols/awareness) over the same channel — see
-   *  EdgesyncAwarenessChannel. */
-  openDocument(docId: string, doc: unknown, presence?: CrdtPresenceLike): void
-  /** Stop syncing a document whose editor panel closed. */
+/**
+ * Session de synchronisation d'un vault. UN port, deux implementations
+ * aujourd'hui (profil serveur Savoire, profil EdgeSync), ouvert a une
+ * troisieme (automerge-repo + Beelay/Keyhive).
+ *
+ * La session POSSEDE le cycle de vie du repertoire et des documents : c'est
+ * elle qui les cree. C'est deliberement l'inverse du sens naturel, et c'est ce
+ * qui rend le port portable : automerge-repo possede le document, sa
+ * persistance et sa synchro dans un `Repo`, donc l'application ne peut pas
+ * fabriquer l'objet CRDT puis le confier au transport. Un port qui ferait
+ * `openDocument(docId, doc)` exclurait Automerge par construction.
+ *
+ * Corollaire : aucun `new YjsCrdtAdapter()` ni `new YMapVaultDirectory()` dans
+ * l'application. Changer de protocole = changer de fabrique, rien d'autre.
+ */
+export interface IVaultSyncSession {
+  /** Liste des notes du vault, creee et synchronisee par la session. */
+  readonly directory: IVaultDirectory
+  /** Ouvre (ou reprend) la synchro d'un document et rend son CRDT.
+   *  Idempotent : deux appels pour le meme docId rendent le meme objet. */
+  openDocument(docId: string): ICRDT
+  /** Arrete la synchro d'un document dont le panneau s'est ferme. */
   closeDocument(docId: string): void
-  /** Rotate K_vault to a fresh epoch (fresh key for every currently-known
-   *  channel too), delivered live to every peer connected right now. Throws
-   *  if `!isGranting`. Preamble to per-peer revocation (EdgesyncVaultSession
-   *  calls Session.rotate() with no exclusion; excluding one peer is what
-   *  revocation would do instead — see EdgesyncVaultSession.renewVaultKey). */
-  renewVaultKey(): Promise<void>
-  /** Dev/debug only: current epoch's K_vault, base64. Undefined before this
-   *  peer has any key (joiner awaiting its first grant). */
-  debugVaultKey(): { epoch: number; base64: string } | undefined
-  /** Dev/debug only: a currently-open document's K_doc, base64. */
-  debugDocKey(docId: string): string | undefined
-  /** Awaited by disposeActiveVault(): must fully close before a caller
-   *  switching to a different vault proceeds (see EdgesyncVaultSession). */
+  getState(): 'connected' | 'connecting' | 'disconnected'
+  /** Pousse une op d'index. Absent si le profil n'indexe pas cote pairs. */
+  pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
+  onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
   dispose(): Promise<void>
 }
 
-export interface EdgesyncVaultSessionFactoryParams {
-  vaultId: string
-  /** 32-byte Ed25519 seed (e.g. an ISeedExportingIdentityProvider's exportSignSeed()). */
-  identitySeed: Uint8Array
-  directory: IVaultDirectory
+/**
+ * Extras d'un protocole a cles (EdgeSync aujourd'hui, Keyhive demain). Le
+ * profil serveur Savoire n'en a aucun : a detecter structurellement via
+ * isKeyManagedSession(), jamais a supposer.
+ */
+export interface IKeyManagedVaultSession {
+  /** Fixe : ce pair est-il celui dont la genese a cree le vault. */
+  readonly isOwner: boolean
+  /** Dynamique : ce pair possede-t-il la cle du vault. */
+  readonly isGranting: boolean
+  /** Rotation de la cle du vault vers une nouvelle epoque. */
+  renewVaultKey(): Promise<void>
+  debugVaultKey(): { epoch: number; base64: string } | undefined
+  debugDocKey(docId: string): string | undefined
 }
 
-export interface IEdgesyncVaultSessionFactory {
-  open(params: EdgesyncVaultSessionFactoryParams): Promise<EdgesyncVaultSessionLike>
+export function isKeyManagedSession(
+  session: IVaultSyncSession,
+): session is IVaultSyncSession & IKeyManagedVaultSession {
+  return typeof (session as Partial<IKeyManagedVaultSession>).renewVaultKey === 'function'
+}
+
+export interface VaultSyncSessionFactoryParams {
+  vaultId: string
+  token: string
+  userId: string
+  /** Graine Ed25519 32 octets, requise par les profils a identite (EdgeSync). */
+  identitySeed?: Uint8Array
+  /** Signe les ops sortantes (profil serveur, via CollabOrchestrator). */
+  identity?: IIdentityProvider
+  /** Appele quand la liste des notes change, quelle qu'en soit l'origine. */
+  onChanged: () => void
+  /** Remonte l'etat de connexion du transport a l'UI. */
+  onConnectionChange?: (state: 'connected' | 'disconnected') => void
+}
+
+export interface IVaultSyncSessionFactory {
+  open(params: VaultSyncSessionFactoryParams): Promise<IVaultSyncSession>
 }
 
 export interface IVaultsBackend {
@@ -125,21 +127,23 @@ export interface IVaultsAPI {
 export interface ActivatedVault {
   readonly vaultId: string
   readonly client: VaultClient
-  readonly hub: VaultHubLike
-  readonly edgesyncVault?: EdgesyncVaultSessionLike
+  /** Absente pour un document partage isole (activateSharedDocument). */
+  readonly session?: IVaultSyncSession
   dispose(): Promise<void>
 }
 
 export interface ActivateVaultParams {
   vaultId: string
   token: string
+  userId: string
   storage: IVaultStorage
   documentStore: DocumentStore
-  directory: IVaultDirectory
   resolveDoc: (path: string) => IDocumentMeta | undefined
   onChanged: () => void
-  /** 32-byte Ed25519 seed for the vault's shared edgesync Keyring. */
-  identitySeed: Uint8Array
+  /** Graine Ed25519, transmise telle quelle a la fabrique de session. */
+  identitySeed?: Uint8Array
+  identity?: IIdentityProvider
+  onConnectionChange?: (state: 'connected' | 'disconnected') => void
 }
 
 export interface ActivateSharedDocParams {
@@ -151,12 +155,12 @@ export interface ActivateSharedDocParams {
   resolveDoc: (path: string) => IDocumentMeta | undefined
 }
 
+
 export interface IDocumentsAPI {
   activateVault(params: ActivateVaultParams): Promise<ActivatedVault>
   activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault>
   getActiveClient(): VaultClient | undefined
-  getActiveHub(): VaultHubLike | null
-  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined
+  getActiveSession(): IVaultSyncSession | undefined
   disposeActiveVault(): Promise<void>
 }
 

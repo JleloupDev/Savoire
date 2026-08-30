@@ -8,7 +8,7 @@
 // on it (see AppShell.tsx's "Renouveler la clé" button) — not a feature end
 // users are expected to reach for.
 import { useState } from 'react'
-import type { EdgesyncVaultSessionLike } from '@savoire/application'
+import type { IKeyManagedVaultSession } from '@savoire/application'
 
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
@@ -68,14 +68,14 @@ function CopyableKey({ value }: { value: string }) {
 
 export interface VaultKeyDebugPanelProps {
   vaultName: string
-  edgesyncVault: EdgesyncVaultSessionLike
+  session: IKeyManagedVaultSession
   activeDoc: { id: string; path: string } | null
   onClose: () => void
 }
 
-export function VaultKeyDebugPanel({ vaultName, edgesyncVault, activeDoc, onClose }: VaultKeyDebugPanelProps) {
-  const vaultKey = edgesyncVault.debugVaultKey()
-  const docKey = activeDoc ? edgesyncVault.debugDocKey(activeDoc.id) : undefined
+export function VaultKeyDebugPanel({ vaultName, session, activeDoc, onClose }: VaultKeyDebugPanelProps) {
+  const vaultKey = session.debugVaultKey()
+  const docKey = activeDoc ? session.debugDocKey(activeDoc.id) : undefined
 
   return (
     <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>

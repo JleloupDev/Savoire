@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { DocumentStore } from '@savoire/platform'
 import type { IIdentityProvider } from '@savoire/plugin-api'
-import type { IApplicationAPI, IAdminBackend, IAuthBackend, ISharingBackend, IVaultHubFactory, IVaultsBackend, IEdgesyncVaultSessionFactory } from './contracts'
+import type { IApplicationAPI, IAdminBackend, IAuthBackend, ISharingBackend, IVaultsBackend, IVaultSyncSessionFactory } from './contracts'
 import { ApplicationAPI } from './ApplicationAPI'
 import { AuthService } from './AuthService'
 import { AdminService } from './AdminService'
@@ -11,17 +11,15 @@ import { VaultsService } from './VaultsService'
 import { DocumentsService } from './DocumentsService'
 import { DocumentSessionService } from './DocumentSessionService'
 import { WorkspaceService } from './WorkspaceService'
-import { SyncOrchestrator } from './SyncOrchestrator'
 
 export interface AppRootDeps {
   authBackend: IAuthBackend
   adminBackend: IAdminBackend
   sharingBackend: ISharingBackend
   backend: IVaultsBackend
-  hubFactory: IVaultHubFactory
-  /** Absent = profil serveur Savoire (le hub relaie le répertoire et les
-   *  documents). Présent = profil EdgeSync (P2P, E2E). Voir DocumentsService. */
-  edgesyncVaultSessionFactory?: IEdgesyncVaultSessionFactory
+  /** Le profil de synchronisation : serveur Savoire, EdgeSync, ou demain
+   *  automerge-repo. Un seul port, choisi ici. Voir IVaultSyncSession. */
+  vaultSyncSessionFactory: IVaultSyncSessionFactory
   documentStore: DocumentStore
   identityProvider?: IIdentityProvider
 }
@@ -35,8 +33,7 @@ export class AppRoot {
     const admin = new AdminService(deps.adminBackend)
     const sharing = new SharingService(deps.sharingBackend)
     const vaults = new VaultsService(deps.backend)
-    const sync = new SyncOrchestrator(deps.hubFactory)
-    const documents = new DocumentsService(sync, deps.edgesyncVaultSessionFactory)
+    const documents = new DocumentsService(deps.vaultSyncSessionFactory)
     const documentSession = new DocumentSessionService(deps.documentStore)
     const workspace = new WorkspaceService()
     this.api = new ApplicationAPI(auth, admin, sharing, vaults, documents, documentSession, workspace)

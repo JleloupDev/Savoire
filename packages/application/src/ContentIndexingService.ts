@@ -3,7 +3,7 @@
 import type { HookRegistry, IIndexRegistry } from '@savoire/plugin-api'
 import type { CrdtVersion } from '@savoire/domain-index'
 import type { ILocalIndexStorage } from '@savoire/platform'
-import type { VaultHubLike } from './contracts'
+import type { IVaultSyncSession } from './contracts'
 
 /**
  * ContentIndexingService — subscribes to onDocumentStabilized and dispatches to IndexContributors.
@@ -13,10 +13,10 @@ import type { VaultHubLike } from './contracts'
  * Lifecycle:
  *   1. restore()       — on startup, reloads persisted snapshots
  *   2. init()          — subscribes to the hook (call after plugins have loaded)
- *   3. attachHub(hub)  — called after vault activation, wires server sync
+ *   3. attachHub(getSession) — apres activation d'un vault, branche la synchro d'index
  */
 export class ContentIndexingService {
-  private getHub: (() => VaultHubLike | null) | null = null
+  private getHub: (() => IVaultSyncSession | null | undefined) | null = null
   private hubUnsubscribe: (() => void) | null = null
   private onIndexed: ((docId: string, path: string) => void) | null = null
 
@@ -78,7 +78,7 @@ export class ContentIndexingService {
    * The hub is queried via getHub() on each op (not captured at registration time)
    * to avoid stale refs after a vault switch.
    */
-  attachHub(getHub: () => VaultHubLike | null): void {
+  attachHub(getHub: () => IVaultSyncSession | null | undefined): void {
     // Clear previous subscription when vault changes
     this.hubUnsubscribe?.()
     this.hubUnsubscribe = null
@@ -86,7 +86,7 @@ export class ContentIndexingService {
 
     const hub = getHub()
     if (hub?.onIndexOpApplied) {
-      this.hubUnsubscribe = hub.onIndexOpApplied((evt) => {
+      this.hubUnsubscribe = hub.onIndexOpApplied((evt: { seq: number; docId: string; path: string; markdownContent: string }) => {
         for (const contributor of this.indexRegistry.getAll()) {
           contributor.onOp(evt.seq, evt.docId, evt.path, evt.markdownContent)
         }

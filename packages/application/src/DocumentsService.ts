@@ -1,92 +1,67 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { VaultClient, type DocumentStore, type IDocumentMeta, type IVaultDirectory, type IVaultStorage } from '@savoire/platform'
-import type { ActivatedVault, ActivateVaultParams, IDocumentsAPI, IEdgesyncVaultSessionFactory, EdgesyncVaultSessionLike, VaultHubLike } from './contracts'
-import { SyncOrchestrator } from './SyncOrchestrator'
-
-type ActiveContext = ActivatedVault
+import type {
+  ActivatedVault, ActivateVaultParams, ActivateSharedDocParams,
+  IDocumentsAPI, IVaultSyncSession, IVaultSyncSessionFactory,
+} from './contracts'
 
 export class DocumentsService implements IDocumentsAPI {
-  private active: ActiveContext | null = null
+  private active: ActivatedVault | null = null
 
-  constructor(
-    private readonly sync: SyncOrchestrator,
-    private readonly edgesyncFactory?: IEdgesyncVaultSessionFactory,
-  ) {}
+  constructor(private readonly sessionFactory: IVaultSyncSessionFactory) {}
 
   async activateVault(params: ActivateVaultParams): Promise<ActivatedVault> {
     await this.disposeActiveVault()
 
-    const s = params.storage
-    const storageWithHub: IVaultStorage = {
-      readFile:         (v, p, t)    => s.readFile(v, p, t),
-      writeFile:        (v, p, c, t) => s.writeFile(v, p, c, t),
-      resolveFileUrl:   (v, p)       => s.resolveFileUrl(v, p),
-      listDocuments:    (v, t)       => s.listDocuments(v, t),
-      uploadAttachment: (v, f, t)    => s.uploadAttachment(v, f, t),
-    }
+    // La session cree le repertoire ET les CRDT des documents. L'application
+    // n'instancie aucun adaptateur : changer de protocole = changer de
+    // fabrique. Voir IVaultSyncSession pour le pourquoi de cette inversion.
+    const session = await this.sessionFactory.open({
+      vaultId: params.vaultId,
+      token: params.token,
+      userId: params.userId,
+      identitySeed: params.identitySeed,
+      identity: params.identity,
+      onChanged: params.onChanged,
+      onConnectionChange: params.onConnectionChange,
+    })
 
     const client = new VaultClient(
       params.vaultId,
       params.token,
-      storageWithHub,
+      params.storage,
       params.documentStore,
-      params.directory,
+      session.directory,
       params.resolveDoc,
     )
-    const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
-    // Profil EdgeSync uniquement. Sans factory, le répertoire et les documents
-    // sont relayés par le hub Savoire (VaultHubClient) — profil serveur.
-    const edgesyncVault = await this.edgesyncFactory?.open({
-      vaultId: params.vaultId,
-      identitySeed: params.identitySeed,
-      directory: params.directory,
-    })
-    // The directory's own CRDT observer is the source of truth for "the note
-    // list changed" — local edits AND remote ops both go through it, whichever
-    // profile applied them (hub relay or edgesync Session).
-    const unsubDirectoryChange = params.directory.onChange(params.onChanged)
 
-    const active: ActiveContext = {
+    const active: ActivatedVault = {
       vaultId: params.vaultId,
       client,
-      hub,
-      edgesyncVault,
-      dispose: async () => {
-        unsubDirectoryChange()
-        await edgesyncVault?.dispose()
-        await hub.dispose()
-      },
+      session,
+      dispose: async () => { await session.dispose() },
     }
-
     this.active = active
     return active
   }
 
   /**
-   * Activates a single shared document without connecting to the vault hub.
-   * Used when the caller has document-level ACL but is not a vault member.
-   * The VaultClient is pre-seeded with the one known document; all write
-   * operations on the stub storage throw read-only errors.
+   * Active un document partage seul, sans session de vault : l'appelant a une
+   * ACL au niveau document mais n'est pas membre du vault. Le VaultClient est
+   * pre-rempli avec l'unique document connu et toute ecriture echoue.
    * see ADR-027
    */
-  async activateSharedDocument(params: {
-    vaultId: string
-    doc: IDocumentMeta
-    token: string
-    documentStore: DocumentStore
-    directory: IVaultDirectory
-    resolveDoc: (path: string) => IDocumentMeta | undefined
-  }): Promise<ActivatedVault> {
+  async activateSharedDocument(params: ActivateSharedDocParams): Promise<ActivatedVault> {
     await this.disposeActiveVault()
 
     const d = params.doc
     const readOnly = async (): Promise<never> => { throw new Error('read-only shared document') }
     const stubStorage: IVaultStorage = {
-      listDocuments:    async ()       => [d],
-      readFile:         async ()       => '',
+      listDocuments:    async () => [d],
+      readFile:         async () => '',
       writeFile:        readOnly,
-      resolveFileUrl:   ()             => '',
+      resolveFileUrl:   () => '',
       uploadAttachment: readOnly,
     }
 
@@ -100,18 +75,11 @@ export class DocumentsService implements IDocumentsAPI {
     )
     client.addDocument(d)
 
-    const nullHub: VaultHubLike = {
-      connect: async () => {},
-      dispose: async () => {},
-    }
-
     const active: ActivatedVault = {
       vaultId: params.vaultId,
       client,
-      hub: nullHub,
       dispose: async () => {},
     }
-
     this.active = active
     return active
   }
@@ -120,24 +88,18 @@ export class DocumentsService implements IDocumentsAPI {
     return this.active?.client
   }
 
-  getActiveHub(): import('./contracts').VaultHubLike | null {
-    return this.active?.hub ?? null
-  }
-
-  getActiveEdgesyncVault(): EdgesyncVaultSessionLike | undefined {
-    return this.active?.edgesyncVault
+  getActiveSession(): IVaultSyncSession | undefined {
+    return this.active?.session
   }
 
   async disposeActiveVault(): Promise<void> {
     if (!this.active) return
     const active = this.active
     this.active = null
-    // Close the edgesync vault session directly (not via active.dispose(),
-    // which also disposes the hub — that's sync.disposeActive()'s job below,
-    // and it additionally clears SyncOrchestrator's own bookkeeping). Awaited:
-    // a subsequent activateVault() must not race ahead of this connection
-    // actually closing.
-    await active.edgesyncVault?.dispose()
-    await this.sync.disposeActive()
+    // Attendu : une activation suivante ne doit pas doubler la fermeture de
+    // cette connexion.
+    await active.dispose()
   }
 }
+
+export type { IVaultDirectory, DocumentStore, IDocumentMeta }

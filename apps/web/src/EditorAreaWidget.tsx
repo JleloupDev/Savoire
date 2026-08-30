@@ -5,27 +5,16 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { YjsCrdtAdapter, GracePool, SignalRTransport } from '@savoire/infrastructure-sync'
-import { CollabOrchestrator } from '@savoire/application'
-import type { EdgesyncVaultSessionLike } from '@savoire/application'
+import type { IVaultSyncSession } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
-import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin, IIdentityProvider } from '@savoire/plugin-api'
+import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
-
-// One live Y.Doc adapter per document, shared across effect remounts (React
-// StrictMode double-mount, editor-mode toggles): recreating it on every
-// remount would discard already-synced content and force a wasted resync.
-// Session lifecycle itself is owned by EdgesyncVaultSession (vault-scoped,
-// stable across these remounts) — unlike the old per-document model, closing
-// and reopening a document's Session on remount is cheap and never risks
-// losing keys (see EdgesyncVaultSession).
-const crdtPool = new GracePool<YjsCrdtAdapter>((crdt) => crdt.dispose())
 
 // ─── Refs injected from EditorPage (always current, never stale) ───────────
 
@@ -37,12 +26,11 @@ export interface EditorAreaRefs {
   token: React.MutableRefObject<string | null>
   activeAccount: React.MutableRefObject<AccountEntry | null>
   vaultAPI: React.MutableRefObject<VaultClient | undefined>
-  /** Profil EdgeSync : session partagée du vault actif (une par vault, pas par
-   *  document). Undefined en profil serveur Savoire — les documents passent
-   *  alors par SignalRTransport + CollabOrchestrator. */
-  edgesyncVault: React.MutableRefObject<EdgesyncVaultSessionLike | undefined>
-  /** Requis par CollabOrchestrator en profil serveur (signature des ops). */
-  identity: React.MutableRefObject<IIdentityProvider | undefined>
+  /** Session de synchronisation du vault actif, quel que soit le profil
+   *  (serveur Savoire, EdgeSync, demain automerge-repo). C'est ELLE qui cree
+   *  le CRDT d'un document : voir IVaultSyncSession. Undefined pour un
+   *  document partage isole. */
+  vaultSession: React.MutableRefObject<IVaultSyncSession | undefined>
   onControllerReady: React.MutableRefObject<(ctrl: EditorController | null) => void>
   /** File type registry — populated by plugins in onBeforeReady. */
   fileTypeRegistry: React.MutableRefObject<FileTypeRegistry | null>
@@ -106,28 +94,13 @@ function DocumentPanelHost({
     unsubPluginLoadedRef.current?.()
     unsubPluginLoadedRef.current = null
 
-    // Deux profils de synchronisation, choisis par la présence d'une session
-    // EdgeSync sur le vault actif (AppShell) — jamais les deux à la fois :
-    //  - EdgeSync : vault + documents partagent un Keyring E2E ; les curseurs
-    //    pairs passent par le même canal (EdgesyncAwarenessChannel), d'où le
-    //    `crdt` passé en 3e argument.
-    //  - Serveur Savoire : ops relayées par SyncHub (SignalRTransport), signées
-    //    par CollabOrchestrator.
-    const poolKey = `${vaultId}/${doc.id}`
-    const crdtLease = crdtPool.acquire(poolKey, () => new YjsCrdtAdapter())
-    const crdt = crdtLease.value
-    const edgesyncVault = refs.edgesyncVault.current
-
-    let transport: SignalRTransport | null = null
-    let orchestrator: CollabOrchestrator | null = null
-    if (edgesyncVault) {
-      edgesyncVault.openDocument(doc.id, crdt.rawDoc, crdt)
-    } else {
-      const identity = refs.identity.current
-      if (!identity) throw new Error('CollabOrchestrator requires an identity provider')
-      transport = new SignalRTransport({ serverUrl: '', userId, getToken: () => refs.token.current })
-      orchestrator = new CollabOrchestrator(crdt, transport, identity)
-    }
+    // L'editeur ne fabrique plus le CRDT : c'est la session du vault qui le
+    // cree et le synchronise, parce que certains protocoles (automerge-repo)
+    // possedent le document. openDocument() est idempotent, donc sûr face aux
+    // remontages d'effet (StrictMode, bascule de mode d'edition).
+    const session = refs.vaultSession.current
+    if (!session) console.warn('[Sync] aucune session de vault active, le document ne se synchronisera pas', doc.id)
+    const crdt = session?.openDocument(doc.id)
 
     const view = new DocumentView({
       path: doc.path,
@@ -141,7 +114,7 @@ function DocumentPanelHost({
       defaultPlugins: refs.defaultPlugins.current,
       pluginRegistry,
       crdt,
-      getTransportState: () => (transport ? transport.getState() : edgesyncVault ? 'connected' : 'connecting'),
+      getTransportState: () => session?.getState() ?? 'disconnected',
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current,
       createPluginLoader: refs.createPluginLoader,
@@ -150,8 +123,7 @@ function DocumentPanelHost({
       },
     })
     view.mount()
-    if (transport) void transport.join(vaultId, doc.id)
-    const unsubCrdtIndex = crdt.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
+    const unsubCrdtIndex = crdt?.onTextChange((text) => refs.onCrdtTextChange.current?.(doc.id, text))
     viewRef.current = view
 
     const ctrl = view.controller
@@ -170,11 +142,8 @@ function DocumentPanelHost({
     return () => {
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
-      unsubCrdtIndex()
-      edgesyncVault?.closeDocument(doc.id)
-      orchestrator?.dispose()
-      if (transport) void transport.disconnect()
-      crdtLease.release()
+      unsubCrdtIndex?.()
+      session?.closeDocument(doc.id)
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)

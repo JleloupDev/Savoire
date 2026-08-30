@@ -2,12 +2,12 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import {
   AppRoot, AuthService, AdminService, SharingService,
-  type IVaultHubFactory, type IVaultsBackend, type IEdgesyncVaultSessionFactory,
+  type IVaultsBackend, type IVaultSyncSessionFactory,
 } from '@savoire/application'
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
   HttpAdminBackend, HttpAuthBackend, HttpSharingBackend, HttpVaultsBackend,
-  RestVaultStorage, ServerKeyProvider, VaultHubClient,
+  RestVaultStorage, ServerKeyProvider, SavoireServerVaultSession,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
 
@@ -34,6 +34,12 @@ export function createWebInfrastructure(
   getToken:   () => string | null,
   getUserId:  () => string,
 ) {
+  // DERNIERE inversion restante : ce fetcher sert le contenu ponctuel
+  // (embeds ![[...]], vault.read()) et parle a SyncHub, donc au serveur
+  // Savoire uniquement. Un protocole qui possede le stockage des documents
+  // (blobs EdgeSync, Repo automerge) doit fournir le sien : IDocumentFetcher
+  // devrait venir de la session, comme le repertoire et les CRDT. En l'etat,
+  // les embeds sont vides en profil EdgeSync. Voir IVaultSyncSession.
   const documentFetcher = new CrdtDocumentFetcher({ getToken, getUserId })
   const vaultStorage    = new RestVaultStorage()
   const documentStore   = new DocumentStore(documentFetcher)
@@ -49,20 +55,27 @@ export interface CreateWebAppRootParams {
   /** K_User du compte actif, ou null. Utile au seul profil EdgeSync
    *  (VaultKeyContext) — ignoré en profil serveur. */
   getVaultKey: () => Uint8Array | null
-  /** Absent = profil serveur Savoire (défaut) : le hub relaie le répertoire et
-   *  les documents, le serveur lit les données. Fourni (voir edgesyncProfile.ts)
-   *  = profil EdgeSync : P2P, E2E, serveur aveugle. */
-  edgesyncVaultSessionFactory?: IEdgesyncVaultSessionFactory
+  /** Absente = profil serveur Savoire (defaut). Fournie (voir
+   *  edgesyncProfile.ts) = profil EdgeSync : P2P, E2E, serveur aveugle.
+   *  Demain, un connecteur automerge-repo se brancherait au meme endroit. */
+  vaultSyncSessionFactory?: IVaultSyncSessionFactory
   onConnectionChange?: (state: 'connected' | 'disconnected') => void
 }
 
-function makeHubFactory(
+/** Profil par defaut : serveur Savoire. Le hub relaie le repertoire et les
+ *  documents, le serveur lit les donnees. Voir edgesyncProfile.ts pour le
+ *  profil P2P, et IVaultSyncSession pour le contrat commun. */
+function makeServerVaultSessionFactory(
   getToken: () => string | null,
   onConnectionChange?: (state: 'connected' | 'disconnected') => void,
-): IVaultHubFactory {
+): IVaultSyncSessionFactory {
   return {
-    create: ({ vaultId, vaultClient, onChanged }) =>
-      new VaultHubClient('', vaultId, vaultClient, onChanged, getToken, onConnectionChange),
+    open: (params) => SavoireServerVaultSession.open({
+      ...params,
+      getToken,
+      serverUrl: '',
+      onConnectionChange: params.onConnectionChange ?? onConnectionChange,
+    }),
   }
 }
 
@@ -73,8 +86,9 @@ export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {
     authBackend,
     sharingBackend,
     backend,
-    hubFactory: makeHubFactory(params.getToken, params.onConnectionChange),
-    edgesyncVaultSessionFactory: params.edgesyncVaultSessionFactory,
+    vaultSyncSessionFactory:
+      params.vaultSyncSessionFactory
+      ?? makeServerVaultSessionFactory(params.getToken, params.onConnectionChange),
     documentStore: params.documentStore,
     identityProvider,
   })

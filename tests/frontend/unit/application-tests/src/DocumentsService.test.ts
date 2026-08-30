@@ -1,42 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { DocumentsService, SyncOrchestrator } from '@savoire/application'
-import type { IVaultHubFactory, VaultHubLike, IEdgesyncVaultSessionFactory, EdgesyncVaultSessionLike } from '@savoire/application'
+//
+// Adapte au port IVaultSyncSession (30/08/2026) : DocumentsService ne connait
+// plus ni hub ni session edgesync, seulement UNE fabrique de session. Chaque
+// intention de test d'origine est conservee ; « le hub est connecte/dispose »
+// devient « la session est ouverte/disposee », la connexion etant desormais
+// interne a l'implementation de session.
+import { describe, it, expect, vi } from 'vitest'
+import { DocumentsService } from '@savoire/application'
+import type { IVaultSyncSessionFactory, IVaultSyncSession } from '@savoire/application'
 import type { DocumentStore, IDocumentMeta, IVaultDirectory, IVaultStorage } from '@savoire/platform'
 import type { OpenDocument } from '@savoire/platform'
 
 // ── Stubs ────────────────────────────────────────────────────────────────────
-
-function makeHub(): VaultHubLike {
-  return {
-    connect: vi.fn(async () => {}),
-    dispose: vi.fn(async () => {}),
-  }
-}
-
-function makeHubFactory(hub: VaultHubLike): IVaultHubFactory {
-  return { create: vi.fn(() => hub) }
-}
-
-function makeEdgesyncVaultSession(): EdgesyncVaultSessionLike {
-  return {
-    isOwner: true,
-    isGranting: true,
-    openDocument: vi.fn(),
-    closeDocument: vi.fn(),
-    renewVaultKey: vi.fn(async () => {}),
-    debugVaultKey: vi.fn(() => undefined),
-    debugDocKey: vi.fn(() => undefined),
-    dispose: vi.fn(async () => {}),
-  }
-}
-
-function makeEdgesyncFactory(session: EdgesyncVaultSessionLike = makeEdgesyncVaultSession()): IEdgesyncVaultSessionFactory {
-  return { open: vi.fn(async () => session) }
-}
-
-const identitySeed = new Uint8Array(32)
 
 function makeDirectory(): IVaultDirectory {
   return {
@@ -56,188 +32,165 @@ function makeDirectory(): IVaultDirectory {
   }
 }
 
+function makeSession(directory: IVaultDirectory = makeDirectory()): IVaultSyncSession {
+  return {
+    directory,
+    openDocument: vi.fn(() => ({}) as never),
+    closeDocument: vi.fn(),
+    getState: vi.fn(() => 'connected' as const),
+    dispose: vi.fn(async () => {}),
+  }
+}
+
+function makeFactory(session: IVaultSyncSession = makeSession()): IVaultSyncSessionFactory {
+  return { open: vi.fn(async () => session) }
+}
+
 function makeStorage(): IVaultStorage {
   return {
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
-    resolveFileUrl: vi.fn(() => '/url'),
+    resolveFileUrl: vi.fn(() => ''),
     listDocuments: vi.fn(async () => []),
-    uploadAttachment: vi.fn(async () => ({ fileName: 'f', storagePath: 'sp' })),
+    uploadAttachment: vi.fn(async () => ({ fileName: 'f', storagePath: 'p' })),
   }
-}
-
-function makeDocumentStore(): DocumentStore {
-  const openDoc: OpenDocument = {
-    docId: 'doc-1',
-    path: 'note.md',
-    content: '# Hello',
-    metadata: { id: 'doc-1', path: 'note.md' },
-    refCount: 1,
-  }
-  return {
-    open: vi.fn(async () => openDoc),
-    close: vi.fn(),
-    readContent: vi.fn(async () => '# Hello'),
-    get: vi.fn(),
-    size: 0,
-  } as unknown as DocumentStore
 }
 
 function makeMeta(id: string, path: string): IDocumentMeta {
   return { id, path }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+function makeDocumentStore(): DocumentStore {
+  const openDoc: OpenDocument = {
+    docId: 'doc-1', path: 'note.md', content: '# Hello',
+    metadata: makeMeta('doc-1', 'note.md'), refCount: 1,
+  }
+  return {
+    open: vi.fn(async () => openDoc),
+    readContent: vi.fn(async () => '# Hello'),
+    readDirect: vi.fn(async () => '# Hello'),
+    writeContent: vi.fn(async () => {}),
+    close: vi.fn(),
+    get: vi.fn(() => undefined),
+    size: 0,
+  } as unknown as DocumentStore
+}
 
-beforeEach(() => { vi.clearAllMocks() })
+const identitySeed = new Uint8Array(32)
+
+function activateParams(over: Partial<Parameters<DocumentsService['activateVault']>[0]> = {}) {
+  return {
+    vaultId: 'v1',
+    token: 'tok',
+    userId: 'u1',
+    storage: makeStorage(),
+    documentStore: makeDocumentStore(),
+    resolveDoc: () => undefined,
+    onChanged: vi.fn(),
+    identitySeed,
+    ...over,
+  }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('DocumentsService', () => {
   it('getActiveClient returns undefined before activateVault', () => {
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())), makeEdgesyncFactory())
+    const svc = new DocumentsService(makeFactory())
     expect(svc.getActiveClient()).toBeUndefined()
   })
 
-  it('activateVault returns ActivatedVault with client and hub', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
-    const active = await svc.activateVault({
-      vaultId: 'v1',
-      token: 'tok',
-      storage: makeStorage(),
-      documentStore: makeDocumentStore(),
-      resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
+  it('activateVault returns ActivatedVault with client and session', async () => {
+    const session = makeSession()
+    const factory = makeFactory(session)
+    const svc = new DocumentsService(factory)
+    const active = await svc.activateVault(activateParams())
     expect(active.vaultId).toBe('v1')
     expect(active.client).toBeDefined()
-    expect(active.hub).toBe(hub)
-    expect(hub.connect).toHaveBeenCalledOnce()
+    expect(active.session).toBe(session)
+    expect(factory.open).toHaveBeenCalledOnce()
   })
 
   it('getActiveClient returns client after activateVault', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
-    await svc.activateVault({
-      vaultId: 'v1',
-      token: 'tok',
-      storage: makeStorage(),
-      documentStore: makeDocumentStore(),
-      resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
+    const svc = new DocumentsService(makeFactory())
+    await svc.activateVault(activateParams())
     expect(svc.getActiveClient()).toBeDefined()
   })
 
   it('disposeActiveVault is a no-op when no active vault', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
+    const session = makeSession()
+    const svc = new DocumentsService(makeFactory(session))
     await expect(svc.disposeActiveVault()).resolves.toBeUndefined()
-    expect(hub.dispose).not.toHaveBeenCalled()
+    expect(session.dispose).not.toHaveBeenCalled()
   })
 
-  it('disposeActiveVault disposes hub and clears client', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
-    await svc.activateVault({
-      vaultId: 'v1',
-      token: 'tok',
-      storage: makeStorage(),
-      documentStore: makeDocumentStore(),
-      resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
-    await svc.disposeActiveVault()
-    expect(hub.dispose).toHaveBeenCalledOnce()
-    expect(svc.getActiveClient()).toBeUndefined()
-  })
-
-  it('disposeActiveVault disposes the edgesync vault session too (regression: it was previously never called, leaking WebRTC/relay connections)', async () => {
-    const session = makeEdgesyncVaultSession()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())), makeEdgesyncFactory(session))
-    await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
-    expect(svc.getActiveEdgesyncVault()).toBe(session)
+  it('disposeActiveVault disposes the session and clears client', async () => {
+    const session = makeSession()
+    const svc = new DocumentsService(makeFactory(session))
+    await svc.activateVault(activateParams())
+    expect(svc.getActiveSession()).toBe(session)
     await svc.disposeActiveVault()
     expect(session.dispose).toHaveBeenCalledOnce()
-    expect(svc.getActiveEdgesyncVault()).toBeUndefined()
+    expect(svc.getActiveClient()).toBeUndefined()
+    expect(svc.getActiveSession()).toBeUndefined()
   })
 
-  it('subscribes onChanged to the directory\'s own change notifications (regression: remote directory ops — e.g. via edgesync — must refresh the UI, not just local edits)', async () => {
-    const directory = makeDirectory()
+  it('passes onChanged through to the session factory (the session owns the directory and its change notifications)', async () => {
     const onChanged = vi.fn()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())), makeEdgesyncFactory())
-    await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged, identitySeed, directory,
-    })
+    const factory = makeFactory()
+    const svc = new DocumentsService(factory)
+    await svc.activateVault(activateParams({ onChanged }))
+    expect(vi.mocked(factory.open).mock.calls[0][0].onChanged).toBe(onChanged)
+  })
 
-    expect(directory.onChange).toHaveBeenCalledOnce()
-    // Simulate the directory firing a change (local or remote — it doesn't
-    // distinguish) and confirm the app's onChanged callback actually runs.
-    const registeredCb = vi.mocked(directory.onChange).mock.calls[0][0]
-    registeredCb()
-    expect(onChanged).toHaveBeenCalledOnce()
-
-    // And disposal unsubscribes cleanly.
-    const unsub = vi.mocked(directory.onChange).mock.results[0].value as () => void
-    await svc.disposeActiveVault()
-    expect(unsub).toBeDefined()
+  it('builds the VaultClient on the session-owned directory (regression: the app must not create its own)', async () => {
+    const directory = makeDirectory()
+    const svc = new DocumentsService(makeFactory(makeSession(directory)))
+    const active = await svc.activateVault(activateParams())
+    active.client.addDocument(makeMeta('doc-1', 'note.md'))
+    expect(directory.add).toHaveBeenCalledOnce()
   })
 
   it('activateVault disposes previous vault before activating new one', async () => {
-    const hub1 = makeHub()
-    const hub2 = makeHub()
+    const first = makeSession()
+    const second = makeSession()
     let call = 0
-    const factory: IVaultHubFactory = { create: vi.fn(() => call++ === 0 ? hub1 : hub2) }
-    const svc = new DocumentsService(new SyncOrchestrator(factory), makeEdgesyncFactory())
+    const factory: IVaultSyncSessionFactory = { open: vi.fn(async () => (call++ === 0 ? first : second)) }
+    const svc = new DocumentsService(factory)
 
-    await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
-    await svc.activateVault({
-      vaultId: 'v2', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
+    await svc.activateVault(activateParams({ vaultId: 'v1' }))
+    await svc.activateVault(activateParams({ vaultId: 'v2' }))
 
-    expect(hub1.dispose).toHaveBeenCalledOnce()
-    expect(hub2.connect).toHaveBeenCalledOnce()
+    expect(first.dispose).toHaveBeenCalledOnce()
+    expect(svc.getActiveSession()).toBe(second)
     expect(svc.getActiveClient()).toBeDefined()
   })
 
-  it('activateVault connects the hub', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
-    await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
-    expect(hub.connect).toHaveBeenCalled()
-  })
-
-  it('active.dispose disposes the hub', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
-    const active = await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
-    })
+  it('active.dispose disposes the session', async () => {
+    const session = makeSession()
+    const svc = new DocumentsService(makeFactory(session))
+    const active = await svc.activateVault(activateParams())
     await active.dispose()
-    expect(hub.dispose).toHaveBeenCalledOnce()
+    expect(session.dispose).toHaveBeenCalledOnce()
   })
 
   it('resolveDoc is passed correctly to VaultClient', async () => {
-    const hub = makeHub()
-    const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
+    const svc = new DocumentsService(makeFactory())
     const doc = makeMeta('doc-1', 'note.md')
     const resolveDoc = vi.fn(() => doc)
+    const active = await svc.activateVault(activateParams({ resolveDoc }))
+    expect(active.client).toBeDefined()
+  })
 
-    const active = await svc.activateVault({
-      vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
+  it('activateSharedDocument works without any session (isolated document, see ADR-027)', async () => {
+    const svc = new DocumentsService(makeFactory())
+    const doc = makeMeta('doc-1', 'note.md')
+    const active = await svc.activateSharedDocument({
+      vaultId: 'v1', doc, token: 'tok',
+      documentStore: makeDocumentStore(), directory: makeDirectory(),
+      resolveDoc: () => doc,
     })
+    expect(active.session).toBeUndefined()
     expect(active.client).toBeDefined()
   })
 })

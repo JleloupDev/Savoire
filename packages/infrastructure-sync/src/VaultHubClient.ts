@@ -6,7 +6,7 @@ import {
   HubConnectionState,
   LogLevel,
 } from '@microsoft/signalr'
-import type { IDocumentMeta, VaultClient } from '@savoire/platform'
+import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 
 const VAULT_COMPACT_THRESHOLD = 100
 
@@ -42,12 +42,12 @@ export class VaultHubClient {
   constructor(
     private readonly serverUrl: string,
     private readonly vaultId: string,
-    private readonly vaultClient: VaultClient,
+    private readonly directory: IVaultDirectory,
     private readonly onChanged: () => void,
     private readonly getToken: () => string | null = () => null,
     private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
   ) {
-    this.unsubLocalVaultUpdate = this.vaultClient.onLocalVaultUpdate(
+    this.unsubLocalVaultUpdate = this.directory.onLocalUpdate(
       (update) => void this.pushVaultUpdate(update),
     )
   }
@@ -69,9 +69,9 @@ export class VaultHubClient {
 
       // ── Vault CRDT init (replaces VaultSnapshot) ──────────────────────────
       this.connection.on('InitVault', (_vaultId: string, ops: string[]) => {
-        for (const op of ops) this.vaultClient.applyVaultUpdate(fromBase64(op))
+        for (const op of ops) this.directory.applyUpdate(fromBase64(op))
         if (ops.length > VAULT_COMPACT_THRESHOLD) {
-          const snapshot = toBase64(this.vaultClient.encodeVaultState())
+          const snapshot = toBase64(this.directory.encodeFullState())
           void this.connection?.invoke('SnapshotVault', this.vaultId, snapshot).catch(console.error)
         }
         this.onChanged()
@@ -79,7 +79,7 @@ export class VaultHubClient {
 
       // ── Incremental vault CRDT updates ────────────────────────────────────
       this.connection.on('VaultOperationReceived', (_vaultId: string, opBase64: string) => {
-        this.vaultClient.applyVaultUpdate(fromBase64(opBase64))
+        this.directory.applyUpdate(fromBase64(opBase64))
         this.onChanged()
       })
 

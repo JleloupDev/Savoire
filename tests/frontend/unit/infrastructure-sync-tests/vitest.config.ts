@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@savoire/infrastructure-sync': path.resolve(__dirname, '../../../../packages/infrastructure-sync/src/index.ts'),
+      '@savoire/application': path.resolve(__dirname, '../../../../packages/application/src/index.ts'),
       '@savoire/domain-sync': path.resolve(__dirname, '../../../../packages/domain-sync/src/index.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
