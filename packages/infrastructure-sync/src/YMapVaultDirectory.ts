@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import * as Y from 'yjs'
 import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
-import type { ICrdt } from 'edgesync-protocol'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain. Cast once; runtime behaviour is validated by tests.
@@ -11,7 +10,10 @@ const Y_ = Y as Record<string, any>
 
 type VaultEntry = { path: string }
 
-export class YMapVaultDirectory implements IVaultDirectory, ICrdt {
+// Satisfait structurellement le port ICrdt d'edgesync-protocol (applyUpdate /
+// encodeFullState / onLocalUpdate) sans l'importer : le connecteur EdgeSync
+// s'en charge. Le cœur reste agnostique au protocole.
+export class YMapVaultDirectory implements IVaultDirectory {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly doc: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

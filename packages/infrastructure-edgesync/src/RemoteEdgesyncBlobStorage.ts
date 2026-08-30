@@ -8,7 +8,7 @@
 // substitute for the normal K_vault grant flow. Persists CONTENT only — the
 // Keyring itself is recovered through a separate mechanism, see VaultKeyEscrow.ts.
 import type { IStorage } from 'edgesync-protocol'
-import { bytesToBase64, base64ToBytes } from './base64'
+import { bytesToBase64, base64ToBytes } from '@savoire/infrastructure-sync'
 
 export interface RemoteEdgesyncBlobStorageOptions {
   vaultId: string

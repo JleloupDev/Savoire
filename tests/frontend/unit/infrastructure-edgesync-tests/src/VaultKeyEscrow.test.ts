@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { VaultKeyEscrow, WrongVaultKeyError, bytesToBase64 } from '@savoire/infrastructure-sync'
+import { VaultKeyEscrow, WrongVaultKeyError, bytesToBase64 } from '@savoire/infrastructure-edgesync'
 import { Keyring, randomBytes } from 'edgesync-protocol'
 
 function mockFetch(handler: (url: string, init?: RequestInit) => { status: number; body?: unknown }) {

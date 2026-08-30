@@ -7,7 +7,7 @@
 // protocol's in-process transport (no relay/WebRTC needed: this channel only
 // depends on ITransport + Keyring).
 import { describe, it, expect } from 'vitest'
-import { EdgesyncAwarenessChannel } from '@savoire/infrastructure-sync'
+import { EdgesyncAwarenessChannel } from '@savoire/infrastructure-edgesync'
 import { Bus, InProcessTransport, Keyring, randomBytes, resourceId } from 'edgesync-protocol'
 
 const rand = () => randomBytes(32)

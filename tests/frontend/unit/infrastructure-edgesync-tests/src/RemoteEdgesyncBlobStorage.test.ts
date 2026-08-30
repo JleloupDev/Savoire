@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { RemoteEdgesyncBlobStorage } from '@savoire/infrastructure-sync'
+import { RemoteEdgesyncBlobStorage } from '@savoire/infrastructure-edgesync'
 
 function mockFetch(body: unknown, status = 200) {
   return vi.fn(async () => ({

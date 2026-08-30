@@ -4,7 +4,7 @@
 // In-memory stand-in for EdgeSyncHub: introduces peers of a vault room and
 // forwards opaque frames, exactly like the server-side blind relay. Shared by
 // the transport contract tests and the EdgesyncVaultSession tests.
-import type { RelayConnection } from '@savoire/infrastructure-sync'
+import type { RelayConnection } from '@savoire/infrastructure-edgesync'
 
 export class FakeRelayServer {
   private readonly conns = new Map<string, FakeServerConnection>()

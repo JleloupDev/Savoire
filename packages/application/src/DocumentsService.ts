@@ -11,7 +11,7 @@ export class DocumentsService implements IDocumentsAPI {
 
   constructor(
     private readonly sync: SyncOrchestrator,
-    private readonly edgesyncFactory: IEdgesyncVaultSessionFactory,
+    private readonly edgesyncFactory?: IEdgesyncVaultSessionFactory,
   ) {}
 
   async activateVault(params: ActivateVaultParams): Promise<ActivatedVault> {
@@ -35,17 +35,16 @@ export class DocumentsService implements IDocumentsAPI {
       params.resolveDoc,
     )
     const hub = await this.sync.attachVaultSync(params.vaultId, client, params.onChanged)
-    const edgesyncVault = await this.edgesyncFactory.open({
+    // Profil EdgeSync uniquement. Sans factory, le répertoire et les documents
+    // sont relayés par le hub Savoire (VaultHubClient) — profil serveur.
+    const edgesyncVault = await this.edgesyncFactory?.open({
       vaultId: params.vaultId,
       identitySeed: params.identitySeed,
       directory: params.directory,
-      isManaged: params.isManaged,
     })
     // The directory's own CRDT observer is the source of truth for "the note
-    // list changed" — local edits AND remote ops applied via the edgesync
-    // Session both go through it. Previously VaultHubClient called onChanged
-    // after applying an incoming op; now that the directory syncs via
-    // EdgesyncVaultSession instead, nothing else fires it for remote changes.
+    // list changed" — local edits AND remote ops both go through it, whichever
+    // profile applied them (hub relay or edgesync Session).
     const unsubDirectoryChange = params.directory.onChange(params.onChanged)
 
     const active: ActiveContext = {
@@ -55,7 +54,7 @@ export class DocumentsService implements IDocumentsAPI {
       edgesyncVault,
       dispose: async () => {
         unsubDirectoryChange()
-        await edgesyncVault.dispose()
+        await edgesyncVault?.dispose()
         await hub.dispose()
       },
     }

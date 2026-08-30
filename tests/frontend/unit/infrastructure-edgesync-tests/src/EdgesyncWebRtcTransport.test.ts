@@ -7,8 +7,8 @@
 // the real FakeRelayServer used elsewhere, proving the signaling messages
 // really do ride the same opaque channel as edgesync frames.
 import { describe, it, expect, beforeEach } from 'vitest'
-import { EdgesyncRelayTransport } from '@savoire/infrastructure-sync'
-import { EdgesyncWebRtcTransport } from '@savoire/infrastructure-sync'
+import { EdgesyncRelayTransport } from '@savoire/infrastructure-edgesync'
+import { EdgesyncWebRtcTransport } from '@savoire/infrastructure-edgesync'
 import { FakeRelayServer } from './fakeRelay'
 
 const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms))

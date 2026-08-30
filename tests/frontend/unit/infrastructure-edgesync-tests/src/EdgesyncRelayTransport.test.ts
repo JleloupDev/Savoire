@@ -7,7 +7,7 @@
 // Sessions over them: if they converge E2E-encrypted, the transport honours
 // everything the protocol needs (introduction, addressed frames, presence).
 import { describe, it, expect } from 'vitest'
-import { EdgesyncRelayTransport, type RelayConnection } from '@savoire/infrastructure-sync'
+import { EdgesyncRelayTransport, type RelayConnection } from '@savoire/infrastructure-edgesync'
 import {
   OwnIdentity, YjsCrdt, PeerStore, Session, Keyring, randomBytes, toBase64, resourceId,
 } from 'edgesync-protocol'

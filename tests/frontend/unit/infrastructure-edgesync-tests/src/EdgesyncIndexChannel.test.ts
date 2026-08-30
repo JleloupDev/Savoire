@@ -7,7 +7,7 @@
 // catching up a late joiner) is proven in EdgesyncVaultSession.test.ts, since
 // that's where two real Y.Docs actually get wired together.
 import { describe, it, expect } from 'vitest'
-import { EdgesyncIndexChannel } from '@savoire/infrastructure-sync'
+import { EdgesyncIndexChannel } from '@savoire/infrastructure-edgesync'
 
 describe('EdgesyncIndexChannel', () => {
   it('set/get/getAll/delete se comportent comme un dictionnaire', () => {

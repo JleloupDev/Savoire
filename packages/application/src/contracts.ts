@@ -12,10 +12,6 @@ export interface AppVaultSummary {
   folderCount: number
   lastModifiedAt: string | null
   sizeBytes: number
-  /** S2, decided once at creation: true if the server holds this vault's
-   *  Keyring directly (ManagedVaultKeyringSource) — no K_User ever needed to
-   *  open it. False = self-managed (S3, VaultKeyEscrow, per-account K_User). */
-  isManaged: boolean
 }
 
 export interface AppDocumentSummary {
@@ -106,9 +102,6 @@ export interface EdgesyncVaultSessionFactoryParams {
   /** 32-byte Ed25519 seed (e.g. an ISeedExportingIdentityProvider's exportSignSeed()). */
   identitySeed: Uint8Array
   directory: IVaultDirectory
-  /** S2 vs S3 — see AppVaultSummary.isManaged. Determines which KeyringSource
-   *  the factory constructs (ManagedVaultKeyringSource vs VaultKeyEscrow). */
-  isManaged: boolean
 }
 
 export interface IEdgesyncVaultSessionFactory {
@@ -117,14 +110,14 @@ export interface IEdgesyncVaultSessionFactory {
 
 export interface IVaultsBackend {
   listVaults(userId: string, token: string): Promise<AppWorkspace>
-  createVault(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary>
+  createVault(userId: string, name: string, token: string): Promise<AppVaultSummary>
   renameVault(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   deleteVault(vaultId: string, token: string): Promise<void>
 }
 
 export interface IVaultsAPI {
   list(userId: string, token: string): Promise<AppWorkspace>
-  create(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary>
+  create(userId: string, name: string, token: string): Promise<AppVaultSummary>
   rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary>
   delete(vaultId: string, token: string): Promise<void>
 }
@@ -147,9 +140,6 @@ export interface ActivateVaultParams {
   onChanged: () => void
   /** 32-byte Ed25519 seed for the vault's shared edgesync Keyring. */
   identitySeed: Uint8Array
-  /** S2 vs S3 — see AppVaultSummary.isManaged. Threaded through to
-   *  IEdgesyncVaultSessionFactory.open(). */
-  isManaged: boolean
 }
 
 export interface ActivateSharedDocParams {

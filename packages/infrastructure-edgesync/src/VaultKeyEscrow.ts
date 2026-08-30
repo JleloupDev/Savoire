@@ -6,7 +6,7 @@
 // K_User (VaultKeyWrapController) — a blind escrow, never usable server-side.
 // K_User itself never appears in any request this class makes.
 import { Keyring, encrypt, decrypt, concat } from 'edgesync-protocol'
-import { bytesToBase64, base64ToBytes } from './base64'
+import { bytesToBase64, base64ToBytes } from '@savoire/infrastructure-sync'
 import type { KeyringSource } from './EdgesyncVaultSession'
 
 const NONCE_BYTES = 24

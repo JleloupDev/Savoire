@@ -106,7 +106,7 @@ describe('DocumentsService', () => {
       storage: makeStorage(),
       documentStore: makeDocumentStore(),
       resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     expect(active.vaultId).toBe('v1')
     expect(active.client).toBeDefined()
@@ -123,7 +123,7 @@ describe('DocumentsService', () => {
       storage: makeStorage(),
       documentStore: makeDocumentStore(),
       resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     expect(svc.getActiveClient()).toBeDefined()
   })
@@ -144,7 +144,7 @@ describe('DocumentsService', () => {
       storage: makeStorage(),
       documentStore: makeDocumentStore(),
       resolveDoc: () => undefined,
-      onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     await svc.disposeActiveVault()
     expect(hub.dispose).toHaveBeenCalledOnce()
@@ -156,7 +156,7 @@ describe('DocumentsService', () => {
     const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())), makeEdgesyncFactory(session))
     await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     expect(svc.getActiveEdgesyncVault()).toBe(session)
     await svc.disposeActiveVault()
@@ -170,7 +170,7 @@ describe('DocumentsService', () => {
     const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(makeHub())), makeEdgesyncFactory())
     await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged, identitySeed, directory, isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged, identitySeed, directory,
     })
 
     expect(directory.onChange).toHaveBeenCalledOnce()
@@ -195,11 +195,11 @@ describe('DocumentsService', () => {
 
     await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     await svc.activateVault({
       vaultId: 'v2', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
 
     expect(hub1.dispose).toHaveBeenCalledOnce()
@@ -212,7 +212,7 @@ describe('DocumentsService', () => {
     const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
     await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     expect(hub.connect).toHaveBeenCalled()
   })
@@ -222,7 +222,7 @@ describe('DocumentsService', () => {
     const svc = new DocumentsService(new SyncOrchestrator(makeHubFactory(hub)), makeEdgesyncFactory())
     const active = await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc: () => undefined, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     await active.dispose()
     expect(hub.dispose).toHaveBeenCalledOnce()
@@ -236,7 +236,7 @@ describe('DocumentsService', () => {
 
     const active = await svc.activateVault({
       vaultId: 'v1', token: 'tok', storage: makeStorage(),
-      documentStore: makeDocumentStore(), resolveDoc, onChanged: vi.fn(), identitySeed, directory: makeDirectory(), isManaged: false,
+      documentStore: makeDocumentStore(), resolveDoc, onChanged: vi.fn(), identitySeed, directory: makeDirectory(),
     })
     expect(active.client).toBeDefined()
   })

@@ -19,7 +19,9 @@ export interface AppRootDeps {
   sharingBackend: ISharingBackend
   backend: IVaultsBackend
   hubFactory: IVaultHubFactory
-  edgesyncVaultSessionFactory: IEdgesyncVaultSessionFactory
+  /** Absent = profil serveur Savoire (le hub relaie le répertoire et les
+   *  documents). Présent = profil EdgeSync (P2P, E2E). Voir DocumentsService. */
+  edgesyncVaultSessionFactory?: IEdgesyncVaultSessionFactory
   documentStore: DocumentStore
   identityProvider?: IIdentityProvider
 }

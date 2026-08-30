@@ -9,8 +9,8 @@ export class VaultsService implements IVaultsAPI {
     return this.backend.listVaults(userId, token)
   }
 
-  create(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary> {
-    return this.backend.createVault(userId, name, token, isManaged)
+  create(userId: string, name: string, token: string): Promise<AppVaultSummary> {
+    return this.backend.createVault(userId, name, token)
   }
 
   rename(vaultId: string, name: string, token: string): Promise<AppVaultSummary> {

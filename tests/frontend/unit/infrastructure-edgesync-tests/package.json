@@ -1,0 +1,25 @@
+{
+  "name": "@savoire/infrastructure-edgesync-tests",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/infrastructure-sync": "workspace:*",
+    "@savoire/domain-sync": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
+    "@savoire/platform": "workspace:*",
+    "@microsoft/signalr": "^8.0.17",
+    "@noble/ed25519": "^3.1.0",
+    "edgesync-protocol": "workspace:*",
+    "yjs": "^13.6.0",
+    "@savoire/infrastructure-edgesync": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

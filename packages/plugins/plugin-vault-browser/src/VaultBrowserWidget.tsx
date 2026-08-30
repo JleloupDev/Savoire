@@ -27,7 +27,7 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   vaults: React.MutableRefObject<TVault[]>
   selectedVaultId: React.MutableRefObject<string | null>
   onSelectVault: React.MutableRefObject<(vault: TVault) => void>
-  onCreateVault: React.MutableRefObject<(name: string, isManaged: boolean) => Promise<void>>
+  onCreateVault: React.MutableRefObject<(name: string) => Promise<void>>
   onRenameVault: React.MutableRefObject<(vault: TVault, name: string) => Promise<void>>
   onDeleteVault: React.MutableRefObject<(vault: TVault) => Promise<void>>
   onRefresh?: React.MutableRefObject<() => void>
@@ -132,7 +132,6 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
-  const [managed, setManaged] = useState(false)
   const [sharedNotes, setSharedNotes] = useState<SharedNoteLike[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -161,8 +160,8 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
     const n = newName.trim()
     if (!n) return
     try {
-      await refs.onCreateVault.current(n, managed)
-      setCreating(false); setNewName(''); setManaged(false)
+      await refs.onCreateVault.current(n)
+      setCreating(false); setNewName('')
       sync()
     } catch {}
   }
@@ -258,17 +257,13 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
               ref={inputRef}
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); setManaged(false) } }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName('') } }}
               placeholder="Nom du vault"
               style={S.inp}
             />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-faint)', padding: '2px 4px', cursor: 'pointer' }}>
-              <input type="checkbox" checked={managed} onChange={e => setManaged(e.target.checked)} />
-              Géré par le serveur
-            </label>
             <div style={{ display: 'flex', gap: 4 }}>
               <button onClick={() => void handleCreate()} disabled={!newName.trim()} style={S.btn('var(--color-success, #4caf50)')}>OK</button>
-              <button onClick={() => { setCreating(false); setNewName(''); setManaged(false) }} style={S.btn('var(--color-danger, #f66)')}>Ann.</button>
+              <button onClick={() => { setCreating(false); setNewName('') }} style={S.btn('var(--color-danger, #f66)')}>Ann.</button>
             </div>
           </>
         ) : (

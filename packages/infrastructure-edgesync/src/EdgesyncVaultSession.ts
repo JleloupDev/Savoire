@@ -53,8 +53,8 @@ import {
 import { EdgesyncWebRtcTransport } from './EdgesyncWebRtcTransport'
 import { EdgesyncAwarenessChannel, AWARENESS_TAG } from './EdgesyncAwarenessChannel'
 import { EdgesyncIndexChannel } from './EdgesyncIndexChannel'
-import type { YMapVaultDirectory } from './YMapVaultDirectory'
-import { bytesToBase64 } from './base64'
+import type { YMapVaultDirectory } from '@savoire/infrastructure-sync'
+import { bytesToBase64 } from '@savoire/infrastructure-sync'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain — Y.Doc's declared type is missing the Observable mixin's

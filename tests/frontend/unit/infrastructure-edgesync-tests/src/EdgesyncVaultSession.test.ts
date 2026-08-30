@@ -13,7 +13,7 @@ import * as Y from 'yjs'
 import {
   EdgesyncVaultSession, EdgesyncRelayTransport, EdgesyncWebRtcTransport, YMapVaultDirectory,
   WrongVaultKeyError, type KeyringSource,
-} from '@savoire/infrastructure-sync'
+} from '@savoire/infrastructure-edgesync'
 import { randomBytes, InMemoryStorage, Keyring } from 'edgesync-protocol'
 import { FakeRelayServer } from './fakeRelay'
 

@@ -24,11 +24,11 @@ export class HttpVaultsBackend implements IVaultsBackend {
     )
   }
 
-  createVault(userId: string, name: string, token: string, isManaged: boolean): Promise<AppVaultSummary> {
+  createVault(userId: string, name: string, token: string): Promise<AppVaultSummary> {
     return this.requestJson<AppVaultSummary>(
       `/api/v1/users/${encodeURIComponent(userId)}/vaults`,
       token,
-      { method: 'POST', body: JSON.stringify({ name, isManaged }) },
+      { method: 'POST', body: JSON.stringify({ name }) },
     )
   }
 

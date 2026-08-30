@@ -15,11 +15,11 @@ function makeBackend(): IVaultsBackend {
     listVaults: vi.fn(async () => []),
     createVault: vi.fn(async () => ({
       id: 'v1', name: 'Main', role: 'owner',
-      documentCount: 0, folderCount: 0, lastModifiedAt: null, sizeBytes: 0, isManaged: false,
+      documentCount: 0, folderCount: 0, lastModifiedAt: null, sizeBytes: 0,
     })),
     renameVault: vi.fn(async () => ({
       id: 'v1', name: 'Renamed', role: 'owner',
-      documentCount: 0, folderCount: 0, lastModifiedAt: null, sizeBytes: 0, isManaged: false,
+      documentCount: 0, folderCount: 0, lastModifiedAt: null, sizeBytes: 0,
     })),
     deleteVault: vi.fn(async () => {}),
     listDocuments: vi.fn(async () => []),
@@ -90,9 +90,9 @@ describe('AppRoot (integration)', () => {
   it('api.vaults.create delegates to backend', async () => {
     const backend = makeBackend()
     const root = new AppRoot({ backend, hubFactory: makeHubFactory(), documentStore: makeDocumentStore(), edgesyncVaultSessionFactory: makeEdgesyncVaultSessionFactory() })
-    const result = await root.api.vaults.create('user1', 'New Vault', 'tok', false)
+    const result = await root.api.vaults.create('user1', 'New Vault', 'tok')
     expect(result.name).toBe('Main') // returns backend stub value
-    expect(backend.createVault).toHaveBeenCalledWith('user1', 'New Vault', 'tok', false)
+    expect(backend.createVault).toHaveBeenCalledWith('user1', 'New Vault', 'tok')
   })
 
   it('api.vaults.rename delegates to backend', async () => {
