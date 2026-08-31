@@ -861,8 +861,9 @@ export function AppShell() {
             </button>
           )}
 
-          {/* Renew vault key — preamble to revocation, see handleRenewVaultKey */}
-          {selectedVault && (
+          {/* Rotation de cle : propre aux protocoles a cles (EdgeSync), absente
+              du profil serveur Savoire — voir isKeyManagedSession. */}
+          {selectedVault && vaultSessionRef.current && isKeyManagedSession(vaultSessionRef.current) && (
             <button onClick={() => void handleRenewVaultKey()} title="Renouveler la clé du vault (rotation d'epoch, propagée aux pairs connectés)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -872,8 +873,8 @@ export function AppShell() {
             </button>
           )}
 
-          {/* Debug: show the vault's/active document's decrypted key — see VaultKeyDebugPanel */}
-          {selectedVault && vaultSessionRef.current && (
+          {/* Debug des cles : idem, profil a cles uniquement. */}
+          {selectedVault && vaultSessionRef.current && isKeyManagedSession(vaultSessionRef.current) && (
             <button onClick={() => setKeyDebugOpen(true)} title="Afficher les clés en clair (debug)" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
