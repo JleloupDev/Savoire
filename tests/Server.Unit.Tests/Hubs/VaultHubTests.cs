@@ -40,7 +40,7 @@ public class VaultHubTests
         var identity = new ClaimsIdentity([new Claim("sub", UserId)], "Bearer");
         context.User.Returns(new ClaimsPrincipal(identity));
 
-        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>())
+        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>(), new DocumentLockRegistry())
         {
             Clients = _clients,
             Groups  = _groups,

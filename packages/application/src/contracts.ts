@@ -73,6 +73,13 @@ export interface IVaultSyncSession {
    * pour les documents, et ne stocke aucun etat d'index interpretable.
    */
   openIndex(namespace: string): IIndexChannel
+  /**
+   * Verrous d'edition, pour les types de documents qui ne sont pas des CRDT.
+   * Absent d'un profil qui n'a pas d'arbitre : sans arbitrage central, deux
+   * pairs ne peuvent pas trancher qui detient le verrou, et pretendre le
+   * contraire serait pire que ne rien offrir.
+   */
+  readonly locks?: IDocumentLocks
   dispose(): Promise<void>
 }
 
@@ -96,6 +103,28 @@ export function isKeyManagedSession(
   session: IVaultSyncSession,
 ): session is IVaultSyncSession & IKeyManagedVaultSession {
   return typeof (session as Partial<IKeyManagedVaultSession>).renewVaultKey === 'function'
+}
+
+/** Detenteur courant d'un verrou d'edition. */
+export interface DocumentLockState {
+  holderUserId: string
+  holderDisplayName: string
+  /** true = c'est nous. L'editeur reste alors modifiable. */
+  isHeldByCaller: boolean
+}
+
+export interface IDocumentLocks {
+  /** Prend le verrou s'il est libre. Rend le detenteur EFFECTIF, qui peut etre un autre. */
+  acquire(docId: string): Promise<DocumentLockState | null>
+  /** Etat courant, sans rien prendre. */
+  get(docId: string): Promise<DocumentLockState | null>
+  release(docId: string): Promise<void>
+  /** Demande la main au detenteur. Il decide : on ne prend pas d'autorite. */
+  request(docId: string): Promise<void>
+  /** Le verrou d'un document a change de main (ou a ete libere). */
+  onChanged(cb: (docId: string, holder: DocumentLockState | null) => void): () => void
+  /** Quelqu'un demande la main sur un document que NOUS detenons. */
+  onRequested(cb: (docId: string, requesterName: string) => void): () => void
 }
 
 export interface VaultSyncSessionFactoryParams {

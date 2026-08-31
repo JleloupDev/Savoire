@@ -62,6 +62,7 @@ export class DocumentView {
         path: this.options.path,
         userId: this.options.userId,
         vault: this.options.vault,
+        readOnly: this.options.readOnly,
         onContentStabilized: spec.contentExtractor
           ? (rawContent: string) => {
               const shadow = spec.contentExtractor!.toShadowDocument(rawContent)
@@ -104,6 +105,19 @@ export class DocumentView {
     this.pluginFileView = null
     this.editorController?.destroy()
     this.editorController = null
+  }
+
+  /**
+   * Bascule la vue en lecture seule sans la remonter. Rend false si la vue
+   * ouverte ne sait pas le faire — l'appelant doit alors remonter.
+   */
+  setReadOnly(readOnly: boolean): boolean {
+    this.options.readOnly = readOnly
+    if (this.pluginFileView?.setReadOnly) {
+      this.pluginFileView.setReadOnly(readOnly)
+      return true
+    }
+    return false
   }
 
   get controller(): EditorController | null {

@@ -10,7 +10,7 @@
 // protocole se fait en changeant de fabrique de session, sans toucher l'app.
 import type { ICRDT, IIdentityProvider } from '@savoire/plugin-api'
 import type { IVaultDirectory } from '@savoire/platform'
-import type { IVaultSyncSession, VaultSyncSessionFactoryParams } from '@savoire/application'
+import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { YMapIndexChannel } from './YMapIndexChannel'
 import { CollabOrchestrator } from '@savoire/application'
@@ -90,6 +90,18 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     open.orchestrator.dispose()
     void open.transport.disconnect()
     open.crdt.dispose()
+  }
+
+  /** Arbitrage des verrous : delegue au hub, seul point central du profil. */
+  get locks(): IDocumentLocks {
+    return {
+      acquire: (docId) => this.hub.acquireLock(docId),
+      get: (docId) => this.hub.getLock(docId),
+      release: (docId) => this.hub.releaseLock(docId),
+      request: (docId) => this.hub.requestLock(docId),
+      onChanged: (cb) => this.hub.onLockChanged(cb),
+      onRequested: (cb) => this.hub.onLockRequested(cb),
+    }
   }
 
   openIndex(namespace: string): IIndexChannel {

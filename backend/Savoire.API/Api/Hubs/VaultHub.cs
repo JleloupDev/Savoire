@@ -11,13 +11,15 @@ using Savoire.Application.Sync.JoinVault;
 using Savoire.Application.Sync.PushVaultOperation;
 using Savoire.Application.Sync.SnapshotVault;
 using Savoire.Application.Sync.IndexChannel;
+using Savoire.Application.Common;
 
 namespace Savoire.Server.Hubs;
 
 [Authorize]
 public sealed class VaultHub(
-    IMediator         mediator,
-    ILogger<VaultHub> logger) : Hub
+    IMediator             mediator,
+    ILogger<VaultHub>     logger,
+    DocumentLockRegistry  locks) : Hub
 {
     // ── Vault CRDT sync ───────────────────────────────────────────────────────
 
@@ -98,12 +100,82 @@ public sealed class VaultHub(
 
     private static string IndexGroup(string vaultId, string ns) => $"idx:{vaultId}:{ns}";
 
+    // ── Verrous d'edition ─────────────────────────────────────────────────────
+    //
+    // Pour les types de documents qui ne sont pas des CRDT (mindmap, excalidraw
+    // aujourd'hui), la synchronisation se fait par snapshots en
+    // dernier-ecrivain-gagne : a deux, l'un ecrase l'autre en silence. Un seul
+    // redacteur a la fois, donc, et les autres en lecture seule.
+    //
+    // L'arbitrage est central parce qu'il ne peut pas etre autrement : deux
+    // clients qui demandent le verrou au meme instant ne peuvent pas trancher
+    // entre eux. TryAcquire est atomique.
+
+    /// <summary>Prend le verrou s'il est libre. Rend le detenteur effectif.</summary>
+    public async Task<DocumentLockDto> AcquireLock(string vaultId, string docId)
+    {
+        var candidate = new LockHolder(GetCallerId(), GetCallerName(), Context.ConnectionId);
+        LockHolder holder = locks.TryAcquire(vaultId, docId, candidate);
+        bool acquired = holder.ConnectionId == Context.ConnectionId;
+
+        if (acquired)
+        {
+            await Clients.OthersInGroup(vaultId)
+                .SendAsync("LockChanged", vaultId, docId, holder.UserId, holder.DisplayName);
+            logger.LogInformation("Lock {VaultId}/{DocId} pris par {User}", vaultId, docId, holder.DisplayName);
+        }
+
+        return new DocumentLockDto(holder.UserId, holder.DisplayName, acquired);
+    }
+
+    /// <summary>Rend l'etat courant du verrou, sans le prendre.</summary>
+    public Task<DocumentLockDto?> GetLock(string vaultId, string docId)
+    {
+        LockHolder? holder = locks.Get(vaultId, docId);
+        return Task.FromResult(holder is null
+            ? null
+            : new DocumentLockDto(holder.UserId, holder.DisplayName, holder.ConnectionId == Context.ConnectionId));
+    }
+
+    public async Task ReleaseLock(string vaultId, string docId)
+    {
+        if (!locks.Release(vaultId, docId, Context.ConnectionId)) return;
+        await Clients.Group(vaultId).SendAsync("LockChanged", vaultId, docId, null, null);
+        logger.LogInformation("Lock {VaultId}/{DocId} libere", vaultId, docId);
+    }
+
+    /// <summary>
+    /// Demande la main au detenteur courant. On ne la prend pas d'autorite :
+    /// le detenteur est peut-etre en train d'ecrire. Il recoit la demande et
+    /// decide.
+    /// </summary>
+    public async Task RequestLock(string vaultId, string docId)
+    {
+        LockHolder? holder = locks.Get(vaultId, docId);
+        if (holder is null) return;
+        await Clients.Client(holder.ConnectionId)
+            .SendAsync("LockRequested", vaultId, docId, GetCallerId(), GetCallerName());
+    }
+
+    private string GetCallerName()
+        => Context.User?.FindFirstValue("display_name")
+        ?? Context.User?.FindFirstValue("email")
+        ?? "Quelqu'un";
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    public override Task OnDisconnectedAsync(Exception? exception)
+    public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        // Sans cela, fermer un onglet laisserait le document verrouille pour
+        // tout le monde, sans detenteur joignable.
+        foreach (string key in locks.ReleaseAllFor(Context.ConnectionId))
+        {
+            string[] parts = key.Split('/', 2);
+            if (parts.Length != 2) continue;
+            await Clients.Group(parts[0]).SendAsync("LockChanged", parts[0], parts[1], null, null);
+        }
         logger.LogInformation("Client disconnected from VaultHub: {ConnectionId}", Context.ConnectionId);
-        return base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(exception);
     }
 
     private string GetCallerId() =>

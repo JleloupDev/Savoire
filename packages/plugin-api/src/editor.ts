@@ -22,6 +22,10 @@ export interface ToolbarCommand {
   group?: string              // 'format' | 'insert' | 'action'
   requiresSelection?: boolean
   hotkeys?: Array<{ modifiers: string[]; key: string }>
+  /** Sous-commandes affichees dans un menu deroulant. Quand il est present,
+   *  `run` sert de defaut (clic sur le bouton lui-meme). Permet a un plugin
+   *  d'offrir un menu sans que la barre ne s'allonge indefiniment. */
+  items?: ToolbarCommand[]
   run(ctx: EditorCommandContext): void
   isActive?(ctx: EditorCommandContext): boolean
   isEnabled?(ctx: EditorCommandContext): boolean

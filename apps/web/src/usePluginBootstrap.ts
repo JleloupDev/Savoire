@@ -217,6 +217,9 @@ export function usePluginBootstrap({
         extension: 'md',
         label: 'Note Markdown',
         icon: '📝',
+        // Le texte des notes EST un CRDT (Y.Text) : edition simultanee, aucune
+        // perte. C'est le seul type qui peut l'affirmer aujourd'hui.
+        collaborationMode: 'crdt',
         creatable: true,
         create: async () => '',
         // No open() — EditorCore handles .md files directly via DocumentView.

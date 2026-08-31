@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Toolbar — Markdown toolbar, mounted above the CodeMirror editor.
 
+import { useState } from 'react'
 import { useEditorContext } from './EditorContext'
 import type { ToolbarCommand } from '@savoire/plugin-api'
 
@@ -53,12 +54,60 @@ function btnStyle(active = false): React.CSSProperties {
 
 function Btn({ cmd }: { cmd: ToolbarCommand }) {
   const ctrl = useEditorContext()
+  const [open, setOpen] = useState(false)
+
+  function exec(target: ToolbarCommand) {
+    const core = ctrl as unknown as { view?: unknown } | null
+    target.run({ view: core?.view } as never)
+  }
 
   function handleMouseDown(e: React.MouseEvent) {
     // Empeche l'editeur de perdre le focus.
     e.preventDefault()
-    const core = ctrl as unknown as { view?: unknown } | null
-    cmd.run({ view: core?.view } as never)
+    if (cmd.items?.length) { setOpen(o => !o); return }
+    exec(cmd)
+  }
+
+  if (cmd.items?.length) {
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+          title={cmd.label}
+          data-testid="toolbar-command"
+          data-command-id={cmd.id}
+          onMouseDown={handleMouseDown}
+          style={btnStyle(open)}
+        >
+          {cmd.icon}
+        </button>
+        {open && (
+          <span
+            style={{
+              position: 'absolute', top: '100%', left: 0, zIndex: 40, minWidth: 150,
+              display: 'flex', flexDirection: 'column', padding: 4, gap: 1,
+              background: 'var(--bg-elevated, #273147)',
+              border: '1px solid var(--border, #2f3745)',
+              borderRadius: 6, boxShadow: 'var(--shadow, 0 6px 20px rgba(0,0,0,0.35))',
+            }}
+            onMouseDown={e => e.preventDefault()}
+          >
+            {cmd.items.map(sub => (
+              <button
+                key={sub.id}
+                data-testid="toolbar-command"
+                data-command-id={sub.id}
+                title={sub.label}
+                onMouseDown={() => { exec(sub); setOpen(false) }}
+                style={{ ...btnStyle(), justifyContent: 'flex-start', gap: 8, width: '100%', height: 24 }}
+              >
+                <span style={{ minWidth: 22, opacity: 0.75 }}>{sub.icon}</span>
+                <span style={{ fontWeight: 500 }}>{sub.label}</span>
+              </button>
+            ))}
+          </span>
+        )}
+      </span>
+    )
   }
 
   return (

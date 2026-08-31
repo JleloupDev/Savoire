@@ -7,6 +7,7 @@ import {
   LogLevel,
 } from '@microsoft/signalr'
 import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
+import type { DocumentLockState } from '@savoire/application'
 
 const VAULT_COMPACT_THRESHOLD = 100
 
@@ -34,6 +35,8 @@ export class VaultHubClient {
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
   private indexCallbacks = new Map<string, ((update: Uint8Array) => void)[]>()
+  private lockChangedCallbacks: ((docId: string, holder: DocumentLockState | null) => void)[] = []
+  private lockRequestedCallbacks: ((docId: string, requesterName: string) => void)[] = []
   private unsubLocalVaultUpdate: (() => void) | null = null
 
   constructor(
@@ -86,6 +89,17 @@ export class VaultHubClient {
         if (!cbs) return
         const update = fromBase64(updateBase64)
         for (const cb of cbs) cb(update)
+      })
+
+      // ── Verrous d'edition ─────────────────────────────────────────────────
+      this.connection.on('LockChanged', (_v: string, docId: string, userId: string | null, name: string | null) => {
+        const holder = userId
+          ? { holderUserId: userId, holderDisplayName: name ?? userId, isHeldByCaller: false }
+          : null
+        for (const cb of this.lockChangedCallbacks) cb(docId, holder)
+      })
+      this.connection.on('LockRequested', (_v: string, docId: string, _u: string, name: string) => {
+        for (const cb of this.lockRequestedCallbacks) cb(docId, name)
       })
 
       // ── Reconnection: rejoin to get fresh vault CRDT state ────────────────
@@ -170,6 +184,47 @@ export class VaultHubClient {
       if (!cur) return
       this.indexCallbacks.set(namespace, cur.filter(x => x !== cb))
     }
+  }
+
+  // ── Verrous d'edition ─────────────────────────────────────────────────────
+
+  async acquireLock(docId: string): Promise<DocumentLockState | null> {
+    try {
+      const connection = await this._ensureConnected()
+      return await connection.invoke<DocumentLockState | null>('AcquireLock', this.vaultId, docId)
+    } catch (err) {
+      console.warn('[VaultHub] acquireLock failed', err)
+      return null
+    }
+  }
+
+  async getLock(docId: string): Promise<DocumentLockState | null> {
+    try {
+      const connection = await this._ensureConnected()
+      return await connection.invoke<DocumentLockState | null>('GetLock', this.vaultId, docId)
+    } catch { return null }
+  }
+
+  async releaseLock(docId: string): Promise<void> {
+    if (!this.isConnected) return
+    try { await this.connection!.invoke('ReleaseLock', this.vaultId, docId) }
+    catch (err) { console.warn('[VaultHub] releaseLock failed', err) }
+  }
+
+  async requestLock(docId: string): Promise<void> {
+    if (!this.isConnected) return
+    try { await this.connection!.invoke('RequestLock', this.vaultId, docId) }
+    catch (err) { console.warn('[VaultHub] requestLock failed', err) }
+  }
+
+  onLockChanged(cb: (docId: string, holder: DocumentLockState | null) => void): () => void {
+    this.lockChangedCallbacks.push(cb)
+    return () => { this.lockChangedCallbacks = this.lockChangedCallbacks.filter(x => x !== cb) }
+  }
+
+  onLockRequested(cb: (docId: string, requesterName: string) => void): () => void {
+    this.lockRequestedCallbacks.push(cb)
+    return () => { this.lockRequestedCallbacks = this.lockRequestedCallbacks.filter(x => x !== cb) }
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

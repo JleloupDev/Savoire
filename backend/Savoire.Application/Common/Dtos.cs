@@ -185,3 +185,6 @@ public record ViewAccessDto(
     DateTime ExpiresAt,
     string? UserId = null
 );
+
+/// <summary>Etat d'un verrou d'edition. IsHeldByCaller distingue « c'est moi » de « c'est un autre ».</summary>
+public record DocumentLockDto(string HolderUserId, string HolderDisplayName, bool IsHeldByCaller);

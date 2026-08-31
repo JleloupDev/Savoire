@@ -458,10 +458,21 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     // Les groupes sont rendus separes par une barre verticale, dans cet ordre.
     const F = (f: import('./types').MarkdownFormat) => () => this.toggleFormat(f)
     const toolbarCmds: ToolbarCommand[] = [
-      { id: 'tb-paragraph', label: 'Texte normal',   icon: '¶',   group: 'bloc',   run: F('paragraph') },
-      { id: 'tb-h1',        label: 'Titre 1',        icon: 'H1',  group: 'bloc',   run: F('h1') },
-      { id: 'tb-h2',        label: 'Titre 2',        icon: 'H2',  group: 'bloc',   run: F('h2') },
-      { id: 'tb-h3',        label: 'Titre 3',        icon: 'H3',  group: 'bloc',   run: F('h3') },
+      // Menu deroulant : les six niveaux de titre existent dans
+      // FormattingService, les etaler en boutons rendait la barre illisible.
+      {
+        id: 'tb-heading', label: 'Style de bloc', icon: 'H▾', group: 'bloc',
+        run: F('paragraph'),
+        items: [
+          { id: 'tb-paragraph', label: 'Texte normal', icon: '¶',  run: F('paragraph') },
+          { id: 'tb-h1', label: 'Titre 1', icon: 'H1', run: F('h1') },
+          { id: 'tb-h2', label: 'Titre 2', icon: 'H2', run: F('h2') },
+          { id: 'tb-h3', label: 'Titre 3', icon: 'H3', run: F('h3') },
+          { id: 'tb-h4', label: 'Titre 4', icon: 'H4', run: F('h4') },
+          { id: 'tb-h5', label: 'Titre 5', icon: 'H5', run: F('h5') },
+          { id: 'tb-h6', label: 'Titre 6', icon: 'H6', run: F('h6') },
+        ],
+      },
 
       { id: 'tb-bold',      label: 'Gras',           icon: 'B',   group: 'format', requiresSelection: false, run: F('bold') },
       { id: 'tb-italic',    label: 'Italique',       icon: 'I',   group: 'format', requiresSelection: false, run: F('italic') },

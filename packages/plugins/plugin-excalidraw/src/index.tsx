@@ -4,7 +4,7 @@
 //
 // see ADR-023
 
-import React from 'react'
+import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
 import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom } from '@savoire/plugin-api'
@@ -51,6 +51,10 @@ function createExcalidrawView(
   let pendingFiles: BinaryFiles | null = null
 
   let generation = 0
+  // Excalidraw ignorait purement et simplement ctx.readOnly : un document
+  // ouvert en lecture seule restait modifiable.
+  let readOnly = !!ctx.readOnly
+  let setViewMode: ((v: boolean) => void) | null = null
 
   function scheduleSave(elements: Elements, state: AppState, files: BinaryFiles) {
     if (isApplyingRemote) return
@@ -94,11 +98,14 @@ function createExcalidrawView(
   }
 
   function ExcalidrawEditor({ initialData }: { initialData: unknown }) {
+    const [view, setView] = useState(readOnly)
+    setViewMode = setView
     return (
-      <div style={{ height: '100%', width: '100%' }}>
+      <div style={{ height: '100%', width: '100%' }} data-testid="excalidraw-view" data-readonly={view ? 'true' : 'false'}>
         <Excalidraw
           initialData={initialData as ExcalidrawInitialDataState}
           onChange={scheduleSave}
+          viewModeEnabled={view}
           theme="dark"
           excalidrawAPI={(api: ExcalidrawImperativeAPI) => {
             excalidrawAPI = api as ExcalidrawAPIRef
@@ -168,6 +175,11 @@ function createExcalidrawView(
       })()
     },
 
+    setReadOnly(next: boolean) {
+      readOnly = next
+      setViewMode?.(next)
+    },
+
     destroy() {
       // Invalider tout async en cours : le prochain mount() incrémentera generation.
       // Ne pas incrémenter ici — destroy() seul (sans mount() après) doit juste nettoyer.
@@ -199,6 +211,10 @@ const plugin: VaultPlugin = {
       extension: 'excalidraw',
       label: 'Dessin Excalidraw',
       icon: '✏️',
+      // Synchronise par snapshots JSON en dernier-ecrivain-gagne : a deux, un
+      // dessin ecrase l'autre en entier. Verrou obligatoire tant que l'etat
+      // n'est pas un CRDT (voir y-excalidraw, ecarte pour l'instant).
+      collaborationMode: 'lock',
 
       create: async () => JSON.stringify(EMPTY_SCENE, null, 2),
 

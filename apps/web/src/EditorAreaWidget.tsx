@@ -5,7 +5,7 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import type { IVaultSyncSession } from '@savoire/application'
+import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
@@ -98,12 +98,62 @@ function DocumentPanelHost({
   const unsubPluginLoadedRef = useRef<(() => void) | null>(null)
   const [modeTick, setModeTick] = useState(0)
   const [controller, setController] = useState<EditorController | null>(null)
+  // Verrou d'edition : null = libre ou type CRDT (aucun verrou en jeu).
+  const [lock, setLock] = useState<DocumentLockState | null>(null)
+  const [lockRequest, setLockRequest] = useState<string | null>(null)
 
   useEffect(() => {
     const onModeChanged = () => setModeTick(t => t + 1)
     window.addEventListener('markdown-editor-mode-changed', onModeChanged)
     return () => window.removeEventListener('markdown-editor-mode-changed', onModeChanged)
   }, [])
+
+  // ── Verrou d'edition ──────────────────────────────────────────────────────
+  //
+  // Un type dont l'etat n'est pas un CRDT se synchronise par snapshots en
+  // dernier-ecrivain-gagne : a deux, l'un ecrase l'autre en silence. On prend
+  // donc le verrou a l'ouverture, et on le rend a la fermeture. Si un autre le
+  // detient, l'editeur s'ouvre en lecture seule.
+  //
+  // Defaut prudent : un type qui ne declare rien est traite comme 'lock'.
+  const ext = doc.path.split('.').pop()?.toLowerCase() ?? ''
+  const collabMode = refs.fileTypeRegistry.current?.resolve(ext)?.collaborationMode ?? 'lock'
+  const needsLock = collabMode === 'lock'
+  const lockedByOther = !!lock && !lock.isHeldByCaller
+
+  // Le changement de verrou bascule la vue a chaud quand elle sait le faire
+  // (Excalidraw). Sinon seulement on la remonte : remonter systematiquement
+  // faisait courir le demontage de la racine React du plugin contre son
+  // remontage, d'ou un « removeChild » intempestif.
+  const [remountKey, setRemountKey] = useState(0)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    if (!view.setReadOnly(refs.isReadOnly.current || lockedByOther)) {
+      setRemountKey(k => k + 1)
+    }
+  }, [lockedByOther, refs])
+
+  useEffect(() => {
+    const locks = refs.vaultSession.current?.locks
+    if (!needsLock || !locks) { setLock(null); return }
+
+    let cancelled = false
+    void locks.acquire(doc.id).then(state => { if (!cancelled) setLock(state) })
+
+    const unsubChanged = locks.onChanged((docId, holder) => {
+      if (docId === doc.id) setLock(holder)
+    })
+    const unsubRequested = locks.onRequested((docId, who) => {
+      if (docId === doc.id) setLockRequest(who)
+    })
+
+    return () => {
+      cancelled = true
+      unsubChanged(); unsubRequested()
+      void locks.release(doc.id)
+    }
+  }, [doc.id, needsLock, refs])
 
   useEffect(() => {
     const container = containerRef.current
@@ -140,7 +190,7 @@ function DocumentPanelHost({
       crdt,
       getTransportState: () => session?.getState() ?? 'disconnected',
       editorMode: refs.markdownEditorMode.current,
-      readOnly: refs.isReadOnly.current,
+      readOnly: refs.isReadOnly.current || lockedByOther,
       createPluginLoader: refs.createPluginLoader,
       onFileContentStabilized: (docId, path, shadowMarkdown) => {
         void refs.contentIndexingService.current?.indexNow(docId, path, shadowMarkdown)
@@ -173,7 +223,7 @@ function DocumentPanelHost({
       setController(null)
       refs.onControllerReady.current(null)
     }
-  }, [doc.id, doc.path, refs, userId, vaultId, modeTick])
+  }, [doc.id, doc.path, refs, userId, vaultId, modeTick, remountKey])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     const vault = refs.vaultAPI.current
@@ -217,7 +267,58 @@ function DocumentPanelHost({
         onDragOver={e => e.preventDefault()}
         onDrop={e => void handleDrop(e)}
       >
-        {showRichChrome && <Toolbar />}
+        {lockedByOther && (
+          <div
+            data-testid="lock-banner"
+            data-lock-holder={lock?.holderDisplayName}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+              padding: '6px 12px', fontSize: 12,
+              background: 'color-mix(in srgb, var(--color-warn, #d19a2f) 12%, var(--bg-surface))',
+              borderBottom: '1px solid var(--border)', color: 'var(--text)',
+            }}
+          >
+            <span>🔒 <strong>{lock?.holderDisplayName}</strong> a la main sur ce document. Vous le voyez en lecture seule.</span>
+            <button
+              data-testid="lock-request"
+              onClick={() => void refs.vaultSession.current?.locks?.request(doc.id)}
+              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11.5, cursor: 'pointer' }}
+            >
+              Demander la main
+            </button>
+          </div>
+        )}
+        {lockRequest && (
+          <div
+            data-testid="lock-request-banner"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+              padding: '6px 12px', fontSize: 12,
+              background: 'color-mix(in srgb, var(--accent) 12%, var(--bg-surface))',
+              borderBottom: '1px solid var(--border)', color: 'var(--text)',
+            }}
+          >
+            <span><strong>{lockRequest}</strong> demande la main sur ce document.</span>
+            <button
+              data-testid="lock-handover"
+              onClick={() => {
+                // On rend la main : le verrou se libere, le demandeur le prendra.
+                void refs.vaultSession.current?.locks?.release(doc.id)
+                setLockRequest(null)
+              }}
+              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--accent)', color: 'var(--accent-text)', fontSize: 11.5, cursor: 'pointer' }}
+            >
+              Céder la main
+            </button>
+            <button
+              onClick={() => setLockRequest(null)}
+              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11.5, cursor: 'pointer' }}
+            >
+              Plus tard
+            </button>
+          </div>
+        )}
+        {showRichChrome && !lockedByOther && <Toolbar />}
         <div
           data-testid="editor-panel"
           data-doc-id={doc.id}

@@ -11,6 +11,8 @@ export interface FileContext {
   userId?: string
   /** VaultAPI injected so the plugin can read/write without depending on an internal import. */
   vault?: VaultAPI
+  /** Vue ouverte en lecture seule (ACL, ou verrou detenu par quelqu'un d'autre). */
+  readOnly?: boolean
   /**
    * Called by the FileView when its content is stabilized (after internal debounce).
    * The app layer converts the raw content via contentExtractor.toShadowDocument()
@@ -21,13 +23,43 @@ export interface FileContext {
 
 export interface FileView {
   mount(container: HTMLElement): void
+  /**
+   * Bascule la vue en lecture seule, ou l'en sort. Appele quand le verrou
+   * d'edition change de main.
+   *
+   * L'alternative — remonter la vue — fait courir une course entre le
+   * demontage de la racine React du plugin et le remontage : c'est exactement
+   * ce qui produisait un « removeChild: node is not a child of this node ».
+   * Une vue qui l'implemente n'est jamais remontee pour un simple changement
+   * de verrou.
+   */
+  setReadOnly?(readOnly: boolean): void
   destroy(): void
 }
+
+/**
+ * Comment ce type de document se comporte a plusieurs.
+ *
+ *  'crdt' — edition simultanee. Les modifications convergent, personne ne perd
+ *           son travail. Reserve aux types dont l'etat EST un CRDT.
+ *
+ *  'lock' — un seul redacteur a la fois. Les autres voient le document en
+ *           lecture seule et peuvent demander la main. C'est le mode a
+ *           declarer des que la synchronisation se fait par snapshots en
+ *           dernier-ecrivain-gagne : sans verrou, deux personnes qui editent
+ *           en meme temps s'ecrasent mutuellement, en silence.
+ *
+ * Defaut : 'lock'. Un type qui ne se prononce pas n'est pas un CRDT, et
+ * l'hypothese prudente est celle qui ne perd pas de donnees.
+ */
+export type CollaborationMode = 'crdt' | 'lock'
 
 export interface FileTypeSpec {
   extension: string
   label: string
   icon: string
+  /** Voir CollaborationMode. Defaut : 'lock'. */
+  collaborationMode?: CollaborationMode
   /**
    * If false, this type does not appear in the creation picker (e.g., images).
    * The icon is still used elsewhere (file tree, tabs, etc.).

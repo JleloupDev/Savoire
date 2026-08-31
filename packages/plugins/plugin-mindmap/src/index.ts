@@ -213,6 +213,8 @@ const plugin: VaultPlugin = {
       extension: 'mm',
       label: 'Mind Map',
       icon: '🧠',
+      // Meme raison qu'Excalidraw : snapshots en dernier-ecrivain-gagne.
+      collaborationMode: 'lock',
 
       // Nouveau fichier : carte vide avec un nœud racine.
       create: async () => {
