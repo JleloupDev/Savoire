@@ -101,6 +101,10 @@ function DocumentPanelHost({
   // Verrou d'edition : null = libre ou type CRDT (aucun verrou en jeu).
   const [lock, setLock] = useState<DocumentLockState | null>(null)
   const [lockRequest, setLockRequest] = useState<string | null>(null)
+  // Vrai entre « j'ai demande la main » et « je l'ai obtenue » : c'est ce qui
+  // distingue le demandeur, qui doit reprendre le verrou des qu'il se libere,
+  // de celui qui vient de le ceder et ne doit surtout pas le reprendre.
+  const wantsLockRef = useRef(false)
 
   useEffect(() => {
     const onModeChanged = () => setModeTick(t => t + 1)
@@ -119,7 +123,12 @@ function DocumentPanelHost({
   const ext = doc.path.split('.').pop()?.toLowerCase() ?? ''
   const collabMode = refs.fileTypeRegistry.current?.resolve(ext)?.collaborationMode ?? 'lock'
   const needsLock = collabMode === 'lock'
-  const lockedByOther = !!lock && !lock.isHeldByCaller
+  // Sur un type a verrou, on n'ecrit que si on le DETIENT. Un verrou libre ne
+  // donne pas le droit d'ecrire : sans cela, ceder la main laissait le cedant
+  // modifiable, et deux personnes pouvaient editer en meme temps le document
+  // que le verrou etait justement cense proteger.
+  const canEdit = !needsLock || !!lock?.isHeldByCaller
+  const lockedByOther = !canEdit
 
   // Le changement de verrou bascule la vue a chaud quand elle sait le faire
   // (Excalidraw). Sinon seulement on la remonte : remonter systematiquement
@@ -142,7 +151,15 @@ function DocumentPanelHost({
     void locks.acquire(doc.id).then(state => { if (!cancelled) setLock(state) })
 
     const unsubChanged = locks.onChanged((docId, holder) => {
-      if (docId === doc.id) setLock(holder)
+      if (docId !== doc.id) return
+      // Le verrou se libere et c'est nous qui l'attendions : on le reprend.
+      // L'arbitrage reste au serveur — si plusieurs le tentent, un seul gagne.
+      if (holder === null && wantsLockRef.current) {
+        wantsLockRef.current = false
+        void locks.acquire(doc.id).then(state => { if (!cancelled) setLock(state) })
+        return
+      }
+      setLock(holder)
     })
     const unsubRequested = locks.onRequested((docId, who) => {
       if (docId === doc.id) setLockRequest(who)
@@ -278,13 +295,24 @@ function DocumentPanelHost({
               borderBottom: '1px solid var(--border)', color: 'var(--text)',
             }}
           >
-            <span>🔒 <strong>{lock?.holderDisplayName}</strong> a la main sur ce document. Vous le voyez en lecture seule.</span>
+            <span>
+              {lock
+                ? <>🔒 <strong>{lock.holderDisplayName}</strong> a la main sur ce document. Vous le voyez en lecture seule.</>
+                : <>🔓 Personne n'a la main sur ce document. Vous le voyez en lecture seule.</>}
+            </span>
             <button
               data-testid="lock-request"
-              onClick={() => void refs.vaultSession.current?.locks?.request(doc.id)}
+              onClick={() => {
+                wantsLockRef.current = true
+                const locks = refs.vaultSession.current?.locks
+                // Verrou libre : on le prend directement. Sinon on sollicite
+                // le detenteur, qui reste libre de refuser.
+                if (lock) void locks?.request(doc.id)
+                else void locks?.acquire(doc.id).then(setLock)
+              }}
               style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11.5, cursor: 'pointer' }}
             >
-              Demander la main
+              {lock ? 'Demander la main' : 'Prendre la main'}
             </button>
           </div>
         )}
@@ -302,8 +330,11 @@ function DocumentPanelHost({
             <button
               data-testid="lock-handover"
               onClick={() => {
-                // On rend la main : le verrou se libere, le demandeur le prendra.
+                // On rend la main : le verrou se libere, le demandeur le
+                // reprend. Surtout ne pas le reprendre soi-meme au passage.
+                wantsLockRef.current = false
                 void refs.vaultSession.current?.locks?.release(doc.id)
+                setLock(null)
                 setLockRequest(null)
               }}
               style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--accent)', color: 'var(--accent-text)', fontSize: 11.5, cursor: 'pointer' }}
