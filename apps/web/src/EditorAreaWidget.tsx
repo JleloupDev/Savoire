@@ -214,12 +214,26 @@ function EditorAreaPanel({
   // synchronously at entry.
   const pendingOpensRef = useRef<Set<string>>(new Set())
   const [openError, setOpenError] = useState<string | null>(null)
-  const [vaultTick, setVaultTick] = useState(0)
+  // Force le re-rendu sur notifyVaultChange : `vault` est lu depuis un ref
+  // (non reactif) plus bas. NE PAS remettre ce compteur dans la key de
+  // DockviewReact : il change a chaque creation de note, et une key qui change
+  // detruit puis remonte le composant, donc ferme tous les editeurs ouverts.
+  const [, bumpVaultTick] = useState(0)
 
-  // Clear center layout when vault changes
+  // Vider la zone centrale quand on CHANGE de vault.
+  //
+  // notifyVaultChange() est un signal « quelque chose a bouge dans le vault »,
+  // emis aussi bien par un changement de vault que par la creation, le
+  // renommage ou la suppression d'une note. Le prendre pour « on a change de
+  // vault » fermait tous les editeurs ouverts a chaque nouvelle note.
+  // On compare donc l'id du vault, et on ne vide que s'il a reellement change.
+  const lastVaultIdRef = useRef<string | null>(refs.selectedVault.current?.id ?? null)
   useEffect(() => {
     return manager.subscribeVaultChange?.(() => {
-      setVaultTick(v => v + 1)
+      bumpVaultTick(v => v + 1)
+      const currentId = refs.selectedVault.current?.id ?? null
+      if (currentId === lastVaultIdRef.current) return
+      lastVaultIdRef.current = currentId
       pendingOpenPathsRef.current = []
       const api = dockviewRef.current
       if (!api) return
@@ -227,7 +241,7 @@ function EditorAreaPanel({
         api.removePanel(panel)
       }
     })
-  }, [manager])
+  }, [manager, refs])
 
   async function openPathInCenter(path: string, referenceId?: string, dropPosition?: string, referenceIsGroup = false) {
     const vault = refs.selectedVault.current
@@ -331,7 +345,7 @@ function EditorAreaPanel({
         </div>
       )}
       <DockviewReact
-        key={`vault-${vault.id}-${vaultTick}`}
+        key={`vault-${vault.id}`}
         components={{ 'doc-editor': PanelDispatcher as React.FC<IDockviewPanelProps> }}
         onDidDrop={(e: DockviewDidDropEvent) => {
           const path = e.nativeEvent.dataTransfer?.getData('text/x-poc-file-path')
