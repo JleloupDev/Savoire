@@ -195,7 +195,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
-        ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys())),
+        // Mode « source » : Markdown brut, aucune decoration. Meme document,
+        // meme CRDT — seul le rendu change.
+        ...(options.editorMode === 'source'
+          ? []
+          : createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys()))),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
           '.cm-scroller': { overflow: 'visible' },

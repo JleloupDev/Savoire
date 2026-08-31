@@ -197,7 +197,18 @@ function DocumentPanelHost({
   }, [refs])
 
   const isMarkdown = (doc.path.split('.').pop()?.toLowerCase() ?? '') === 'md'
-  const showCm6Ui = isMarkdown && refs.markdownEditorMode.current === 'source' && !!controller
+
+  // Les barres de mise en forme etaient liees au mode « source » parce que le
+  // mode « rich » etait Milkdown, qui apportait sa propre interface. Milkdown
+  // parti, elles reviennent la ou elles ont un sens : le mode riche, ou l'on
+  // met en forme sans connaitre la syntaxe Markdown. Le mode source reste
+  // volontairement nu — du texte, rien autour.
+  const showRichChrome = isMarkdown && refs.markdownEditorMode.current === 'rich' && !!controller
+
+  // Le menu de triggers (« / », « [[ ») reste dans LES DEUX modes : c'est de
+  // l'assistance a la frappe, pas de la mise en forme, et il ne s'affiche que
+  // lorsqu'on tape la sequence.
+  const showTriggers = isMarkdown && !!controller
 
   return (
     <EditorContext.Provider value={controller}>
@@ -206,7 +217,7 @@ function DocumentPanelHost({
         onDragOver={e => e.preventDefault()}
         onDrop={e => void handleDrop(e)}
       >
-        {showCm6Ui && <Toolbar />}
+        {showRichChrome && <Toolbar />}
         <div
           data-testid="editor-panel"
           data-doc-id={doc.id}
@@ -215,8 +226,8 @@ function DocumentPanelHost({
           style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
         />
       </div>
-      {showCm6Ui && <BubbleToolbar />}
-      {showCm6Ui && <TriggerOverlay />}
+      {showRichChrome && <BubbleToolbar />}
+      {showTriggers && <TriggerOverlay />}
     </EditorContext.Provider>
   )
 }

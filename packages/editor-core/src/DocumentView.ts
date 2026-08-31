@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorCore } from './EditorCore'
-import { RichMarkdownEditor } from './RichMarkdownEditor'
 import type { EditorController } from './types'
 import type {
   FileContext,
@@ -79,22 +78,12 @@ export class DocumentView {
       return
     }
 
-    const isMarkdown = this.ext === 'md'
-    if (isMarkdown && this.options.editorMode === 'rich') {
-      this.editorController = new RichMarkdownEditor({
-        container: this.options.container,
-        path: this.options.path,
-        vault: this.options.vault,
-        readOnly: this.options.readOnly,
-        vaultId: this.options.vaultId,
-        docId: this.options.docId,
-        userId: this.options.userId,
-        sync: this.options.pluginAPI?.sync,
-      })
-      return
-    }
-
+    // Un SEUL editeur pour les deux modes : meme CodeMirror, meme Y.Text.
+    // Le mode ne change que le rendu — « rich » active le live preview,
+    // « source » montre le Markdown brut. Rien a convertir entre les deux,
+    // et donc rien a changer cote synchronisation.
     this.editorController = new EditorCore({
+      editorMode: this.options.editorMode ?? 'rich',
       container: this.options.container,
       crdt: this.options.crdt as import('./types').ICodeMirrorCRDT | undefined,
       getTransportState: this.options.getTransportState,
