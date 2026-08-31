@@ -18,8 +18,23 @@ export function toggleMarkdownFormat(view: EditorView, format: MarkdownFormat): 
   if (headingLevel !== undefined) {
     toggleHeading(view, headingLevel); return
   }
+  if (format === 'image') {
+    insertImage(view); return
+  }
+  if (format === 'codeblock') {
+    insertCodeBlock(view); return
+  }
+  if (format === 'table') {
+    insertTable(view); return
+  }
+  if (format === 'paragraph') {
+    clearBlockFormat(view); return
+  }
   if (format === 'ul' || format === 'ol') {
     toggleList(view, format === 'ol'); return
+  }
+  if (format === 'tasklist') {
+    toggleTaskList(view); return
   }
   if (format === 'blockquote') {
     toggleBlockquote(view); return
@@ -154,6 +169,82 @@ function insertLink(view: EditorView): void {
   view.dispatch({
     changes: { from, to, insert },
     selection: { anchor: from + text.length + 3, head: from + insert.length - 1 },
+  })
+  view.focus()
+}
+
+// ─── Ajouts : liste de taches, bloc de code, tableau, image, paragraphe ──────
+
+/** Bascule « - [ ] » sur les lignes selectionnees. */
+function toggleTaskList(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  const first = view.state.doc.lineAt(from)
+  const last  = view.state.doc.lineAt(to)
+  const changes: { from: number; to: number; insert: string }[] = []
+  let allTasks = true
+  for (let n = first.number; n <= last.number; n++) {
+    if (!/^\s*- \[[ xX]\] /.test(view.state.doc.line(n).text)) { allTasks = false; break }
+  }
+  for (let n = first.number; n <= last.number; n++) {
+    const line = view.state.doc.line(n)
+    if (allTasks) {
+      const m = /^(\s*)- \[[ xX]\] /.exec(line.text)
+      if (m) changes.push({ from: line.from, to: line.from + m[0].length, insert: m[1] })
+    } else {
+      // Repartir d'une puce simple si la ligne en est deja une.
+      const m = /^(\s*)(?:- \[[ xX]\] |[-*+] )?/.exec(line.text)
+      const indent = m?.[1] ?? ''
+      changes.push({ from: line.from, to: line.from + (m?.[0].length ?? 0), insert: `${indent}- [ ] ` })
+    }
+  }
+  view.dispatch({ changes })
+  view.focus()
+}
+
+/** Retire titre, citation et puce de la ligne : retour au paragraphe. */
+function clearBlockFormat(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  const first = view.state.doc.lineAt(from)
+  const last  = view.state.doc.lineAt(to)
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = first.number; n <= last.number; n++) {
+    const line = view.state.doc.line(n)
+    const m = /^(\s*)(#{1,6} |> |- \[[ xX]\] |[-*+] |\d+\. )/.exec(line.text)
+    if (m) changes.push({ from: line.from, to: line.from + m[0].length, insert: m[1] })
+  }
+  if (changes.length) view.dispatch({ changes })
+  view.focus()
+}
+
+function insertBlock(view: EditorView, block: string, cursorOffset: number): void {
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+  const prefix = line.text.trim() ? '\n\n' : ''
+  const insert = `${prefix}${block}`
+  view.dispatch({
+    changes: { from: line.to, insert },
+    selection: { anchor: line.to + prefix.length + cursorOffset },
+  })
+  view.focus()
+}
+
+function insertCodeBlock(view: EditorView): void {
+  // Curseur sur la ligne vide entre les deux cloture.
+  insertBlock(view, '```\n\n```\n', 4)
+}
+
+function insertTable(view: EditorView): void {
+  insertBlock(view, '| Colonne 1 | Colonne 2 |\n| --- | --- |\n|  |  |\n', 2)
+}
+
+function insertImage(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  const selected = view.state.doc.sliceString(from, to)
+  const alt = selected || 'description'
+  const insert = `![${alt}](url)`
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + alt.length + 4, head: from + insert.length - 1 },
   })
   view.focus()
 }

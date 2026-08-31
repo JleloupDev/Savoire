@@ -15,8 +15,10 @@ export type EditorEvent =
 export type MarkdownFormat =
   | 'bold' | 'italic' | 'strike' | 'code'
   | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
-  | 'ul' | 'ol' | 'blockquote'
-  | 'link' | 'hr'
+  | 'paragraph'
+  | 'ul' | 'ol' | 'tasklist' | 'blockquote'
+  | 'codeblock' | 'table'
+  | 'link' | 'image' | 'hr'
 
 /** Screen coordinates of the mid-top of a selection or cursor position. */
 export interface SelectionCoords {

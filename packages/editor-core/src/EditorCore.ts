@@ -452,14 +452,32 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     for (const item of builtins) slash.register(item)
 
     // Toolbar commands — built-ins for common Markdown formatting
-    const toolbarCmds = [
-      { id: 'tb-bold',   label: 'Gras',        icon: 'B',    group: 'format', requiresSelection: true,  run: () => this.toggleFormat('bold')   },
-      { id: 'tb-italic', label: 'Italique',    icon: 'I',    group: 'format', requiresSelection: true,  run: () => this.toggleFormat('italic') },
-      { id: 'tb-strike', label: 'Barré',       icon: 'S',    group: 'format', requiresSelection: true,  run: () => this.toggleFormat('strike') },
-      { id: 'tb-code',   label: 'Code inline', icon: '</>',  group: 'format', requiresSelection: false, run: () => this.toggleFormat('code')   },
-      { id: 'tb-link',   label: 'Lien',        icon: '🔗',  group: 'insert', requiresSelection: false, run: () => this.toggleFormat('link')   },
-      { id: 'tb-h1',     label: 'Titre 1',     icon: 'H1',   group: 'format', requiresSelection: false, run: () => this.toggleFormat('h1')    },
-      { id: 'tb-h2',     label: 'Titre 2',     icon: 'H2',   group: 'format', requiresSelection: false, run: () => this.toggleFormat('h2')    },
+    // Jeu complet de commandes de mise en forme. Elles vivent dans le REGISTRE,
+    // pas en dur dans le composant : c'est ce qui permet a un plugin d'en
+    // ajouter les siennes (toolbar.register) et a l'hote de les reordonner.
+    // Les groupes sont rendus separes par une barre verticale, dans cet ordre.
+    const F = (f: import('./types').MarkdownFormat) => () => this.toggleFormat(f)
+    const toolbarCmds: ToolbarCommand[] = [
+      { id: 'tb-paragraph', label: 'Texte normal',   icon: '¶',   group: 'bloc',   run: F('paragraph') },
+      { id: 'tb-h1',        label: 'Titre 1',        icon: 'H1',  group: 'bloc',   run: F('h1') },
+      { id: 'tb-h2',        label: 'Titre 2',        icon: 'H2',  group: 'bloc',   run: F('h2') },
+      { id: 'tb-h3',        label: 'Titre 3',        icon: 'H3',  group: 'bloc',   run: F('h3') },
+
+      { id: 'tb-bold',      label: 'Gras',           icon: 'B',   group: 'format', requiresSelection: false, run: F('bold') },
+      { id: 'tb-italic',    label: 'Italique',       icon: 'I',   group: 'format', requiresSelection: false, run: F('italic') },
+      { id: 'tb-strike',    label: 'Barré',          icon: 'S',   group: 'format', requiresSelection: false, run: F('strike') },
+      { id: 'tb-code',      label: 'Code inline',    icon: '`c`', group: 'format', requiresSelection: false, run: F('code') },
+
+      { id: 'tb-ul',        label: 'Liste à puces',  icon: '•',   group: 'liste',  run: F('ul') },
+      { id: 'tb-ol',        label: 'Liste numérotée', icon: '1.', group: 'liste',  run: F('ol') },
+      { id: 'tb-task',      label: 'Liste de tâches', icon: '☑',  group: 'liste',  run: F('tasklist') },
+
+      { id: 'tb-quote',     label: 'Citation',       icon: '❝',   group: 'insert', run: F('blockquote') },
+      { id: 'tb-codeblock', label: 'Bloc de code',   icon: '</>', group: 'insert', run: F('codeblock') },
+      { id: 'tb-table',     label: 'Tableau',        icon: '⊞',   group: 'insert', run: F('table') },
+      { id: 'tb-link',      label: 'Lien',           icon: '🔗',  group: 'insert', run: F('link') },
+      { id: 'tb-image',     label: 'Image',          icon: '🖼',  group: 'insert', run: F('image') },
+      { id: 'tb-hr',        label: 'Séparateur',     icon: '—',   group: 'insert', run: F('hr') },
     ]
     for (const cmd of toolbarCmds) toolbar.register(cmd)
   }

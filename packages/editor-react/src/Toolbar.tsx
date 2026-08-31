@@ -3,7 +3,7 @@
 // Toolbar — Markdown toolbar, mounted above the CodeMirror editor.
 
 import { useEditorContext } from './EditorContext'
-import type { MarkdownFormat } from '@savoire/editor-core'
+import type { ToolbarCommand } from '@savoire/plugin-api'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -49,32 +49,29 @@ function btnStyle(active = false): React.CSSProperties {
   }
 }
 
-// ── Button ────────────────────────────────────────────────────────────────────
+// ── Bouton ────────────────────────────────────────────────────────────────────
 
-interface BtnProps {
-  title: string
-  format: MarkdownFormat
-  children: React.ReactNode
-}
-
-function Btn({ title, format, children }: BtnProps) {
+function Btn({ cmd }: { cmd: ToolbarCommand }) {
   const ctrl = useEditorContext()
 
   function handleMouseDown(e: React.MouseEvent) {
-    // Prevent the editor from losing focus
+    // Empeche l'editeur de perdre le focus.
     e.preventDefault()
-    ctrl?.toggleFormat(format)
+    const core = ctrl as unknown as { view?: unknown } | null
+    cmd.run({ view: core?.view } as never)
   }
 
   return (
     <button
-      title={title}
+      title={cmd.label}
+      data-testid="toolbar-command"
+      data-command-id={cmd.id}
       onMouseDown={handleMouseDown}
       style={btnStyle()}
       onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated, #273147)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text, #e6ebf4)' }}
       onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted, #b2bfd6)' }}
     >
-      {children}
+      {cmd.icon}
     </button>
   )
 }
@@ -83,94 +80,41 @@ function Sep() {
   return <span style={sepStyle} />
 }
 
-// ── Toolbar ───────────────────────────────────────────────────────────────────
+// ── Barre ─────────────────────────────────────────────────────────────────────
+//
+// Rendue depuis le REGISTRE de commandes, plus en dur. Un plugin qui appelle
+// api.toolbar.register() voit son bouton apparaitre ici, dans son groupe.
+// Auparavant le registre existait, EditorCore y enregistrait sept commandes,
+// et ce composant les ignorait au profit d'une liste figee : le point
+// d'extension n'etait branche nulle part.
+
+/** Ordre d'affichage des groupes. Les groupes inconnus (plugins) suivent. */
+const GROUP_ORDER = ['bloc', 'format', 'liste', 'insert']
 
 export function Toolbar() {
+  const ctrl = useEditorContext()
+  const commands = ctrl?.getToolbarCommands?.() ?? []
+  if (commands.length === 0) return <div style={barStyle} />
+
+  const groups = new Map<string, ToolbarCommand[]>()
+  for (const cmd of commands) {
+    const g = cmd.group ?? 'autre'
+    if (!groups.has(g)) groups.set(g, [])
+    groups.get(g)!.push(cmd)
+  }
+  const ordered = [
+    ...GROUP_ORDER.filter(g => groups.has(g)),
+    ...[...groups.keys()].filter(g => !GROUP_ORDER.includes(g)),
+  ]
+
   return (
-    <div style={barStyle}>
-      {/* Headings */}
-      <Btn title="Titre 1 (# )" format="h1">H1</Btn>
-      <Btn title="Titre 2 (## )" format="h2">H2</Btn>
-      <Btn title="Titre 3 (### )" format="h3">H3</Btn>
-
-      <Sep />
-
-      {/* Inline */}
-      <Btn title="Gras (**texte**)" format="bold"><b>B</b></Btn>
-      <Btn title="Italique (*texte*)" format="italic"><i>I</i></Btn>
-      <Btn title="Barré (~~texte~~)" format="strike"><s>S</s></Btn>
-      <Btn title="Code inline (`texte`)" format="code">
-        <span style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>`c`</span>
-      </Btn>
-
-      <Sep />
-
-      {/* Lists */}
-      <Btn title="Liste à puces (- )" format="ul">
-        <ListBulletIcon />
-      </Btn>
-      <Btn title="Liste numérotée (1. )" format="ol">
-        <ListOrderedIcon />
-      </Btn>
-      <Btn title="Citation (> )" format="blockquote">
-        <QuoteIcon />
-      </Btn>
-
-      <Sep />
-
-      {/* Misc */}
-      <Btn title="Lien [texte](url)" format="link">
-        <LinkIcon />
-      </Btn>
-      <Btn title="Séparateur (---)" format="hr">—</Btn>
+    <div style={barStyle} data-testid="editor-toolbar">
+      {ordered.map((g, i) => (
+        <span key={g} style={{ display: 'contents' }}>
+          {i > 0 && <Sep />}
+          {groups.get(g)!.map(cmd => <Btn key={cmd.id} cmd={cmd} />)}
+        </span>
+      ))}
     </div>
-  )
-}
-
-// ── Micro SVG icons ───────────────────────────────────────────────────────────
-
-function ListBulletIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <circle cx="2" cy="4" r="1.5"/>
-      <rect x="5" y="3" width="10" height="2" rx="1"/>
-      <circle cx="2" cy="8" r="1.5"/>
-      <rect x="5" y="7" width="10" height="2" rx="1"/>
-      <circle cx="2" cy="12" r="1.5"/>
-      <rect x="5" y="11" width="10" height="2" rx="1"/>
-    </svg>
-  )
-}
-
-function ListOrderedIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <text x="0" y="5" fontSize="5" fontFamily="monospace">1.</text>
-      <rect x="5" y="3" width="10" height="2" rx="1"/>
-      <text x="0" y="9" fontSize="5" fontFamily="monospace">2.</text>
-      <rect x="5" y="7" width="10" height="2" rx="1"/>
-      <text x="0" y="13" fontSize="5" fontFamily="monospace">3.</text>
-      <rect x="5" y="11" width="10" height="2" rx="1"/>
-    </svg>
-  )
-}
-
-function QuoteIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <rect x="0" y="2" width="2" height="12" rx="1"/>
-      <rect x="4" y="4" width="11" height="2" rx="1"/>
-      <rect x="4" y="8" width="9" height="2" rx="1"/>
-      <rect x="4" y="12" width="7" height="2" rx="1"/>
-    </svg>
-  )
-}
-
-function LinkIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l2-2a3.5 3.5 0 0 0-4.95-4.95l-1 1"/>
-      <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-2 2a3.5 3.5 0 0 0 4.95 4.95l1-1"/>
-    </svg>
   )
 }
