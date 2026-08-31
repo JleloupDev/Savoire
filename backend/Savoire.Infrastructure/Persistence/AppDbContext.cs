@@ -25,7 +25,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefreshToken>              RefreshTokens       => Set<RefreshToken>();
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
-    public DbSet<IndexSnapshotEntity>       IndexSnapshots      => Set<IndexSnapshotEntity>();
     public DbSet<EdgesyncBlobEntity>        EdgesyncBlobs       => Set<EdgesyncBlobEntity>();
     public DbSet<VaultKeyWrapEntity>        VaultKeyWraps       => Set<VaultKeyWrapEntity>();
     public DbSet<VaultMemberIdentityEntity> VaultMemberIdentities => Set<VaultMemberIdentityEntity>();
@@ -207,18 +206,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .OnDelete(DeleteBehavior.Restrict);
         });
 
-        modelBuilder.Entity<IndexSnapshotEntity>(e =>
-        {
-            e.ToTable("index_snapshots");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasColumnName("id");
-            e.Property(x => x.VaultId).HasColumnName("vault_id").IsRequired();
-            e.Property(x => x.Namespace).HasColumnName("namespace").IsRequired();
-            e.Property(x => x.ProcessedSeq).HasColumnName("processed_seq").IsRequired();
-            e.Property(x => x.Data).HasColumnName("data").IsRequired();
-            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
-            e.HasIndex(x => new { x.VaultId, x.Namespace }).HasDatabaseName("idx_snapshots_vault_ns");
-        });
 
         modelBuilder.Entity<ShareLinkEntity>(e =>
         {

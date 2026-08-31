@@ -140,7 +140,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
 
         // Index repositories
-        services.AddScoped<IIndexSnapshotRepository,  EfIndexSnapshotRepository>();
 
         // Edgesync blob repository (blind per-vault backup store, see ADR-022-style stance)
         services.AddScoped<IEdgesyncBlobRepository, EfEdgesyncBlobRepository>();

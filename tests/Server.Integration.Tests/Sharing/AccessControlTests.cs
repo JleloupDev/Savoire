@@ -88,21 +88,18 @@ public class AccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task ACL11_RemoveMember_RevokesAccess()
     {
-        // Owner seeds a snapshot so a member read returns 200 (not 404-empty).
-        await _owner.PutAsJsonAsync(
-            $"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks",
-            new SaveIndexSnapshotRequest("backlinks", 1, "{\"v\":1}"));
-
-        // viewer peut lire avant le retrait (membre du vault)
-        var before = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks");
-        before.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Le vault apparait dans l'espace du viewer tant qu'il en est membre.
+        // (Le vehicule etait l'API index-snapshots, supprimee avec la bascule
+        // des index en CRDT : le listing exprime la meme chose, plus directement.)
+        var before = await _viewer.GetFromJsonAsync<WorkspaceProbe>($"/api/v1/users/{_viewerId}/vaults");
+        before!.Vaults.Should().Contain(v => v.Id == _vaultId);
 
         // Owner retire viewer
         await _owner.DeleteAsync($"/api/v1/vaults/{_vaultId}/members/{_viewerId}");
 
-        // viewer n'a plus accès (404 : vault masqué pour un non-membre)
-        var after = await _viewer.GetAsync($"/api/v1/vaults/{_vaultId}/index-snapshots/backlinks");
-        after.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // viewer ne voit plus le vault
+        var after = await _viewer.GetFromJsonAsync<WorkspaceProbe>($"/api/v1/users/{_viewerId}/vaults");
+        after!.Vaults.Should().NotContain(v => v.Id == _vaultId);
 
         // Remettre viewer pour les autres tests
         await _owner.PostAsJsonAsync(
@@ -140,3 +137,7 @@ public class AccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     }
 
 }
+
+/// <summary>Sonde minimale du workspace, pour les assertions d'acces.</summary>
+public sealed record WorkspaceProbe(List<WorkspaceProbeVault> Vaults);
+public sealed record WorkspaceProbeVault(string Id, string Name);

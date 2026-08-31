@@ -295,8 +295,8 @@ export function usePluginBootstrap({
         }
         onCrdtTextChangeRef.current = (docId, text) => { for (const h of handlers) h(docId, text) }
 
-        const noopGateway = { broadcast: () => {}, onRemote: () => () => {} }
-        new RealtimeIndexingService(source, engine, noopGateway).start()
+        
+        new RealtimeIndexingService(source, engine).start()
 
         contentIndexingServiceRef.current?.setOnIndexed((docId, path) => {
           managerRef.current?.notifyDocumentIndexed(docId, path)

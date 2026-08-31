@@ -171,18 +171,6 @@ public record VaultLinkDto(
     string  LinkType
 );
 
-public record IndexSnapshotDto(
-    string Namespace,
-    long   ProcessedSeq,
-    string Data,
-    DateTime CreatedAt
-);
-
-public record SaveIndexSnapshotRequest(
-    string Namespace,
-    long   ProcessedSeq,
-    string Data
-);
 
 public record EdgesyncBlobDto(
     string BytesBase64

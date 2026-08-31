@@ -4,5 +4,4 @@ export type { IDocumentMeta, IDocumentFetcher, IVaultStorage, ILocalIndexStorage
 export type { OpenDocument } from './DocumentStore'
 export { DocumentStore } from './DocumentStore'
 export { VaultClient } from './VaultClient'
-export { InMemoryIndexStorage, LocalStorageIndexStorage, ServerIndexStorage } from './LocalIndexStorage'
-export { NoopIndexSyncGateway } from './NoopIndexSyncGateway'
+export { InMemoryIndexStorage, LocalStorageIndexStorage } from './LocalIndexStorage'

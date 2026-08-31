@@ -119,19 +119,6 @@ public class ResourcePermissionEntity
             GrantedBy, GrantedAt, ExpiresAt);
 }
 
-public class IndexSnapshotEntity
-{
-    public string   Id           { get; set; } = null!;
-    public string   VaultId      { get; set; } = null!;
-    public string   Namespace    { get; set; } = null!;
-    public long     ProcessedSeq { get; set; }
-    public string   Data         { get; set; } = null!;
-    public DateTime CreatedAt    { get; set; }
-
-    public IndexSnapshot ToDomain() =>
-        IndexSnapshot.Rehydrate(Id, VaultId, Namespace, ProcessedSeq, Data, CreatedAt);
-}
-
 // ── Reference / lookup tables ─────────────────────────────────────────────────
 
 public class RefResourceTypeEntity   { public string Value { get; set; } = null!; public string Description { get; set; } = null!; }
