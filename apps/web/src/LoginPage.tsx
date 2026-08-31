@@ -13,7 +13,7 @@ const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.fea
 ]
 
 function InputField({
-  label, type, value, onChange, placeholder, onEnter,
+  label, type, value, onChange, placeholder, onEnter, testId,
 }: {
   label: string
   type: string
@@ -21,6 +21,7 @@ function InputField({
   onChange: (v: string) => void
   placeholder: string
   onEnter: () => void
+  testId?: string
 }) {
   const [focused, setFocused] = useState(false)
   return (
@@ -29,6 +30,7 @@ function InputField({
         {label}
       </label>
       <input
+        data-testid={testId}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -156,9 +158,9 @@ export function LoginPage() {
 
         {/* Fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 24 }}>
-          <InputField label={t('app', 'login.email')} type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
+          <InputField testId="login-email" label={t('app', 'login.email')} type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
           <div>
-            <InputField label={t('app', 'login.password')} type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
+            <InputField testId="login-password" label={t('app', 'login.password')} type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
             <div style={{ textAlign: 'right', marginTop: 6 }}>
               <span style={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer' }}>{t('app', 'login.forgot')}</span>
             </div>
@@ -167,6 +169,7 @@ export function LoginPage() {
 
         {/* Submit */}
         <button
+          data-testid="login-submit"
           onClick={handleLogin}
           disabled={loading || !email || !password}
           style={{ padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: (!email || !password || loading) ? 'not-allowed' : 'pointer', opacity: (!email || !password) ? 0.45 : 1, transition: 'opacity 0.15s, filter 0.12s', letterSpacing: '0.01em', marginBottom: 28, width: '100%', fontFamily: 'var(--font-ui)' }}

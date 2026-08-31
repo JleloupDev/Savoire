@@ -3,6 +3,7 @@
 import { createRoot } from 'react-dom/client'
 import './app.css'
 import { App } from './App'
+import { initProfile } from './profile'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
@@ -14,4 +15,10 @@ if (!root) throw new Error('Root element not found')
 // guard in WorkspaceRoot's onDockviewReady continuation was not sufficient
 // to prevent the resulting duplicate Dockview/EditorCore/Awareness state.
 // See project memory (project_p2p_sync_design.md) for the investigation.
-createRoot(root).render(<App />)
+// Le profil de synchronisation est resolu AVANT le premier rendu : une garde
+// de cles installee apres coup laisserait l'UI mentir entre les deux.
+// ?profile=edgesync pour le profil P2P, sinon profil serveur Savoire.
+void initProfile().then(profile => {
+  if (profile.error) console.warn('[profile]', profile.error)
+  createRoot(root).render(<App />)
+})

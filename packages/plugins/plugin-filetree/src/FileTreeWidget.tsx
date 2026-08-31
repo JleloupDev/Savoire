@@ -170,6 +170,9 @@ function FileNodeRow({
   return (
     <div>
       <div
+        data-testid={node.isDir ? 'tree-folder' : 'tree-file'}
+        data-path={node.path}
+        data-name={node.name}
         style={rowStyle}
         draggable={!node.isDir}
         onDragStart={e => {
@@ -420,6 +423,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes }: FileTreePr
           {creating ? (
             <>
               <input
+                data-testid="tree-create-name"
                 ref={inputRef}
                 value={newPath}
                 onChange={e => { setNewPath(e.target.value); if (error) setError('') }}
@@ -458,14 +462,14 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes }: FileTreePr
                 </div>
               )}
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => void handleCreate()} disabled={!newPath.trim()} style={btnStyle('#4caf50')}>OK</button>
+                <button data-testid="tree-create-confirm" onClick={() => void handleCreate()} disabled={!newPath.trim()} style={btnStyle('#4caf50')}>OK</button>
                 <button onClick={cancelCreate} style={btnStyle('#f66')}>Ann.</button>
               </div>
             </>
           ) : (
             <div style={{ display: 'flex', gap: 4 }}>
-              {canCreateFile && <button onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('#4caf50')}>+ Note</button>}
-              {canCreateFolder && <button onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text-muted, #bbb)')}>+ Dossier</button>}
+              {canCreateFile && <button data-testid="tree-new-file" onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('#4caf50')}>+ Note</button>}
+              {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text-muted, #bbb)')}>+ Dossier</button>}
             </div>
           )}
         </div>

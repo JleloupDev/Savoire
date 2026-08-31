@@ -8,6 +8,7 @@ import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
+import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { isKeyManagedSession, type IVaultSyncSession } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -199,8 +200,20 @@ export function AppShell() {
   const { documentFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
   const managerRef = useRef<WorkspaceManagerImpl | null>(null)
 
+  // Le profil a ete resolu avant le premier rendu (main.tsx) ; on lui donne
+  // ici de quoi lire le jeton et K_User quand il en aura besoin.
+  setProfileRuntimeDeps({
+    getToken: () => tokenRef.current,
+    getVaultKey: () => {
+      const userId = activeAccountRef.current?.userId
+      return userId ? getVaultKey(userId) : null
+    },
+  })
+  const activeProfile = getActiveProfile()
+
   const appRootRef = useRef(createWebAppRoot({
     documentStore: documentStore,
+    vaultSyncSessionFactory: activeProfile.vaultSyncSessionFactory,
     getToken: () => tokenRef.current,
     getVaultKey: () => {
       const userId = activeAccountRef.current?.userId
@@ -812,7 +825,12 @@ export function AppShell() {
   // full-page takeover — see plan Context for why.
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}>
+    <div
+      data-testid="app-shell"
+      data-profile={activeProfile.name}
+      data-requires-user-key={requiresUserKey() ? 'true' : 'false'}
+      style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
+    >
 
       {/* ── Icon rail ── */}
       <IconRail
@@ -856,7 +874,7 @@ export function AppShell() {
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
 
           {activeDoc && (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
+            <span data-testid="save-status" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
           )}
 
           {/* Share */}
@@ -938,7 +956,7 @@ export function AppShell() {
           (width/border/shadow), this wrapper only owns the dimmed backdrop
           and the ✕ anchor, or the card would end up double-boxed. ── */}
       {keyModalRequest && activeAccount && (
-        <div onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div data-testid="key-modal" onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
             <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} />
             <button onClick={() => setKeyModalRequest(null)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>

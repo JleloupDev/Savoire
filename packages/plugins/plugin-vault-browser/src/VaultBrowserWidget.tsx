@@ -190,6 +190,10 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
               }}
             >
               <button
+                data-testid="vault-item"
+                data-vault-id={v.id}
+                data-vault-name={v.name}
+                data-vault-locked={v.locked ? 'true' : 'false'}
                 onClick={() => handleSelect(v)}
                 style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.locked ? 'var(--text-faint)' : v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
               >
@@ -254,6 +258,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
         {creating ? (
           <>
             <input
+              data-testid="vault-create-name"
               ref={inputRef}
               value={newName}
               onChange={e => setNewName(e.target.value)}
@@ -268,7 +273,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
           </>
         ) : (
           <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
+            <button data-testid="vault-create-open" onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
               + Nouveau vault
             </button>
             {refs.onRefresh && (

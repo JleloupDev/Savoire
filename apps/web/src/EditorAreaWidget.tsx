@@ -51,6 +51,30 @@ export interface EditorAreaRefs {
   onCrdtTextChange: React.MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
 }
 
+// Onglet de document. Dockview ne monte que le contenu du panneau ACTIF :
+// [data-testid="editor-panel"] ne revele donc qu'un seul document a la fois.
+// Les onglets, eux, existent tous — c'est le seul point d'observation fiable
+// pour « quels documents sont ouverts ». Sert aussi de non-regression au bug
+// ou creer une note fermait tous les editeurs.
+function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
+  const doc = props.params?.doc
+  return (
+    <div
+      data-testid="editor-tab"
+      data-doc-id={doc?.id}
+      data-doc-path={doc?.path}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', height: '100%' }}
+    >
+      <span className="dv-default-tab-content">{props.api.title}</span>
+      <span
+        onClick={(e) => { e.stopPropagation(); props.api.close() }}
+        style={{ cursor: 'pointer', opacity: 0.6, fontSize: 12 }}
+        title="Fermer"
+      >✕</span>
+    </div>
+  )
+}
+
 interface EditorPanelParams {
   doc: DocumentDto
   refs: EditorAreaRefs
@@ -183,7 +207,13 @@ function DocumentPanelHost({
         onDrop={e => void handleDrop(e)}
       >
         {showCm6Ui && <Toolbar />}
-        <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: 'auto' }} />
+        <div
+          data-testid="editor-panel"
+          data-doc-id={doc.id}
+          data-doc-path={doc.path}
+          ref={containerRef}
+          style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
+        />
       </div>
       {showCm6Ui && <BubbleToolbar />}
       {showCm6Ui && <TriggerOverlay />}
@@ -293,6 +323,7 @@ function EditorAreaPanel({
         api?.addPanel({
           id: panelId,
           component: 'doc-editor',
+          tabComponent: 'doc-tab',
           title,
           params: {
             doc,
@@ -347,6 +378,7 @@ function EditorAreaPanel({
       <DockviewReact
         key={`vault-${vault.id}`}
         components={{ 'doc-editor': PanelDispatcher as React.FC<IDockviewPanelProps> }}
+        tabComponents={{ 'doc-tab': DocumentTab as React.FC<IDockviewPanelProps> }}
         onDidDrop={(e: DockviewDidDropEvent) => {
           const path = e.nativeEvent.dataTransfer?.getData('text/x-poc-file-path')
           if (!path) return
