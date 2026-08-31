@@ -7,7 +7,7 @@ import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
-import { getVaultLockProbe } from './vaultLock'
+import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { isKeyManagedSession, type IVaultSyncSession } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -139,7 +139,12 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
                   </button>
                 ))}
                 <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
-                <button onClick={() => { onManageKey(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>🔑 Ma clé de chiffrement</button>
+                {/* Uniquement si le profil actif utilise reellement une cle
+                    utilisateur : en profil serveur, en fournir une ne
+                    chiffrerait rien — autant ne pas proposer un placebo. */}
+                {requiresUserKey() && (
+                  <button onClick={() => { onManageKey(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>🔑 Ma clé de chiffrement</button>
+                )}
                 <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer' }}>⚙ Administration</button>
                 <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}>✕ Déconnexion</button>
               </div>
@@ -208,9 +213,9 @@ export function AppShell() {
   }))
   const application = appRootRef.current.api
 
-  // Profil EdgeSync uniquement : decide le badge « verrouille » d'un vault, sans
-  // jamais ouvrir de session. Undefined en profil serveur — voir vaultLock.ts.
-  const vaultLockProbeRef = useRef(getVaultLockProbe())
+  // Profil a cles uniquement : decide le badge « verrouille » d'un vault, sans
+  // jamais ouvrir de session. Undefined en profil serveur — voir keyCustody.ts.
+  const keyCustodyRef = useRef(getKeyCustody())
 
   // Single source of truth for "get me a usable K_User, or tell me there's
   // none". K_User is memory-only and user-held (VaultKeyGate.tsx): the server
@@ -438,7 +443,7 @@ export function AppShell() {
     }
 
     switchChainRef.current = switchChainRef.current.then(run).catch((err) => {
-      if (vaultLockProbeRef.current?.isWrongKeyError(err)) {
+      if (keyCustodyRef.current?.isWrongKeyError(err)) {
         // Distinct from "nothing escrowed yet" (which never throws — see
         // EdgesyncVaultSession.restore()): the server DOES have a wrapped
         // Keyring for this vault, but the K_User currently in memory does not
@@ -497,7 +502,7 @@ export function AppShell() {
   useEffect(() => {
     if (!vaultIdsKey) return
     // Profil serveur : pas de sonde, aucun vault n'est verrouille.
-    const probe = vaultLockProbeRef.current
+    const probe = keyCustodyRef.current
     if (!probe) return
     const generation = ++probeGenerationRef.current
     const ids = vaultIdsKey.split(',')
@@ -567,12 +572,16 @@ export function AppShell() {
 
   onCreateVaultRef.current = async (name: string) => {
     if (!token || !activeAccount) return
-    // A Keyring only survives a reload if SOME key is present to escrow it
-    // under (VaultKeyEscrow.save() no-ops without one) — require a key
-    // before creating rather than let a vault's content quietly become
-    // unrecoverable. Still always "possible to create": the key modal
-    // resumes creation automatically once a key is set (handleKeyModalDone).
-    if (!await resolveVaultKey(activeAccount.userId)) {
+    // Par defaut (profil serveur), aucune ceremonie de cle : le serveur gere
+    // tout, on cree le vault directement. Gerer sa propre cle reste possible,
+    // mais c'est une option explicite (menu du compte), pas un peage ici.
+    //
+    // Dans un profil a cles, en revanche, le Keyring ne survit a un rechargement
+    // que si une K_User existe pour le sceller (VaultKeyEscrow.save() ne fait
+    // rien sans elle) : mieux vaut demander la cle que laisser le contenu
+    // devenir silencieusement irrecuperable. La creation reprend toute seule
+    // une fois la cle saisie (handleKeyModalDone).
+    if (requiresUserKey() && !await resolveVaultKey(activeAccount.userId)) {
       setKeyModalRequest({ kind: 'create-vault', name })
       return
     }

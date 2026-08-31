@@ -16,16 +16,17 @@ import {
   EdgesyncVaultSession, EdgesyncVaultSyncSession, RemoteEdgesyncBlobStorage,
   VaultKeyEscrow, WrongVaultKeyError,
 } from '@savoire/infrastructure-edgesync'
-import { setVaultLockProbe } from './vaultLock'
+import { setKeyCustody } from './keyCustody'
 
-/** Installe la sonde de verrouillage propre a EdgeSync (badges « verrouille »).
- *  A appeler une fois, avant le rendu, quand l'app tourne en profil EdgeSync. */
-export function installEdgesyncVaultLockProbe(
+/** Installe la garde de cles propre a EdgeSync : a partir de la, une K_User
+ *  devient necessaire (badges « verrouille », ceremonie de cle). A appeler une
+ *  fois, avant le rendu, quand l'app tourne en profil EdgeSync. */
+export function installEdgesyncKeyCustody(
   getToken: () => string | null,
   getVaultKey: () => Uint8Array | null,
 ): void {
   const escrow = new VaultKeyEscrow({ getToken, getVaultKey })
-  setVaultLockProbe({
+  setKeyCustody({
     async isLocked(vaultId) {
       try { await escrow.fetch(vaultId); return false }
       catch (err) { return err instanceof WrongVaultKeyError }
