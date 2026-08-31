@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
-import { VaultClient, DocumentStore, ServerIndexStorage } from '@savoire/platform'
+import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/platform'
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
@@ -442,9 +442,12 @@ export function AppShell() {
       vaultSessionRef.current = active.session
       onChanged()
 
-      // Branche la synchro d'index sur la session active, puis restaure son snapshot.
+      // L'index est purement LOCAL : il se persiste dans le navigateur, jamais
+      // sur le serveur. Toute note existante a ete indexee au moment ou elle a
+      // ete creee, et les modifications des autres pairs arrivent par la
+      // synchro de l'index lui-meme — le serveur n'a rien a stocker ici.
       contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveSession())
-      await contentIndexingServiceRef.current?.switchVault(new ServerIndexStorage(vault.id, () => tokenRef.current))
+      await contentIndexingServiceRef.current?.switchVault(new LocalStorageIndexStorage(vault.id))
 
       // Les snapshots d'index viennent d'etre restaures (switchVault ci-dessus),
       // mais les panneaux qui les affichent ont deja construit leur vue : sans
