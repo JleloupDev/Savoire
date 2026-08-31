@@ -63,18 +63,33 @@ export function TriggerOverlay() {
     return () => { unsubDoc(); unsubSel() }
   }, [ctrl])
 
+  // Ordre de navigation = ordre AFFICHE.
+  //
+  // groupByCategory() regroupe les entrees d'une meme categorie, ce qui
+  // reordonne la liste des qu'une categorie n'est pas contigue dans `items`.
+  // Les fleches indexaient `items`, l'oeil suivait l'affichage : le
+  // surlignage sautait des lignes, puis remontait au milieu une fois le bas
+  // atteint. On navigue donc sur la liste aplatie DANS L'ORDRE DU RENDU.
+  const grouped = groupByCategory(items)
+  const flat = grouped.flatMap(g => g.entries)
+
+  // La liste peut retrecir sous le curseur (l'utilisateur affine sa requete).
   useEffect(() => {
-    if (!activation || !ctrl || items.length === 0) return
+    if (selectedIdx >= flat.length) setSelectedIdx(0)
+  }, [flat.length, selectedIdx])
+
+  useEffect(() => {
+    if (!activation || !ctrl || flat.length === 0) return
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'ArrowDown') {
         e.preventDefault(); e.stopPropagation()
-        setSelectedIdx(i => (i + 1) % items.length)
+        setSelectedIdx(i => (i + 1) % flat.length)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault(); e.stopPropagation()
-        setSelectedIdx(i => (i - 1 + items.length) % items.length)
+        setSelectedIdx(i => (i - 1 + flat.length) % flat.length)
       } else if (e.key === 'Enter' || e.key === 'Tab') {
-        const item = items[selectedIdx]
+        const item = flat[selectedIdx]
         if (item) { e.preventDefault(); e.stopPropagation(); commit(item) }
       } else if (e.key === 'Escape') {
         setActivation(null); setItems([])
@@ -82,14 +97,22 @@ export function TriggerOverlay() {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [activation, selectedIdx, items, ctrl])
+  }, [activation, selectedIdx, flat, ctrl])
 
+  // Defilement CONFINE au menu. scrollIntoView() fait defiler tous les
+  // ancetres scrollables, fenetre comprise : sur un curseur proche du bas de
+  // l'ecran, il deplacait la page sous un menu en position fixed.
   useEffect(() => {
-    const el = menuRef.current?.querySelector('[data-selected="true"]') as HTMLElement | null
-    el?.scrollIntoView({ block: 'nearest' })
+    const menu = menuRef.current
+    const el = menu?.querySelector('[data-selected="true"]') as HTMLElement | null
+    if (!menu || !el) return
+    const top = el.offsetTop - menu.offsetTop
+    const bottom = top + el.offsetHeight
+    if (top < menu.scrollTop) menu.scrollTop = top
+    else if (bottom > menu.scrollTop + menu.clientHeight) menu.scrollTop = bottom - menu.clientHeight
   }, [selectedIdx])
 
-  if (!activation || !ctrl || items.length === 0) return null
+  if (!activation || !ctrl || flat.length === 0) return null
 
   function commit(item: TriggerItem) {
     if (!ctrl || !activation) return
@@ -113,8 +136,6 @@ export function TriggerOverlay() {
   const menuMaxHeight = 300
   const left = Math.min(activation.coords.x, window.innerWidth - menuWidth - 8)
   const enoughRoomAbove = activation.lineTop > menuMaxHeight + 8
-  const grouped = groupByCategory(items)
-
   // see ADR-024
   return createPortal(
     <div
@@ -143,7 +164,7 @@ export function TriggerOverlay() {
             {category}
           </div>
           {entries.map(item => {
-            const idx = items.indexOf(item)
+            const idx = flat.indexOf(item)
             const active = idx === selectedIdx
             return (
               <div
