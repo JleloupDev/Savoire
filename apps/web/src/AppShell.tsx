@@ -58,6 +58,9 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
     return (
       <button
         key={item.id}
+        data-testid="ribbon-item"
+        data-ribbon-id={item.id}
+        data-ribbon-title={item.title}
         title={item.title}
         onClick={() => onRibbonClick(item)}
         style={{
@@ -78,7 +81,10 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
     )
   }
 
-  const leftItems  = ribbonItems.filter(i => i.container === 'left')
+  // Les vues centrales (graphe, futures pages pleine largeur) s'ouvrent depuis
+  // la barre de gauche : sans ce regroupement, leur bouton ne s'affichait nulle
+  // part et la vue devenait inatteignable.
+  const leftItems  = ribbonItems.filter(i => i.container === 'left' || i.container === 'center')
   const rightItems = ribbonItems.filter(i => i.container === 'right')
 
   return (
@@ -342,7 +348,6 @@ export function AppShell() {
     fileTypeRegistryRef,
     onControllerReadyRef,
     contentIndexingServiceRef,
-    getGraphContributor,
     pluginLoaderRef,
     triggersRef,
     onCrdtTextChangeRef,
@@ -441,18 +446,14 @@ export function AppShell() {
       contentIndexingServiceRef.current?.attachHub(() => application.documents.getActiveSession())
       await contentIndexingServiceRef.current?.switchVault(new ServerIndexStorage(vault.id, () => tokenRef.current))
 
-      const graphContributor = getGraphContributor()
-      if (graphContributor) {
-        fetch(`/api/v1/vaults/${vault.id}/links`, {
-          headers: { Authorization: `Bearer ${tok}` },
-        })
-          .then(r => r.ok ? r.json() : [])
-          .then((links: Array<{ sourceId: string; sourcePath: string; targetId: string | null; targetPath: string; linkType: string }>) => {
-            graphContributor.bulkLoad(links)
-            managerRef.current?.notifyDocumentIndexed('', '')
-          })
-          .catch(err => console.warn('[GraphPlugin] preload links failed', err))
-      }
+      // Les snapshots d'index viennent d'etre restaures (switchVault ci-dessus),
+      // mais les panneaux qui les affichent ont deja construit leur vue : sans
+      // ce signal, le graphe reste vide jusqu'a la prochaine indexation.
+      //
+      // Remplace un prechargement via GET /api/v1/vaults/{id}/links, endpoint
+      // supprime avec la projection SQL des documents (juin 2026) : il rendait
+      // 404 en silence, et le graphe se croyait charge alors qu'il n'avait rien.
+      managerRef.current?.notifyDocumentIndexed('', '')
     }
 
     switchChainRef.current = switchChainRef.current.then(run).catch((err) => {

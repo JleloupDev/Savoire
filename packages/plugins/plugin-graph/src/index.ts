@@ -29,10 +29,14 @@ export function createGraphPlugin(options: { groupId?: string; tabOf?: string } 
         id: 'graph',
         title: 'Graphe',
         icon: 'git-fork',
+        // Vue principale, pas un panneau lateral : un graphe de vault a besoin
+        // de place. `ribbon` pose le bouton d'ouverture dans la barre d'icones
+        // de gauche. groupId/tabOf restent honores si un hote veut malgre tout
+        // l'ancrer dans un groupe.
         groupId: options.groupId,
-        container: 'right',
+        container: options.groupId ? undefined : 'center',
         tabOf: options.tabOf,
-        initialSize: 320,
+        ribbon: true,
         closable: true,
         createView(ctx) {
           return new GraphWidget(ctx, () => current)

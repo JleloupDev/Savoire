@@ -255,9 +255,9 @@ export function usePluginBootstrap({
         await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
           groupId: 'notes-tools',
         }), pluginApi)
-        const { plugin: graphPlugin, getContributor: getGraphContributor } = createGraphPlugin({
-          groupId: 'notes-tools',
-        })
+        // Pas de groupId : le graphe s'ouvre comme vue principale (onglet a
+        // cote de l'editeur), depuis la barre d'icones de gauche.
+        const { plugin: graphPlugin, getContributor: getGraphContributor } = createGraphPlugin()
         getGraphContributorRef.current = getGraphContributor
         await pluginLoaderRef.current.loadInternal(graphPlugin, pluginApi)
         const { plugin: searchPlugin } = createSearchPlugin({

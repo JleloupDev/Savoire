@@ -5,7 +5,7 @@
 // Aucune dépendance externe.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { ViewContext, WorkspaceAPI } from '@savoire/plugin-api'
+import type { ViewContext, WorkspaceAPI, VaultAPI } from '@savoire/plugin-api'
 import type { GraphIndexContributor, GraphNode, GraphEdge } from './GraphIndexContributor'
 
 // ── Force simulation ──────────────────────────────────────────────────────────
@@ -23,26 +23,49 @@ interface SimEdge {
   type: 'wikilink' | 'embed'
 }
 
-function buildSimulation(nodes: GraphNode[], edges: GraphEdge[]): { simNodes: SimNode[]; simEdges: SimEdge[] } {
+function buildSimulation(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  size: { w: number; h: number },
+): { simNodes: SimNode[]; simEdges: SimEdge[] } {
+  // Cercle initial centre sur le canvas reel. Les valeurs etaient codees en
+  // dur autour de (300, 300) : acceptable dans un panneau lateral etroit,
+  // mais en vue principale les noeuds demarraient hors champ et la simulation
+  // n'avait pas le temps de tous les ramener.
+  const cx = size.w / 2
+  const cy = size.h / 2
+  const radius = Math.max(80, Math.min(size.w, size.h) * 0.35)
   const simNodes: SimNode[] = nodes.map((n, i) => ({
     ...n,
-    x: 300 + 200 * Math.cos((i / nodes.length) * Math.PI * 2),
-    y: 300 + 200 * Math.sin((i / nodes.length) * Math.PI * 2),
+    x: cx + radius * Math.cos((i / Math.max(1, nodes.length)) * Math.PI * 2),
+    y: cy + radius * Math.sin((i / Math.max(1, nodes.length)) * Math.PI * 2),
     vx: 0, vy: 0,
   }))
 
   const nodeById = new Map(simNodes.map(n => [n.docId, n]))
-  const nodeByPathStem = new Map(simNodes.map(n => [n.path.replace(/\.md$/, ''), n]))
+  // Un wikilink s'ecrit rarement comme le chemin complet : [[nouvelle-note]]
+  // doit atteindre "dossier/nouvelle-note.md". On indexe donc chaque noeud par
+  // son chemin, son radical sans extension, et son seul nom de fichier — le
+  // tout insensible a la casse.
+  const norm = (v: string) => v.trim().replace(/\.md$/i, '').toLowerCase()
+  const byName = new Map<string, SimNode>()
+  for (const n of simNodes) {
+    byName.set(norm(n.path), n)
+    const base = n.path.split('/').at(-1) ?? n.path
+    if (!byName.has(norm(base))) byName.set(norm(base), n)
+  }
 
   const simEdges: SimEdge[] = []
+  const seen = new Set<string>()
   for (const e of edges) {
     const src = nodeById.get(e.sourceId)
-    const tgt = nodeById.get(e.targetPath)
-      ?? nodeByPathStem.get(e.targetPath)
-      ?? nodeByPathStem.get(e.targetPath.replace(/\.md$/, ''))
-    if (src && tgt && src !== tgt) {
-      simEdges.push({ source: src, target: tgt, type: e.linkType })
-    }
+    const tgt = nodeById.get(e.targetPath) ?? byName.get(norm(e.targetPath))
+    if (!src || !tgt || src === tgt) continue
+    // Deduplique : plusieurs liens vers la meme note ne font qu'une arete.
+    const key = `${src.docId}->${tgt.docId}:${e.linkType}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    simEdges.push({ source: src, target: tgt, type: e.linkType })
   }
 
   return { simNodes, simEdges }
@@ -90,9 +113,10 @@ function tickSimulation(nodes: SimNode[], edges: SimEdge[], cx: number, cy: numb
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-function GraphPanel({ getContributor, workspace }: {
+function GraphPanel({ getContributor, workspace, vault }: {
   getContributor: () => GraphIndexContributor
   workspace: WorkspaceAPI
+  vault: VaultAPI
 }) {
   const [, setTick]            = useState(0)
   const [activePath, setActivePath] = useState<string | null>(
@@ -102,6 +126,10 @@ function GraphPanel({ getContributor, workspace }: {
   const rafRef     = useRef<number | null>(null)
   const svgRef     = useRef<SVGSVGElement>(null)
   const [size, setSize] = useState({ w: 400, h: 400 })
+  // Miroir en ref : rebuild() a besoin de la taille courante sans se recreer
+  // a chaque redimensionnement (sinon l'effet d'abonnement se relance).
+  const sizeRef = useRef(size)
+  sizeRef.current = size
 
   // Track SVG container size
   useEffect(() => {
@@ -115,20 +143,52 @@ function GraphPanel({ getContributor, workspace }: {
     return () => ro.disconnect()
   }, [])
 
-  // Rebuild sim when index changes
+  // Le graphe montre TOUT le vault, pas seulement ce qui a ete indexe.
+  // L'index ne connait que les documents ouverts ou re-indexes : s'y limiter
+  // faisait disparaitre les notes jamais ouvertes, et avec elles toutes les
+  // aretes qui pointaient vers elles. Les noeuds viennent donc du repertoire
+  // du vault, l'index n'apportant que les liens.
+  const vaultNodesRef = useRef<GraphNode[]>([])
+
   const rebuild = useCallback(() => {
-    const nodes = getContributor().getNodes()
+    const indexed = getContributor().getNodes()
+    // Fusion par CHEMIN, pas par docId : le repertoire du vault et l'index ne
+    // s'accordent pas toujours sur l'identifiant d'une note (resolveDocumentId
+    // peut echouer et retomber sur le chemin), et fusionner par docId
+    // dedoublait alors les noeuds. Le chemin, lui, identifie la note de facon
+    // stable. L'entree de l'index gagne : elle porte le docId reel, celui
+    // auquel les aretes font reference.
+    const key = (path: string) => path.replace(/\.md$/i, '').toLowerCase()
+    const merged = new Map<string, GraphNode>()
+    for (const n of vaultNodesRef.current) merged.set(key(n.path), n)
+    for (const n of indexed) merged.set(key(n.path), n)
     const edges = getContributor().getAllEdges()
-    const { simNodes, simEdges } = buildSimulation(nodes, edges)
+    const { simNodes, simEdges } = buildSimulation([...merged.values()], edges, sizeRef.current)
     simRef.current = { nodes: simNodes, edges: simEdges }
     setTick(t => t + 1)
   }, [getContributor])
 
-  useEffect(() => {
+  const reloadVaultNodes = useCallback(async () => {
+    try {
+      const paths = await vault.list()
+      vaultNodesRef.current = paths
+        .filter(p => !p.endsWith('/'))
+        .map(p => ({ docId: vault.resolveDocumentId(p) ?? p, path: p }))
+    } catch (err) {
+      console.warn('[graph] liste du vault indisponible', err)
+      vaultNodesRef.current = []
+    }
     rebuild()
-    const unsub = workspace.subscribeDocumentIndexed?.(() => rebuild())
-    return unsub
-  }, [workspace, rebuild])
+  }, [vault, rebuild])
+
+  useEffect(() => {
+    void reloadVaultNodes()
+    const unsubIndexed = workspace.subscribeDocumentIndexed?.(() => rebuild())
+    // Creation, renommage, suppression d'une note : la liste change sans
+    // qu'aucune indexation ne se produise.
+    const unsubVault = workspace.subscribeVaultChange?.(() => void reloadVaultNodes())
+    return () => { unsubIndexed?.(); unsubVault?.() }
+  }, [workspace, rebuild, reloadVaultNodes])
 
   // Track active document
   useEffect(() => {
@@ -172,7 +232,7 @@ function GraphPanel({ getContributor, workspace }: {
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {(!sim || sim.nodes.length === 0) ? (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-            Ouvre et édite des notes pour les voir apparaître.
+            Ce vault ne contient aucune note.
           </div>
         ) : (
           <svg
@@ -240,7 +300,7 @@ export class GraphWidget implements Widget {
   ) {}
 
   render() {
-    return <GraphPanel getContributor={this.getContributor} workspace={this.ctx.workspace} />
+    return <GraphPanel getContributor={this.getContributor} workspace={this.ctx.workspace} vault={this.ctx.vault} />
   }
 
   dispose(): void {}

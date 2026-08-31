@@ -9,7 +9,8 @@ export interface RibbonItem {
   id: string
   title: string
   icon?: string
-  container: 'left' | 'right'
+  /** 'center' = vue principale ; son bouton se range dans la barre de gauche. */
+  container: PanelLocation
 }
 
 export interface ActiveEditorInfo {
@@ -234,7 +235,7 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
         id: v.id,
         title: v.title,
         icon: v.icon,
-        container: this.effectiveContainer(v) as 'left' | 'right',
+        container: this.effectiveContainer(v) as PanelLocation,
       }))
 
     return [...groupItems, ...viewItems]
@@ -301,7 +302,17 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
   toggleView(viewId: string): void {
     const view = this.views.getAll().find(v => v.id === viewId)
     if (!view) return
-    const location = this.effectiveContainer(view) as 'left' | 'right'
+    const location = this.effectiveContainer(view)
+
+    // Vue principale : elle vit dans le dock central, a cote de l'editeur.
+    // Il n'y a pas de volet a plier ou deplier, on lui donne simplement le
+    // focus. Sans ce cas, toggleView() sortait ici et la vue restait
+    // inatteignable depuis la barre d'icones.
+    if (location === 'center') {
+      this.port.focusPanel(viewId)
+      return
+    }
+
     if (location !== 'left' && location !== 'right') return
 
     if (location === 'left') {
