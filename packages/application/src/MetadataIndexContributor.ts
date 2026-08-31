@@ -1,50 +1,46 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry } from '@savoire/plugin-api'
 import type { DocMetadata, CrdtVersion } from '@savoire/domain-index'
 
-// Parses frontmatter and first H1 from stabilized markdown content.
-// Produces Level 2 metadata (title, tags, aliases, raw frontmatter).
-// crdtVersion is set externally by IndexEngine after onTextChange fires.
+// Extrait le frontmatter et le premier H1 du markdown stabilise.
+// Produit les metadonnees de niveau 2 (titre, tags, alias, frontmatter brut).
+//
+// crdtVersion est LOCALE et n'est pas partagee : elle decrit l'etat du
+// document chez CE pair (voir updateCrdtVersion, appele par IndexEngine apres
+// onTextChange). La partager n'aurait aucun sens entre pairs.
 export class MetadataIndexContributor implements IndexContributor {
   readonly namespace = 'metadata'
 
   private readonly store = new Map<string, DocMetadata>()
-  private _processedSeq = -1
+  private readonly localVersions = new Map<string, CrdtVersion>()
 
-  get processedSeq(): number { return this._processedSeq }
+  computeEntries(docId: string, path: string, markdown: string): SharedIndexEntry[] {
+    const frontmatter = parseFrontmatter(markdown)
+    return [{
+      key: 'meta',
+      value: {
+        docId,
+        path,
+        crdtVersion: { clock: 0 },
+        title: resolveTitle(frontmatter, markdown),
+        tags: resolveTags(frontmatter, markdown),
+        aliases: resolveAliases(frontmatter),
+        frontmatter,
+      } satisfies DocMetadata,
+    }]
+  }
 
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, DocMetadata>
-      this.store.clear()
-      for (const [docId, entry] of Object.entries(data)) this.store.set(docId, entry)
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[MetadataIndexContributor] restore failed:', err)
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.store.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'meta')
+      if (!entry) continue
+      const meta = { ...(entry.value as DocMetadata) }
+      const localVersion = this.localVersions.get(docId)
+      if (localVersion) meta.crdtVersion = localVersion
+      this.store.set(docId, meta)
     }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    const frontmatter = parseFrontmatter(markdownContent)
-    const title = resolveTitle(frontmatter, markdownContent)
-    const tags = resolveTags(frontmatter, markdownContent)
-    const aliases = resolveAliases(frontmatter)
-    const existing = this.store.get(docId)
-    this.store.set(docId, {
-      docId,
-      path,
-      crdtVersion: existing?.crdtVersion ?? { clock: 0 },
-      title,
-      tags,
-      aliases,
-      frontmatter,
-    })
-    if (seq !== null) this._processedSeq = seq
-  }
-
-  snapshot(): string {
-    return JSON.stringify(Object.fromEntries(this.store))
   }
 
   getMetadata(docId: string): DocMetadata | null {
@@ -55,8 +51,9 @@ export class MetadataIndexContributor implements IndexContributor {
     return [...this.store.values()]
   }
 
-  // Called by IndexEngine after onTextChange to attach the CRDT version to the metadata.
+  /** Appele par IndexEngine apres onTextChange. Purement local. */
   updateCrdtVersion(docId: string, version: CrdtVersion): void {
+    this.localVersions.set(docId, version)
     const entry = this.store.get(docId)
     if (entry) entry.crdtVersion = version
   }

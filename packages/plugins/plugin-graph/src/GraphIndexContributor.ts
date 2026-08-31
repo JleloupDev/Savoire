@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry } from '@savoire/plugin-api'
+
+/** Ce qu'un document publie dans le namespace 'graph'. */
+interface GraphDocEntry {
+  path: string
+  targets: Array<{ targetPath: string; linkType: 'wikilink' | 'embed' }>
+}
 
 export interface GraphNode {
   docId: string
@@ -13,82 +19,34 @@ export interface GraphEdge {
   linkType: 'wikilink' | 'embed'
 }
 
-// Snapshot format persisted via IndexSnapshotController
-interface GraphSnapshot {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-}
-
 const WIKILINK_RE = /(!?)\[\[([^\]|#\n]+?)(?:\|[^\]]*)?\]\]/g
 
 export class GraphIndexContributor implements IndexContributor {
   readonly namespace = 'graph'
 
-  // source docId → node info
+  // Modeles de lecture, reconstruits depuis la carte partagee.
   private nodes = new Map<string, GraphNode>()
-  // source docId → outbound edges
   private edges = new Map<string, GraphEdge[]>()
 
-  private _processedSeq = 0
-  get processedSeq(): number { return this._processedSeq }
-
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as GraphSnapshot
-      this.nodes.clear()
-      this.edges.clear()
-      for (const n of data.nodes) this.nodes.set(n.docId, n)
-      for (const e of data.edges) {
-        const list = this.edges.get(e.sourceId) ?? []
-        list.push(e)
-        this.edges.set(e.sourceId, list)
-      }
-      this._processedSeq = processedSeq
-    } catch {
-      // corrupt snapshot — start fresh
-    }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    // Update node
-    this.nodes.set(docId, { docId, path })
-
-    // Replace outbound edges for this doc
-    const outEdges: GraphEdge[] = []
+  computeEntries(_docId: string, path: string, markdown: string): SharedIndexEntry[] {
+    const targets: Array<{ targetPath: string; linkType: 'wikilink' | 'embed' }> = []
     WIKILINK_RE.lastIndex = 0
     let m: RegExpExecArray | null
-    while ((m = WIKILINK_RE.exec(markdownContent)) !== null) {
-      const isEmbed = m[1] === '!'
-      const targetPath = m[2].trim()
-      outEdges.push({ sourceId: docId, targetPath, linkType: isEmbed ? 'embed' : 'wikilink' })
+    while ((m = WIKILINK_RE.exec(markdown)) !== null) {
+      targets.push({ targetPath: m[2].trim(), linkType: m[1] === '!' ? 'embed' : 'wikilink' })
     }
-    this.edges.set(docId, outEdges)
-
-    if (seq !== null) this._processedSeq = seq
+    return [{ key: 'links', value: { path, targets } satisfies GraphDocEntry }]
   }
 
-  snapshot(): string {
-    const nodes = [...this.nodes.values()]
-    const edges: GraphEdge[] = []
-    for (const list of this.edges.values()) edges.push(...list)
-    return JSON.stringify({ nodes, edges } satisfies GraphSnapshot)
-  }
-
-  // ── Bulk load from server ────────────────────────────────────────────────
-
-  /**
-   * Initialise le graphe depuis les liens déjà calculés par le serveur.
-   * Appelé une fois au chargement du vault pour éviter d'attendre que chaque
-   * note soit ouverte et ré-indexée.
-   * Les onOp() ultérieurs mettent à jour les nœuds individuellement.
-   */
-  bulkLoad(links: Array<{ sourceId: string; sourcePath: string; targetId: string | null; targetPath: string; linkType: string }>): void {
-    for (const l of links) {
-      this.nodes.set(l.sourceId, { docId: l.sourceId, path: l.sourcePath })
-      const list = this.edges.get(l.sourceId) ?? []
-      const exists = list.some(e => e.targetPath === l.targetPath)
-      if (!exists) list.push({ sourceId: l.sourceId, targetPath: l.targetPath, linkType: l.linkType as 'wikilink' | 'embed' })
-      this.edges.set(l.sourceId, list)
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.nodes = new Map()
+    this.edges = new Map()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'links')
+      if (!entry) continue
+      const { path, targets } = entry.value as GraphDocEntry
+      this.nodes.set(docId, { docId, path })
+      this.edges.set(docId, targets.map(t => ({ sourceId: docId, ...t })))
     }
   }
 

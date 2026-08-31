@@ -70,4 +70,8 @@ export class EdgesyncIndexChannel {
     this.map.observe(handler)
     return () => this.map.unobserve(handler)
   }
+
+  /** Le Y.Doc appartient a la Session edgesync, qui le detruit de son cote :
+   *  rien a liberer ici. Les abonnements sont deja rendus par onChange(). */
+  dispose(): void {}
 }

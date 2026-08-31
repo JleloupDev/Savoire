@@ -57,6 +57,10 @@ export type {
   NoteScope,
   ContentExtractor,
   IndexContributor,
+  AnyIndexContributor,
+  LocalIndexContributor,
+  AnchorContributor,
+  SharedIndexEntry,
   ICollaborativeText,
   IndexEntry,
   RelPosJSON,
@@ -77,3 +81,4 @@ export type { ICRDT } from './crdt'
 export type { ITransport } from './transport'
 export type { IIdentityProvider, ISeedExportingIdentityProvider } from './identity'
 export { encodeSignedOp, decodeSignedOp, toHex, fromHex } from './identity'
+export * from './indexChannel'

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor, ICollaborativeText, AnchorIndex } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry, ICollaborativeText, AnchorIndex } from '@savoire/plugin-api'
 import { validateEntry, anchorKey } from '@savoire/plugin-api'
 
 export interface BacklinkEntry {
@@ -22,44 +22,27 @@ function extractTargets(content: string): string[] {
 export class WikilinkIndexContributor implements IndexContributor {
   readonly namespace = 'wikilinks'
 
-  // onOp-maintained map for backlinks panel queries
+  // Modele de lecture (cible -> sources), reconstruit depuis la carte partagee.
   private readonly backlinks = new Map<string, Map<string, BacklinkEntry>>()
-  private _processedSeq = -1
 
-  get processedSeq(): number { return this._processedSeq }
+  computeEntries(_docId: string, path: string, markdown: string): SharedIndexEntry[] {
+    const targets = [...new Set(extractTargets(markdown))]
+    if (targets.length === 0) return []
+    return [{ key: 'targets', value: { path, targets } }]
+  }
 
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, BacklinkEntry[]>
-      this.backlinks.clear()
-      for (const [target, entries] of Object.entries(data)) {
-        const inner = new Map<string, BacklinkEntry>()
-        for (const e of entries) inner.set(e.docId, e)
-        this.backlinks.set(target, inner)
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.backlinks.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'targets')
+      if (!entry) continue
+      const { path, targets } = entry.value as { path: string; targets: string[] }
+      for (const target of targets) {
+        let inner = this.backlinks.get(target)
+        if (!inner) { inner = new Map(); this.backlinks.set(target, inner) }
+        inner.set(docId, { docId, path })
       }
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[WikilinkIndexContributor] restore failed:', err)
     }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    for (const inner of this.backlinks.values()) inner.delete(docId)
-    for (const target of extractTargets(markdownContent)) {
-      let inner = this.backlinks.get(target)
-      if (!inner) { inner = new Map(); this.backlinks.set(target, inner) }
-      inner.set(docId, { docId, path })
-    }
-    for (const [target, inner] of this.backlinks) {
-      if (inner.size === 0) this.backlinks.delete(target)
-    }
-    if (seq !== null) this._processedSeq = seq
-  }
-
-  snapshot(): string {
-    const data: Record<string, BacklinkEntry[]> = {}
-    for (const [target, inner] of this.backlinks) data[target] = [...inner.values()]
-    return JSON.stringify(data)
   }
 
   // onTextChange: maintains real-time anchor positions in AnchorIndex

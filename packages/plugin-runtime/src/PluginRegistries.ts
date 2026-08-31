@@ -14,7 +14,7 @@ import type {
   HookRegistry,
   IEditorHostAPI,
   IIndexRegistry,
-  IndexContributor,
+  AnyIndexContributor,
   InputTrigger,
   PluginAPI,
   PluginCommand,
@@ -192,10 +192,10 @@ export class HookRegistryImpl implements HookRegistry {
 // ─── IndexRegistryImpl ────────────────────────────────────────────────────
 
 export class IndexRegistryImpl implements IIndexRegistry {
-  private readonly factories = new Map<string, () => IndexContributor>()
-  private current = new Map<string, IndexContributor>()
+  private readonly factories = new Map<string, () => AnyIndexContributor>()
+  private current = new Map<string, AnyIndexContributor>()
 
-  registerFactory(factory: () => IndexContributor): void {
+  registerFactory(factory: () => AnyIndexContributor): void {
     const instance = factory()
     this.factories.set(instance.namespace, factory)
     this.current.set(instance.namespace, instance)
@@ -210,11 +210,11 @@ export class IndexRegistryImpl implements IIndexRegistry {
     console.debug(`[IndexRegistry] rebuilt ${this.current.size} contributors`)
   }
 
-  getAll(): IndexContributor[] {
+  getAll(): AnyIndexContributor[] {
     return [...this.current.values()]
   }
 
-  get(namespace: string): IndexContributor | undefined {
+  get(namespace: string): AnyIndexContributor | undefined {
     return this.current.get(namespace)
   }
 }

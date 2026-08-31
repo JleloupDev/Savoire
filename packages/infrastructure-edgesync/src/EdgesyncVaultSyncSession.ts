@@ -13,6 +13,8 @@
 import type { ICRDT } from '@savoire/plugin-api'
 import type { IVaultDirectory } from '@savoire/platform'
 import type { IVaultSyncSession, IKeyManagedVaultSession } from '@savoire/application'
+import type { IIndexChannel } from '@savoire/plugin-api'
+import { EdgesyncIndexChannel } from './EdgesyncIndexChannel'
 import { YjsCrdtAdapter, YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { EdgesyncVaultSession } from './EdgesyncVaultSession'
 
@@ -26,6 +28,7 @@ export interface EdgesyncVaultSyncSessionOptions {
 
 export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedVaultSession {
   private readonly crdts = new Map<string, YjsCrdtAdapter>()
+  private readonly indexes = new Map<string, EdgesyncIndexChannel>()
   private readonly unsubDirectory: () => void
 
   private constructor(
@@ -64,6 +67,18 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     crdt.dispose()
   }
 
+  openIndex(namespace: string): IIndexChannel {
+    const existing = this.indexes.get(namespace)
+    if (existing) return existing
+    // Le canal passe par le VRAI protocole : un pair qui l'ouvre tard recoit
+    // l'etat complet, pas seulement les mises a jour futures. Sa cle est
+    // derivee comme celle d'un document — l'appartenance au vault EST l'acces
+    // a l'index, aucune ACL separee.
+    const channel = this.inner.openIndex(namespace)
+    this.indexes.set(namespace, channel)
+    return channel
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return 'connected'
   }
@@ -79,6 +94,8 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
   async dispose(): Promise<void> {
     this.unsubDirectory()
     for (const docId of [...this.crdts.keys()]) this.closeDocument(docId)
+    for (const channel of this.indexes.values()) channel.dispose?.()
+    this.indexes.clear()
     await this.inner.dispose()
     this.directory.dispose()
   }

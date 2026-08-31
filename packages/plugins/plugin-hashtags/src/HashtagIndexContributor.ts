@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor, ICollaborativeText, AnchorIndex } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry, ICollaborativeText, AnchorIndex } from '@savoire/plugin-api'
 import { validateEntry, anchorKey } from '@savoire/plugin-api'
 
 // Matches hashtags including accented characters (e.g. #salut, #été).
@@ -18,36 +18,23 @@ function extractHashtags(content: string): string[] {
 export class HashtagIndexContributor implements IndexContributor {
   readonly namespace = 'hashtags'
 
-  // onOp-maintained map for panel queries
+  // Modele de lecture, reconstruit depuis la carte partagee.
   private readonly byDoc = new Map<string, { path: string; tags: Set<string> }>()
-  private _processedSeq = -1
 
-  get processedSeq(): number { return this._processedSeq }
+  computeEntries(_docId: string, path: string, markdown: string): SharedIndexEntry[] {
+    const tags = extractHashtags(markdown)
+    if (tags.length === 0) return []
+    return [{ key: 'tags', value: { path, tags: [...new Set(tags)] } }]
+  }
 
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, { path: string; tags: string[] }>
-      this.byDoc.clear()
-      for (const [docId, { path, tags }] of Object.entries(data)) {
-        this.byDoc.set(docId, { path, tags: new Set(tags) })
-      }
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[HashtagIndexContributor] restore failed:', err)
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.byDoc.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'tags')
+      if (!entry) continue
+      const { path, tags } = entry.value as { path: string; tags: string[] }
+      this.byDoc.set(docId, { path, tags: new Set(tags) })
     }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    const tags = extractHashtags(markdownContent)
-    if (tags.length > 0) this.byDoc.set(docId, { path, tags: new Set(tags) })
-    else this.byDoc.delete(docId)
-    if (seq !== null) this._processedSeq = seq
-  }
-
-  snapshot(): string {
-    const data: Record<string, { path: string; tags: string[] }> = {}
-    for (const [docId, { path, tags }] of this.byDoc) data[docId] = { path, tags: [...tags] }
-    return JSON.stringify(data)
   }
 
   // onTextChange: maintains real-time anchor positions in AnchorIndex

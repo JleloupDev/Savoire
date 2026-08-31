@@ -85,7 +85,6 @@ builder.Services.AddSwaggerGen(options =>
 
 // 6. SignalR
 builder.Services.AddSignalR();
-builder.Services.AddSingleton<Savoire.Application.Sync.Common.IndexOpSequencer>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 
 // 7. CORS — configurable via AllowedOrigins, fallback permissif en dev

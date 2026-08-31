@@ -17,4 +17,9 @@ public static class CrdtResourceType
 
     /// <summary>Snapshot-based plugin room (excalidraw, mindmap). OpBytes = UTF-8 JSON snapshot.</summary>
     public const string Room     = "room";
+
+    /// <summary>Index partagé d'un namespace. OpBytes = binary Yjs update.
+    /// Le serveur n'interprète rien : il empile et rediffuse. ResourceId =
+    /// "index:{vaultId}:{namespace}".</summary>
+    public const string Index    = "index";
 }

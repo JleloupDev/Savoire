@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry } from '@savoire/plugin-api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,63 +40,31 @@ function extractWikilinks(content: string): string[] {
 export class BacklinksIndexContributor implements IndexContributor {
   readonly namespace = 'backlinks'
 
-  // Map<targetPath, Map<sourceDocId, BacklinkEntry>>
+  // Map<cible, Map<docId source, entree>> — modele de lecture reconstruit
+  // depuis la carte partagee.
   // see ADR-017
   private readonly index = new Map<string, Map<string, BacklinkEntry>>()
 
-  private _processedSeq = -1
+  computeEntries(_docId: string, path: string, markdown: string): SharedIndexEntry[] {
+    const targets = [...new Set(extractWikilinks(markdown))]
+    if (targets.length === 0) return []
+    return [{ key: 'targets', value: { path, targets } }]
+  }
 
-  get processedSeq(): number { return this._processedSeq }
-
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, BacklinkEntry[]>
-      this.index.clear()
-      for (const [target, entries] of Object.entries(data)) {
-        const inner = new Map<string, BacklinkEntry>()
-        for (const e of entries) inner.set(e.docId, e)
-        this.index.set(target, inner)
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.index.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'targets')
+      if (!entry) continue
+      const { path, targets } = entry.value as { path: string; targets: string[] }
+      for (const target of targets) {
+        let inner = this.index.get(target)
+        if (!inner) { inner = new Map(); this.index.set(target, inner) }
+        inner.set(docId, { docId, path })
       }
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[BacklinksIndexContributor] restore failed:', err)
     }
   }
 
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    // 1. Retire toutes les entrées existantes de ce document source
-    for (const inner of this.index.values()) {
-      inner.delete(docId)
-    }
-
-    // 2. Réindexe les wikilinks présents dans le contenu courant
-    const targets = extractWikilinks(markdownContent)
-    for (const target of targets) {
-      let inner = this.index.get(target)
-      if (!inner) { inner = new Map(); this.index.set(target, inner) }
-      inner.set(docId, { docId, path })
-    }
-
-    // 3. Nettoie les cibles vides
-    for (const [target, inner] of this.index) {
-      if (inner.size === 0) this.index.delete(target)
-    }
-
-    if (seq !== null) this._processedSeq = seq
-  }
-
-  snapshot(): string {
-    const data: Record<string, BacklinkEntry[]> = {}
-    for (const [target, inner] of this.index) {
-      data[target] = [...inner.values()]
-    }
-    return JSON.stringify(data)
-  }
-
-  /**
-   * Retourne les documents qui contiennent un lien vers `targetPath`.
-   * Recherche par chemin exact ou par nom de fichier sans extension.
-   */
   getBacklinks(targetPath: string): BacklinkEntry[] {
     // Cherche par chemin exact en premier
     const exact = this.index.get(targetPath)

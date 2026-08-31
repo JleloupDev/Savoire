@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
 import type { DocumentStore, IDocumentMeta, IVaultDirectory, IVaultStorage, VaultClient } from '@savoire/platform'
-import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider } from '@savoire/plugin-api'
+import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
   id: string
@@ -64,9 +64,15 @@ export interface IVaultSyncSession {
   /** Arrete la synchro d'un document dont le panneau s'est ferme. */
   closeDocument(docId: string): void
   getState(): 'connected' | 'connecting' | 'disconnected'
-  /** Pousse une op d'index. Absent si le profil n'indexe pas cote pairs. */
-  pushIndexOp?(docId: string, path: string, markdownContent: string): Promise<number | null>
-  onIndexOpApplied?(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void
+  /**
+   * Ouvre (ou reprend) le canal partage d'un namespace d'index. Un canal par
+   * namespace : un client ne synchronise que les index dont ses plugins
+   * charges ont besoin. Idempotent — deux appels rendent le meme canal.
+   *
+   * Le serveur n'est qu'un passe-plat : il relaie des trames opaques, comme
+   * pour les documents, et ne stocke aucun etat d'index interpretable.
+   */
+  openIndex(namespace: string): IIndexChannel
   dispose(): Promise<void>
 }
 

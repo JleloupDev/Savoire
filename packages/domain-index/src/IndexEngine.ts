@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { ICollaborativeText } from './ICollaborativeText'
-import type { IndexContributor } from './IndexContributor'
+import type { AnchorContributor } from './IndexContributor'
 import type { CrdtVersion } from './CrdtVersion'
 import { AnchorIndex } from './AnchorIndex'
 
 export class IndexEngine {
   private readonly _index = new AnchorIndex()
-  private readonly contributors: IndexContributor[] = []
+  private readonly contributors: AnchorContributor[] = []
 
   // ── Query delegation ───────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ export class IndexEngine {
 
   // ── Registration ───────────────────────────────────────────────────────────
 
-  register(contributor: IndexContributor): this {
+  register(contributor: AnchorContributor): this {
     this.contributors.push(contributor)
     return this
   }
@@ -46,13 +46,6 @@ export class IndexEngine {
     }
     this._index.markValidated(docId, version)
     this._index.revalidationQueue.delete(docId)
-  }
-
-  // Called for each markdown op — drives op-log contributors (backlinks, graph, etc.).
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
-    for (const c of this.contributors) {
-      c.onOp(seq, docId, path, markdownContent)
-    }
   }
 
 }

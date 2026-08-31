@@ -6,7 +6,6 @@ using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Savoire.Application.Sync.Common;
 using Savoire.Application.Sync.JoinVault;
 using Savoire.Application.Sync.PushVaultOperation;
 using Savoire.Application.Sync.SnapshotVault;
@@ -41,7 +40,7 @@ public class VaultHubTests
         var identity = new ClaimsIdentity([new Claim("sub", UserId)], "Bearer");
         context.User.Returns(new ClaimsPrincipal(identity));
 
-        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>(), new IndexOpSequencer())
+        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>())
         {
             Clients = _clients,
             Groups  = _groups,

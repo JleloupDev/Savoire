@@ -1,39 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry } from '@savoire/plugin-api'
 
-// Built-in contributor registered by the application itself (not a plugin).
-// Indexes document stems so the index can resolve [[PageName]] to a vault path.
+// Contributeur integre, enregistre par l'application elle-meme (pas un plugin).
+// Indexe le radical des documents pour que [[PageName]] se resolve en chemin.
+//
+// Migre au contrat partage : plus de snapshot, de restore ni de processedSeq.
+// Il declare ce qu'un document produit ; le runtime possede la carte CRDT et
+// lui rend l'etat complet a chaque changement, local ou distant.
+interface FilenameValue { path: string; stem: string }
+
 export class FilenameIndexContributor implements IndexContributor {
   readonly namespace = 'filename'
 
-  private readonly index = new Map<string, { path: string; stem: string }>()
-  private _processedSeq = -1
+  private readonly index = new Map<string, FilenameValue>()
 
-  get processedSeq(): number { return this._processedSeq }
-
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, { path: string; stem: string }>
-      this.index.clear()
-      for (const [docId, entry] of Object.entries(data)) {
-        this.index.set(docId, entry)
-      }
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[FilenameIndexContributor] restore failed:', err)
-    }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, _content: string): void {
+  computeEntries(_docId: string, path: string, _markdown: string): SharedIndexEntry[] {
     const basename = path.split('/').pop() ?? path
     const stem = basename.includes('.') ? basename.slice(0, basename.lastIndexOf('.')) : basename
-    this.index.set(docId, { path, stem })
-    if (seq !== null) this._processedSeq = seq
+    return [{ key: 'name', value: { path, stem } satisfies FilenameValue }]
   }
 
-  snapshot(): string {
-    return JSON.stringify(Object.fromEntries(this.index))
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.index.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'name')
+      if (entry) this.index.set(docId, entry.value as FilenameValue)
+    }
   }
 
   resolveByName(name: string): string | undefined {

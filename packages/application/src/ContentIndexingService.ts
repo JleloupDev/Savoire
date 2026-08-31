@@ -1,23 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { HookRegistry, IIndexRegistry } from '@savoire/plugin-api'
-import type { CrdtVersion } from '@savoire/domain-index'
+import type { HookRegistry, IIndexRegistry, IIndexChannel } from '@savoire/plugin-api'
+import type { CrdtVersion, SharedIndexEntry } from '@savoire/domain-index'
+import { isSharedContributor } from '@savoire/domain-index'
 import type { ILocalIndexStorage } from '@savoire/platform'
 import type { IVaultSyncSession } from './contracts'
 
 /**
- * ContentIndexingService — subscribes to onDocumentStabilized and dispatches to IndexContributors.
+ * ContentIndexingService — possede les canaux d'index et fait le pont entre
+ * les documents et les contributeurs.
  *
  * see ADR-015
  *
- * Lifecycle:
- *   1. restore()       — on startup, reloads persisted snapshots
- *   2. init()          — subscribes to the hook (call after plugins have loaded)
- *   3. attachHub(getSession) — apres activation d'un vault, branche la synchro d'index
+ * Deux familles de contributeurs cohabitent :
+ *
+ *  - PARTAGES (isSharedContributor) : le service ouvre un canal CRDT par
+ *    namespace, y ecrit les entrees calculees par le contributeur, et lui
+ *    renvoie l'etat complet a chaque changement — local ou distant. Le
+ *    contributeur ne connait ni transport, ni persistance, ni sequencement.
+ *
+ *  - LOCAUX : `fulltext` uniquement, qui reste sur l'ancien modele
+ *    snapshot/restore persiste dans le navigateur. Voir LocalIndexContributor.
+ *
+ * Aucun etat d'index ne transite plus vers le serveur sous forme
+ * interpretable : les canaux relaient des trames CRDT opaques.
+ *
+ * Cycle de vie :
+ *   1. init()                       — s'abonne au hook (apres chargement des plugins)
+ *   2. switchVault(storage, session) — a chaque activation de vault
  */
 export class ContentIndexingService {
-  private getHub: (() => IVaultSyncSession | null | undefined) | null = null
-  private hubUnsubscribe: (() => void) | null = null
+  private readonly channels = new Map<string, IIndexChannel>()
+  private readonly channelUnsubs: (() => void)[] = []
   private onIndexed: ((docId: string, path: string) => void) | null = null
 
   constructor(
@@ -26,96 +40,110 @@ export class ContentIndexingService {
     private storage: ILocalIndexStorage,
   ) {}
 
-  /** Swaps storage, rebuilds fresh contributor instances, and reloads snapshots for the new vault. */
-  async switchVault(storage: ILocalIndexStorage): Promise<void> {
-    this.storage = storage
-    this.indexRegistry.rebuild()
-    await this.restore()
-  }
-
-  /** Callback invoked after each local indexing pass (to notify panels). */
+  /** Callback invoque apres chaque passe d'indexation locale (pour les panneaux). */
   setOnIndexed(cb: (docId: string, path: string) => void): void {
     this.onIndexed = cb
   }
 
-  /** Reloads snapshots from storage. Call before init(). */
-  async restore(): Promise<void> {
+  /**
+   * Rebranche tout sur un nouveau vault : instances de contributeurs neuves,
+   * stockage local du vault, canaux partages de sa session.
+   */
+  async switchVault(
+    storage: ILocalIndexStorage,
+    getSession?: () => IVaultSyncSession | null | undefined,
+  ): Promise<void> {
+    this.closeChannels()
+    this.storage = storage
+    this.indexRegistry.rebuild()
+    await this.restoreLocal()
+    if (getSession) this.openChannels(getSession)
+  }
+
+  /** Recharge les snapshots des contributeurs LOCAUX uniquement. */
+  private async restoreLocal(): Promise<void> {
     for (const contributor of this.indexRegistry.getAll()) {
+      if (isSharedContributor(contributor)) continue
       const saved = await this.storage.loadSnapshot(contributor.namespace)
-      if (saved) {
-        contributor.restore(saved.data, saved.seq)
-        console.debug(`[ContentIndexingService] restored "${contributor.namespace}" at seq=${saved.seq}`)
-      }
+      if (saved) contributor.restore(saved.data, saved.seq)
     }
   }
 
-  /** Subscribes to onDocumentStabilized. Call after plugins have loaded. */
+  /** Ouvre un canal par contributeur partage et l'y abonne. */
+  private openChannels(getSession: () => IVaultSyncSession | null | undefined): void {
+    const session = getSession()
+    if (!session) return
+    for (const contributor of this.indexRegistry.getAll()) {
+      if (!isSharedContributor(contributor)) continue
+      const channel = session.openIndex(contributor.namespace)
+      this.channels.set(contributor.namespace, channel)
+      const feed = (): void => {
+        const byDoc = new Map<string, SharedIndexEntry[]>()
+        for (const { id, value } of channel.getAll()) {
+          byDoc.set(id, (value as SharedIndexEntry[] | undefined) ?? [])
+        }
+        contributor.onEntriesChanged(byDoc)
+        // Un pair distant a modifie l'index : les panneaux doivent se rafraichir.
+        this.onIndexed?.('', '')
+      }
+      this.channelUnsubs.push(channel.onChange(feed))
+      feed() // etat deja presente au moment de l'ouverture
+    }
+  }
+
+  private closeChannels(): void {
+    for (const unsub of this.channelUnsubs) unsub()
+    this.channelUnsubs.length = 0
+    for (const channel of this.channels.values()) channel.dispose()
+    this.channels.clear()
+  }
+
+  /** S'abonne a onDocumentStabilized. A appeler apres le chargement des plugins. */
   init(): void {
     this.hooks.onDocumentStabilized(async (docId, path, content, crdtVersion?: CrdtVersion) => {
-      // 1. Apply locally with seq=null (op not yet sequenced)
-      for (const contributor of this.indexRegistry.getAll()) {
-        contributor.onOp(null, docId, path, content)
-        if (crdtVersion && 'updateCrdtVersion' in contributor) {
-          (contributor as { updateCrdtVersion(docId: string, version: CrdtVersion): void }).updateCrdtVersion(docId, crdtVersion)
-        }
-        const snap = contributor.snapshot()
-        await this.storage.saveSnapshot(contributor.namespace, snap, contributor.processedSeq)
-      }
-
-      // 2. Notify panels (backlinks, metadata) that this doc was re-indexed
+      await this.indexDocument(docId, path, content, crdtVersion)
       this.onIndexed?.(docId, path)
-
-      // 3. Push to server for sequencing and broadcast to other clients
-      const hub = this.getHub?.()
-      if (hub?.pushIndexOp) {
-        void hub.pushIndexOp(docId, path, content)
-      }
     })
   }
 
   /**
-   * Wires server sync. Called after vault activation.
-   * The hub is queried via getHub() on each op (not captured at registration time)
-   * to avoid stale refs after a vault switch.
+   * Indexe un contenu markdown deja converti (documents non-Markdown :
+   * Excalidraw, etc., via onFileContentStabilized).
    */
-  attachHub(getHub: () => IVaultSyncSession | null | undefined): void {
-    // Clear previous subscription when vault changes
-    this.hubUnsubscribe?.()
-    this.hubUnsubscribe = null
-    this.getHub = getHub
-
-    const hub = getHub()
-    if (hub?.onIndexOpApplied) {
-      this.hubUnsubscribe = hub.onIndexOpApplied((evt: { seq: number; docId: string; path: string; markdownContent: string }) => {
-        for (const contributor of this.indexRegistry.getAll()) {
-          contributor.onOp(evt.seq, evt.docId, evt.path, evt.markdownContent)
-        }
-        // No saveSnapshot here — final seq is persisted on the next local op
-      })
-    }
+  async indexNow(docId: string, path: string, shadowMarkdown: string): Promise<void> {
+    await this.indexDocument(docId, path, shadowMarkdown)
+    this.onIndexed?.(docId, path)
   }
 
-  detachHub(): void {
-    this.hubUnsubscribe?.()
-    this.hubUnsubscribe = null
-    this.getHub = null
+  /** Oublie un document supprime, dans tous les namespaces partages. */
+  forgetDocument(docId: string): void {
+    for (const channel of this.channels.values()) channel.delete(docId)
   }
 
-  /**
-   * Immediately indexes pre-converted shadow content.
-   * Used by non-Markdown FileViews (Excalidraw, etc.) via onFileContentStabilized.
-   * Content is already in Markdown (shadow document) — no contentExtractor here.
-   */
-  async indexNow(docId: string, path: string, shadowMarkdown: string, pushToHub = true): Promise<void> {
+  private async indexDocument(
+    docId: string,
+    path: string,
+    content: string,
+    crdtVersion?: CrdtVersion,
+  ): Promise<void> {
     for (const contributor of this.indexRegistry.getAll()) {
-      contributor.onOp(null, docId, path, shadowMarkdown)
-      const snap = contributor.snapshot()
-      await this.storage.saveSnapshot(contributor.namespace, snap, contributor.processedSeq)
-    }
-    if (pushToHub) {
-      const hub = this.getHub?.()
-      if (hub?.pushIndexOp) void hub.pushIndexOp(docId, path, shadowMarkdown)
+      if (isSharedContributor(contributor)) {
+        // Une seule ecriture par document : le canal est clefe par documentId,
+        // donc « recalculer ce document » remplace exactement ses entrees.
+        this.channels.get(contributor.namespace)?.set(
+          docId,
+          contributor.computeEntries(docId, path, content),
+        )
+        continue
+      }
+      contributor.onOp(null, docId, path, content)
+      if (crdtVersion && 'updateCrdtVersion' in contributor) {
+        (contributor as unknown as { updateCrdtVersion(d: string, v: CrdtVersion): void })
+          .updateCrdtVersion(docId, crdtVersion)
+      }
+      await this.storage.saveSnapshot(
+        contributor.namespace, contributor.snapshot(), contributor.processedSeq,
+      )
     }
   }
-
 }

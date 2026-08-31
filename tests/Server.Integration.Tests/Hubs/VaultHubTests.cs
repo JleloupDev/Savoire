@@ -163,16 +163,30 @@ public class VaultHubTests : IClassFixture<AppFactory>, IAsyncLifetime
 
     // ── PushIndexOp ───────────────────────────────────────────────────────────
 
-    [Fact(DisplayName = "PushIndexOp — retourne un numero de sequence positif")]
-    public async Task PushIndexOp_ReturnsSequenceNumber()
+    [Fact(DisplayName = "PushIndexUpdate — le serveur empile et rediffuse des trames opaques")]
+    public async Task PushIndexUpdate_RelaysOpaqueFrames()
     {
         await using HubConnection conn = CreateConnection();
         await conn.StartAsync();
         await conn.InvokeAsync("JoinVault", _vaultId);
 
-        var dto = new PushIndexOpDto(_vaultId, Guid.NewGuid().ToString(), "index-seq.md", "# Hello index");
-        long seq = await conn.InvokeAsync<long>("PushIndexOp", dto);
+        // Le serveur n'interprete jamais ces octets : n'importe quel contenu passe.
+        byte[] update = [1, 2, 3, 4, 5];
+        await conn.InvokeAsync("PushIndexUpdate", _vaultId, "graph", Convert.ToBase64String(update));
 
-        seq.Should().BePositive();
+        string[] ops = await conn.InvokeAsync<string[]>("JoinIndex", _vaultId, "graph");
+
+        ops.Should().Contain(Convert.ToBase64String(update));
+    }
+
+    [Fact(DisplayName = "JoinIndex — un namespace inconnu rend une liste vide, sans erreur")]
+    public async Task JoinIndex_UnknownNamespace_ReturnsEmpty()
+    {
+        await using HubConnection conn = CreateConnection();
+        await conn.StartAsync();
+
+        string[] ops = await conn.InvokeAsync<string[]>("JoinIndex", _vaultId, "namespace-inexistant");
+
+        ops.Should().BeEmpty();
     }
 }

@@ -10,12 +10,9 @@ import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 
 const VAULT_COMPACT_THRESHOLD = 100
 
-interface IndexOpAppliedEvent {
-  seq: number
-  docId: string
-  path: string
-  markdownContent: string
-}
+// Relais d'index : le hub transporte des mises a jour CRDT OPAQUES, une par
+// namespace. Remplace l'ancien PushIndexOp, qui expediait le markdown complet
+// au serveur pour qu'il le sequence et le rediffuse.
 
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
@@ -36,7 +33,7 @@ export class VaultHubClient {
   private disposing = false
   private pendingCreates = new Map<string, Promise<IDocumentMeta>>()
   private authBlockedUntil = 0
-  private indexOpCallbacks: ((evt: IndexOpAppliedEvent) => void)[] = []
+  private indexCallbacks = new Map<string, ((update: Uint8Array) => void)[]>()
   private unsubLocalVaultUpdate: (() => void) | null = null
 
   constructor(
@@ -83,9 +80,12 @@ export class VaultHubClient {
         this.onChanged()
       })
 
-      // ── Index ops ─────────────────────────────────────────────────────────
-      this.connection.on('IndexOpApplied', (evt: IndexOpAppliedEvent) => {
-        for (const cb of this.indexOpCallbacks) cb(evt)
+      // ── Index : mises a jour CRDT opaques, par namespace ──────────────────
+      this.connection.on('IndexUpdateReceived', (_vaultId: string, namespace: string, updateBase64: string) => {
+        const cbs = this.indexCallbacks.get(namespace)
+        if (!cbs) return
+        const update = fromBase64(updateBase64)
+        for (const cb of cbs) cb(update)
       })
 
       // ── Reconnection: rejoin to get fresh vault CRDT state ────────────────
@@ -139,22 +139,37 @@ export class VaultHubClient {
 
   // ── Index ops ─────────────────────────────────────────────────────────────
 
-  async pushIndexOp(docId: string, path: string, markdownContent: string): Promise<number | null> {
-    if (!this.isConnected) return null
+  /** Rejoint le canal d'index d'un namespace et rend les ops deja stockees. */
+  async joinIndex(namespace: string): Promise<Uint8Array[]> {
+    if (this.disposed) return []
     try {
       const connection = await this._ensureConnected()
-      return await connection.invoke<number>('PushIndexOp', {
-        vaultId: this.vaultId, docId, path, markdownContent,
-      })
+      const ops = await connection.invoke<string[]>('JoinIndex', this.vaultId, namespace)
+      return ops.map(fromBase64)
     } catch (err) {
-      console.warn('[VaultHub] pushIndexOp failed', err)
-      return null
+      console.warn('[VaultHub] joinIndex failed', err)
+      return []
     }
   }
 
-  onIndexOpApplied(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void {
-    this.indexOpCallbacks.push(cb)
-    return () => { this.indexOpCallbacks = this.indexOpCallbacks.filter(x => x !== cb) }
+  async pushIndexUpdate(namespace: string, update: Uint8Array): Promise<void> {
+    if (!this.isConnected) return
+    try {
+      await this.connection!.invoke('PushIndexUpdate', this.vaultId, namespace, toBase64(update))
+    } catch (err) {
+      console.warn('[VaultHub] pushIndexUpdate failed', err)
+    }
+  }
+
+  onIndexUpdate(namespace: string, cb: (update: Uint8Array) => void): () => void {
+    const list = this.indexCallbacks.get(namespace) ?? []
+    list.push(cb)
+    this.indexCallbacks.set(namespace, list)
+    return () => {
+      const cur = this.indexCallbacks.get(namespace)
+      if (!cur) return
+      this.indexCallbacks.set(namespace, cur.filter(x => x !== cb))
+    }
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

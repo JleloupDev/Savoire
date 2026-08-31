@@ -7,18 +7,17 @@ using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using Savoire.Application.Sync.Common;
 using Savoire.Application.Sync.JoinVault;
 using Savoire.Application.Sync.PushVaultOperation;
 using Savoire.Application.Sync.SnapshotVault;
+using Savoire.Application.Sync.IndexChannel;
 
 namespace Savoire.Server.Hubs;
 
 [Authorize]
 public sealed class VaultHub(
     IMediator         mediator,
-    ILogger<VaultHub> logger,
-    IndexOpSequencer  sequencer) : Hub
+    ILogger<VaultHub> logger) : Hub
 {
     // ── Vault CRDT sync ───────────────────────────────────────────────────────
 
@@ -64,19 +63,40 @@ public sealed class VaultHub(
         logger.LogInformation("Vault {VaultId} compacted by {ConnectionId}", vaultId, Context.ConnectionId);
     }
 
-    // ── Index ops ─────────────────────────────────────────────────────────────
+    // ── Index partagés ────────────────────────────────────────────────────────
+    //
+    // Un canal CRDT par namespace. Le serveur ne lit rien : il empile des
+    // trames opaques et les rediffuse, exactement comme pour le répertoire de
+    // vault et les documents. Remplace PushIndexOp, qui recevait le markdown
+    // complet et le séquençait — le serveur y était un relais de contenu.
 
-    public async Task<long> PushIndexOp(PushIndexOpDto dto)
+    public async Task<string[]> JoinIndex(string vaultId, string ns)
     {
-        long seq = sequencer.Next();
-
-        var evt = new IndexOpAppliedEvent(seq, dto.DocId, dto.Path, dto.MarkdownContent);
-        await Clients.OthersInGroup(dto.VaultId).SendAsync("IndexOpApplied", evt);
-
-        logger.LogDebug("IndexOp seq={Seq} docId={DocId}", seq, dto.DocId);
-
-        return seq;
+        await Groups.AddToGroupAsync(Context.ConnectionId, IndexGroup(vaultId, ns));
+        JoinIndexResult result = await mediator.Send(new JoinIndexQuery(vaultId, ns));
+        logger.LogInformation(
+            "Client {ConnectionId} joined index {VaultId}/{Namespace} - {Count} op(s)",
+            Context.ConnectionId, vaultId, ns, result.Ops.Length);
+        return result.Ops;
     }
+
+    public async Task PushIndexUpdate(string vaultId, string ns, string updateBase64)
+    {
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(updateBase64); }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "Invalid index update from {Id}", Context.ConnectionId);
+            return;
+        }
+
+        await mediator.Send(new PushIndexUpdateCommand(vaultId, ns, bytes));
+
+        await Clients.OthersInGroup(IndexGroup(vaultId, ns))
+            .SendAsync("IndexUpdateReceived", vaultId, ns, updateBase64);
+    }
+
+    private static string IndexGroup(string vaultId, string ns) => $"idx:{vaultId}:{ns}";
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 

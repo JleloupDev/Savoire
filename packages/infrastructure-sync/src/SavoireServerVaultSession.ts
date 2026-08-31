@@ -11,6 +11,8 @@
 import type { ICRDT, IIdentityProvider } from '@savoire/plugin-api'
 import type { IVaultDirectory } from '@savoire/platform'
 import type { IVaultSyncSession, VaultSyncSessionFactoryParams } from '@savoire/application'
+import type { IIndexChannel } from '@savoire/plugin-api'
+import { YMapIndexChannel } from './YMapIndexChannel'
 import { CollabOrchestrator } from '@savoire/application'
 import { YMapVaultDirectory } from './YMapVaultDirectory'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
@@ -31,6 +33,7 @@ export interface SavoireServerVaultSessionOptions extends VaultSyncSessionFactor
 export class SavoireServerVaultSession implements IVaultSyncSession {
   readonly directory: IVaultDirectory
   private readonly docs = new Map<string, OpenDoc>()
+  private readonly indexes = new Map<string, YMapIndexChannel>()
   private readonly hub: VaultHubClient
   private readonly unsubDirectory: () => void
 
@@ -89,22 +92,32 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     open.crdt.dispose()
   }
 
+  openIndex(namespace: string): IIndexChannel {
+    const existing = this.indexes.get(namespace)
+    if (existing) return existing
+    // Le hub relaie les mises a jour en binaire opaque, exactement comme le
+    // repertoire de vault et les documents : le serveur ne lit rien.
+    const channel = new YMapIndexChannel(namespace, {
+      push: (ns, update) => void this.hub.pushIndexUpdate(ns, update),
+      subscribe: (ns, cb) => this.hub.onIndexUpdate(ns, cb),
+    })
+    this.indexes.set(namespace, channel)
+    void this.hub.joinIndex(namespace).then(ops => {
+      for (const op of ops) channel.applyUpdate(op)
+    })
+    return channel
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     // Le hub du vault porte le repertoire ; l'etat d'un document suit le sien.
     return this.hub.isConnected ? 'connected' : 'disconnected'
   }
 
-  pushIndexOp(docId: string, path: string, markdownContent: string): Promise<number | null> {
-    return this.hub.pushIndexOp(docId, path, markdownContent)
-  }
-
-  onIndexOpApplied(cb: (evt: { seq: number; docId: string; path: string; markdownContent: string }) => void): () => void {
-    return this.hub.onIndexOpApplied(cb)
-  }
-
   async dispose(): Promise<void> {
     this.unsubDirectory()
     for (const docId of [...this.docs.keys()]) this.closeDocument(docId)
+    for (const channel of this.indexes.values()) channel.dispose()
+    this.indexes.clear()
     await this.hub.dispose()
     this.directory.dispose()
   }

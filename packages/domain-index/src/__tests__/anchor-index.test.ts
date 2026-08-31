@@ -5,7 +5,7 @@ import * as Y from 'yjs'
 import { AnchorIndex, resolveEntry, validateEntry } from '../AnchorIndex'
 import { anchorKey } from '../AnchorHandle'
 import { IndexEngine } from '../IndexEngine'
-import type { IndexContributor } from '../IndexContributor'
+import type { AnchorContributor } from '../IndexContributor'
 import type { ICollaborativeText } from '../ICollaborativeText'
 import { makeDoc, cloneDoc, syncTo, YjsTestText } from './helpers'
 
@@ -14,7 +14,7 @@ import { makeDoc, cloneDoc, syncTo, YjsTestText } from './helpers'
 
 const HASHTAG_RE = /(?<![[\w])#[\w\u00C0-\u017E]+/g
 
-class TestHashtagContributor implements IndexContributor {
+class TestHashtagContributor implements AnchorContributor {
   readonly namespace = 'hashtags'
   private _processedSeq = -1
   get processedSeq() { return this._processedSeq }

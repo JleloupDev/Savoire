@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IndexContributor, ICollaborativeText, AnchorIndex, IndexEntry } from '@savoire/plugin-api'
+import type { IndexContributor, SharedIndexEntry, ICollaborativeText, AnchorIndex, IndexEntry } from '@savoire/plugin-api'
 import { anchorKey } from '@savoire/plugin-api'
 
 export interface HeadingMeta { level: number }
@@ -24,35 +24,25 @@ export function headingToAnchor(heading: string): string {
 export class HeadingIndexContributor implements IndexContributor {
   readonly namespace = 'headings'
 
-  // onOp-maintained map for [[Page#Heading]] resolution
+  // Modele de lecture pour [[Page#Heading]], reconstruit depuis la carte partagee.
   private readonly byDoc = new Map<string, { path: string; headings: string[] }>()
-  private _processedSeq = -1
 
-  get processedSeq(): number { return this._processedSeq }
-
-  restore(snapshot: string, processedSeq: number): void {
-    try {
-      const data = JSON.parse(snapshot) as Record<string, { path: string; headings: string[] }>
-      this.byDoc.clear()
-      for (const [docId, entry] of Object.entries(data)) this.byDoc.set(docId, entry)
-      this._processedSeq = processedSeq
-    } catch (err) {
-      console.warn('[HeadingIndexContributor] restore failed:', err)
-    }
-  }
-
-  onOp(seq: number | null, docId: string, path: string, markdownContent: string): void {
+  computeEntries(_docId: string, path: string, markdown: string): SharedIndexEntry[] {
     const headings: string[] = []
     let m: RegExpExecArray | null
     HEADING_RE.lastIndex = 0
-    while ((m = HEADING_RE.exec(markdownContent)) !== null) headings.push(m[2].trim())
-    if (headings.length > 0) this.byDoc.set(docId, { path, headings })
-    else this.byDoc.delete(docId)
-    if (seq !== null) this._processedSeq = seq
+    while ((m = HEADING_RE.exec(markdown)) !== null) headings.push(m[2].trim())
+    if (headings.length === 0) return []
+    return [{ key: 'headings', value: { path, headings } }]
   }
 
-  snapshot(): string {
-    return JSON.stringify(Object.fromEntries(this.byDoc))
+  onEntriesChanged(byDoc: ReadonlyMap<string, SharedIndexEntry[]>): void {
+    this.byDoc.clear()
+    for (const [docId, entries] of byDoc) {
+      const entry = entries.find(e => e.key === 'headings')
+      if (!entry) continue
+      this.byDoc.set(docId, entry.value as { path: string; headings: string[] })
+    }
   }
 
   // onTextChange: maintains real-time anchor positions in AnchorIndex

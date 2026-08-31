@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import MiniSearch from 'minisearch'
-import type { IndexContributor } from '@savoire/plugin-api'
+import type { LocalIndexContributor } from '@savoire/plugin-api'
 
 export interface FullTextSearchResult {
   docId: string
@@ -28,7 +28,14 @@ function stripMarkdown(md: string): string {
 
 type DocRecord = { id: string; text: string }
 
-export class FullTextIndexContributor implements IndexContributor {
+// Seul contributeur NON partage entre pairs. MiniSearch serialise un index
+// monolithique, non decomposable par document : impossible a exprimer en carte
+// CRDT. C'est un index derive — un accelerateur de recherche, pas une
+// connaissance partagee — que chaque pair reconstruit depuis les documents
+// qu'il possede. Il reste donc sur l'ancien contrat, persiste localement.
+// Son sort definitif (serveur dedie, ou local pleinement assume) reste a
+// trancher.
+export class FullTextIndexContributor implements LocalIndexContributor {
   readonly namespace = 'fulltext'
   private _processedSeq = -1
   // docId → vault path, needed to build FullTextSearchResult

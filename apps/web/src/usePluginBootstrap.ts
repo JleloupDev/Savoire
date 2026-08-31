@@ -35,7 +35,7 @@ import {
 import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService } from '@savoire/application'
 import type { ITextChangeSource } from '@savoire/application'
 import { IndexEngine } from '@savoire/domain-index'
-import type { ICollaborativeText, IndexContributor } from '@savoire/domain-index'
+import type { ICollaborativeText, AnchorContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
 import type { EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -276,14 +276,12 @@ export function usePluginBootstrap({
         triggers.register({ id: 'slash-command', character: '/', description: 'Palette de commandes' })
         pluginsBootstrappedRef.current = true
 
-        // Proxy contributor: delegates onTextChange to all current registry contributors.
-        // Using indexRegistry.getAll() at call time handles vault switch automatically.
-        const proxyContributor: IndexContributor = {
+        // Contributeur relais : redistribue onTextChange a tous les contributeurs
+        // du registre. Purement local (chemin des ancres) — il ne produit
+        // aucune entree partagee, d'ou AnchorContributor et non IndexContributor.
+        // getAll() est lu a l'appel, ce qui gere le changement de vault tout seul.
+        const proxyContributor: AnchorContributor = {
           namespace: '__realtime__',
-          processedSeq: 0,
-          onOp: () => {},
-          restore: () => {},
-          snapshot: () => '{}',
           onTextChange(text, docId, index) {
             for (const c of indexRegistry.getAll()) c.onTextChange?.(text, docId, index)
           },

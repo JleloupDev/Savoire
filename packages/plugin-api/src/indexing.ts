@@ -7,6 +7,10 @@ export type {
   ICollaborativeText,
   IndexEntry,
   IndexContributor,
+  AnyIndexContributor,
+  LocalIndexContributor,
+  AnchorContributor,
+  SharedIndexEntry,
   CrdtVersion,
   DocMetadata,
   FileTreeEntry,
@@ -37,8 +41,12 @@ export interface IIndexStoreAPI {
 // ISP: plugins that register contributors receive this narrow interface.
 
 export interface IIndexContributorRegistry {
-  /** Register a factory — a fresh instance is created on each vault switch. */
-  registerFactory(factory: () => import('@savoire/domain-index').IndexContributor): void
+  /**
+   * Enregistre une fabrique — une instance neuve est creee a chaque changement
+   * de vault. Un plugin peut ainsi exposer son propre index, partage entre
+   * pairs sans qu'il ait a s'occuper du transport (voir IndexContributor).
+   */
+  registerFactory(factory: () => import('@savoire/domain-index').AnyIndexContributor): void
 }
 
 // ─── Combined (used by application layer wiring) ─────────────────────────────
@@ -49,8 +57,8 @@ export interface IPluginIndexAPI extends IIndexContributorRegistry {}
 // Wider than IPluginIndexAPI — exposes contributor list for ContentIndexingService.
 
 export interface IIndexRegistry extends IPluginIndexAPI {
-  getAll(): import('@savoire/domain-index').IndexContributor[]
-  get(namespace: string): import('@savoire/domain-index').IndexContributor | undefined
+  getAll(): import('@savoire/domain-index').AnyIndexContributor[]
+  get(namespace: string): import('@savoire/domain-index').AnyIndexContributor | undefined
   /** Recreates all contributor instances from their registered factories. */
   rebuild(): void
 }
