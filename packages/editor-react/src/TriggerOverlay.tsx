@@ -106,7 +106,11 @@ export function TriggerOverlay() {
     const menu = menuRef.current
     const el = menu?.querySelector('[data-selected="true"]') as HTMLElement | null
     if (!menu || !el) return
-    const top = el.offsetTop - menu.offsetTop
+    // Position de l'entree DANS le contenu defilant du menu. Mesuree par
+    // rectangles plutot que par offsetTop : ce dernier depend de l'offsetParent
+    // (le menu est en position fixed, les entrees sont imbriquees dans un
+    // conteneur par categorie), et s'y fier avait desactive le defilement.
+    const top = el.getBoundingClientRect().top - menu.getBoundingClientRect().top + menu.scrollTop
     const bottom = top + el.offsetHeight
     if (top < menu.scrollTop) menu.scrollTop = top
     else if (bottom > menu.scrollTop + menu.clientHeight) menu.scrollTop = bottom - menu.clientHeight
