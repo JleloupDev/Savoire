@@ -18,6 +18,7 @@ export default defineConfig({
       '@savoire/plugin-wikilinks': src('plugin-wikilinks'),
       '@savoire/plugin-note-embed': src('plugin-note-embed'),
       '@savoire/plugin-module': src('plugin-module'),
+      '@savoire/plugin-office': src('plugin-office'),
     },
   },
   test: {

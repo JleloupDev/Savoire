@@ -49,10 +49,15 @@ export interface FileView {
  *           dernier-ecrivain-gagne : sans verrou, deux personnes qui editent
  *           en meme temps s'ecrasent mutuellement, en silence.
  *
+ *  'none' — ni CRDT ni verrou. Pour un document qui n'est qu'un pointeur
+ *           (lien vers un document en ligne) : il change rarement, la
+ *           collaboration se fait ailleurs, et un verrou serait une gene
+ *           plus qu'une protection. Le dernier qui ecrit gagne.
+ *
  * Defaut : 'lock'. Un type qui ne se prononce pas n'est pas un CRDT, et
  * l'hypothese prudente est celle qui ne perd pas de donnees.
  */
-export type CollaborationMode = 'crdt' | 'lock'
+export type CollaborationMode = 'crdt' | 'lock' | 'none'
 
 export interface FileTypeSpec {
   extension: string

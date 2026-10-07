@@ -14,7 +14,8 @@
     "@savoire/plugin-filetree": "workspace:*",
     "@savoire/plugin-wikilinks": "workspace:*",
     "@savoire/plugin-note-embed": "workspace:*",
-    "@savoire/plugin-module": "workspace:*"
+    "@savoire/plugin-module": "workspace:*",
+    "@savoire/plugin-office": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

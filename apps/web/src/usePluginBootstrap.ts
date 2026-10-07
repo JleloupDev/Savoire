@@ -7,6 +7,7 @@ import { createFileTreePlugin } from '@savoire/plugin-filetree'
 import { createVaultBrowserPlugin, type VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
+import officePlugin from '@savoire/plugin-office'
 import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
@@ -268,9 +269,10 @@ export function usePluginBootstrap({
           ribbon: true,
         })
         await pluginLoaderRef.current.loadInternal(searchPlugin, pluginApi)
-        // excalidraw and mindmap register FileTypeSpec in the workspace API (file-type handlers).
+        // excalidraw, mindmap and office register FileTypeSpec in the workspace API (file-type handlers).
         await pluginLoaderRef.current.loadInternal(excalidrawPlugin, pluginApi)
         await pluginLoaderRef.current.loadInternal(mindmapPlugin, pluginApi)
+        await pluginLoaderRef.current.loadInternal(officePlugin, pluginApi)
         // Editor plugins — blocks, hooks, slash commands (shared across all tabs).
         for (const plugin of defaultPluginsRef.current) {
           await pluginLoaderRef.current.loadInternal(plugin, pluginApi)

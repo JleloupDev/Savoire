@@ -30,6 +30,7 @@
     "@savoire/plugin-mermaid": "workspace:*",
     "@savoire/plugin-metadata": "workspace:*",
     "@savoire/plugin-mindmap": "workspace:*",
+    "@savoire/plugin-office": "workspace:*",
     "@savoire/plugin-module": "workspace:*",
     "@savoire/plugin-note-embed": "workspace:*",
     "@savoire/plugin-plaintext": "workspace:*",
