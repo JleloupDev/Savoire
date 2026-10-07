@@ -9,7 +9,10 @@ import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/p
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
-import { isKeyManagedSession, SessionSyncAPI, type IVaultSyncSession } from '@savoire/application'
+import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, type IVaultSyncSession } from '@savoire/application'
+import type { PluginManifest } from '@savoire/plugin-api'
+import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
+import { personalPluginStore } from './pluginPreferences'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -118,6 +121,7 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
         <button
           title="Paramètres"
+          data-testid="settings-open"
           onClick={onSettingsClick}
           style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', margin: '0 4px', transition: 'background 0.12s, color 0.12s' }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)' }}
@@ -357,12 +361,49 @@ export function AppShell() {
     pluginLoaderRef,
     triggersRef,
     onCrdtTextChangeRef,
+    activationRef,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
     vaultProxy,
     managerRef,
     vaultBrowserRefs,
     editorAreaRefsHolder,
+  })
+
+  // ── Plugins actifs ─────────────────────────────────────────────────────────
+  // Plugins de vault : reglages partages du vault. Plugins personnels : ce
+  // navigateur, par compte. Desactiver filtre, ne detruit rien.
+  const pluginSettingsRef = useRef<PluginSettingsService | null>(null)
+  pluginSettingsRef.current ??= new PluginSettingsService(
+    () => pluginLoaderRef.current.getAll()
+      .map(e => e.plugin?.manifest)
+      .filter((m): m is PluginManifest => !!m),
+    activationRef.current,
+    personalPluginStore(() => activeAccountRef.current?.userId),
+  )
+  useEffect(() => {
+    pluginSettingsRef.current?.setPersonalStore(personalPluginStore(() => activeAccount?.userId))
+  }, [activeAccount?.userId])
+
+  // Un plugin change d'etat : ses panneaux se ferment, la barre d'icones et
+  // l'explorateur se mettent a jour, les documents ouverts se remontent.
+  useEffect(() => activationRef.current.onChange(() => {
+    const m = managerRef.current
+    if (m) {
+      const views = m.views as { _hiddenIds?: () => string[] }
+      for (const id of views._hiddenIds?.() ?? []) m.closePanel(id)
+      setRibbonItems(m.getRibbonItems())
+      m.notifyVaultChange()
+    }
+    window.dispatchEvent(new Event('savoire-plugins-changed'))
+  }), [activationRef])
+
+  const describeUnsupportedTypeRef = useRef((ext: string): string | undefined => {
+    const owner = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.ownerOf?.(ext)
+    if (!owner) return undefined
+    const name = pluginLoaderRef.current.getAll().find(e => e.id === owner)?.plugin?.manifest.name ?? owner
+    return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », qui est désactivé. `
+      + `Le fichier est intact : réactivez le plugin dans Réglages › Plugins pour l'ouvrir.`
   })
 
   const loadDocumentRef = useRef<(doc: DocumentDto) => Promise<string>>(async () => '')
@@ -388,6 +429,7 @@ export function AppShell() {
     createPluginLoader: () => new PluginLoader(),
     isReadOnly: isReadOnlyRef,
     onCrdtTextChange: onCrdtTextChangeRef,
+    describeUnsupportedType: describeUnsupportedTypeRef,
   }
 
   // ── Create VaultClient and notify workspace of vault change ────────────────
@@ -445,6 +487,7 @@ export function AppShell() {
       })
       vaultAPIRef.current = active.client
       vaultSessionRef.current = active.session
+      pluginSettingsRef.current?.attachVault(active.session)
       onChanged()
 
       // Les index partages ouvrent un canal CRDT par namespace sur la session
@@ -668,6 +711,7 @@ export function AppShell() {
         // Un document partage n'a jamais de session de vault (isole par
         // construction, voir ADR-027) : purger la ref du vault precedent.
         vaultSessionRef.current = undefined
+        pluginSettingsRef.current?.attachVault(undefined)
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
@@ -693,6 +737,7 @@ export function AppShell() {
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
+            pluginSettingsRef.current?.attachVault(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -704,6 +749,7 @@ export function AppShell() {
             docEventUnsubRef.current = null
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
+            pluginSettingsRef.current?.attachVault(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -724,6 +770,7 @@ export function AppShell() {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
+      pluginSettingsRef.current?.attachVault(undefined)
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
     }
@@ -773,6 +820,7 @@ export function AppShell() {
       await application.documents.disposeActiveVault()
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
+      pluginSettingsRef.current?.attachVault(undefined)
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
       managerRef.current?.notifyVaultChange()
@@ -959,7 +1007,7 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
+            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
           </div>
         </div>

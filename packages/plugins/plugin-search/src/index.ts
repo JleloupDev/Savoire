@@ -17,6 +17,7 @@ export function createSearchPlugin(options: {
   const plugin: VaultPlugin = {
     manifest: {
       id: 'plugin-search',
+      scope: 'personal',
       name: 'Recherche',
       version: '0.0.1',
       description: 'Recherche full-text dans tous les documents du vault.',

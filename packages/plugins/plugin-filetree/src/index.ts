@@ -24,6 +24,8 @@ export function createFileTreePlugin(options: FileTreePluginOptions = {}): Vault
   return {
     manifest: {
       id: 'plugin-filetree',
+      scope: 'vault',
+      essential: true,
       name: 'File Explorer',
       version: '0.0.1',
       description: 'Sidebar file tree view',

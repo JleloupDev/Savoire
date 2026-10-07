@@ -102,6 +102,7 @@ const MAX_IFRAME_HEIGHT = 1400
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-module',
+    scope: 'personal',
     name: 'Modules',
     version: '1.0.0',
     permissions: ['ui:editor', 'vault:read', 'vault:write'],

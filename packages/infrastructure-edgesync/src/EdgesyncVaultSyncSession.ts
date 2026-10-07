@@ -79,6 +79,10 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     return channel
   }
 
+  openVaultSettings(section: string): IIndexChannel {
+    return this.openIndex(`settings/${section}`)
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return 'connected'
   }

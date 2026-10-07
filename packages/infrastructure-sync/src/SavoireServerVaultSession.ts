@@ -169,6 +169,11 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     return channel
   }
 
+  /** Meme mecanisme qu'un index, sous un prefixe reserve : le hub relaie sans lire. */
+  openVaultSettings(section: string): IIndexChannel {
+    return this.openIndex(`settings/${section}`)
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     // Le hub du vault porte le repertoire ; l'etat d'un document suit le sien.
     return this.hub.isConnected ? 'connected' : 'disconnected'

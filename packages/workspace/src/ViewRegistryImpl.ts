@@ -5,10 +5,19 @@ import type { ViewRegistry, ViewSpec, ViewGroup } from '@savoire/plugin-api'
 interface GroupEntry { group: ViewGroup; pluginId?: string }
 interface SpecEntry  { spec: ViewSpec;  pluginId?: string }
 
+/** Sous-ensemble structurel de PluginActivation (@savoire/plugin-runtime). */
+interface ActivationLike { isEnabled(pluginId: string | undefined): boolean }
+
 export class ViewRegistryImpl implements ViewRegistry {
   private readonly specs  = new Map<string, SpecEntry>()
   private readonly groups = new Map<string, GroupEntry>()
   private _currentPlugin: string | undefined
+  private activation: ActivationLike | undefined
+
+  /** Vue d'un plugin desactive : masquee, pas supprimee. */
+  private live(pluginId: string | undefined): boolean {
+    return !this.activation || this.activation.isEnabled(pluginId)
+  }
 
   // ── ViewSpec ──────────────────────────────────────────────────────────────
 
@@ -21,11 +30,12 @@ export class ViewRegistryImpl implements ViewRegistry {
   }
 
   getAll(): ViewSpec[] {
-    return Array.from(this.specs.values()).map(e => e.spec)
+    return Array.from(this.specs.values()).filter(e => this.live(e.pluginId)).map(e => e.spec)
   }
 
   get(id: string): ViewSpec | undefined {
-    return this.specs.get(id)?.spec
+    const entry = this.specs.get(id)
+    return entry && this.live(entry.pluginId) ? entry.spec : undefined
   }
 
   // ── ViewGroup ─────────────────────────────────────────────────────────────
@@ -40,17 +50,30 @@ export class ViewRegistryImpl implements ViewRegistry {
   }
 
   getGroups(): ViewGroup[] {
-    return Array.from(this.groups.values()).map(e => e.group)
+    return Array.from(this.groups.values()).filter(e => this.live(e.pluginId)).map(e => e.group)
   }
 
   getGroup(id: string): ViewGroup | undefined {
-    return this.groups.get(id)?.group
+    const entry = this.groups.get(id)
+    return entry && this.live(entry.pluginId) ? entry.group : undefined
   }
 
   // ── Plugin lifecycle ──────────────────────────────────────────────────────
 
   _setCurrentPlugin(pluginId: string | undefined): void {
     this._currentPlugin = pluginId
+  }
+
+  _setActivation(activation: ActivationLike): void {
+    this.activation = activation
+  }
+
+  /** Vues et groupes d'un plugin desactive : pour fermer leurs panneaux ouverts. */
+  _hiddenIds(): string[] {
+    const ids: string[] = []
+    for (const [id, e] of this.specs) if (!this.live(e.pluginId)) ids.push(id)
+    for (const [id, e] of this.groups) if (!this.live(e.pluginId)) ids.push(id)
+    return ids
   }
 
   _cleanupPlugin(pluginId: string): void {

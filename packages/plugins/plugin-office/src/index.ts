@@ -243,6 +243,7 @@ function createOfficeView(
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-office',
+    scope: 'vault',
     name: 'Documents Office liés',
     version: '0.0.1',
     description: 'Word, Excel, PowerPoint et OpenDocument : un lien vers le document en ligne',

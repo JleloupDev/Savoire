@@ -62,18 +62,23 @@ export class ContentIndexingService {
 
   /** Recharge les snapshots des contributeurs LOCAUX uniquement. */
   private async restoreLocal(): Promise<void> {
-    for (const contributor of this.indexRegistry.getAll()) {
+    for (const contributor of this.indexRegistry.getAllRegistered?.() ?? this.indexRegistry.getAll()) {
       if (isSharedContributor(contributor)) continue
       const saved = await this.storage.loadSnapshot(contributor.namespace)
       if (saved) contributor.restore(saved.data, saved.seq)
     }
   }
 
-  /** Ouvre un canal par contributeur partage et l'y abonne. */
+  /**
+   * Ouvre un canal par contributeur partage et l'y abonne. Y compris pour un
+   * plugin desactive : son index reste synchronise et intact, il cesse
+   * seulement d'etre recalcule. Le reactiver le retrouve a jour.
+   */
   private openChannels(getSession: () => IVaultSyncSession | null | undefined): void {
     const session = getSession()
     if (!session) return
-    for (const contributor of this.indexRegistry.getAll()) {
+    const contributors = this.indexRegistry.getAllRegistered?.() ?? this.indexRegistry.getAll()
+    for (const contributor of contributors) {
       if (!isSharedContributor(contributor)) continue
       const channel = session.openIndex(contributor.namespace)
       this.channels.set(contributor.namespace, channel)

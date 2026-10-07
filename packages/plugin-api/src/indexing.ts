@@ -57,7 +57,10 @@ export interface IPluginIndexAPI extends IIndexContributorRegistry {}
 // Wider than IPluginIndexAPI — exposes contributor list for ContentIndexingService.
 
 export interface IIndexRegistry extends IPluginIndexAPI {
+  /** Contributeurs des plugins actifs. */
   getAll(): import('@savoire/domain-index').AnyIndexContributor[]
+  /** Tous les contributeurs, plugins desactives compris. Defaut : getAll(). */
+  getAllRegistered?(): import('@savoire/domain-index').AnyIndexContributor[]
   get(namespace: string): import('@savoire/domain-index').AnyIndexContributor | undefined
   /** Recreates all contributor instances from their registered factories. */
   rebuild(): void

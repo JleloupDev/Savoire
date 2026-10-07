@@ -16,6 +16,7 @@ export function createHashtagsPlugin(options: {
   return {
     manifest: {
       id: 'plugin-hashtags',
+      scope: 'vault',
       name: 'Hashtags',
       version: '0.0.1',
       description: 'Indexe les hashtags et affiche les documents associés.',

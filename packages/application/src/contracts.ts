@@ -89,6 +89,13 @@ export interface IVaultSyncSession extends IVaultContentSession {
    */
   openIndex(namespace: string): IIndexChannel
   /**
+   * Reglages partages du vault, par section (« plugins »...) : une carte CRDT
+   * cle -> valeur, synchronisee entre tous les membres. Deux membres qui
+   * changent deux cles differentes ne s'ecrasent pas ; sur la meme cle, le
+   * dernier gagne. Idempotent.
+   */
+  openVaultSettings(section: string): IIndexChannel
+  /**
    * Verrous d'edition, pour les types de documents qui ne sont pas des CRDT.
    * Absent d'un profil qui n'a pas d'arbitre : sans arbitrage central, deux
    * pairs ne peuvent pas trancher qui detient le verrou, et pretendre le

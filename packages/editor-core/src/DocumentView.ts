@@ -36,6 +36,16 @@ export interface DocumentViewOptions {
    * Wired to ContentIndexingService.indexNow() by the app layer.
    */
   onFileContentStabilized?: (docId: string, path: string, shadowMarkdown: string) => void
+  /**
+   * Message affiche quand aucun plugin actif n'ouvre ce type de fichier (son
+   * plugin est desactive, ou n'existe pas). Defaut : un message generique.
+   */
+  unsupportedMessage?: string
+}
+
+/** Seul le Markdown est ouvert par l'editeur lui-meme ; tout autre type exige un plugin. */
+export function isOpenableWithoutPlugin(ext: string): boolean {
+  return ext === 'md'
 }
 
 export class DocumentView {
@@ -44,6 +54,7 @@ export class DocumentView {
   private readonly fileTypeSpec: ReturnType<FileTypeRegistry['resolve']>
   private editorController: EditorController | null = null
   private pluginFileView: FileView | null = null
+  private unsupported: HTMLElement | null = null
 
   constructor(options: DocumentViewOptions) {
     this.options = options
@@ -52,7 +63,25 @@ export class DocumentView {
   }
 
   mount(): void {
-    if (this.editorController || this.pluginFileView) return
+    if (this.editorController || this.pluginFileView || this.unsupported) return
+
+    // Aucun plugin actif pour ce type : une fiche en lecture seule, qui
+    // n'ecrit jamais rien. Surtout pas l'editeur Markdown, qui ouvrirait un
+    // document vide a la place du fichier et laisserait taper dedans.
+    if (!this.fileTypeSpec?.open && !isOpenableWithoutPlugin(this.ext)) {
+      const el = document.createElement('div')
+      el.dataset.testid = 'unsupported-file'
+      el.style.cssText = [
+        'max-width:520px', 'margin:48px auto', 'padding:24px', 'border-radius:8px',
+        'border:1px solid var(--border,#313244)', 'font-family:var(--font-ui,sans-serif)',
+        'font-size:13px', 'line-height:1.5', 'color:var(--text-muted,#a6adc8)',
+      ].join(';')
+      el.textContent = this.options.unsupportedMessage
+        ?? `Aucun plugin actif n'ouvre les fichiers .${this.ext}. Le fichier est intact.`
+      this.options.container.replaceChildren(el)
+      this.unsupported = el
+      return
+    }
 
     if (this.fileTypeSpec?.open) {
       const spec = this.fileTypeSpec
@@ -101,6 +130,8 @@ export class DocumentView {
   }
 
   destroy(): void {
+    this.unsupported?.remove()
+    this.unsupported = null
     this.pluginFileView?.destroy()
     this.pluginFileView = null
     this.editorController?.destroy()

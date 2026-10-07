@@ -14,6 +14,7 @@ export function createBacklinksPlugin(_options: {
   return {
     manifest: {
       id: 'plugin-backlinks',
+      scope: 'vault',
       name: 'Backlinks',
       version: '0.0.1',
       description: 'Indexe les backlinks (vue fournie par plugin-wikilinks).',

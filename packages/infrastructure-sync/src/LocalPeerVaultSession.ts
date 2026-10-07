@@ -174,6 +174,10 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
     return channel
   }
 
+  openVaultSettings(section: string): IIndexChannel {
+    return this.openIndex(`settings/${section}`)
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return this.disposed ? 'disconnected' : 'connected'
   }

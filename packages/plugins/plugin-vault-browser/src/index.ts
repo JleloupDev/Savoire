@@ -28,6 +28,8 @@ export function createVaultBrowserPlugin<TVault extends VaultSummaryLike = Vault
   return {
     manifest: {
       id: 'plugin-vault-browser',
+      scope: 'vault',
+      essential: true,
       name: 'Vault Browser',
       version: '0.0.1',
       description: 'Sidebar vault browser view',

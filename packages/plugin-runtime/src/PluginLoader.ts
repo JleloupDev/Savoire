@@ -3,6 +3,7 @@
 import type { VaultPlugin, PluginAPI, IPluginLoader } from '@savoire/plugin-api'
 import { PluginSandbox } from './PluginSandbox'
 import { BlockRegistryImpl } from './PluginRegistries'
+import type { PluginActivation } from './PluginActivation'
 
 export interface PluginEntry {
   id: string
@@ -47,11 +48,19 @@ export class PluginLoader implements IPluginLoader {
       console.warn(`[PluginLoader] Plugin '${id}' already loaded. Skipping.`)
       return
     }
+    // Tout ce que le plugin enregistre pendant son onload porte son id : c'est
+    // ce qui permet de le desactiver sans le decharger (PluginActivation).
+    const activation = (api as { activation?: PluginActivation }).activation
     if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = id
     api.views._setCurrentPlugin?.(id)
-    await plugin.onload(api)
-    if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = undefined
-    api.views._setCurrentPlugin?.(undefined)
+    if (activation) activation.currentPluginId = id
+    try {
+      await plugin.onload(api)
+    } finally {
+      if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = undefined
+      api.views._setCurrentPlugin?.(undefined)
+      if (activation) activation.currentPluginId = undefined
+    }
     this.loaded.set(id, { id, sandbox: null, plugin, api })
     console.log(`[PluginLoader] Internal plugin loaded: ${id}`)
   }

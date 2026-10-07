@@ -6,7 +6,7 @@ export type { ActivationEntry, ActivationContext, ActivationSource } from './Plu
 export { EventBus, globalEventBus } from './EventBus'
 export { CommandRegistry } from './CommandRegistry'
 export { DocumentPipeline } from './DocumentPipeline'
-export { DocumentView } from './DocumentView'
+export { DocumentView, isOpenableWithoutPlugin } from './DocumentView'
 export type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand, ActivePluginInfo } from './types'
 export type { Command, CommandContext } from './CommandRegistry'
 export type { DocumentViewOptions } from './DocumentView'

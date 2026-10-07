@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
-import { DocumentView } from '@savoire/editor-core'
+import { DocumentView, isOpenableWithoutPlugin } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
 import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
@@ -49,6 +49,8 @@ export interface EditorAreaRefs {
   isReadOnly: React.MutableRefObject<boolean>
   /** Emit a CRDT text change to RealtimeIndexingService — wired by usePluginBootstrap. */
   onCrdtTextChange: React.MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
+  /** Message pour un type de fichier dont aucun plugin actif ne s'occupe. */
+  describeUnsupportedType: React.MutableRefObject<(ext: string) => string | undefined>
 }
 
 // Onglet de document. Dockview ne monte que le contenu du panneau ACTIF :
@@ -109,7 +111,13 @@ function DocumentPanelHost({
   useEffect(() => {
     const onModeChanged = () => setModeTick(t => t + 1)
     window.addEventListener('markdown-editor-mode-changed', onModeChanged)
-    return () => window.removeEventListener('markdown-editor-mode-changed', onModeChanged)
+    // Un plugin active ou desactive : la vue du document change de nature
+    // (editeur du plugin <-> fiche « plugin desactive »), on la remonte.
+    window.addEventListener('savoire-plugins-changed', onModeChanged)
+    return () => {
+      window.removeEventListener('markdown-editor-mode-changed', onModeChanged)
+      window.removeEventListener('savoire-plugins-changed', onModeChanged)
+    }
   }, [])
 
   // ── Verrou d'edition ──────────────────────────────────────────────────────
@@ -121,7 +129,10 @@ function DocumentPanelHost({
   //
   // Defaut prudent : un type qui ne declare rien est traite comme 'lock'.
   const ext = doc.path.split('.').pop()?.toLowerCase() ?? ''
-  const collabMode = refs.fileTypeRegistry.current?.resolve(ext)?.collaborationMode ?? 'lock'
+  // Aucun plugin actif pour ce type : la vue est une fiche en lecture seule,
+  // ni verrou ni CRDT (voir DocumentView).
+  const supported = isOpenableWithoutPlugin(ext) || !!refs.fileTypeRegistry.current?.resolve(ext)
+  const collabMode = refs.fileTypeRegistry.current?.resolve(ext)?.collaborationMode ?? (supported ? 'lock' : 'none')
   const needsLock = collabMode === 'lock'
   // Sur un type a verrou, on n'ecrit que si on le DETIENT. Un verrou libre ne
   // donne pas le droit d'ecrire : sans cela, ceder la main laissait le cedant
@@ -191,7 +202,8 @@ function DocumentPanelHost({
     // remontages d'effet (StrictMode, bascule de mode d'edition).
     const session = refs.vaultSession.current
     if (!session) console.warn('[Sync] aucune session de vault active, le document ne se synchronisera pas', doc.id)
-    const crdt = session?.openDocument(doc.id)
+    const openable = isOpenableWithoutPlugin(ext) || !!fileTypeRegistry.resolve(ext)
+    const crdt = openable ? session?.openDocument(doc.id) : undefined
 
     const view = new DocumentView({
       path: doc.path,
@@ -209,6 +221,7 @@ function DocumentPanelHost({
       editorMode: refs.markdownEditorMode.current,
       readOnly: refs.isReadOnly.current || lockedByOther,
       createPluginLoader: refs.createPluginLoader,
+      unsupportedMessage: refs.describeUnsupportedType.current(ext),
       onFileContentStabilized: (docId, path, shadowMarkdown) => {
         void refs.contentIndexingService.current?.indexNow(docId, path, shadowMarkdown)
       },
@@ -234,7 +247,7 @@ function DocumentPanelHost({
       unsubPluginLoadedRef.current?.()
       unsubPluginLoadedRef.current = null
       unsubCrdtIndex?.()
-      session?.closeDocument(doc.id)
+      if (crdt) session?.closeDocument(doc.id)
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
       setController(null)

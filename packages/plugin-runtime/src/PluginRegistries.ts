@@ -30,11 +30,27 @@ import type {
   ViewRegistry,
   ViewSpec,
 } from '@savoire/plugin-api'
+import type { PluginActivation } from './PluginActivation'
+
+// Chaque registre retient quel plugin a enregistre quoi, et filtre a la
+// lecture ce qui appartient a un plugin desactive. Voir PluginActivation.
+// Sans activation branchee (tests, editeur seul), tout est actif.
+
+interface Owned<T> { item: T; pluginId?: string }
+
+function ownerOf(activation?: PluginActivation): string | undefined {
+  return activation?.currentPluginId
+}
+
+function enabled(activation: PluginActivation | undefined, pluginId: string | undefined): boolean {
+  return !activation || activation.isEnabled(pluginId)
+}
 
 // ─── TriggerRegistryImpl ──────────────────────────────────────────────────
 
 export class TriggerRegistryImpl implements TriggerRegistry {
-  private readonly triggers = new Map<string, InputTrigger>()
+  private readonly triggers = new Map<string, Owned<InputTrigger>>()
+  activation?: PluginActivation
 
   register(trigger: InputTrigger): void {
     const conflict = this.findConflict(trigger.character)
@@ -44,7 +60,7 @@ export class TriggerRegistryImpl implements TriggerRegistry {
         `Plugin "${trigger.id}" may not work as expected.`
       )
     }
-    this.triggers.set(trigger.id, trigger)
+    this.triggers.set(trigger.id, { item: trigger, pluginId: ownerOf(this.activation) })
   }
 
   unregister(id: string): void {
@@ -52,11 +68,11 @@ export class TriggerRegistryImpl implements TriggerRegistry {
   }
 
   getAll(): InputTrigger[] {
-    return [...this.triggers.values()]
+    return [...this.triggers.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
   }
 
   findConflict(character: string): InputTrigger | undefined {
-    for (const t of this.triggers.values()) {
+    for (const t of this.getAll()) {
       if (t.character === character) return t
     }
     return undefined
@@ -74,11 +90,12 @@ export class BlockRegistryImpl implements BlockRegistry {
   // Set by PluginLoader before calling plugin.onload() when tag=true.
   // Any spec registered while this is set gets stamped with this plugin id.
   _currentPluginId?: string
+  activation?: PluginActivation
 
   constructor(private readonly slashRegistry?: SlashRegistry) {}
 
   register(spec: BlockSpec): void {
-    const pluginId = this._currentPluginId
+    const pluginId = this._currentPluginId ?? ownerOf(this.activation)
     this.specEntries.set(spec.type, { spec, pluginId })
     console.debug(`[BlockRegistry] registered: ${spec.type}${pluginId ? ` (${pluginId})` : ''}`)
     if (spec.trigger && this.slashRegistry) {
@@ -109,6 +126,7 @@ export class BlockRegistryImpl implements BlockRegistry {
   detectActive(text: string, ids: Set<string> | null): { type: string; spec: BlockSpec } | null {
     for (const [type, { spec, pluginId }] of this.specEntries) {
       if (!spec.detect) continue
+      if (!enabled(this.activation, pluginId)) continue
       if (ids !== null && !ids.has(pluginId ?? '')) continue
       const matched = spec.detect instanceof RegExp ? spec.detect.test(text) : spec.detect(text)
       if (matched) return { type, spec }
@@ -117,13 +135,15 @@ export class BlockRegistryImpl implements BlockRegistry {
   }
 
   getAll(): BlockSpec[] {
-    return [...this.specEntries.values()].map(e => e.spec)
+    return [...this.specEntries.values()]
+      .filter(e => enabled(this.activation, e.pluginId))
+      .map(e => e.spec)
   }
 
   getActive(ids: Set<string> | null): BlockSpec[] {
     if (ids === null) return this.getAll()
     return [...this.specEntries.values()]
-      .filter(e => ids.has(e.pluginId ?? ''))
+      .filter(e => enabled(this.activation, e.pluginId) && ids.has(e.pluginId ?? ''))
       .map(e => e.spec)
   }
 }
@@ -136,33 +156,43 @@ type VoidHook<T> = (v: T) => void
 type StabilizedHook = (docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion) => void
 
 export class HookRegistryImpl implements HookRegistry {
-  private beforeParseHooks: StrHook[] = []
-  private afterParseHooks: UnknownHook[] = []
-  private beforeRenderHooks: UnknownHook[] = []
-  private afterRenderHooks: StrHook[] = []
-  private documentOpenHooks: VoidHook<string>[] = []
-  private documentSaveHooks: VoidHook<string>[] = []
-  private selectionChangeHooks: VoidHook<unknown>[] = []
-  private documentStabilizedHooks: StabilizedHook[] = []
+  private beforeParseHooks: Owned<StrHook>[] = []
+  private afterParseHooks: Owned<UnknownHook>[] = []
+  private beforeRenderHooks: Owned<UnknownHook>[] = []
+  private afterRenderHooks: Owned<StrHook>[] = []
+  private documentOpenHooks: Owned<VoidHook<string>>[] = []
+  private documentSaveHooks: Owned<VoidHook<string>>[] = []
+  private selectionChangeHooks: Owned<VoidHook<unknown>>[] = []
+  private documentStabilizedHooks: Owned<StabilizedHook>[] = []
+  activation?: PluginActivation
 
-  beforeParse(hook: StrHook): void { this.beforeParseHooks.push(hook) }
-  afterParse(hook: UnknownHook): void { this.afterParseHooks.push(hook) }
-  beforeRender(hook: UnknownHook): void { this.beforeRenderHooks.push(hook) }
-  afterRender(hook: StrHook): void { this.afterRenderHooks.push(hook) }
-  onDocumentOpen(hook: VoidHook<string>): void { this.documentOpenHooks.push(hook) }
-  onDocumentSave(hook: VoidHook<string>): void { this.documentSaveHooks.push(hook) }
-  onSelectionChange(hook: VoidHook<unknown>): void { this.selectionChangeHooks.push(hook) }
-  onDocumentStabilized(hook: StabilizedHook): void { this.documentStabilizedHooks.push(hook) }
+  private own<T>(item: T): Owned<T> {
+    return { item, pluginId: ownerOf(this.activation) }
+  }
+
+  /** Hooks des plugins actifs, dans l'ordre d'enregistrement. */
+  private live<T>(list: Owned<T>[]): T[] {
+    return list.filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
+  }
+
+  beforeParse(hook: StrHook): void { this.beforeParseHooks.push(this.own(hook)) }
+  afterParse(hook: UnknownHook): void { this.afterParseHooks.push(this.own(hook)) }
+  beforeRender(hook: UnknownHook): void { this.beforeRenderHooks.push(this.own(hook)) }
+  afterRender(hook: StrHook): void { this.afterRenderHooks.push(this.own(hook)) }
+  onDocumentOpen(hook: VoidHook<string>): void { this.documentOpenHooks.push(this.own(hook)) }
+  onDocumentSave(hook: VoidHook<string>): void { this.documentSaveHooks.push(this.own(hook)) }
+  onSelectionChange(hook: VoidHook<unknown>): void { this.selectionChangeHooks.push(this.own(hook)) }
+  onDocumentStabilized(hook: StabilizedHook): void { this.documentStabilizedHooks.push(this.own(hook)) }
 
   async runBeforeParse(source: string): Promise<string> {
     let s = source
-    for (const h of this.beforeParseHooks) s = await h(s)
+    for (const h of this.live(this.beforeParseHooks)) s = await h(s)
     return s
   }
 
   runBeforeParseSync(source: string): string {
     let s = source
-    for (const h of this.beforeParseHooks) {
+    for (const h of this.live(this.beforeParseHooks)) {
       const result = h(s)
       // Skip async hooks — only sync string returns are applied in the CM6 StateField
       if (typeof result === 'string') s = result
@@ -172,20 +202,20 @@ export class HookRegistryImpl implements HookRegistry {
 
   async runAfterRender(html: string): Promise<string> {
     let h = html
-    for (const hook of this.afterRenderHooks) h = await hook(h)
+    for (const hook of this.live(this.afterRenderHooks)) h = await hook(h)
     return h
   }
 
   runDocumentOpen(path: string): void {
-    this.documentOpenHooks.forEach(h => h(path))
+    this.live(this.documentOpenHooks).forEach(h => h(path))
   }
 
   runDocumentSave(content: string): void {
-    this.documentSaveHooks.forEach(h => h(content))
+    this.live(this.documentSaveHooks).forEach(h => h(content))
   }
 
   runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion): void {
-    this.documentStabilizedHooks.forEach(h => h(docId, path, content, crdtVersion))
+    this.live(this.documentStabilizedHooks).forEach(h => h(docId, path, content, crdtVersion))
   }
 }
 
@@ -193,11 +223,14 @@ export class HookRegistryImpl implements HookRegistry {
 
 export class IndexRegistryImpl implements IIndexRegistry {
   private readonly factories = new Map<string, () => AnyIndexContributor>()
+  private readonly owners = new Map<string, string | undefined>()
   private current = new Map<string, AnyIndexContributor>()
+  activation?: PluginActivation
 
   registerFactory(factory: () => AnyIndexContributor): void {
     const instance = factory()
     this.factories.set(instance.namespace, factory)
+    this.owners.set(instance.namespace, ownerOf(this.activation))
     this.current.set(instance.namespace, instance)
     console.debug(`[IndexRegistry] registered factory: ${instance.namespace}`)
   }
@@ -210,7 +243,17 @@ export class IndexRegistryImpl implements IIndexRegistry {
     console.debug(`[IndexRegistry] rebuilt ${this.current.size} contributors`)
   }
 
+  /** Contributeurs des plugins actifs : ceux qui calculent de nouvelles entrees. */
   getAll(): AnyIndexContributor[] {
+    return [...this.current.values()].filter(c => enabled(this.activation, this.owners.get(c.namespace)))
+  }
+
+  /**
+   * Tous les contributeurs, actifs ou non. Les canaux partages restent ouverts
+   * pour un plugin desactive : son index n'est pas detruit, et le reactiver
+   * le retrouve tel quel.
+   */
+  getAllRegistered(): AnyIndexContributor[] {
     return [...this.current.values()]
   }
 
@@ -222,10 +265,11 @@ export class IndexRegistryImpl implements IIndexRegistry {
 // ─── CommandRegistryImpl ──────────────────────────────────────────────────
 
 export class CommandRegistryImpl implements CommandRegistry {
-  private readonly commands = new Map<string, PluginCommand>()
+  private readonly commands = new Map<string, Owned<PluginCommand>>()
+  activation?: PluginActivation
 
   register(command: PluginCommand): void {
-    this.commands.set(command.id, command)
+    this.commands.set(command.id, { item: command, pluginId: ownerOf(this.activation) })
   }
 
   unregister(id: string): void {
@@ -233,25 +277,42 @@ export class CommandRegistryImpl implements CommandRegistry {
   }
 
   execute(id: string, context: { editorView: unknown }): void {
-    const cmd = this.commands.get(id)
-    if (!cmd) { console.warn(`[CommandRegistry] unknown command: ${id}`); return }
-    cmd.run(context)
+    const entry = this.commands.get(id)
+    if (!entry || !enabled(this.activation, entry.pluginId)) { console.warn(`[CommandRegistry] unknown command: ${id}`); return }
+    entry.item.run(context)
   }
 
   getAll(): PluginCommand[] {
-    return [...this.commands.values()]
+    return [...this.commands.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
   }
 }
 
 // ─── FileTypeRegistryImpl ─────────────────────────────────────────────────
 
 export class FileTypeRegistryImpl implements FileTypeRegistry {
-  private readonly specs = new Map<string, FileTypeSpec>()
+  private readonly specs = new Map<string, Owned<FileTypeSpec>>()
+  activation?: PluginActivation
 
-  register(spec: FileTypeSpec): void { this.specs.set(spec.extension, spec) }
+  register(spec: FileTypeSpec): void { this.specs.set(spec.extension, { item: spec, pluginId: ownerOf(this.activation) }) }
   unregister(ext: string): void { this.specs.delete(ext) }
-  resolve(ext: string): FileTypeSpec | undefined { return this.specs.get(ext) }
-  getAll(): FileTypeSpec[] { return [...this.specs.values()].sort((a, b) => a.extension.localeCompare(b.extension)) }
+
+  /** Type actif pour cette extension. Undefined si aucun plugin actif ne la gere. */
+  resolve(ext: string): FileTypeSpec | undefined {
+    const entry = this.specs.get(ext)
+    return entry && enabled(this.activation, entry.pluginId) ? entry.item : undefined
+  }
+
+  /** Plugin qui gere cette extension, actif ou non : pour proposer de le reactiver. */
+  ownerOf(ext: string): string | undefined {
+    return this.specs.get(ext)?.pluginId
+  }
+
+  getAll(): FileTypeSpec[] {
+    return [...this.specs.values()]
+      .filter(e => enabled(this.activation, e.pluginId))
+      .map(e => e.item)
+      .sort((a, b) => a.extension.localeCompare(b.extension))
+  }
 }
 
 // ─── VaultAPIStub ─────────────────────────────────────────────────────────
@@ -277,10 +338,11 @@ export class WorkspaceAPIStub implements WorkspaceAPI {
 // ─── SlashRegistryImpl ────────────────────────────────────────────────────
 
 export class SlashRegistryImpl implements SlashRegistry {
-  private readonly items = new Map<string, SlashCommandItem>()
+  private readonly items = new Map<string, Owned<SlashCommandItem>>()
+  activation?: PluginActivation
 
   register(item: SlashCommandItem): void {
-    this.items.set(item.id, item)
+    this.items.set(item.id, { item, pluginId: ownerOf(this.activation) })
   }
 
   unregister(id: string): void {
@@ -288,7 +350,7 @@ export class SlashRegistryImpl implements SlashRegistry {
   }
 
   getAll(): SlashCommandItem[] {
-    return [...this.items.values()]
+    return [...this.items.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
   }
 }
 
@@ -307,10 +369,13 @@ export class ViewRegistryStub implements ViewRegistry {
 // ─── ToolbarCommandRegistryImpl ───────────────────────────────────────────
 
 export class ToolbarCommandRegistryImpl implements ToolbarCommandRegistry {
-  private cmds = new Map<string, ToolbarCommand>()
-  register(cmd: ToolbarCommand): void { this.cmds.set(cmd.id, cmd) }
+  private cmds = new Map<string, Owned<ToolbarCommand>>()
+  activation?: PluginActivation
+  register(cmd: ToolbarCommand): void { this.cmds.set(cmd.id, { item: cmd, pluginId: ownerOf(this.activation) }) }
   unregister(id: string): void { this.cmds.delete(id) }
-  getAll(): ToolbarCommand[] { return Array.from(this.cmds.values()) }
+  getAll(): ToolbarCommand[] {
+    return Array.from(this.cmds.values()).filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
+  }
   getByGroup(group: string): ToolbarCommand[] { return this.getAll().filter(c => c.group === group) }
 }
 
@@ -350,6 +415,20 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   setEditorPositionAPI(api: EditorPositionAPI): void {
     this.editor = api
   }
+
+  /**
+   * Branche l'activation sur tous les registres. Ensuite, ce qu'enregistre un
+   * plugin pendant son onload est tamponne, et filtre s'il est desactive.
+   */
+  attachActivation(activation: PluginActivation): void {
+    this.activation = activation
+    for (const registry of [this.blocks, this.hooks, this.commands, this.files, this.slash, this.triggers, this.toolbar, this.index]) {
+      if (registry) registry.activation = activation
+    }
+    ;(this.views as { _setActivation?: (a: PluginActivation) => void })._setActivation?.(activation)
+  }
+
+  activation?: PluginActivation
 
   static create(vault?: VaultAPI, sync?: SyncAPI): PluginAPIImpl {
     const slash    = new SlashRegistryImpl()

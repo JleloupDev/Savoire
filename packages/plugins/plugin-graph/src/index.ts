@@ -16,6 +16,7 @@ export function createGraphPlugin(options: { groupId?: string; tabOf?: string } 
   const plugin: VaultPlugin = {
     manifest: {
       id: 'plugin-graph',
+      scope: 'vault',
       name: 'Graphe de notes',
       version: '0.0.1',
       description: 'Visualise les dépendances entre notes via les wikilinks.',

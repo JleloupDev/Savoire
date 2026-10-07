@@ -53,6 +53,7 @@ function normalizeEmbedData(input: unknown): EmbedData {
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-note-embed',
+    scope: 'vault',
     name: 'Note Embeds',
     version: '1.0.0',
     permissions: ['ui:editor', 'vault:read'],

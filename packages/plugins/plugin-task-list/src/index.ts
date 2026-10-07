@@ -68,6 +68,7 @@ function enhanceList(ul: HTMLElement, depth: number): void {
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-task-list',
+    scope: 'personal',
     name: 'Task & Multi-level Lists',
     version: '1.0.0',
     permissions: ['ui:editor'],

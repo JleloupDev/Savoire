@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 export { PluginLoader } from './PluginLoader'
+export { PluginActivation } from './PluginActivation'
 export { PluginSandbox } from './PluginSandbox'
 export { PermissionFilteredAPI } from './PermissionFilteredAPI'
 export type { PluginEntry } from './PluginLoader'

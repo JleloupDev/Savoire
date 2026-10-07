@@ -73,6 +73,7 @@ interface CodeData { lang: string; code: string }
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-code-block',
+    scope: 'personal',
     name: 'Code Block',
     version: '1.0.0',
     permissions: ['ui:editor'],

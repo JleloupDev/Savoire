@@ -114,6 +114,7 @@ function createPlaintextView(path: string, ctx: FileContext): FileView {
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-plaintext',
+    scope: 'vault',
     name: 'Plaintext Editor',
     version: '0.0.1',
     description: 'Éditeur textarea simple pour les fichiers .txt — POC FileTypeSpec',

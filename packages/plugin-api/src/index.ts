@@ -3,6 +3,7 @@
 export type {
   PluginManifest,
   PluginPermission,
+  PluginScope,
   VaultPlugin,
   IPluginAPI,
   IPluginVaultAPI,

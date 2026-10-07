@@ -10,6 +10,7 @@ export function createMetadataPlugin(options: {
   return {
     manifest: {
       id: 'plugin-metadata',
+      scope: 'personal',
       name: 'Métadonnées',
       version: '0.0.1',
       description: 'Affiche les métadonnées indexées du document courant.',

@@ -199,6 +199,7 @@ function createExcalidrawView(
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-excalidraw',
+    scope: 'vault',
     name: 'Excalidraw',
     version: '0.0.1',
     description: 'Éditeur de dessin vectoriel Excalidraw pour les fichiers .excalidraw',

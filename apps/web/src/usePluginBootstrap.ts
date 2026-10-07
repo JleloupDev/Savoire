@@ -32,6 +32,7 @@ import {
   ToolbarCommandRegistryImpl,
   PluginAPIImpl,
   PluginLoader,
+  PluginActivation,
 } from '@savoire/plugin-runtime'
 import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService } from '@savoire/application'
 import type { ITextChangeSource } from '@savoire/application'
@@ -75,6 +76,8 @@ export interface PluginBootstrapResult {
   triggersRef: MutableRefObject<InstanceType<typeof TriggerRegistryImpl> | null>
   /** Emit a CRDT text change event for the given document. Called per-document by EditorAreaWidget. */
   onCrdtTextChangeRef: MutableRefObject<((docId: string, text: ICollaborativeText) => void) | null>
+  /** Plugins actifs ou non, partage par tous les registres. */
+  activationRef: MutableRefObject<PluginActivation>
 }
 
 /**
@@ -93,6 +96,8 @@ export function usePluginBootstrap({
 }: PluginBootstrapOptions): PluginBootstrapResult {
   const pluginAPIRef = useRef<IEditorHostAPI | null>(null)
   const pluginLoaderRef = useRef(new PluginLoader())
+  // Plugins actifs ou non : partage par tous les registres. Voir PluginActivation.
+  const activationRef = useRef(new PluginActivation())
   const defaultPluginsRef = useRef<VaultPlugin[]>([])
   const pluginsBootstrappedRef = useRef(false)
   const pluginsBootstrapPromiseRef = useRef<Promise<void> | null>(null)
@@ -202,6 +207,10 @@ export function usePluginBootstrap({
         roomClient,
         indexRegistry,
       )
+      // Branche AVANT tout enregistrement : ce que l'application enregistre
+      // elle-meme (le type Markdown) n'appartient a aucun plugin, donc reste
+      // toujours actif ; ce que chaque plugin enregistre porte son id.
+      pluginApi.attachActivation(activationRef.current)
 
       // ContentIndexingService: wires hooks → contributors → storage.
       contentIndexingServiceRef.current = new ContentIndexingService(
@@ -330,5 +339,6 @@ export function usePluginBootstrap({
     pluginLoaderRef,
     triggersRef,
     onCrdtTextChangeRef,
+    activationRef,
   }
 }

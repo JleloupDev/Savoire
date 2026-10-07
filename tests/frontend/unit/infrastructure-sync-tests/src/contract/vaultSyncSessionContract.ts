@@ -196,6 +196,44 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
       })
     })
 
+    describe('reglages du vault', () => {
+      it('un reglage converge, y compris chez un pair qui arrive', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        const setA = a.openVaultSettings('plugins')
+        const setB = b.openVaultSettings('plugins')
+        setA.set('plugin-table', { enabled: false })
+        await harness.settle()
+        expect(setB.getAll()).toEqual([{ id: 'plugin-table', value: { enabled: false } }])
+
+        const c = await open('carol')
+        const setC = c.openVaultSettings('plugins')
+        await harness.settle()
+        expect(setC.getAll()).toEqual([{ id: 'plugin-table', value: { enabled: false } }])
+      })
+
+      it('deux membres qui changent deux cles differentes ne s\'ecrasent pas', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        const setA = a.openVaultSettings('plugins')
+        const setB = b.openVaultSettings('plugins')
+        await harness.settle()
+        setA.set('plugin-table', { enabled: false })
+        setB.set('plugin-mindmap', { enabled: false })
+        await harness.settle()
+        const ids = (s: typeof setA) => s.getAll().map(e => e.id).sort()
+        expect(ids(setA)).toEqual(['plugin-mindmap', 'plugin-table'])
+        expect(ids(setB)).toEqual(['plugin-mindmap', 'plugin-table'])
+      })
+
+      it('les reglages ne se melangent pas avec un index du meme nom', async () => {
+        const a = await open('alice')
+        a.openVaultSettings('tags').set('x', 1)
+        expect(a.openIndex('tags').getAll()).toEqual([])
+        expect(a.openVaultSettings('tags')).toBe(a.openVaultSettings('tags'))
+      })
+    })
+
     describe('pieces jointes', () => {
       it('un fichier envoye par un pair se lit et s\'affiche chez l\'autre', async () => {
         const a = await open('alice')

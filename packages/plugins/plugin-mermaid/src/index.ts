@@ -38,6 +38,7 @@ interface MermaidData { definition: string; source: 'fence' | 'callout' }
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-mermaid',
+    scope: 'personal',
     name: 'Mermaid Diagrams',
     version: '0.0.1',
     description: 'Rendu de diagrammes Mermaid dans l\'éditeur',

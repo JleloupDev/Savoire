@@ -119,6 +119,7 @@ function createTableView(
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-table',
+    scope: 'vault',
     name: 'Tables',
     version: '1.0.0',
     description: 'Fichiers .table avec formules (HyperFormula) et tri',

@@ -201,6 +201,7 @@ async function renderMindmapEmbed(path: string, ctx: FileContext): Promise<HTMLE
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-mindmap',
+    scope: 'vault',
     name: 'Mind Map',
     version: '0.0.1',
     description: 'Éditeur de mind maps interactif pour les fichiers .mm',

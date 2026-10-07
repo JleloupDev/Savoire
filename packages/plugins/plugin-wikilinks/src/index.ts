@@ -26,6 +26,7 @@ export function createWikilinksPlugin(options: {
   return {
     manifest: {
       id: 'plugin-wikilinks',
+      scope: 'vault',
       name: 'Wiki Links',
       version: '0.0.1',
       permissions: ['ui:editor', 'vault:read'],

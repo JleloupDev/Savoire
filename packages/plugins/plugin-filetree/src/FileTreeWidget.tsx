@@ -10,6 +10,8 @@ interface FileTreeProps {
   onOpenFile: (path: string) => void
   workspace: ViewContext['workspace']
   fileTypes: FileTypeSpec[]
+  /** Relit les types a chaque rendu (plugins actives ou desactives). */
+  readFileTypes?: () => FileTypeSpec[]
 }
 
 interface FileNode {
@@ -304,7 +306,11 @@ function FileNodeRow({
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
-export function FileTree({ vault, onOpenFile, workspace, fileTypes }: FileTreeProps) {
+export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileTypes, readFileTypes }: FileTreeProps) {
+  // Relu a chaque rendu : un plugin active ou desactive change les types
+  // disponibles (icones, choix a la creation). Le rendu suit la notification
+  // de changement du workspace.
+  const fileTypes = readFileTypes?.() ?? initialFileTypes
   const [nodes, setNodes] = useState<FileNode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
@@ -496,6 +502,7 @@ export class FileTreeWidget {
         vault={this.ctx.vault}
         workspace={this.ctx.workspace}
         fileTypes={this.ctx.fileTypes.getAll()}
+        readFileTypes={() => this.ctx.fileTypes.getAll()}
         onOpenFile={(path) => void this.ctx.workspace.openFile(path)}
       />
     )

@@ -6,6 +6,7 @@ import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-callout',
+    scope: 'personal',
     name: 'Callout Blocks',
     version: '0.0.1',
     permissions: ['ui:editor'],

@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { InputTrigger, TriggerRegistry } from '@savoire/plugin-api'
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
+import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
@@ -46,9 +47,12 @@ type Tab = 'plugins' | 'triggers' | 'themes'
 export function SettingsPanel({
   loader,
   triggers,
+  pluginSettings,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
+  /** Catalogue et activation. Absent : simple liste des plugins charges. */
+  pluginSettings?: PluginSettingsService
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -92,7 +96,9 @@ export function SettingsPanel({
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
-        {tab === 'plugins'  && <PluginsTab  plugins={plugins} />}
+        {tab === 'plugins'  && (pluginSettings
+          ? <PluginStore service={pluginSettings} />
+          : <PluginsTab plugins={plugins} />)}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
       </div>
@@ -100,7 +106,100 @@ export function SettingsPanel({
   )
 }
 
-// ── Plugins tab ───────────────────────────────────────────────────────────────
+// ── Store de plugins ──────────────────────────────────────────────────────────
+//
+// Catalogue officiel : pour l'instant, les plugins livres avec Savoire. Chaque
+// plugin s'active ou se desactive selon sa portee (vault ou personnel). Rien
+// n'est jamais supprime : voir PluginActivation.
+
+const badge = (bg: string, fg: string): React.CSSProperties => ({
+  fontSize: '0.7rem', padding: '2px 7px', borderRadius: 10, background: bg, color: fg, fontWeight: 600, whiteSpace: 'nowrap',
+})
+
+function PluginStore({ service }: { service: PluginSettingsService }) {
+  const [plugins, setPlugins] = useState<PluginInfo[]>(() => service.list())
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => service.onChange(() => setPlugins(service.list())), [service])
+
+  function toggle(p: PluginInfo) {
+    setError(null)
+    // Desactiver un plugin de vault touche tous les membres : on confirme.
+    if (p.enabled && p.scope === 'vault' && confirming !== p.id) { setConfirming(p.id); return }
+    try {
+      service.setEnabled(p.id, !p.enabled)
+      setConfirming(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return (
+    <div data-testid="plugin-store" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.intro')}</div>
+      {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
+      {plugins.map(p => {
+        const changeable = service.canChange(p.id)
+        return (
+          <div
+            key={p.id}
+            data-testid="plugin-row"
+            data-plugin-id={p.id}
+            data-enabled={p.enabled ? 'true' : 'false'}
+            data-scope={p.scope}
+            style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)', opacity: p.enabled ? 1 : 0.7 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</div>
+                {p.description && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem', marginTop: 2 }}>{p.description}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                <span style={badge('var(--bg-elevated)', 'var(--text-muted)')}>v{p.version}</span>
+                <span style={p.scope === 'vault' ? badge('rgba(124,58,237,0.12)', '#7c3aed') : badge('rgba(8,145,178,0.12)', '#0891b2')}>
+                  {t('app', p.scope === 'vault' ? 'settings.plugins.scope.vault' : 'settings.plugins.scope.personal')}
+                </span>
+                {p.essential
+                  ? <span style={badge('rgba(34,197,94,0.12)', '#22c55e')}>{t('app', 'settings.plugins.essential')}</span>
+                  : (
+                    <button
+                      data-testid="plugin-toggle"
+                      disabled={!changeable}
+                      title={changeable ? undefined : t('app', 'settings.plugins.needVault')}
+                      onClick={() => toggle(p)}
+                      style={{
+                        fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, cursor: changeable ? 'pointer' : 'not-allowed',
+                        border: '1px solid var(--border)', background: p.enabled ? 'transparent' : 'var(--accent)',
+                        color: p.enabled ? 'var(--text-muted)' : 'white', fontWeight: 600,
+                      }}
+                    >
+                      {t('app', p.enabled ? 'settings.plugins.disable' : 'settings.plugins.enable')}
+                    </button>
+                  )}
+              </div>
+            </div>
+            {confirming === p.id && (
+              <div data-testid="plugin-vault-warning" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 6, background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', fontSize: '0.75rem', color: 'var(--text)' }}>
+                <div style={{ marginBottom: 8 }}>⚠ {t('app', 'settings.plugins.vaultWarning')}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button data-testid="plugin-confirm-disable" onClick={() => toggle(p)} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: 'none', background: '#ca8a04', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+                    {t('app', 'settings.plugins.confirmDisable')}
+                  </button>
+                  <button onClick={() => setConfirming(null)} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                    {t('app', 'settings.plugins.cancel')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Plugins tab (sans catalogue) ──────────────────────────────────────────────
 
 function PluginsTab({ plugins }: { plugins: PluginEntry[] }) {
   if (plugins.length === 0) {
