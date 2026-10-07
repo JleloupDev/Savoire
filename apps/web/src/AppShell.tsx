@@ -364,6 +364,7 @@ export function AppShell() {
     onCrdtTextChangeRef,
     activationRef,
     whenPluginsReady,
+    loadStoreEntry,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
     vaultProxy,
@@ -377,12 +378,15 @@ export function AppShell() {
   // (a installer). Plugins de vault : reglages partages du vault. Plugins
   // personnels : ce navigateur, par compte. Desactiver filtre, ne detruit rien.
   const getPluginCatalog = (): PluginCatalogEntry[] => {
-    const inStore = new Set(STORE_CATALOG.map(e => e.manifest.id))
-    const preinstalled = pluginLoaderRef.current.getAll()
+    // Le manifeste du plugin charge fait foi ; sinon, la copie du catalogue.
+    const loaded = new Map(pluginLoaderRef.current.getAll()
       .map(e => e.plugin?.manifest)
-      .filter((m): m is PluginManifest => !!m && !inStore.has(m.id))
-      .map(manifest => ({ manifest, preinstalled: true }))
-    return [...preinstalled, ...STORE_CATALOG.map(e => ({ manifest: e.manifest, preinstalled: false }))]
+      .filter((m): m is PluginManifest => !!m)
+      .map(m => [m.id, m]))
+    return STORE_CATALOG.flatMap(e => {
+      const manifest = loaded.get(e.id) ?? e.manifest
+      return manifest ? [{ manifest, preinstalled: e.preinstalled }] : []
+    })
   }
   const pluginSettingsRef = useRef<PluginSettingsService | null>(null)
   pluginSettingsRef.current ??= new PluginSettingsService(
@@ -413,23 +417,18 @@ export function AppShell() {
   // installes. Un membre installe un plugin de vault : il se charge chez tous.
   const syncInstalledPlugins = useCallback(async () => {
     await whenPluginsReady()
-    const api = pluginAPIRef.current
     const service = pluginSettingsRef.current
-    if (!api || !service) return
+    if (!service) return
     let loaded = false
     for (const id of service.installedIds()) {
-      if (pluginLoaderRef.current.isLoaded(id)) continue
-      const entry = STORE_CATALOG.find(e => e.manifest.id === id)
-      if (!entry) continue
       try {
-        await pluginLoaderRef.current.loadInternal(await entry.load(), api)
-        loaded = true
+        if (await loadStoreEntry(id)) loaded = true
       } catch (err) {
         console.error(`[plugins] echec du chargement de ${id}`, err)
       }
     }
     if (loaded) refreshPluginUI()
-  }, [whenPluginsReady, pluginAPIRef, refreshPluginUI])
+  }, [whenPluginsReady, loadStoreEntry, refreshPluginUI])
   useEffect(() => {
     void syncInstalledPlugins()
     return pluginSettingsRef.current?.onChange(() => { void syncInstalledPlugins() })
@@ -445,12 +444,13 @@ export function AppShell() {
       return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », qui est désactivé. `
         + `Le fichier est intact : réactivez le plugin dans Réglages › Plugins pour l'ouvrir.`
     }
-    const inStore = STORE_CATALOG.find(e => e.extensions.includes(ext))
-    if (inStore) {
-      return `Les fichiers .${ext} s'ouvrent avec le plugin « ${inStore.manifest.name} », disponible dans le store. `
-        + `Le fichier est intact : installez le plugin dans Réglages › Plugins pour l'ouvrir.`
-    }
-    return undefined
+    // Desinstalle (preinstalle ou non), ou jamais installe : il est dans le store.
+    const name = owner
+      ? pluginLoaderRef.current.getAll().find(e => e.id === owner)?.plugin?.manifest.name ?? owner
+      : STORE_CATALOG.find(e => e.extensions?.includes(ext))?.manifest?.name
+    if (!name) return undefined
+    return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », disponible dans le store. `
+      + `Le fichier est intact : installez le plugin dans Réglages › Plugins pour l'ouvrir.`
   })
 
   const loadDocumentRef = useRef<(doc: DocumentDto) => Promise<string>>(async () => '')

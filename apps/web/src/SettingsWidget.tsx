@@ -188,7 +188,7 @@ function PluginStore({ service }: { service: PluginSettingsService }) {
                 {t('app', p.enabled ? 'settings.plugins.disable' : 'settings.plugins.enable')}
               </button>
             )}
-            {p.installed && !p.preinstalled && (
+            {p.installed && !p.essential && (
               <button data-testid="plugin-uninstall" disabled={!changeable} title={hint} style={button(false, changeable)}
                 onClick={() => guarded(p, 'uninstall', () => service.uninstall(p.id))}>
                 {t('app', 'settings.plugins.uninstall')}

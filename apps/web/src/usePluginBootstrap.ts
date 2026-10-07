@@ -3,23 +3,8 @@
 import { useRef, useCallback } from 'react'
 import type { MutableRefObject } from 'react'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
-import { createFileTreePlugin } from '@savoire/plugin-filetree'
-import { createVaultBrowserPlugin, type VaultBrowserRefs } from '@savoire/plugin-vault-browser'
-import excalidrawPlugin from '@savoire/plugin-excalidraw'
-import mindmapPlugin from '@savoire/plugin-mindmap'
-import officePlugin from '@savoire/plugin-office'
-import calloutPlugin from '@savoire/plugin-callout'
-import codeBlockPlugin from '@savoire/plugin-code-block'
-import taskListPlugin from '@savoire/plugin-task-list'
-import noteEmbedPlugin from '@savoire/plugin-note-embed'
-import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
-import modulePlugin from '@savoire/plugin-module'
-import mermaidPlugin from '@savoire/plugin-mermaid'
-import tablePlugin from '@savoire/plugin-table'
-import { createHashtagsPlugin } from '@savoire/plugin-hashtags'
-import { createMetadataPlugin } from '@savoire/plugin-metadata'
-import { createGraphPlugin } from '@savoire/plugin-graph'
-import { createSearchPlugin } from '@savoire/plugin-search'
+import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
+import { STORE_CATALOG, type PluginLoadContext } from './pluginStore'
 import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI } from '@savoire/plugin-api'
 import {
   BlockRegistryImpl,
@@ -80,6 +65,8 @@ export interface PluginBootstrapResult {
   activationRef: MutableRefObject<PluginActivation>
   /** Resolu quand les plugins preinstalles sont charges. */
   whenPluginsReady: () => Promise<void>
+  /** Charge un plugin du store a chaud (installation). False s'il l'etait deja. */
+  loadStoreEntry: (id: string) => Promise<boolean>
 }
 
 /**
@@ -103,6 +90,29 @@ export function usePluginBootstrap({
   const defaultPluginsRef = useRef<VaultPlugin[]>([])
   const pluginsBootstrappedRef = useRef(false)
   const pluginsBootstrapPromiseRef = useRef<Promise<void> | null>(null)
+  // Contexte de construction des plugins du coeur (voir pluginStore).
+  const loadContext: PluginLoadContext = {
+    vaultBrowserRefs,
+    setGraphContributor: (get) => { getGraphContributorRef.current = get },
+  }
+
+  /** Charge un plugin du store. Rend false s'il l'etait deja ou s'il est inconnu. */
+  const loadEntry = async (id: string, api: IEditorHostAPI): Promise<boolean> => {
+    const entry = STORE_CATALOG.find(e => e.id === id)
+    if (!entry || pluginLoaderRef.current.isLoaded(id)) return false
+    const plugin = await entry.load(loadContext)
+    await pluginLoaderRef.current.loadInternal(plugin, api)
+    if (entry.editorDefault) defaultPluginsRef.current.push(plugin)
+    return true
+  }
+
+  const loadStoreEntry = useCallback(async (id: string): Promise<boolean> => {
+    const api = pluginAPIRef.current
+    if (!api) return false
+    return loadEntry(id, api)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const whenPluginsReady = useCallback(async () => {
     if (pluginsBootstrapPromiseRef.current) await pluginsBootstrapPromiseRef.current
   }, [])
@@ -245,51 +255,16 @@ export function usePluginBootstrap({
       triggersRef.current = triggers
       fileTypeRegistryRef.current = fileTypeRegistry
 
-      // see ADR-012
-      defaultPluginsRef.current = [
-        mermaidPlugin, calloutPlugin, codeBlockPlugin,
-        noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin,
-      ]
+      // see ADR-012 — rempli au fil du chargement, avant que le workspace ne
+      // soit pret (onBeforeReady attend le chargement des plugins).
+      defaultPluginsRef.current = []
 
       pluginsBootstrapPromiseRef.current = (async () => {
-        await pluginLoaderRef.current.loadInternal(createVaultBrowserPlugin({
-          refs: vaultBrowserRefs,
-          groupId: 'explorer',
-          closable: false,
-        }), pluginApi)
-        await pluginLoaderRef.current.loadInternal(createFileTreePlugin({
-          groupId: 'explorer',
-          belowOf: 'vault-browser',
-          closable: false,
-        }), pluginApi)
-        await pluginLoaderRef.current.loadInternal(createWikilinksPlugin({
-          groupId: 'notes-tools',
-        }), pluginApi)
-        await pluginLoaderRef.current.loadInternal(createHashtagsPlugin({
-          container: 'left',
-          ribbon: true,
-          icon: 'tag',
-        }), pluginApi)
-        await pluginLoaderRef.current.loadInternal(createMetadataPlugin({
-          groupId: 'notes-tools',
-        }), pluginApi)
-        // Pas de groupId : le graphe s'ouvre comme vue principale (onglet a
-        // cote de l'editeur), depuis la barre d'icones de gauche.
-        const { plugin: graphPlugin, getContributor: getGraphContributor } = createGraphPlugin()
-        getGraphContributorRef.current = getGraphContributor
-        await pluginLoaderRef.current.loadInternal(graphPlugin, pluginApi)
-        const { plugin: searchPlugin } = createSearchPlugin({
-          container: 'left',
-          ribbon: true,
-        })
-        await pluginLoaderRef.current.loadInternal(searchPlugin, pluginApi)
-        // excalidraw, mindmap and office register FileTypeSpec in the workspace API (file-type handlers).
-        await pluginLoaderRef.current.loadInternal(excalidrawPlugin, pluginApi)
-        await pluginLoaderRef.current.loadInternal(mindmapPlugin, pluginApi)
-        await pluginLoaderRef.current.loadInternal(officePlugin, pluginApi)
-        // Editor plugins — blocks, hooks, slash commands (shared across all tabs).
-        for (const plugin of defaultPluginsRef.current) {
-          await pluginLoaderRef.current.loadInternal(plugin, pluginApi)
+        // Les plugins preinstalles du store, dans l'ordre du catalogue. Un
+        // plugin desinstalle dans ce vault est quand meme charge (on ne sait
+        // pas encore quel vault s'ouvrira) : il est filtre, pas visible.
+        for (const entry of STORE_CATALOG) {
+          if (entry.preinstalled) await loadEntry(entry.id, pluginApi)
         }
         // Register EditorCore built-in trigger so it appears in Settings
         triggers.register({ id: 'slash-command', character: '/', description: 'Palette de commandes' })
@@ -346,5 +321,6 @@ export function usePluginBootstrap({
     onCrdtTextChangeRef,
     activationRef,
     whenPluginsReady,
+    loadStoreEntry,
   }
 }

@@ -5,7 +5,9 @@
 //
 // Deux sortes d'entrees dans le catalogue :
 //  - preinstallees : livrees et installees d'office (le coeur de Savoire) ;
-//  - disponibles   : a installer depuis le store.
+//  - du store      : a installer.
+// Toutes, sauf les indispensables, se desinstallent et reviennent alors dans
+// le store, d'ou on peut les reinstaller.
 //
 // Chaque plugin declare sa portee :
 //  - 'vault'    : installation et activation vivent dans le vault (reglages
@@ -19,7 +21,7 @@ import type { IVaultSyncSession } from './contracts'
 
 export interface PluginCatalogEntry {
   manifest: PluginManifest
-  /** Installe d'office. Sinon : disponible dans le store, a installer. */
+  /** Installe par defaut. Sinon : disponible dans le store, a installer. */
   preinstalled: boolean
 }
 
@@ -38,7 +40,10 @@ export interface PluginInfo {
 
 /** Etat des plugins personnels, pour l'utilisateur courant. */
 export interface PersonalPluginState {
+  /** Plugins du store installes. */
   installed: string[]
+  /** Plugins preinstalles que la personne a desinstalles. */
+  removed: string[]
   disabled: string[]
 }
 
@@ -122,24 +127,31 @@ export class PluginSettingsService {
     if (scopeOf(entry.manifest) === 'vault') {
       this.writeVault(id, { installed: true, enabled: true })
     } else {
+      const { installed, removed, disabled } = this.personalState
       this.writePersonal({
-        installed: union(this.personalState.installed, id),
-        disabled: this.personalState.disabled.filter(x => x !== id),
+        installed: entry.preinstalled ? installed : union(installed, id),
+        removed: removed.filter(x => x !== id),
+        disabled: disabled.filter(x => x !== id),
       })
     }
     this.apply()
   }
 
-  /** Seul un plugin du store se desinstalle ; le coeur se desactive seulement. */
+  /**
+   * Desinstalle un plugin, preinstalle ou non : il revient dans le store.
+   * Seul un plugin indispensable ne se desinstalle pas.
+   */
   uninstall(id: string): void {
     const entry = this.require(id)
-    if (entry.preinstalled) throw new Error(`${entry.manifest.name} est livre avec Savoire : desactivez-le plutot`)
+    if (entry.manifest.essential) throw new Error(`${entry.manifest.name} est indispensable et ne peut pas etre desinstalle`)
     if (scopeOf(entry.manifest) === 'vault') {
       this.writeVault(id, { installed: false })
     } else {
+      const { installed, removed, disabled } = this.personalState
       this.writePersonal({
-        installed: this.personalState.installed.filter(x => x !== id),
-        disabled: this.personalState.disabled,
+        installed: installed.filter(x => x !== id),
+        removed: entry.preinstalled ? union(removed, id) : removed,
+        disabled,
       })
     }
     this.apply()
@@ -153,7 +165,7 @@ export class PluginSettingsService {
       this.writeVault(id, { installed: true, enabled })
     } else {
       this.writePersonal({
-        installed: this.personalState.installed,
+        ...this.personalState,
         disabled: enabled
           ? this.personalState.disabled.filter(x => x !== id)
           : union(this.personalState.disabled, id),
@@ -203,9 +215,14 @@ export class PluginSettingsService {
   private isInstalled(id: string): boolean {
     const entry = this.entry(id)
     if (!entry) return false
-    if (entry.preinstalled) return true
-    if (scopeOf(entry.manifest) === 'personal') return this.personalState.installed.includes(id)
-    return this.vaultSetting(id)?.installed === true
+    if (entry.manifest.essential) return true
+    if (scopeOf(entry.manifest) === 'personal') {
+      return entry.preinstalled
+        ? !this.personalState.removed.includes(id)
+        : this.personalState.installed.includes(id)
+    }
+    // Sans reglage, un plugin preinstalle l'est ; un plugin du store ne l'est pas.
+    return this.vaultSetting(id)?.installed ?? entry.preinstalled
   }
 
   private isEnabled(id: string): boolean {

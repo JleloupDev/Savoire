@@ -25,10 +25,10 @@ const CATALOG: PluginCatalogEntry[] = [
 ]
 const STORE_ONLY = ['plugin-theme', 'plugin-wtf']
 
-function memoryStore(initial: PersonalPluginState = { installed: [], disabled: [] }): IPersonalPluginStore & { saved: PersonalPluginState } {
+function memoryStore(initial: PersonalPluginState = { installed: [], removed: [], disabled: [] }): IPersonalPluginStore & { saved: PersonalPluginState } {
   const store = {
     saved: initial,
-    load: () => ({ installed: [...store.saved.installed], disabled: [...store.saved.disabled] }),
+    load: () => ({ installed: [...store.saved.installed], removed: [...store.saved.removed], disabled: [...store.saved.disabled] }),
     save: (state: PersonalPluginState) => { store.saved = state },
   }
   return store
@@ -146,9 +146,37 @@ describe('PluginSettingsService', () => {
     expect(service(memoryStore()).svc.installedIds()).not.toContain('plugin-theme')
   })
 
-  it('un plugin preinstalle ne se desinstalle pas', () => {
+  it('un plugin preinstalle de vault se desinstalle, revient dans le store, et se reinstalle', async () => {
+    const alice = service()
+    const bob = service()
+    alice.svc.attachVault(await vault('alice'))
+    bob.svc.attachVault(await vault('bob'))
+    await settle()
+
+    alice.svc.uninstall('plugin-table')
+    await settle()
+    const table = (svc: PluginSettingsService) => svc.list().find(p => p.id === 'plugin-table')!
+    expect(table(bob.svc)).toMatchObject({ preinstalled: true, installed: false, enabled: false })
+    expect(bob.disabled()).toContain('plugin-table')
+
+    bob.svc.install('plugin-table')
+    await settle()
+    expect(table(alice.svc)).toMatchObject({ installed: true, enabled: true })
+  })
+
+  it('un plugin preinstalle personnel se desinstalle chez la personne seulement', () => {
+    const { svc, personal } = service()
+    svc.uninstall('plugin-search')
+    expect(svc.installedIds()).not.toContain('plugin-search')
+    expect(personal.saved.removed).toEqual(['plugin-search'])
+    svc.install('plugin-search')
+    expect(svc.installedIds()).toContain('plugin-search')
+    expect(personal.saved.removed).toEqual([])
+  })
+
+  it('un plugin indispensable ne se desinstalle pas', () => {
     const { svc } = service()
-    expect(() => svc.uninstall('plugin-search')).toThrow('desactivez-le')
+    expect(() => svc.uninstall('plugin-filetree')).toThrow('indispensable')
   })
 
   it('changer de vault remplace les reglages de vault', async () => {

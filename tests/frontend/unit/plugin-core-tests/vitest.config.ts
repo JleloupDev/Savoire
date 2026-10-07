@@ -10,6 +10,9 @@ const src = (pkg: string) =>
 
 export default defineConfig({
   resolve: {
+    // Le catalogue du store importe tous les plugins : on lit leurs sources
+    // (condition 'source' des paquets), pas des builds qui n'existent pas.
+    conditions: ['source'],
     alias: {
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
@@ -20,6 +23,8 @@ export default defineConfig({
       '@savoire/plugin-module': src('plugin-module'),
       '@savoire/plugin-office': src('plugin-office'),
       '@savoire/plugin-wtf': src('plugin-wtf'),
+      '@savoire/plugin-plaintext': src('plugin-plaintext'),
+      '@savoire/plugin-backlinks': src('plugin-backlinks'),
     },
   },
   test: {

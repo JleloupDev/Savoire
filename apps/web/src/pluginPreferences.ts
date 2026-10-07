@@ -15,16 +15,16 @@ export function personalPluginStore(getUserId: () => string | undefined): IPerso
   return {
     load(): PersonalPluginState {
       const userId = getUserId()
-      if (!userId) return { installed: [], disabled: [] }
+      if (!userId) return { installed: [], removed: [], disabled: [] }
       try {
         const raw = localStorage.getItem(keyFor(userId))
         const parsed: unknown = raw ? JSON.parse(raw) : null
         // Premier format : un simple tableau des plugins desactives.
-        if (Array.isArray(parsed)) return { installed: [], disabled: strings(parsed) }
+        if (Array.isArray(parsed)) return { installed: [], removed: [], disabled: strings(parsed) }
         const state = (parsed ?? {}) as Partial<Record<keyof PersonalPluginState, unknown>>
-        return { installed: strings(state.installed), disabled: strings(state.disabled) }
+        return { installed: strings(state.installed), removed: strings(state.removed), disabled: strings(state.disabled) }
       } catch {
-        return { installed: [], disabled: [] }
+        return { installed: [], removed: [], disabled: [] }
       }
     },
     save(state: PersonalPluginState): void {
