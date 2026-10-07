@@ -234,6 +234,39 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
       })
     })
 
+    describe('cartes partagees', () => {
+      it('une entree converge et reste separee des reglages et des index du meme nom', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        const mapA = a.openSharedMap('review')
+        const mapB = b.openSharedMap('review')
+        mapA.set('c1', { text: 'bonjour' })
+        await harness.settle()
+        expect(mapB.getAll()).toEqual([{ id: 'c1', value: { text: 'bonjour' } }])
+        expect(a.openVaultSettings('review').getAll()).toEqual([])
+        expect(a.openIndex('review').getAll()).toEqual([])
+        expect(a.openSharedMap('review')).toBe(mapA)
+      })
+    })
+
+    describe('ajout de texte', () => {
+      it('le texte ajoute a un document ouvert arrive a la fin, chez tous', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        harness.insertText(a.openDocument('d1'), 0, 'debut')
+        b.openDocument('d1')
+        await harness.settle()
+        b.appendText('d1', ' fin')
+        await harness.settle()
+        expect(await a.readDocument('d1', 'crdt')).toBe('debut fin')
+      })
+
+      it('refuse un document qui n\'est pas ouvert', async () => {
+        const a = await open('alice')
+        expect(() => a.appendText('jamais-ouvert', 'x')).toThrow('pas ouvert')
+      })
+    })
+
     describe('pieces jointes', () => {
       it('un fichier envoye par un pair se lit et s\'affiche chez l\'autre', async () => {
         const a = await open('alice')

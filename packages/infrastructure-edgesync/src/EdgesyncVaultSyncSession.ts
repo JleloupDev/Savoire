@@ -83,6 +83,17 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     return this.openIndex(`settings/${section}`)
   }
 
+  openSharedMap(name: string): IIndexChannel {
+    return this.openIndex(`map/${name}`)
+  }
+
+  appendText(docId: string, text: string): void {
+    const open = this.crdts.get(docId)
+    if (!open) throw new Error(`appendText : le document ${docId} n'est pas ouvert`)
+    const ytext = (open.rawDoc as { getText(name: string): { length: number; insert(i: number, t: string): void } }).getText('codemirror')
+    ytext.insert(ytext.length, text)
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return 'connected'
   }

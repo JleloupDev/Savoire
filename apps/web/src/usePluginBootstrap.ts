@@ -29,6 +29,7 @@ import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
+import { ReviewWidget } from './ReviewWidget'
 import type { VaultSummary } from './types'
 interface PluginBootstrapOptions {
   /** The shared SyncAPI instance (stable, created once). */
@@ -189,6 +190,16 @@ export function usePluginBootstrap({
       ribbon: true,
       icon: 'cpu',
       createView: (_ctx: unknown) => new PluginInspectorWidget(manager),
+    })
+
+    // Revision : commentaires de la note active, et agents locaux.
+    manager.views.register({
+      id: 'review',
+      title: 'Révision',
+      container: 'right',
+      ribbon: true,
+      icon: 'message-square',
+      createView: (_ctx: unknown) => new ReviewWidget(manager, editorAreaRefs),
     })
 
     // Bootstrap plugins once per session (see ADR-012)

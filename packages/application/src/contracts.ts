@@ -96,6 +96,20 @@ export interface IVaultSyncSession extends IVaultContentSession {
    */
   openVaultSettings(section: string): IIndexChannel
   /**
+   * Carte partagee du vault, cle -> valeur, par nom (« review »...). Meme
+   * mecanique que les reglages : un CRDT synchronise entre les membres.
+   * Idempotent. Brique de la couche de revision, et demain de l'API CRDT
+   * des plugins.
+   */
+  openSharedMap(name: string): IIndexChannel
+  /**
+   * Ajoute du texte a la fin d'un document CRDT OUVERT (openDocument), comme
+   * une frappe : l'editeur l'affiche, les pairs le recoivent. Echoue si le
+   * document n'est pas ouvert : son etat n'est peut-etre pas encore arrive,
+   * et le texte risquerait de se placer avant le contenu existant.
+   */
+  appendText(docId: string, text: string): void
+  /**
    * Verrous d'edition, pour les types de documents qui ne sont pas des CRDT.
    * Absent d'un profil qui n'a pas d'arbitre : sans arbitrage central, deux
    * pairs ne peuvent pas trancher qui detient le verrou, et pretendre le

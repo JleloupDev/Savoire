@@ -174,6 +174,17 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     return this.openIndex(`settings/${section}`)
   }
 
+  openSharedMap(name: string): IIndexChannel {
+    return this.openIndex(`map/${name}`)
+  }
+
+  appendText(docId: string, text: string): void {
+    const open = this.docs.get(docId)
+    if (!open) throw new Error(`appendText : le document ${docId} n'est pas ouvert`)
+    const ytext = (open.crdt.rawDoc as { getText(name: string): { length: number; insert(i: number, t: string): void } }).getText('codemirror')
+    ytext.insert(ytext.length, text)
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     // Le hub du vault porte le repertoire ; l'etat d'un document suit le sien.
     return this.hub.isConnected ? 'connected' : 'disconnected'
