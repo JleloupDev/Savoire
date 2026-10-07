@@ -9,7 +9,8 @@ import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/p
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
-import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, type IVaultSyncSession } from '@savoire/application'
+import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
+import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
@@ -362,6 +363,7 @@ export function AppShell() {
     triggersRef,
     onCrdtTextChangeRef,
     activationRef,
+    whenPluginsReady,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
     vaultProxy,
@@ -370,14 +372,21 @@ export function AppShell() {
     editorAreaRefsHolder,
   })
 
-  // ── Plugins actifs ─────────────────────────────────────────────────────────
-  // Plugins de vault : reglages partages du vault. Plugins personnels : ce
-  // navigateur, par compte. Desactiver filtre, ne detruit rien.
+  // ── Plugins : catalogue, installation, activation ──────────────────────────
+  // Catalogue = plugins preinstalles (charges au demarrage) + store officiel
+  // (a installer). Plugins de vault : reglages partages du vault. Plugins
+  // personnels : ce navigateur, par compte. Desactiver filtre, ne detruit rien.
+  const getPluginCatalog = (): PluginCatalogEntry[] => {
+    const inStore = new Set(STORE_CATALOG.map(e => e.manifest.id))
+    const preinstalled = pluginLoaderRef.current.getAll()
+      .map(e => e.plugin?.manifest)
+      .filter((m): m is PluginManifest => !!m && !inStore.has(m.id))
+      .map(manifest => ({ manifest, preinstalled: true }))
+    return [...preinstalled, ...STORE_CATALOG.map(e => ({ manifest: e.manifest, preinstalled: false }))]
+  }
   const pluginSettingsRef = useRef<PluginSettingsService | null>(null)
   pluginSettingsRef.current ??= new PluginSettingsService(
-    () => pluginLoaderRef.current.getAll()
-      .map(e => e.plugin?.manifest)
-      .filter((m): m is PluginManifest => !!m),
+    getPluginCatalog,
     activationRef.current,
     personalPluginStore(() => activeAccountRef.current?.userId),
   )
@@ -385,9 +394,10 @@ export function AppShell() {
     pluginSettingsRef.current?.setPersonalStore(personalPluginStore(() => activeAccount?.userId))
   }, [activeAccount?.userId])
 
-  // Un plugin change d'etat : ses panneaux se ferment, la barre d'icones et
-  // l'explorateur se mettent a jour, les documents ouverts se remontent.
-  useEffect(() => activationRef.current.onChange(() => {
+  // Un plugin change d'etat (ou vient d'etre charge) : ses panneaux se
+  // ferment, la barre d'icones et l'explorateur se mettent a jour, les
+  // documents ouverts se remontent.
+  const refreshPluginUI = useCallback(() => {
     const m = managerRef.current
     if (m) {
       const views = m.views as { _hiddenIds?: () => string[] }
@@ -396,14 +406,51 @@ export function AppShell() {
       m.notifyVaultChange()
     }
     window.dispatchEvent(new Event('savoire-plugins-changed'))
-  }), [activationRef])
+  }, [])
+  useEffect(() => activationRef.current.onChange(refreshPluginUI), [activationRef, refreshPluginUI])
+
+  // Charge le code des plugins du store que le vault (ou la personne) a
+  // installes. Un membre installe un plugin de vault : il se charge chez tous.
+  const syncInstalledPlugins = useCallback(async () => {
+    await whenPluginsReady()
+    const api = pluginAPIRef.current
+    const service = pluginSettingsRef.current
+    if (!api || !service) return
+    let loaded = false
+    for (const id of service.installedIds()) {
+      if (pluginLoaderRef.current.isLoaded(id)) continue
+      const entry = STORE_CATALOG.find(e => e.manifest.id === id)
+      if (!entry) continue
+      try {
+        await pluginLoaderRef.current.loadInternal(await entry.load(), api)
+        loaded = true
+      } catch (err) {
+        console.error(`[plugins] echec du chargement de ${id}`, err)
+      }
+    }
+    if (loaded) refreshPluginUI()
+  }, [whenPluginsReady, pluginAPIRef, refreshPluginUI])
+  useEffect(() => {
+    void syncInstalledPlugins()
+    return pluginSettingsRef.current?.onChange(() => { void syncInstalledPlugins() })
+  }, [syncInstalledPlugins])
 
   const describeUnsupportedTypeRef = useRef((ext: string): string | undefined => {
     const owner = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.ownerOf?.(ext)
-    if (!owner) return undefined
-    const name = pluginLoaderRef.current.getAll().find(e => e.id === owner)?.plugin?.manifest.name ?? owner
-    return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », qui est désactivé. `
-      + `Le fichier est intact : réactivez le plugin dans Réglages › Plugins pour l'ouvrir.`
+    // Un plugin desinstalle reste en memoire (on ne decharge pas) : il faut
+    // proposer de l'installer, pas de le reactiver.
+    const installed = !!owner && !!pluginSettingsRef.current?.installedIds().includes(owner)
+    if (owner && installed) {
+      const name = pluginLoaderRef.current.getAll().find(e => e.id === owner)?.plugin?.manifest.name ?? owner
+      return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », qui est désactivé. `
+        + `Le fichier est intact : réactivez le plugin dans Réglages › Plugins pour l'ouvrir.`
+    }
+    const inStore = STORE_CATALOG.find(e => e.extensions.includes(ext))
+    if (inStore) {
+      return `Les fichiers .${ext} s'ouvrent avec le plugin « ${inStore.manifest.name} », disponible dans le store. `
+        + `Le fichier est intact : installez le plugin dans Réglages › Plugins pour l'ouvrir.`
+    }
+    return undefined
   })
 
   const loadDocumentRef = useRef<(doc: DocumentDto) => Promise<string>>(async () => '')

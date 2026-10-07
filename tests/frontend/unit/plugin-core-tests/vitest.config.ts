@@ -19,6 +19,7 @@ export default defineConfig({
       '@savoire/plugin-note-embed': src('plugin-note-embed'),
       '@savoire/plugin-module': src('plugin-module'),
       '@savoire/plugin-office': src('plugin-office'),
+      '@savoire/plugin-wtf': src('plugin-wtf'),
     },
   },
   test: {

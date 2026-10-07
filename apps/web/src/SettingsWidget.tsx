@@ -83,7 +83,7 @@ export function SettingsPanel({
   })
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', color: 'var(--text)', background: 'var(--bg)', fontSize: '0.82rem' }}>
+    <div style={{ height: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', color: 'var(--text)', background: 'var(--bg)', fontSize: '0.82rem' }}>
       {/* Header */}
       <div style={{ padding: '16px 24px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
@@ -95,7 +95,7 @@ export function SettingsPanel({
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px' }}>
         {tab === 'plugins'  && (pluginSettings
           ? <PluginStore service={pluginSettings} />
           : <PluginsTab plugins={plugins} />)}
@@ -118,83 +118,116 @@ const badge = (bg: string, fg: string): React.CSSProperties => ({
 
 function PluginStore({ service }: { service: PluginSettingsService }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>(() => service.list())
+  // Action en attente de confirmation : « id:disable » ou « id:uninstall ».
   const [confirming, setConfirming] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => service.onChange(() => setPlugins(service.list())), [service])
 
-  function toggle(p: PluginInfo) {
+  function run(action: () => void) {
     setError(null)
-    // Desactiver un plugin de vault touche tous les membres : on confirme.
-    if (p.enabled && p.scope === 'vault' && confirming !== p.id) { setConfirming(p.id); return }
     try {
-      service.setEnabled(p.id, !p.enabled)
+      action()
       setConfirming(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
 
+  // Couper ou desinstaller un plugin de vault touche tous les membres : on confirme.
+  function guarded(p: PluginInfo, kind: 'disable' | 'uninstall', action: () => void) {
+    const key = `${p.id}:${kind}`
+    if (p.scope === 'vault' && confirming !== key) { setConfirming(key); return }
+    run(action)
+  }
+
+  const installed = plugins.filter(p => p.installed)
+  const available = plugins.filter(p => !p.installed)
+
+  const button = (primary: boolean, enabled: boolean): React.CSSProperties => ({
+    fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, cursor: enabled ? 'pointer' : 'not-allowed',
+    border: '1px solid var(--border)', background: primary ? 'var(--accent)' : 'transparent',
+    color: primary ? 'white' : 'var(--text-muted)', fontWeight: 600,
+  })
+
+  function Row({ p }: { p: PluginInfo }) {
+    const changeable = service.canChange(p.id)
+    const hint = changeable ? undefined : t('app', 'settings.plugins.needVault')
+    const warning = confirming === `${p.id}:disable` ? 'disable' : confirming === `${p.id}:uninstall` ? 'uninstall' : null
+    return (
+      <div
+        data-testid="plugin-row"
+        data-plugin-id={p.id}
+        data-installed={p.installed ? 'true' : 'false'}
+        data-enabled={p.enabled ? 'true' : 'false'}
+        data-scope={p.scope}
+        style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)', opacity: p.installed && !p.enabled ? 0.7 : 1 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</div>
+            {p.description && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem', marginTop: 2 }}>{p.description}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+            <span style={badge('var(--bg-elevated)', 'var(--text-muted)')}>v{p.version}</span>
+            <span style={p.scope === 'vault' ? badge('rgba(124,58,237,0.12)', '#7c3aed') : badge('rgba(8,145,178,0.12)', '#0891b2')}>
+              {t('app', p.scope === 'vault' ? 'settings.plugins.scope.vault' : 'settings.plugins.scope.personal')}
+            </span>
+            {p.essential && <span style={badge('rgba(34,197,94,0.12)', '#22c55e')}>{t('app', 'settings.plugins.essential')}</span>}
+            {!p.installed && (
+              <button data-testid="plugin-install" disabled={!changeable} title={hint} style={button(true, changeable)}
+                onClick={() => run(() => service.install(p.id))}>
+                {t('app', 'settings.plugins.install')}
+              </button>
+            )}
+            {p.installed && !p.essential && (
+              <button data-testid="plugin-toggle" disabled={!changeable} title={hint} style={button(!p.enabled, changeable)}
+                onClick={() => p.enabled
+                  ? guarded(p, 'disable', () => service.setEnabled(p.id, false))
+                  : run(() => service.setEnabled(p.id, true))}>
+                {t('app', p.enabled ? 'settings.plugins.disable' : 'settings.plugins.enable')}
+              </button>
+            )}
+            {p.installed && !p.preinstalled && (
+              <button data-testid="plugin-uninstall" disabled={!changeable} title={hint} style={button(false, changeable)}
+                onClick={() => guarded(p, 'uninstall', () => service.uninstall(p.id))}>
+                {t('app', 'settings.plugins.uninstall')}
+              </button>
+            )}
+          </div>
+        </div>
+        {warning && (
+          <div data-testid="plugin-vault-warning" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 6, background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', fontSize: '0.75rem', color: 'var(--text)' }}>
+            <div style={{ marginBottom: 8 }}>⚠ {t('app', 'settings.plugins.vaultWarning')}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                data-testid={warning === 'disable' ? 'plugin-confirm-disable' : 'plugin-confirm-uninstall'}
+                onClick={() => warning === 'disable'
+                  ? guarded(p, 'disable', () => service.setEnabled(p.id, false))
+                  : guarded(p, 'uninstall', () => service.uninstall(p.id))}
+                style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: 'none', background: '#ca8a04', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+                {t('app', warning === 'disable' ? 'settings.plugins.confirmDisable' : 'settings.plugins.confirmUninstall')}
+              </button>
+              <button onClick={() => setConfirming(null)} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                {t('app', 'settings.plugins.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const section: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-faint)', marginTop: 6 }
+
   return (
     <div data-testid="plugin-store" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.intro')}</div>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
-      {plugins.map(p => {
-        const changeable = service.canChange(p.id)
-        return (
-          <div
-            key={p.id}
-            data-testid="plugin-row"
-            data-plugin-id={p.id}
-            data-enabled={p.enabled ? 'true' : 'false'}
-            data-scope={p.scope}
-            style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)', opacity: p.enabled ? 1 : 0.7 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</div>
-                {p.description && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem', marginTop: 2 }}>{p.description}</div>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                <span style={badge('var(--bg-elevated)', 'var(--text-muted)')}>v{p.version}</span>
-                <span style={p.scope === 'vault' ? badge('rgba(124,58,237,0.12)', '#7c3aed') : badge('rgba(8,145,178,0.12)', '#0891b2')}>
-                  {t('app', p.scope === 'vault' ? 'settings.plugins.scope.vault' : 'settings.plugins.scope.personal')}
-                </span>
-                {p.essential
-                  ? <span style={badge('rgba(34,197,94,0.12)', '#22c55e')}>{t('app', 'settings.plugins.essential')}</span>
-                  : (
-                    <button
-                      data-testid="plugin-toggle"
-                      disabled={!changeable}
-                      title={changeable ? undefined : t('app', 'settings.plugins.needVault')}
-                      onClick={() => toggle(p)}
-                      style={{
-                        fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, cursor: changeable ? 'pointer' : 'not-allowed',
-                        border: '1px solid var(--border)', background: p.enabled ? 'transparent' : 'var(--accent)',
-                        color: p.enabled ? 'var(--text-muted)' : 'white', fontWeight: 600,
-                      }}
-                    >
-                      {t('app', p.enabled ? 'settings.plugins.disable' : 'settings.plugins.enable')}
-                    </button>
-                  )}
-              </div>
-            </div>
-            {confirming === p.id && (
-              <div data-testid="plugin-vault-warning" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 6, background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', fontSize: '0.75rem', color: 'var(--text)' }}>
-                <div style={{ marginBottom: 8 }}>⚠ {t('app', 'settings.plugins.vaultWarning')}</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button data-testid="plugin-confirm-disable" onClick={() => toggle(p)} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: 'none', background: '#ca8a04', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
-                    {t('app', 'settings.plugins.confirmDisable')}
-                  </button>
-                  <button onClick={() => setConfirming(null)} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                    {t('app', 'settings.plugins.cancel')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )
-      })}
+      <div style={section}>{t('app', 'settings.plugins.section.installed')}</div>
+      {installed.map(p => <Row key={p.id} p={p} />)}
+      {available.length > 0 && <div style={section}>{t('app', 'settings.plugins.section.available')}</div>}
+      {available.map(p => <Row key={p.id} p={p} />)}
     </div>
   )
 }

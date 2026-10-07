@@ -1,31 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Plugins personnels desactives, memorises dans ce navigateur pour chaque
-// compte. Ne suit pas d'un appareil a l'autre : a deplacer cote compte le jour
-// ou ca compte.
-import type { IPersonalPluginStore } from '@savoire/application'
+// Plugins personnels installes ou desactives, memorises dans ce navigateur
+// pour chaque compte. Ne suit pas d'un appareil a l'autre : a deplacer cote
+// compte le jour ou ca compte.
+import type { IPersonalPluginStore, PersonalPluginState } from '@savoire/application'
 
 const keyFor = (userId: string): string => `savoire.plugins.personal.${userId}`
 
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+
 export function personalPluginStore(getUserId: () => string | undefined): IPersonalPluginStore {
   return {
-    loadDisabled(): string[] {
+    load(): PersonalPluginState {
       const userId = getUserId()
-      if (!userId) return []
+      if (!userId) return { installed: [], disabled: [] }
       try {
         const raw = localStorage.getItem(keyFor(userId))
-        const parsed: unknown = raw ? JSON.parse(raw) : []
-        return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+        const parsed: unknown = raw ? JSON.parse(raw) : null
+        // Premier format : un simple tableau des plugins desactives.
+        if (Array.isArray(parsed)) return { installed: [], disabled: strings(parsed) }
+        const state = (parsed ?? {}) as Partial<Record<keyof PersonalPluginState, unknown>>
+        return { installed: strings(state.installed), disabled: strings(state.disabled) }
       } catch {
-        return []
+        return { installed: [], disabled: [] }
       }
     },
-    saveDisabled(ids: string[]): void {
+    save(state: PersonalPluginState): void {
       const userId = getUserId()
       if (!userId) return
       try {
-        localStorage.setItem(keyFor(userId), JSON.stringify(ids))
+        localStorage.setItem(keyFor(userId), JSON.stringify(state))
       } catch {
         // Stockage indisponible (navigation privee) : le choix vaut pour la session.
       }
