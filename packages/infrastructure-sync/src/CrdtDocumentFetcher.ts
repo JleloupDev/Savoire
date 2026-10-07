@@ -95,6 +95,16 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
     return () => { this.docEventCallbacks.delete(docId) }
   }
 
+  /** Ferme la connexion et libere les documents. Une lecture en attente rend un texte vide. */
+  async dispose(): Promise<void> {
+    const conn = this.connection
+    this.connection = null
+    for (const entry of this.docs.values()) entry.resolveInit()
+    this.docs.clear()
+    this.docEventCallbacks.clear()
+    if (conn) await conn.stop().catch(() => {})
+  }
+
   private async ensureConnection(): Promise<HubConnection> {
     if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
       return this.connection

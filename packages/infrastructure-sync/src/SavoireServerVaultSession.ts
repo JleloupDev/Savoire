@@ -8,9 +8,12 @@
 // C'est ici que vivent les `new` qui etaient jusqu'ici codes en dur dans
 // apps/web : YMapVaultDirectory, YjsCrdtAdapter, SignalRTransport. Changer de
 // protocole se fait en changeant de fabrique de session, sans toucher l'app.
-import type { ICRDT, IIdentityProvider } from '@savoire/plugin-api'
-import type { IVaultDirectory } from '@savoire/platform'
-import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks } from '@savoire/application'
+//
+// Tous les chemins reseau du contenu du vault partent d'ici : hub du vault,
+// hub des documents CRDT, rooms des documents snapshot, REST des pieces jointes.
+import type { DocumentRoomPresence, ICRDT, IIdentityProvider } from '@savoire/plugin-api'
+import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory, IVaultFiles } from '@savoire/platform'
+import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IVaultSharing } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { YMapIndexChannel } from './YMapIndexChannel'
 import { CollabOrchestrator } from '@savoire/application'
@@ -18,6 +21,11 @@ import { YMapVaultDirectory } from './YMapVaultDirectory'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
 import { VaultHubClient } from './VaultHubClient'
+import { DocumentRoomClient, type JoinedDocumentRoom } from './DocumentRoomClient'
+import { CrdtDocumentFetcher } from './CrdtDocumentFetcher'
+import { RestVaultStorage } from './RestVaultStorage'
+import { HttpSharingBackend } from './HttpSharingBackend'
+import { SnapshotDocuments, type SnapshotChannel } from './SnapshotDocuments'
 
 interface OpenDoc {
   crdt: YjsCrdtAdapter
@@ -36,6 +44,13 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   private readonly indexes = new Map<string, YMapIndexChannel>()
   private readonly hub: VaultHubClient
   private readonly unsubDirectory: () => void
+  private readonly rooms: DocumentRoomClient
+  private readonly snapshots: SnapshotDocuments
+  /** Lecture ponctuelle des documents CRDT non ouverts. Cree a la premiere lecture. */
+  private fetcher: CrdtDocumentFetcher | undefined
+  readonly files: IVaultFiles
+  /** Partage arbitre par le serveur (permissions et liens). */
+  readonly sharing: IVaultSharing
 
   private constructor(
     private readonly opts: SavoireServerVaultSessionOptions,
@@ -47,6 +62,19 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     // Le repertoire est la source de verite du « la liste a change » : les
     // edits locaux comme les ops distantes appliquees par le hub y passent.
     this.unsubDirectory = directory.onChange(opts.onChanged)
+
+    this.rooms = new DocumentRoomClient({ serverUrl: opts.serverUrl, getToken: opts.getToken })
+    this.snapshots = new SnapshotDocuments((docId) =>
+      roomChannel(this.rooms, opts.vaultId, docId, opts.userId))
+
+    const storage = new RestVaultStorage({ baseUrl: opts.serverUrl })
+    const token = (): string => opts.getToken() ?? opts.token
+    this.files = {
+      upload: (file) => storage.uploadAttachment(opts.vaultId, file, token()),
+      url: (storagePath) => storage.resolveFileUrl(opts.vaultId, storagePath),
+      read: (storagePath) => storage.readFile(opts.vaultId, storagePath, token()),
+    }
+    this.sharing = new HttpSharingBackend(opts.serverUrl ?? '')
   }
 
   static async open(opts: SavoireServerVaultSessionOptions): Promise<SavoireServerVaultSession> {
@@ -92,6 +120,27 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     open.crdt.dispose()
   }
 
+  openSnapshot(docId: string): ISnapshotDocument {
+    return this.snapshots.open(docId)
+  }
+
+  closeSnapshot(docId: string): void {
+    this.snapshots.close(docId)
+  }
+
+  async readDocument(docId: string, kind: DocumentSyncKind): Promise<string> {
+    if (kind === 'snapshot') return this.snapshots.read(docId)
+    // Document ouvert dans un editeur : son etat local est le plus frais.
+    const open = this.docs.get(docId)
+    if (open) return (open.crdt.rawDoc as { getText(name: string): { toString(): string } }).getText('codemirror').toString()
+    this.fetcher ??= new CrdtDocumentFetcher({
+      serverUrl: this.opts.serverUrl,
+      getToken: this.opts.getToken,
+      getUserId: () => this.opts.userId,
+    })
+    return this.fetcher.getDocumentContent(this.opts.vaultId, docId, '')
+  }
+
   /** Arbitrage des verrous : delegue au hub, seul point central du profil. */
   get locks(): IDocumentLocks {
     return {
@@ -128,9 +177,49 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   async dispose(): Promise<void> {
     this.unsubDirectory()
     for (const docId of [...this.docs.keys()]) this.closeDocument(docId)
+    this.snapshots.dispose()
+    await this.fetcher?.dispose()
     for (const channel of this.indexes.values()) channel.dispose()
     this.indexes.clear()
     await this.hub.dispose()
     this.directory.dispose()
+  }
+}
+
+/** Canal snapshot du profil serveur : une room SignalR, persistee par le hub. */
+function roomChannel(
+  rooms: DocumentRoomClient,
+  vaultId: string,
+  docId: string,
+  userId: string,
+): SnapshotChannel {
+  const room = rooms.openRoom(vaultId, docId, userId)
+  const writeListeners = new Set<(content: string, fromUserId: string) => void>()
+  const presenceListeners = new Set<(userId: string, presence: DocumentRoomPresence) => void>()
+  let closed = false
+  let joined: JoinedDocumentRoom | undefined
+
+  room.then((r) => {
+    joined = r
+    if (closed) return
+    r.onSnapshot((content, from) => { for (const cb of writeListeners) cb(content, from) })
+    r.onPresence((user, presence) => { for (const cb of presenceListeners) cb(user, presence) })
+  }, () => { /* hub injoignable : le document reste vide, l'echec se voit a l'ecriture */ })
+
+  return {
+    initial: room.then(r => r.initialSnapshot),
+    push: async (content) => { await (await room).pushSnapshot(content) },
+    onRemote: (cb) => { writeListeners.add(cb); return () => { writeListeners.delete(cb) } },
+    pushPresence: async (presence) => { await (await room).updatePresence(presence) },
+    onPresence: (cb) => { presenceListeners.add(cb); return () => { presenceListeners.delete(cb) } },
+    close: () => {
+      closed = true
+      writeListeners.clear()
+      presenceListeners.clear()
+      // Fermeture SYNCHRONE si la room est rejointe : une reouverture juste
+      // apres (lecture ponctuelle puis vue) doit trouver la place libre.
+      if (joined) void joined.close()
+      else void room.then(r => r.close(), () => {})
+    },
   }
 }

@@ -7,7 +7,8 @@ import {
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
   HttpAdminBackend, HttpAuthBackend, HttpSharingBackend, HttpVaultsBackend,
-  RestVaultStorage, ServerKeyProvider, SavoireServerVaultSession,
+  ServerKeyProvider, SavoireServerVaultSession,
+  BroadcastChannelPeerBus, LocalPeerVaultSessionFactory,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
 
@@ -34,17 +35,14 @@ export function createWebInfrastructure(
   getToken:   () => string | null,
   getUserId:  () => string,
 ) {
-  // DERNIERE inversion restante : ce fetcher sert le contenu ponctuel
-  // (embeds ![[...]], vault.read()) et parle a SyncHub, donc au serveur
-  // Savoire uniquement. Un protocole qui possede le stockage des documents
-  // (blobs EdgeSync, Repo automerge) doit fournir le sien : IDocumentFetcher
-  // devrait venir de la session, comme le repertoire et les CRDT. En l'etat,
-  // les embeds sont vides en profil EdgeSync. Voir IVaultSyncSession.
+  // Chemins directs vers le serveur Savoire, HORS session de vault. Ils ne
+  // servent plus qu'au document partage isole (ADR-027), qui n'a pas de
+  // session : c'est une fonction propre au serveur. Le contenu d'un vault,
+  // lui, passe entierement par sa session (voir IVaultSyncSession).
   const documentFetcher = new CrdtDocumentFetcher({ getToken, getUserId })
-  const vaultStorage    = new RestVaultStorage()
   const documentStore   = new DocumentStore(documentFetcher)
   const roomClient      = new DocumentRoomClient({ getToken })
-  return { documentFetcher, vaultStorage, roomClient, documentStore }
+  return { documentFetcher, roomClient, documentStore }
 }
 
 // ── AppRoot factory ───────────────────────────────────────────────────────────
@@ -77,6 +75,11 @@ function makeServerVaultSessionFactory(
       onConnectionChange: params.onConnectionChange ?? onConnectionChange,
     }),
   }
+}
+
+/** Profil local (?profile=local) : les onglets du navigateur sont les pairs. */
+export function makeLocalPeerVaultSessionFactory(): IVaultSyncSessionFactory {
+  return new LocalPeerVaultSessionFactory(new BroadcastChannelPeerBus())
 }
 
 export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {

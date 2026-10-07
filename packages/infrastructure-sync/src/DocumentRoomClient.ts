@@ -13,13 +13,21 @@ import {
 } from '@microsoft/signalr'
 import type { DocumentRoom, DocumentRoomPresence, SyncAPI } from '@savoire/plugin-api'
 
+/** Room rejointe : expose en plus le snapshot que le serveur renvoie a l'entree. */
+export interface JoinedDocumentRoom extends DocumentRoom {
+  /** Dernier snapshot persiste, ou null si le document n'a jamais ete ecrit. */
+  readonly initialSnapshot: Promise<string | null>
+}
+
 // ── DocumentRoomHandle ─────────────────────────────────────────────────────
 // Represents a single room subscription on a shared HubConnection.
 
-class DocumentRoomHandle implements DocumentRoom {
+class DocumentRoomHandle implements JoinedDocumentRoom {
   private readonly snapshotListeners = new Set<(json: string, userId: string) => void>()
   private readonly presenceListeners = new Set<(userId: string, p: DocumentRoomPresence) => void>()
   private closed = false
+  private resolveInitial!: (snapshot: string | null) => void
+  readonly initialSnapshot = new Promise<string | null>(r => { this.resolveInitial = r })
 
   constructor(
     private readonly conn: HubConnection,
@@ -27,8 +35,13 @@ class DocumentRoomHandle implements DocumentRoom {
     private readonly docId: string,
     _userId: string,
     /** Called by DocumentRoomClient when close() is invoked. */
-    private readonly onClose: (docId: string) => void,
+    private readonly onClose: (docId: string, handle: DocumentRoomHandle) => void,
   ) {}
+
+  // Called by DocumentRoomClient on RoomJoined. Only the first call counts.
+  _dispatchJoined(snapshot: string | null): void {
+    this.resolveInitial(snapshot)
+  }
 
   // Called by DocumentRoomClient when a SnapshotReceived event arrives for this room.
   _dispatchSnapshot(fromUserId: string, snapshotJson: string): void {
@@ -67,12 +80,15 @@ class DocumentRoomHandle implements DocumentRoom {
     this.closed = true
     this.snapshotListeners.clear()
     this.presenceListeners.clear()
+    this.resolveInitial(null)
+    // Se retirer AVANT d'attendre le serveur : un openRoom() lance juste apres
+    // doit creer une nouvelle poignee, pas recuperer celle-ci, deja morte.
+    this.onClose(this.docId, this)
     try {
       await this.conn.invoke('LeaveRoom', this.vaultId, this.docId)
     } catch {
       // Best-effort leave.
     }
-    this.onClose(this.docId)
   }
 }
 
@@ -96,7 +112,7 @@ export class DocumentRoomClient implements SyncAPI {
     this.getToken = options.getToken ?? (() => null)
   }
 
-  async openRoom(vaultId: string, docId: string, userId: string): Promise<DocumentRoom> {
+  async openRoom(vaultId: string, docId: string, userId: string): Promise<JoinedDocumentRoom> {
     const conn = this.ensureConnection(userId)
     if (conn.state === HubConnectionState.Disconnected) {
       // Start and store the promise so concurrent callers can await it.
@@ -110,12 +126,15 @@ export class DocumentRoomClient implements SyncAPI {
     const existing = this.rooms.get(docId)
     if (existing) return existing
 
-    const handle = new DocumentRoomHandle(conn, vaultId, docId, userId, (id) => {
-      this.rooms.delete(id)
+    const handle = new DocumentRoomHandle(conn, vaultId, docId, userId, (id, closing) => {
+      if (this.rooms.get(id) === closing) this.rooms.delete(id)
     })
     this.rooms.set(docId, handle)
 
     await conn.invoke('JoinRoom', vaultId, docId)
+    // Le serveur envoie RoomJoined AVANT de terminer JoinRoom. S'il ne l'a pas
+    // fait (serveur ancien), le document est considere comme jamais ecrit.
+    handle._dispatchJoined(null)
 
     return handle
   }
@@ -152,11 +171,10 @@ export class DocumentRoomClient implements SyncAPI {
       this.rooms.get(docId)?._dispatchPresence(userId, presence)
     })
 
-    // RoomJoined is informational — the snapshot is returned to the Excalidraw
-    // plugin via a separate REST read on mount, not via this hub event.
-    // We log it for debugging.
-    this.connection.on('RoomJoined', (docId: string, _snapshot: string | null) => {
-      console.debug('[DocumentRoom] RoomJoined', docId, _snapshot ? '(snapshot present)' : '(no snapshot)')
+    // RoomJoined porte le dernier snapshot persiste : c'est l'etat initial du
+    // document. L'ancien chemin le relisait par REST, qui ne le servait plus.
+    this.connection.on('RoomJoined', (docId: string, snapshot: string | null) => {
+      this.rooms.get(docId)?._dispatchJoined(snapshot ?? null)
     })
 
     return this.connection

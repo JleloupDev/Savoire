@@ -9,9 +9,15 @@
  *   2. Sinon → IVaultStorage.readFile() (attachments : images, PDF…)
  *
  * Les plugins ![[...]] et @[[...]] ne savent rien de cette logique.
+ *
+ * Avec une session de vault (cas normal), TOUT le contenu passe par elle :
+ * lecture des documents, ecriture des documents snapshot, pieces jointes. La
+ * session est le seul endroit qui parle au reseau, quel que soit le profil
+ * (serveur Savoire, pair a pair). Sans session (document partage isole), les
+ * anciens chemins `documentStore` / `storage` restent utilises.
  */
 import type { VaultAPI } from '@savoire/plugin-api'
-import type { IDocumentMeta, IVaultDirectory, IVaultStorage } from './ports'
+import { documentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
@@ -23,6 +29,8 @@ export class VaultClient implements VaultAPI {
     private readonly directory: IVaultDirectory,
     /** Résout un chemin relatif en IDocumentMeta — fourni par l'app layer. */
     private readonly resolveDoc: (path: string) => IDocumentMeta | undefined,
+    /** Session du vault. Absente pour un document partage isole. */
+    private readonly session?: IVaultContentSession,
   ) {}
 
   /** Met à jour le token Bearer (appelé après refresh du token d'accès). */
@@ -73,11 +81,18 @@ export class VaultClient implements VaultAPI {
 
   async read(documentId: string): Promise<string> {
     const meta = this.directory.getById(documentId)
+    if (this.session && meta) return this.session.readDocument(documentId, documentSyncKind(meta.path))
     return this.documentStore.readContent(this.vaultId, documentId, this.token, meta)
   }
 
   async readDocumentByPath(path: string): Promise<string> {
     const doc = this._resolveDocumentByPath(path)
+    if (this.session) {
+      // Une piece jointe est inscrite au repertoire, mais son contenu est un fichier.
+      if (path.startsWith('attachments/')) return this.session.files.read(attachmentStoragePath(path))
+      if (doc) return this.session.readDocument(doc.id, documentSyncKind(doc.path))
+      return this.session.files.read(attachmentStoragePath(path))
+    }
     if (doc) {
       const ext = path.split('.').at(-1) ?? ''
       if (ext !== 'md') return this.documentStore.readDirect(this.vaultId, doc.id, this.token)
@@ -90,6 +105,19 @@ export class VaultClient implements VaultAPI {
   async write(documentId: string, content: string): Promise<void> {
     const meta = this.directory.getById(documentId)
     if (!meta) throw new Error(`Document not found: ${documentId}`)
+    if (this.session && documentSyncKind(meta.path) === 'snapshot') {
+      // Ouverture courte : si une vue tient deja le document, on partage sa
+      // synchro ; sinon on l'ouvre le temps d'ecrire.
+      const doc = this.session.openSnapshot(documentId)
+      try {
+        await doc.load()
+        await doc.write(content)
+      } finally {
+        this.session.closeSnapshot(documentId)
+      }
+      return
+    }
+    // Un document CRDT s'ecrit par ses operations (l'editeur), jamais en bloc.
     await this.documentStore.writeContent(this.vaultId, documentId, content, this.token)
   }
 
@@ -164,7 +192,9 @@ export class VaultClient implements VaultAPI {
   }
 
   async uploadAttachment(file: File): Promise<string> {
-    const { storagePath } = await this.storage.uploadAttachment(this.vaultId, file, this.token)
+    const { storagePath } = this.session
+      ? await this.session.files.upload(file)
+      : await this.storage.uploadAttachment(this.vaultId, file, this.token)
     const docPath = `attachments/${storagePath}`
     // Register the attachment as a CRDT directory entry (emits a local vault op).
     this.addDocument({ id: crypto.randomUUID(), path: docPath })
@@ -172,7 +202,8 @@ export class VaultClient implements VaultAPI {
   }
 
   resolveAttachmentUrl(path: string): string {
-    const storagePath = path.startsWith('attachments/') ? path.slice('attachments/'.length) : path
+    const storagePath = attachmentStoragePath(path)
+    if (this.session) return this.session.files.url(storagePath)
     return this.storage.resolveFileUrl(this.vaultId, storagePath)
   }
 
@@ -200,4 +231,9 @@ export class VaultClient implements VaultAPI {
     }
     return undefined
   }
+}
+
+/** Chemin de stockage d'une piece jointe : son chemin sans le prefixe `attachments/`. */
+function attachmentStoragePath(path: string): string {
+  return path.startsWith('attachments/') ? path.slice('attachments/'.length) : path
 }

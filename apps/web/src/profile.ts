@@ -5,6 +5,10 @@
 //
 //   ?profile=server     (defaut) serveur Savoire, le serveur lit les donnees
 //   ?profile=edgesync   P2P, E2E, serveur aveugle
+//   ?profile=local      pairs = onglets du navigateur, aucune synchro serveur.
+//                       Garde-fou du portage P2P : pas d'arbitre (pas de
+//                       verrous), pas de persistance hors des onglets ouverts.
+//                       Comptes et liste des vaults restent servis par le serveur.
 //
 // Sert d'abord aux tests : les deux profils se lancent cote a cote sans
 // recompiler ni toucher au composition root. Le jour ou un connecteur
@@ -16,9 +20,11 @@
 // ?profile=edgesync echoue donc proprement, avec un message, plutot que de
 // casser le demarrage.
 
-export type SyncProfileName = 'server' | 'edgesync'
+import { makeLocalPeerVaultSessionFactory } from './createWebAppRoot'
 
-const KNOWN: readonly SyncProfileName[] = ['server', 'edgesync']
+export type SyncProfileName = 'server' | 'edgesync' | 'local'
+
+const KNOWN: readonly SyncProfileName[] = ['server', 'edgesync', 'local']
 
 export function readProfileFromUrl(search: string = window.location.search): SyncProfileName {
   const raw = new URLSearchParams(search).get('profile')
@@ -40,6 +46,12 @@ export async function loadProfile(
   deps: { getToken: () => string | null; getVaultKey: () => Uint8Array | null },
 ): Promise<LoadedProfile> {
   if (name === 'server') return { name: 'server' }
+  if (name === 'local') {
+    return {
+      name: 'local',
+      vaultSyncSessionFactory: makeLocalPeerVaultSessionFactory(),
+    }
+  }
 
   try {
     // Specificateur VARIABLE, et non litteral, volontairement : un import()

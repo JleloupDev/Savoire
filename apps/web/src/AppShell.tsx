@@ -9,7 +9,7 @@ import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/p
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
-import { isKeyManagedSession, type IVaultSyncSession } from '@savoire/application'
+import { isKeyManagedSession, SessionSyncAPI, type IVaultSyncSession } from '@savoire/application'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -203,7 +203,7 @@ export function AppShell() {
     () => tokenRef.current,
     () => activeAccountRef.current?.userId ?? 'reader',
   ))
-  const { documentFetcher, vaultStorage, roomClient, documentStore } = infraRef.current
+  const { documentFetcher, roomClient, documentStore } = infraRef.current
   const managerRef = useRef<WorkspaceManagerImpl | null>(null)
 
   // Le profil a ete resolu avant le premier rendu (main.tsx) ; on lui donne
@@ -287,6 +287,9 @@ export function AppShell() {
 
   const vaultAPIRef = useRef<VaultClient | undefined>(undefined)
   const vaultSessionRef = useRef<IVaultSyncSession | undefined>(undefined)
+  // `sync.openRoom` des plugins : servi par la session du vault actif. La room
+  // directe ne sert plus qu'au document partage isole, qui n'a pas de session.
+  const pluginSyncRef = useRef(new SessionSyncAPI(() => vaultSessionRef.current, roomClient))
   // Profil serveur : CollabOrchestrator signe chaque op avec cette identité.
   const identityProviderRef = useRef<IIdentityProvider | undefined>(undefined)
   identityProviderRef.current = appRootRef.current.identityProvider
@@ -355,7 +358,7 @@ export function AppShell() {
     triggersRef,
     onCrdtTextChangeRef,
   } = usePluginBootstrap({
-    roomClient: roomClient,
+    roomClient: pluginSyncRef.current,
     vaultProxy,
     managerRef,
     vaultBrowserRefs,
@@ -434,7 +437,6 @@ export function AppShell() {
         vaultId: vault.id,
         token: tok,
         userId: activeAccountRef.current?.userId ?? '',
-        storage: vaultStorage,
         documentStore: documentStore,
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
@@ -483,7 +485,7 @@ export function AppShell() {
     })
     await switchChainRef.current
   // switchToVault only uses stable refs (lastSwitchTsRef, selectedVaultRef, vaultAPIRef,
-  // vaultStorage, documentStore, documentsRef, contentIndexingServiceRef, getGraphContributor,
+  // documentStore, documentsRef, contentIndexingServiceRef, getGraphContributor,
   // managerRef) and state setters — application.documents is stable (created once in appRootRef).
   }, [application.documents])
 
@@ -832,6 +834,10 @@ export function AppShell() {
   // VaultBrowserWidget.tsx), surfaced via the key modal below instead of a
   // full-page takeover — see plan Context for why.
 
+  // Lu a chaque rendu : la session change a l'activation d'un vault, et cette
+  // activation provoque toujours un rendu (liste des documents).
+  const vaultSharing = vaultSessionRef.current?.sharing
+
   return (
     <div
       data-testid="app-shell"
@@ -885,8 +891,8 @@ export function AppShell() {
             <span data-testid="save-status" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
           )}
 
-          {/* Share */}
-          {selectedVault && (
+          {/* Share : capacite du profil, absente sans arbitre (voir IVaultSyncSession.sharing) */}
+          {selectedVault && vaultSharing && (
             <button onClick={() => setSharingOpen(true)} title={t('app', 'topbar.share')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -972,12 +978,12 @@ export function AppShell() {
         </div>
       )}
 
-      {sharingOpen && token && selectedVault && (
+      {sharingOpen && token && selectedVault && vaultSharing && (
         <SharingPanel
           token={token}
           vault={selectedVault}
           document={activeDoc}
-          sharingApi={application.sharing}
+          sharingApi={vaultSharing}
           onClose={() => setSharingOpen(false)}
         />
       )}

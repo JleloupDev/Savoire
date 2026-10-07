@@ -4,7 +4,7 @@
 // d'un vault ou d'un document.
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { ISharingAPI, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
+import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
 import type { VaultSummary, DocumentDto } from './types'
 import { t, ti } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
@@ -124,7 +124,7 @@ interface Props {
   token: string
   vault: VaultSummary | null
   document: DocumentDto | null
-  sharingApi: ISharingAPI
+  sharingApi: IVaultSharing
   onClose: () => void
 }
 

@@ -11,7 +11,7 @@
 // automerge-repo n'aurait pas cette gymnastique a faire : c'est son `Repo` qui
 // produit le document, donc il implementerait openDocument() directement.
 import type { ICRDT } from '@savoire/plugin-api'
-import type { IVaultDirectory } from '@savoire/platform'
+import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory, IVaultFiles } from '@savoire/platform'
 import type { IVaultSyncSession, IKeyManagedVaultSession } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { EdgesyncIndexChannel } from './EdgesyncIndexChannel'
@@ -83,6 +83,33 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     return 'connected'
   }
 
+  // ── Contenu hors editeur : NON PORTE (connecteur gele, 05/10/2026) ─────────
+  // Ajoute au port pendant le gel. A implementer au realignement : documents
+  // snapshot et pieces jointes comme canaux chiffres sous K_vault. Le contrat
+  // vaultSyncSessionContract dit ce qui est attendu.
+
+  async readDocument(docId: string, kind: DocumentSyncKind): Promise<string> {
+    const crdt = this.crdts.get(docId)
+    if (kind === 'crdt' && crdt) {
+      return (crdt.rawDoc as { getText(name: string): { toString(): string } }).getText('codemirror').toString()
+    }
+    // Comportement d'avant le port : un embed d'un document ferme reste vide.
+    if (kind === 'crdt') return ''
+    throw notPorted('documents snapshot')
+  }
+
+  openSnapshot(_docId: string): ISnapshotDocument {
+    throw notPorted('documents snapshot')
+  }
+
+  closeSnapshot(_docId: string): void {}
+
+  readonly files: IVaultFiles = {
+    upload: async () => { throw notPorted('pieces jointes') },
+    url: () => '',
+    read: async () => { throw notPorted('pieces jointes') },
+  }
+
   // ── Extras d'un protocole a cles (detectes par isKeyManagedSession) ────────
 
   get isOwner(): boolean { return this.inner.isOwner }
@@ -99,4 +126,8 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     await this.inner.dispose()
     this.directory.dispose()
   }
+}
+
+function notPorted(what: string): Error {
+  return new Error(`EdgeSync : ${what} pas encore portes sur ce connecteur`)
 }

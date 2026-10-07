@@ -6,6 +6,19 @@ import type {
   IDocumentsAPI, IVaultSyncSession, IVaultSyncSessionFactory,
 } from './contracts'
 
+const throwNoDirectStorage = (): never => {
+  throw new Error('stockage direct indisponible : le contenu passe par la session de vault')
+}
+
+/** Stockage du VaultClient d'un vault : jamais appele, la session sert tout. */
+const NO_DIRECT_STORAGE: IVaultStorage = {
+  readFile: async () => throwNoDirectStorage(),
+  writeFile: async () => throwNoDirectStorage(),
+  resolveFileUrl: () => throwNoDirectStorage(),
+  listDocuments: async () => throwNoDirectStorage(),
+  uploadAttachment: async () => throwNoDirectStorage(),
+}
+
 export class DocumentsService implements IDocumentsAPI {
   private active: ActivatedVault | null = null
 
@@ -27,13 +40,16 @@ export class DocumentsService implements IDocumentsAPI {
       onConnectionChange: params.onConnectionChange,
     })
 
+    // Tout le contenu passe par la session : le VaultClient ne recoit aucun
+    // stockage propre. Un acces direct serait un chemin reseau hors du port.
     const client = new VaultClient(
       params.vaultId,
       params.token,
-      params.storage,
+      NO_DIRECT_STORAGE,
       params.documentStore,
       session.directory,
       params.resolveDoc,
+      session,
     )
 
     const active: ActivatedVault = {

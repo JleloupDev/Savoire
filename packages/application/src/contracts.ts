@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
-import type { DocumentStore, IDocumentMeta, IVaultDirectory, IVaultStorage, VaultClient } from '@savoire/platform'
+import type { DocumentStore, IDocumentMeta, IVaultContentSession, IVaultDirectory, VaultClient } from '@savoire/platform'
 import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
@@ -54,12 +54,27 @@ export interface CrdtPresenceLike {
  *
  * Corollaire : aucun `new YjsCrdtAdapter()` ni `new YMapVaultDirectory()` dans
  * l'application. Changer de protocole = changer de fabrique, rien d'autre.
+ *
+ * Regle : toute donnee du vault passe par la session. Repertoire, documents
+ * CRDT, documents snapshot, index, pieces jointes. Aucun appel reseau sur ces
+ * donnees ailleurs. C'est ce qui garde le portage pair a pair possible.
+ * Le contrat est verifie par une suite de tests commune (vaultSyncSessionContract)
+ * qui tourne sur un connecteur local sans serveur.
+ *
+ * Les decisions qui demandent un arbitre (verrous) sont des capacites
+ * OPTIONNELLES : un profil sans arbitre ne les fournit pas, et l'application
+ * doit fonctionner sans.
  */
-export interface IVaultSyncSession {
+export interface IVaultSyncSession extends IVaultContentSession {
   /** Liste des notes du vault, creee et synchronisee par la session. */
   readonly directory: IVaultDirectory
   /** Ouvre (ou reprend) la synchro d'un document et rend son CRDT.
-   *  Idempotent : deux appels pour le meme docId rendent le meme objet. */
+   *  Idempotent : deux appels pour le meme docId rendent le meme objet.
+   *
+   *  Le CRDT est rendu VIDE ; son etat arrive ensuite, comme des mises a jour
+   *  distantes, meme s'il est deja connu localement. L'editeur se monte sur un
+   *  texte vide et ne suit que les changements posterieurs (yCollab) : un etat
+   *  present des le retour de cette methode resterait invisible. */
   openDocument(docId: string): ICRDT
   /** Arrete la synchro d'un document dont le panneau s'est ferme. */
   closeDocument(docId: string): void
@@ -80,6 +95,14 @@ export interface IVaultSyncSession {
    * contraire serait pire que ne rien offrir.
    */
   readonly locks?: IDocumentLocks
+  /**
+   * Partage du vault et de ses documents : qui y a acces, avec quel droit.
+   * Capacite d'arbitrage, comme les verrous : le profil serveur la fournit,
+   * un profil sans arbitre ne la fournit pas, et l'UI masque alors le partage.
+   * Un protocole P2P la portera par son ACL (les liens publics, eux, supposent
+   * un serveur qui les sert).
+   */
+  readonly sharing?: IVaultSharing
   dispose(): Promise<void>
 }
 
@@ -171,7 +194,6 @@ export interface ActivateVaultParams {
   vaultId: string
   token: string
   userId: string
-  storage: IVaultStorage
   documentStore: DocumentStore
   resolveDoc: (path: string) => IDocumentMeta | undefined
   onChanged: () => void
@@ -316,6 +338,10 @@ export interface ISharingBackend {
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
   openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
 }
+
+/** La part du partage qui depend du profil de synchro. Voir IVaultSyncSession.sharing. */
+export type IVaultSharing = Pick<ISharingAPI,
+  'getSharing' | 'grantPermission' | 'revokePermission' | 'lookupUserByEmail' | 'createShareLink' | 'revokeShareLink'>
 
 export interface ISharingAPI {
   getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing>
