@@ -480,6 +480,13 @@ export function AppShell() {
         token: tok,
         userId: activeAccountRef.current?.userId ?? '',
         documentStore: documentStore,
+        // La nature d'un document vient du type declare par son plugin, actif
+        // ou non : un type 'crdt' est un CRDT, quelle que soit son extension.
+        syncKindOf: (path) => {
+          const ext = path.split('.').pop()?.toLowerCase() ?? ''
+          const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
+          return spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
+        },
         resolveDoc: (path) => documentsRef.current.find(d => d.path === path || d.path === path + '.md'),
         onChanged,
         identitySeed,

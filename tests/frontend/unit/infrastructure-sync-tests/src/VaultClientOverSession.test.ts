@@ -5,7 +5,7 @@
 // connecteur local (sans serveur) le prouve : deux pairs s'echangent dessins,
 // tableaux, notes et pieces jointes par la seule session.
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { DocumentStore, VaultClient, type IVaultStorage } from '@savoire/platform'
+import { DocumentStore, VaultClient, type DocumentSyncKind, type IVaultStorage } from '@savoire/platform'
 import type { IVaultSyncSession } from '@savoire/application'
 import { InProcessPeerBus, LocalPeerVaultSessionFactory, type YjsCrdtAdapter } from '@savoire/infrastructure-sync'
 
@@ -73,6 +73,20 @@ describe('VaultClient sur une session de vault', () => {
     doc.getText('codemirror').insert(0, '# Titre')
     await settle()
     expect(await bob.client.readDocumentByPath('note.md')).toBe('# Titre')
+  })
+
+  it('un type declare crdt par son plugin se lit depuis son CRDT, quelle que soit l\'extension', async () => {
+    const syncKindOf = (path: string): DocumentSyncKind => (path.endsWith('.md') || path.endsWith('.wtf') ? 'crdt' : 'snapshot')
+    const alice = await peer('alice')
+    const bobSession = await factory.open({ vaultId: 'v1', token: '', userId: 'bob', onChanged: () => {} })
+    sessions.push(bobSession)
+    const bob = new VaultClient('v1', '', forbiddenStorage(), forbiddenStore(), bobSession.directory, () => undefined, bobSession, syncKindOf)
+    await alice.client.createFile('note.wtf')
+    const id = alice.client.resolveDocumentId('note.wtf')!
+    const doc = (alice.session.openDocument(id) as YjsCrdtAdapter).rawDoc as { getText(n: string): { insert(i: number, t: string): void } }
+    doc.getText('codemirror').insert(0, 'wtf !')
+    await settle()
+    expect(await bob.readDocumentByPath('note.wtf')).toBe('wtf !')
   })
 
   it('une piece jointe passe par la session', async () => {

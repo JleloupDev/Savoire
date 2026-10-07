@@ -8,6 +8,7 @@ import { createVaultBrowserPlugin, type VaultBrowserRefs } from '@savoire/plugin
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
 import officePlugin from '@savoire/plugin-office'
+import wtfPlugin from '@savoire/plugin-wtf'
 import calloutPlugin from '@savoire/plugin-callout'
 import codeBlockPlugin from '@savoire/plugin-code-block'
 import taskListPlugin from '@savoire/plugin-task-list'
@@ -282,6 +283,8 @@ export function usePluginBootstrap({
         await pluginLoaderRef.current.loadInternal(excalidrawPlugin, pluginApi)
         await pluginLoaderRef.current.loadInternal(mindmapPlugin, pluginApi)
         await pluginLoaderRef.current.loadInternal(officePlugin, pluginApi)
+        // Plugin de test du runtime : des .wtf qui sont du simple Markdown.
+        await pluginLoaderRef.current.loadInternal(wtfPlugin, pluginApi)
         // Editor plugins — blocks, hooks, slash commands (shared across all tabs).
         for (const plugin of defaultPluginsRef.current) {
           await pluginLoaderRef.current.loadInternal(plugin, pluginApi)

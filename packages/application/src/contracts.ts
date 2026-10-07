@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
-import type { DocumentStore, IDocumentMeta, IVaultContentSession, IVaultDirectory, VaultClient } from '@savoire/platform'
+import type { DocumentStore, DocumentSyncKind, IDocumentMeta, IVaultContentSession, IVaultDirectory, VaultClient } from '@savoire/platform'
 import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
@@ -202,6 +202,11 @@ export interface ActivateVaultParams {
   token: string
   userId: string
   documentStore: DocumentStore
+  /**
+   * Famille de synchro d'un document (CRDT ou snapshot), d'apres le type
+   * declare par son plugin. Defaut : seul le Markdown est un CRDT.
+   */
+  syncKindOf?: (path: string) => DocumentSyncKind
   resolveDoc: (path: string) => IDocumentMeta | undefined
   onChanged: () => void
   /** Graine Ed25519, transmise telle quelle a la fabrique de session. */

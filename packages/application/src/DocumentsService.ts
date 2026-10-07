@@ -50,6 +50,7 @@ export class DocumentsService implements IDocumentsAPI {
       session.directory,
       params.resolveDoc,
       session,
+      params.syncKindOf,
     )
 
     const active: ActivatedVault = {

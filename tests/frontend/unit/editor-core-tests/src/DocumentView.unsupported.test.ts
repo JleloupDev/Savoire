@@ -42,6 +42,16 @@ describe('DocumentView sans plugin pour le type', () => {
     expect(container.textContent).toBe('Plugin Tables désactivé.')
   })
 
+  it('un type actif sans open() est confie a l\'editeur Markdown, pas a la fiche', () => {
+    const registry = { ...emptyRegistry, resolve: (ext: string) => ext === 'wtf' ? { extension: 'wtf', label: 'WTF', icon: '?', create: async () => '' } : undefined } as unknown as FileTypeRegistry
+    const container = document.createElement('div')
+    const view = new DocumentView({ path: 'x.wtf', container, vault, fileTypeRegistry: registry, vaultId: 'v1' })
+    view.mount()
+    expect(container.querySelector('[data-testid="unsupported-file"]')).toBeNull()
+    expect(view.controller).not.toBeNull()
+    view.destroy()
+  })
+
   it('se demonte proprement', () => {
     const { view, container } = mount('budget.table')
     view.destroy()

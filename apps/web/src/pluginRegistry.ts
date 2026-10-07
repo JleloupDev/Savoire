@@ -11,6 +11,7 @@ export const pluginRegistry: Record<string, () => Promise<VaultPlugin>> = {
   'plugin-excalidraw':  () => import('@savoire/plugin-excalidraw').then(m => m.default),
   'plugin-mindmap':     () => import('@savoire/plugin-mindmap').then(m => m.default),
   'plugin-office':      () => import('@savoire/plugin-office').then(m => m.default),
+  'plugin-wtf':         () => import('@savoire/plugin-wtf').then(m => m.default),
   // Editor plugins — used when activating via frontmatter in standalone mode
   // (in shared API mode, activateScopedPlugin() skips the load if already registered)
   'plugin-mermaid':     () => import('@savoire/plugin-mermaid').then(m => m.default),

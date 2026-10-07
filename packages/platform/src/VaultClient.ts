@@ -17,7 +17,7 @@
  * anciens chemins `documentStore` / `storage` restent utilises.
  */
 import type { VaultAPI } from '@savoire/plugin-api'
-import { documentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
+import { documentSyncKind, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
@@ -31,6 +31,8 @@ export class VaultClient implements VaultAPI {
     private readonly resolveDoc: (path: string) => IDocumentMeta | undefined,
     /** Session du vault. Absente pour un document partage isole. */
     private readonly session?: IVaultContentSession,
+    /** Famille de synchro d'un document. Defaut : seul le Markdown est un CRDT. */
+    private readonly syncKindOf: (path: string) => DocumentSyncKind = documentSyncKind,
   ) {}
 
   /** Met à jour le token Bearer (appelé après refresh du token d'accès). */
@@ -81,7 +83,7 @@ export class VaultClient implements VaultAPI {
 
   async read(documentId: string): Promise<string> {
     const meta = this.directory.getById(documentId)
-    if (this.session && meta) return this.session.readDocument(documentId, documentSyncKind(meta.path))
+    if (this.session && meta) return this.session.readDocument(documentId, this.syncKindOf(meta.path))
     return this.documentStore.readContent(this.vaultId, documentId, this.token, meta)
   }
 
@@ -90,7 +92,7 @@ export class VaultClient implements VaultAPI {
     if (this.session) {
       // Une piece jointe est inscrite au repertoire, mais son contenu est un fichier.
       if (path.startsWith('attachments/')) return this.session.files.read(attachmentStoragePath(path))
-      if (doc) return this.session.readDocument(doc.id, documentSyncKind(doc.path))
+      if (doc) return this.session.readDocument(doc.id, this.syncKindOf(doc.path))
       return this.session.files.read(attachmentStoragePath(path))
     }
     if (doc) {
@@ -105,7 +107,7 @@ export class VaultClient implements VaultAPI {
   async write(documentId: string, content: string): Promise<void> {
     const meta = this.directory.getById(documentId)
     if (!meta) throw new Error(`Document not found: ${documentId}`)
-    if (this.session && documentSyncKind(meta.path) === 'snapshot') {
+    if (this.session && this.syncKindOf(meta.path) === 'snapshot') {
       // Ouverture courte : si une vue tient deja le document, on partage sa
       // synchro ; sinon on l'ouvre le temps d'ecrire.
       const doc = this.session.openSnapshot(documentId)

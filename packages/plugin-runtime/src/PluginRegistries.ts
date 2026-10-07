@@ -302,6 +302,15 @@ export class FileTypeRegistryImpl implements FileTypeRegistry {
     return entry && enabled(this.activation, entry.pluginId) ? entry.item : undefined
   }
 
+  /**
+   * Type declare pour cette extension, que son plugin soit actif ou non. Sert
+   * a ce qui ne doit pas dependre de l'activation, comme la nature d'un
+   * document (CRDT ou snapshot) : couper un plugin ne change pas ses donnees.
+   */
+  resolveRegistered(ext: string): FileTypeSpec | undefined {
+    return this.specs.get(ext)?.item
+  }
+
   /** Plugin qui gere cette extension, actif ou non : pour proposer de le reactiver. */
   ownerOf(ext: string): string | undefined {
     return this.specs.get(ext)?.pluginId

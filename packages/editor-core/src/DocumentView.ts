@@ -68,7 +68,9 @@ export class DocumentView {
     // Aucun plugin actif pour ce type : une fiche en lecture seule, qui
     // n'ecrit jamais rien. Surtout pas l'editeur Markdown, qui ouvrirait un
     // document vide a la place du fichier et laisserait taper dedans.
-    if (!this.fileTypeSpec?.open && !isOpenableWithoutPlugin(this.ext)) {
+    // Un type ACTIF sans open() est, lui, confie a l'editeur Markdown : c'est
+    // le contrat de FileTypeSpec.open.
+    if (!this.fileTypeSpec && !isOpenableWithoutPlugin(this.ext)) {
       const el = document.createElement('div')
       el.dataset.testid = 'unsupported-file'
       el.style.cssText = [

@@ -84,7 +84,11 @@ export interface IVaultDirectory {
 
 export type DocumentSyncKind = 'crdt' | 'snapshot'
 
-/** Famille de synchro d'un document, d'apres son chemin. Seul le markdown est un CRDT. */
+/**
+ * Famille de synchro par defaut, d'apres le chemin : seul le Markdown est un
+ * CRDT. L'application fournit mieux quand elle connait les types declares par
+ * les plugins (un type 'crdt' est un CRDT, quelle que soit son extension).
+ */
 export function documentSyncKind(path: string): DocumentSyncKind {
   return path.endsWith('.md') ? 'crdt' : 'snapshot'
 }
