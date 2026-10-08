@@ -23,6 +23,7 @@ export default defineConfig({
       '@savoire/plugin-module': src('plugin-module'),
       '@savoire/plugin-office': src('plugin-office'),
       '@savoire/plugin-wtf': src('plugin-wtf'),
+      '@savoire/plugin-chat': src('plugin-chat'),
       '@savoire/plugin-plaintext': src('plugin-plaintext'),
       '@savoire/plugin-backlinks': src('plugin-backlinks'),
     },

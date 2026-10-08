@@ -222,6 +222,9 @@ function DocumentPanelHost({
       readOnly: refs.isReadOnly.current || lockedByOther,
       createPluginLoader: refs.createPluginLoader,
       unsupportedMessage: refs.describeUnsupportedType.current(ext),
+      userName: refs.activeAccount.current?.displayName,
+      // Cartes partagees propres a ce document, par la session (voir ISharedMap).
+      shared: session ? { openMap: (name: string) => session.openSharedMap(`doc/${doc.id}/${name}`) } : undefined,
       onFileContentStabilized: (docId, path, shadowMarkdown) => {
         void refs.contentIndexingService.current?.indexNow(docId, path, shadowMarkdown)
       },

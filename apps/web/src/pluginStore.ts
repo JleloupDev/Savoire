@@ -126,6 +126,19 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-backlinks')).createBacklinksPlugin(),
   },
   {
+    id: 'plugin-chat', preinstalled: false,
+    manifest: {
+      id: 'plugin-chat',
+      name: 'Discussions',
+      version: '0.0.1',
+      description: 'Des discussions en direct entre les membres du vault (fichiers .chat)',
+      scope: 'vault',
+      permissions: ['ui:editor'],
+    },
+    extensions: ['chat'],
+    load: async () => (await import('@savoire/plugin-chat')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

@@ -41,6 +41,10 @@ export interface DocumentViewOptions {
    * plugin est desactive, ou n'existe pas). Defaut : un message generique.
    */
   unsupportedMessage?: string
+  /** Nom affiche de la personne courante, transmis aux vues de plugin. */
+  userName?: string
+  /** Donnees partagees du document, transmises aux vues de plugin. */
+  shared?: import('@savoire/plugin-api').DocumentSharedData
 }
 
 /** Seul le Markdown est ouvert par l'editeur lui-meme ; tout autre type exige un plugin. */
@@ -92,6 +96,8 @@ export class DocumentView {
         vaultId: this.options.vaultId,
         path: this.options.path,
         userId: this.options.userId,
+        userName: this.options.userName,
+        shared: this.options.shared,
         vault: this.options.vault,
         readOnly: this.options.readOnly,
         onContentStabilized: spec.contentExtractor

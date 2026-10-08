@@ -24,6 +24,7 @@
     "@savoire/plugin-agent-reviewer": "workspace:*",
     "@savoire/plugin-backlinks": "workspace:*",
     "@savoire/plugin-callout": "workspace:*",
+    "@savoire/plugin-chat": "workspace:*",
     "@savoire/plugin-code-block": "workspace:*",
     "@savoire/plugin-excalidraw": "workspace:*",
     "@savoire/plugin-filetree": "workspace:*",

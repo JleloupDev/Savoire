@@ -84,3 +84,4 @@ export type { IIdentityProvider, ISeedExportingIdentityProvider } from './identi
 export { encodeSignedOp, decodeSignedOp, toHex, fromHex } from './identity'
 export * from './indexChannel'
 export type * from './agents'
+export type * from './sharedMap'

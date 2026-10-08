@@ -3,12 +3,20 @@
 // ─── File types ─────────────────────────────────────────────────────────
 import type { VaultAPI } from './vault'
 import type { ContentExtractor } from './indexing'
+import type { DocumentSharedData } from './sharedMap'
 
 export interface FileContext {
   vaultId: string
   path: string
   /** Id of the current user, used for sync (DocumentRoom). */
   userId?: string
+  /** Nom affiche de la personne courante. */
+  userName?: string
+  /**
+   * Donnees partagees de ce document : cartes CRDT synchronisees entre les
+   * membres. Absent sans session de vault (document partage isole).
+   */
+  shared?: DocumentSharedData
   /** VaultAPI injected so the plugin can read/write without depending on an internal import. */
   vault?: VaultAPI
   /** Vue ouverte en lecture seule (ACL, ou verrou detenu par quelqu'un d'autre). */
