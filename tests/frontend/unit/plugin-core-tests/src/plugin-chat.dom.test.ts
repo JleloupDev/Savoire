@@ -39,7 +39,7 @@ function send(el: HTMLElement, text: string) {
   el.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }))
 }
 
-const texts = (el: HTMLElement) => [...el.querySelectorAll('[data-testid="chat-text"]')].map(n => n.textContent)
+const texts = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-testid="chat-text"]')).map(n => n.textContent)
 
 describe('plugin-chat', () => {
   it('declare le type .chat, en CRDT, sans verrou', async () => {
