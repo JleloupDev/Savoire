@@ -95,6 +95,9 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-task-list', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-task-list')).default },
   { id: 'plugin-table', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-table')).default },
 
+  // ── Coeur : agents ─────────────────────────────────────────────────────────
+  { id: 'plugin-agent-reviewer', preinstalled: true, load: async () => (await import('@savoire/plugin-agent-reviewer')).default },
+
   // ── Disponibles ────────────────────────────────────────────────────────────
   {
     id: 'plugin-plaintext', preinstalled: false,

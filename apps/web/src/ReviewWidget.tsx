@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
-  AGENTS, AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
+  AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
   type AgentRunResult, type IVaultSyncSession, type ReviewEntry, type ReviewStatus, type ReviewThread, type UserActor,
 } from '@savoire/application'
 import type { EditorAreaRefs } from './EditorAreaWidget'
@@ -40,6 +40,12 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   useEffect(() => manager.subscribeActiveDocument(p => { setPath(p); setRun(null) }), [manager])
   // Changement de vault : nouvelle session, donc nouveau service.
   useEffect(() => manager.subscribeVaultChange(() => setTick(t => t + 1)), [manager])
+  // Un plugin qui propose des agents est installe, coupe ou retire.
+  useEffect(() => {
+    const onPlugins = () => setTick(t => t + 1)
+    window.addEventListener('savoire-plugins-changed', onPlugins)
+    return () => window.removeEventListener('savoire-plugins-changed', onPlugins)
+  }, [])
 
   const session = refs.vaultSession.current
   const client = refs.vaultAPI.current
@@ -58,6 +64,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   }
 
   const me: UserActor = { kind: 'user', userId: account.userId, displayName: account.displayName }
+  // Agents proposes par les plugins actifs.
+  const agents = refs.pluginAPI.current?.agents?.getAll() ?? []
   const threads = review.threads(docId)
 
   function act(action: () => void) {
@@ -76,7 +84,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   }
 
   async function launch(agentId: string) {
-    const agent = AGENTS.find(a => a.id === agentId)!
+    const agent = agents.find(a => a.id === agentId)
+    if (!agent) return
     const mode = AGENT_MODES.find(m => m.id === modeId)!
     setRun(await runAgent({
       agent, mode,
@@ -127,7 +136,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
         >
           {AGENT_MODES.map(m => <option key={m.id} value={m.id}>{m.label} — {m.description}</option>)}
         </select>
-        {AGENTS.map(a => (
+        {agents.length === 0 && <div style={{ marginTop: 8 }}><Muted>Aucun agent : installez un plugin d'agent depuis le store.</Muted></div>}
+        {agents.map(a => (
           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <div style={{ flex: 1, fontSize: 12 }}>
               <div style={{ fontWeight: 600 }}>{a.name}</div>

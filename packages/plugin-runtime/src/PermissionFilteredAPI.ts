@@ -65,6 +65,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.toolbar
   }
 
+  get agents() {
+    this.require('agents')
+    return this.inner.agents
+  }
+
   private require(permission: PluginPermission): void {
     if (!this.permissions.has(permission)) {
       throw new Error(

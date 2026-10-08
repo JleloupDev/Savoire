@@ -85,6 +85,20 @@ describe('PluginActivation', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  it('les agents d\'un plugin desactive disparaissent', async () => {
+    const api = PluginAPIImpl.create()
+    const activation = new PluginActivation()
+    api.attachActivation(activation)
+    await new PluginLoader().loadInternal({
+      manifest: { id: 'p-agent', name: 'P', version: '1', permissions: ['agents'] },
+      async onload(a) { a.agents?.register({ id: 'ag', name: 'Ag', description: '', requires: [], run: async () => {} }) },
+      async onunload() {},
+    }, api)
+    expect(api.agents.getAll().map(a => a.id)).toEqual(['ag'])
+    activation.setDisabled(['p-agent'])
+    expect(api.agents.getAll()).toEqual([])
+  })
+
   it('notifie seulement quand l\'ensemble change', () => {
     const activation = new PluginActivation()
     const cb = vi.fn()

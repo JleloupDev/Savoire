@@ -21,6 +21,7 @@
     "@savoire/notifications": "workspace:*",
     "@savoire/platform": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-agent-reviewer": "workspace:*",
     "@savoire/plugin-backlinks": "workspace:*",
     "@savoire/plugin-callout": "workspace:*",
     "@savoire/plugin-code-block": "workspace:*",

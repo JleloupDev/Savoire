@@ -4,6 +4,8 @@
 // Kept separate from types (plugin-api) so that package has no runtime code.
 
 import type {
+  AgentRegistry,
+  AgentSpec,
   BlockRegistry,
   BlockSpec,
   BlockTrigger,
@@ -388,6 +390,22 @@ export class ToolbarCommandRegistryImpl implements ToolbarCommandRegistry {
   getByGroup(group: string): ToolbarCommand[] { return this.getAll().filter(c => c.group === group) }
 }
 
+// ─── AgentRegistryImpl ────────────────────────────────────────────────────
+
+export class AgentRegistryImpl implements AgentRegistry {
+  private readonly specs = new Map<string, Owned<AgentSpec>>()
+  activation?: PluginActivation
+
+  register(spec: AgentSpec): void {
+    this.specs.set(spec.id, { item: spec, pluginId: ownerOf(this.activation) })
+  }
+
+  /** Agents des plugins actifs : desactiver un plugin retire ses agents. */
+  getAll(): AgentSpec[] {
+    return [...this.specs.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
+  }
+}
+
 // ─── EditorPositionAPIStub ────────────────────────────────────────────────
 // No-op stub used before EditorCore wires the real implementation.
 
@@ -416,6 +434,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
     editor?: EditorPositionAPI,
     public readonly sync?: SyncAPI,
     public readonly index?: IndexRegistryImpl,
+    public readonly agents: AgentRegistryImpl = new AgentRegistryImpl(),
   ) {
     this.editor = editor ?? new EditorPositionAPIStub()
   }
@@ -431,7 +450,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
    */
   attachActivation(activation: PluginActivation): void {
     this.activation = activation
-    for (const registry of [this.blocks, this.hooks, this.commands, this.files, this.slash, this.triggers, this.toolbar, this.index]) {
+    for (const registry of [this.blocks, this.hooks, this.commands, this.files, this.slash, this.triggers, this.toolbar, this.index, this.agents]) {
       if (registry) registry.activation = activation
     }
     ;(this.views as { _setActivation?: (a: PluginActivation) => void })._setActivation?.(activation)

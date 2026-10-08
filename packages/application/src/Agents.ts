@@ -13,18 +13,18 @@
 // soit son mode.
 //
 // Ces modes sont des roles d'AGENT, distincts des roles de vault du serveur.
-// Pour l'instant les agents parlent a l'application, pas aux plugins.
+//
+// Les agents sont proposes par des plugins (AgentSpec, @savoire/plugin-api) :
+// ils agissent par le contexte ci-dessous, jamais par la PluginAPI.
 import type { VaultClient } from '@savoire/platform'
-import type { AgentActor } from './Actor'
+import type {
+  AgentCapability, AgentReviewEntry, AgentReviewThread, AgentRunContext, AgentSpec, AgentTarget,
+} from '@savoire/plugin-api'
+import { describeActor, type AgentActor } from './Actor'
 import type { IVaultSyncSession } from './contracts'
-import type { ReviewEntry, ReviewService, ReviewThread } from './ReviewService'
+import type { ReviewEntry, ReviewService } from './ReviewService'
 
-export type AgentCapability =
-  | 'documents.read'
-  | 'documents.write'
-  | 'index.query'
-  | 'review.read'
-  | 'review.write'
+export type { AgentCapability, AgentSpec } from '@savoire/plugin-api'
 
 export interface AgentMode {
   id: 'read' | 'review' | 'write'
@@ -60,10 +60,22 @@ export function userCapabilities(user: { canWrite: boolean }): AgentCapability[]
   return user.canWrite ? [...base, 'review.write', 'documents.write'] : base
 }
 
-/** Mode ∩ droits de la personne. */
-export function effectiveCapabilities(mode: AgentMode, user: { canWrite: boolean }): Set<AgentCapability> {
+/** Ce que l'agent demande ∩ mode ∩ droits de la personne. */
+export function effectiveCapabilities(
+  agent: Pick<AgentSpec, 'requires'>,
+  mode: AgentMode,
+  user: { canWrite: boolean },
+): Set<AgentCapability> {
   const allowed = new Set(userCapabilities(user))
-  return new Set(mode.capabilities.filter(c => allowed.has(c)))
+  const requested = new Set(agent.requires)
+  return new Set(mode.capabilities.filter(c => allowed.has(c) && requested.has(c)))
+}
+
+function forAgent(e: ReviewEntry): AgentReviewEntry {
+  return {
+    id: e.id, kind: e.kind, text: e.text, createdAt: e.createdAt, status: e.status,
+    author: describeActor(e.author), authorIsAgent: e.author.kind === 'agent',
+  }
 }
 
 export class AgentPermissionError extends Error {
@@ -81,7 +93,7 @@ export interface AgentContextDeps {
 }
 
 /** Tout ce qu'un agent peut faire, et rien d'autre. Chaque appel est verifie. */
-export class AgentContext {
+export class AgentContext implements AgentRunContext {
   readonly log: string[] = []
 
   constructor(private readonly deps: AgentContextDeps) {}
@@ -130,9 +142,9 @@ export class AgentContext {
       this.require('review.read')
       return this.deps.review.list(docId)
     },
-    threads: (docId: string): ReviewThread[] => {
+    threads: (docId: string): AgentReviewThread[] => {
       this.require('review.read')
-      return this.deps.review.threads(docId)
+      return this.deps.review.threads(docId).map(t => ({ root: forAgent(t.root), replies: t.replies.map(forAgent) }))
     },
     comment: (docId: string, text: string): ReviewEntry => {
       this.require('review.write')
@@ -149,13 +161,6 @@ export class AgentContext {
   }
 }
 
-export interface AgentDefinition {
-  id: string
-  name: string
-  description: string
-  run(ctx: AgentContext, target: { docId: string; path: string }): Promise<void>
-}
-
 export interface AgentRunResult {
   ok: boolean
   log: string[]
@@ -163,18 +168,18 @@ export interface AgentRunResult {
 }
 
 export interface RunAgentParams {
-  agent: AgentDefinition
+  agent: AgentSpec
   mode: AgentMode
   user: { userId: string; displayName: string; canWrite: boolean }
-  target: { docId: string; path: string }
+  target: AgentTarget
   client: VaultClient
   session: IVaultSyncSession
   review: ReviewService
 }
 
-/** Lance un agent sur une note, avec les droits mode ∩ personne. */
+/** Lance un agent sur une note, avec les droits demande ∩ mode ∩ personne. */
 export async function runAgent(p: RunAgentParams): Promise<AgentRunResult> {
-  const capabilities = effectiveCapabilities(p.mode, p.user)
+  const capabilities = effectiveCapabilities(p.agent, p.mode, p.user)
   const ctx = new AgentContext({
     actor: {
       kind: 'agent',

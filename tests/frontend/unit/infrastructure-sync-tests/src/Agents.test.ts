@@ -7,9 +7,10 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { DocumentStore, VaultClient, type IVaultStorage } from '@savoire/platform'
 import {
-  AGENT_MODES, AgentContext, AgentPermissionError, ReviewService, describeActor, reviewText,
-  reviewerAgent, runAgent, type IVaultSyncSession,
+  AGENT_MODES, AgentContext, AgentPermissionError, ReviewService, describeActor, runAgent, type IVaultSyncSession,
 } from '@savoire/application'
+import type { AgentSpec } from '@savoire/plugin-api'
+import { reviewText, reviewerAgent } from '@savoire/plugin-agent-reviewer'
 import { InProcessPeerBus, LocalPeerVaultSessionFactory, type YjsCrdtAdapter } from '@savoire/infrastructure-sync'
 
 const SETTLE_MS = 5
@@ -41,8 +42,8 @@ describe('agents', () => {
     const raw = (alice.session.openDocument(docId) as YjsCrdtAdapter).rawDoc as { getText(n: string): { insert(i: number, t: string): void; toString(): string } }
     raw.getText('codemirror').insert(0, NOTE)
     await settle()
-    const run = (modeId: string, canWrite = true) => runAgent({
-      agent: reviewerAgent,
+    const run = (modeId: string, canWrite = true, agent: AgentSpec = reviewerAgent) => runAgent({
+      agent,
       mode: mode(modeId),
       user: { userId: 'alice', displayName: 'Alice', canWrite },
       target: { docId, path: 'note.md' },
@@ -106,6 +107,31 @@ describe('agents', () => {
     expect(result.capabilities).not.toContain('review.write')
     expect(alice.review.list(docId)).toEqual([])
     expect(text()).toBe(NOTE)
+  })
+
+  it('un agent n\'a jamais plus que ce qu\'il demande, meme en mode redaction', async () => {
+    const { alice, docId, run, text } = await setup()
+    const curious: AgentSpec = {
+      ...reviewerAgent, id: 'lecteur-seul', requires: ['documents.read', 'index.query'],
+    }
+    const result = await run('write', true, curious)
+    expect(result.capabilities.sort()).toEqual(['documents.read', 'index.query'])
+    expect(alice.review.list(docId)).toEqual([])
+    expect(text()).toBe(NOTE)
+  })
+
+  it('un agent voit les fils de la revision sans les objets internes', async () => {
+    const { alice, docId } = await setup()
+    alice.review.comment(docId, 'Question', { kind: 'user', userId: 'alice', displayName: 'Alice' })
+    const ctx = new AgentContext({
+      actor: { kind: 'agent', agentId: 'x', agentName: 'X', onBehalfOf: { userId: 'alice', displayName: 'Alice' } },
+      capabilities: new Set(mode('review').capabilities),
+      client: alice.client, session: alice.session, review: alice.review,
+    })
+    const [thread] = ctx.review.threads(docId)
+    expect(thread.root).toMatchObject({ text: 'Question', author: 'Alice', authorIsAgent: false, status: 'open' })
+    ctx.review.reply(thread.root.id, 'Je regarde')
+    expect(ctx.review.threads(docId)[0].replies[0]).toMatchObject({ author: 'X (IA), pour Alice', authorIsAgent: true })
   })
 
   it('un appel hors droits est refuse, meme si l\'agent essaie', async () => {

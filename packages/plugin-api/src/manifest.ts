@@ -67,3 +67,5 @@ export type PluginPermission =
   | 'network:*'
   | 'ui:editor'
   | 'ui:settings'
+  /** Proposer des agents (voir agents.ts). */
+  | 'agents'

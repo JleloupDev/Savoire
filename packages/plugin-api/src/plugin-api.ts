@@ -19,6 +19,7 @@ import type { ViewRegistry } from './views'
 import type { SlashRegistry, TriggerRegistry } from './triggers'
 import type { EditorPositionAPI, ToolbarCommandRegistry } from './editor'
 import type { SyncAPI } from './sync'
+import type { AgentRegistry } from './agents'
 import type { IPluginIndexAPI } from './indexing'
 
 export interface IPluginVaultAPI extends VaultAPI {}
@@ -48,6 +49,8 @@ export interface IPluginAPI {
   sync?: SyncAPI
   /** Index local — enregistrement de contributeurs (backlinks, tags…). */
   index?: IPluginIndexAPI
+  /** Agents proposes par le plugin (permission 'agents'). Voir agents.ts. */
+  agents?: AgentRegistry
 }
 
 export interface PluginAPI extends IPluginAPI {}

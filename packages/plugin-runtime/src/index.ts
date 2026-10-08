@@ -18,4 +18,5 @@ export {
   ToolbarCommandRegistryImpl,
   EditorPositionAPIStub,
   PluginAPIImpl,
+  AgentRegistryImpl,
 } from './PluginRegistries'
