@@ -17,7 +17,7 @@
 import type { VaultClient } from '@savoire/platform'
 import type { AgentActor } from './Actor'
 import type { IVaultSyncSession } from './contracts'
-import type { ReviewEntry, ReviewService } from './ReviewService'
+import type { ReviewEntry, ReviewService, ReviewThread } from './ReviewService'
 
 export type AgentCapability =
   | 'documents.read'
@@ -130,9 +130,17 @@ export class AgentContext {
       this.require('review.read')
       return this.deps.review.list(docId)
     },
+    threads: (docId: string): ReviewThread[] => {
+      this.require('review.read')
+      return this.deps.review.threads(docId)
+    },
     comment: (docId: string, text: string): ReviewEntry => {
       this.require('review.write')
       return this.deps.review.comment(docId, text, this.deps.actor)
+    },
+    reply: (rootId: string, text: string): ReviewEntry => {
+      this.require('review.write')
+      return this.deps.review.reply(rootId, text, this.deps.actor)
     },
   }
 

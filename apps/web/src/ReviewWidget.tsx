@@ -11,8 +11,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
-  AGENTS, AGENT_MODES, ReviewService, describeActor, runAgent,
-  type AgentRunResult, type IVaultSyncSession, type ReviewEntry, type UserActor,
+  AGENTS, AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
+  type AgentRunResult, type IVaultSyncSession, type ReviewEntry, type ReviewStatus, type ReviewThread, type UserActor,
 } from '@savoire/application'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 
@@ -58,7 +58,12 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   }
 
   const me: UserActor = { kind: 'user', userId: account.userId, displayName: account.displayName }
-  const entries = review.list(docId)
+  const threads = review.threads(docId)
+
+  function act(action: () => void) {
+    setError(null)
+    try { action() } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+  }
 
   function submit() {
     setError(null)
@@ -86,8 +91,16 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
       <div style={{ fontWeight: 600, marginBottom: 10, color: 'var(--text)' }}>{path}</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {entries.length === 0 && <Muted>Aucun commentaire.</Muted>}
-        {entries.map(e => <Entry key={e.id} entry={e} />)}
+        {threads.length === 0 && <Muted>Aucun commentaire.</Muted>}
+        {threads.map(t => (
+          <Thread
+            key={t.root.id}
+            thread={t}
+            canWrite={canWrite}
+            onReply={text => act(() => review.reply(t.root.id, text, me))}
+            onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
+          />
+        ))}
       </div>
 
       <textarea
@@ -131,6 +144,60 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
         )}
       </div>
     </Shell>
+  )
+}
+
+function Thread({ thread, canWrite, onReply, onStatus }: {
+  thread: ReviewThread
+  canWrite: boolean
+  onReply: (text: string) => void
+  onStatus: (status: ReviewStatus) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const { root, replies } = thread
+  const isComment = root.kind === 'comment'
+  return (
+    <div data-testid="review-thread" data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
+      <Entry entry={root} />
+      {isComment && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+          <select
+            data-testid="review-status"
+            value={root.status ?? 'open'}
+            disabled={!canWrite}
+            onChange={e => onStatus(e.target.value as ReviewStatus)}
+            style={{ fontSize: 11, padding: '1px 4px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'inherit' }}
+          >
+            {REVIEW_STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          {root.statusBy && root.status !== 'open' && <span>par {describeActor(root.statusBy)}</span>}
+        </div>
+      )}
+      {replies.length > 0 && (
+        <div style={{ marginLeft: 14, display: 'flex', flexDirection: 'column', gap: 4, borderLeft: '2px solid var(--border)', paddingLeft: 8 }}>
+          {replies.map(r => <Entry key={r.id} entry={r} />)}
+        </div>
+      )}
+      {isComment && canWrite && (
+        <div style={{ display: 'flex', gap: 6, marginLeft: 14 }}>
+          <input
+            data-testid="review-reply-input"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder="Répondre…"
+            style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'inherit' }}
+          />
+          <button
+            data-testid="review-reply-submit"
+            disabled={!draft.trim()}
+            onClick={() => { onReply(draft); setDraft('') }}
+            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+          >
+            Répondre
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
