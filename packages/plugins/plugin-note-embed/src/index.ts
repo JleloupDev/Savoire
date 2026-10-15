@@ -199,7 +199,8 @@ const plugin: VaultPlugin = {
             const source = await api.vault.readDocumentByPath(targetPath)
             const { body: mdBody } = parseFrontmatter(source)
             const preprocessed = await api.hooks.runBeforeParse(mdBody)
-            body.innerHTML = String(marked.parse(preprocessed))
+            // breaks : meme rendu des retours a la ligne que dans l'editeur.
+            body.innerHTML = String(marked.parse(preprocessed, { breaks: true }))
           } catch {
             body.textContent = `⚠ Could not load "${targetPath}"`
           }

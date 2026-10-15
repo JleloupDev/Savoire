@@ -268,7 +268,9 @@ export function AppShell() {
   // 'rich' par defaut : c'est le mode qui reprend l'affichage actuel (live
   // preview des blocs) en y ajoutant les marques inline et les barres de mise
   // en forme. 'source' donne le Markdown brut, sans rien autour.
-  const [markdownEditorMode, setMarkdownEditorMode] = useState<'source' | 'rich'>('rich')
+  // Le Markdown s'edite toujours avec l'apercu en direct : le bouton qui
+  // basculait vers le Markdown brut a ete retire.
+  const [markdownEditorMode] = useState<'source' | 'rich'>('rich')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
 
@@ -1025,11 +1027,6 @@ export function AppShell() {
               <span>Clés (debug)</span>
             </button>
           )}
-
-          {/* Editor mode toggle */}
-          <button data-testid="editor-mode-toggle" data-editor-mode={markdownEditorMode} onClick={() => setMarkdownEditorMode(m => (m === 'source' ? 'rich' : 'source'))} title={t('app', 'topbar.editor.toggle')} style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
-            {markdownEditorMode === 'source' ? t('app', 'topbar.editor.source') : t('app', 'topbar.editor.rich')}
-          </button>
 
           {/* Language switcher */}
           <button

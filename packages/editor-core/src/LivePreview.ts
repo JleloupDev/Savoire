@@ -208,7 +208,10 @@ function buildDecorations(
       // Level 2: fallback — render with marked (run beforeParse hooks first, e.g. wikilinks)
       try {
         const preprocessed = hooks ? hooks.runBeforeParseSync(text) : text
-        const html = marked.parse(preprocessed) as string
+        // breaks : un retour a la ligne simple reste un retour a la ligne,
+        // comme pendant la saisie. Sans lui, trois lignes collees se
+        // fondaient en une seule des que le curseur quittait le paragraphe.
+        const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(
           Decoration.replace({
             widget: new MarkdownWidget(html),

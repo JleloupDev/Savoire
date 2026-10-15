@@ -89,7 +89,8 @@ const plugin: VaultPlugin = {
 
       renderClient: (data, _ctx) => {
         const { markdown } = data as ListData
-        const html = String(marked.parse(markdown))
+        // breaks : meme rendu des retours a la ligne que dans l'editeur.
+        const html = String(marked.parse(markdown, { breaks: true }))
 
         const wrapper = document.createElement('div')
         wrapper.className = 'vault-rendered-block'
