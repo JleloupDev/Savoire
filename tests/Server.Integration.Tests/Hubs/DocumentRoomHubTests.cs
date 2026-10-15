@@ -32,14 +32,15 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         (_token, _userId) = await _factory.CreateUserAndGetTokenAsync(
             $"room-hub-{uid}@test.com", displayName: "Room Hub User");
 
-        // docId unique par instance pour éviter toute interférence avec le cache statique
-        _docId = Guid.NewGuid().ToString();
 
         var http = _factory.CreateClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
         var vaultResp = await http.PostAsJsonAsync($"/api/v1/users/{_userId}/vaults", new { name = "Room Hub Tests" });
         vaultResp.EnsureSuccessStatusCode();
         _vaultId = (await vaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
+
+        // docId unique par instance, inscrit dans le vault (registre « document -> vault »)
+        _docId = await _factory.NewDocumentAsync(_token, _vaultId);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -76,7 +77,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "JoinRoom — le client reçoit RoomJoined avec snapshot null si aucun snapshot en cache")]
     public async Task JoinRoom_ReceivesRoomJoined_WithNullSnapshot_WhenNoCache()
     {
-        var freshDocId = Guid.NewGuid().ToString();
+        var freshDocId = await _factory.NewDocumentAsync(_token, _vaultId);
         await using var conn = CreateConnection();
 
         var tcs = new TaskCompletionSource<(string docId, string? snapshot)>();
@@ -159,7 +160,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "PushSnapshot — snapshot mis en cache et retourné au prochain JoinRoom")]
     public async Task PushSnapshot_IsCachedAndReturnedOnNextJoin()
     {
-        var cacheDocId   = Guid.NewGuid().ToString();
+        var cacheDocId   = await _factory.NewDocumentAsync(_token, _vaultId);
         var snapshotJson = """{"content":"# Cached snapshot"}""";
 
         await using var writer = CreateConnection();
@@ -227,7 +228,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "PushSnapshot — un client non-joint à la room ne reçoit pas le snapshot")]
     public async Task PushSnapshot_ClientNotInRoom_DoesNotReceiveSnapshot()
     {
-        var otherDocId = Guid.NewGuid().ToString();
+        var otherDocId = await _factory.NewDocumentAsync(_token, _vaultId);
 
         await using var sender   = CreateConnection();
         await using var outsider = CreateConnection();

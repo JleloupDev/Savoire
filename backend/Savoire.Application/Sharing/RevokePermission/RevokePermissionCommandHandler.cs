@@ -13,7 +13,8 @@ public sealed class RevokePermissionCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
     IVaultMemberIdentityRepository identities,
-    IPublisher                    publisher)
+    IPublisher                    publisher,
+    IVaultDocumentRepository      vaultDocuments)
     : IRequestHandler<RevokePermissionCommand>
 {
     public async Task Handle(RevokePermissionCommand cmd, CancellationToken ct)
@@ -22,7 +23,7 @@ public sealed class RevokePermissionCommandHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, resourceType, cmd.ResourceId,
-            vaults, permissions, ct);
+            vaults, permissions, vaultDocuments, ct);
 
         var perm = await permissions.GetAsync(
             resourceType, cmd.ResourceId, SubjectType.User, cmd.TargetUserId, ct);

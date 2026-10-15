@@ -89,6 +89,20 @@ describe('VaultClient sur une session de vault', () => {
     expect(await bob.readDocumentByPath('note.wtf')).toBe('wtf !')
   })
 
+  it('creer un document l\'inscrit d\'abord aupres de la session ; un refus annule la creation', async () => {
+    const alice = await peer('alice')
+    const order: string[] = []
+    const real = alice.session.registerDocuments.bind(alice.session)
+    alice.session.registerDocuments = async (ids) => { order.push(`register:${ids.length}`); await real(ids) }
+    alice.client.onChange(() => order.push('directory'))
+    await alice.client.createFile('inscrite.md')
+    expect(order.slice(0, 2)).toEqual(['register:1', 'directory'])
+
+    alice.session.registerDocuments = async () => { throw new Error('refuse') }
+    await expect(alice.client.createFile('refusee.md')).rejects.toThrow('refuse')
+    expect(alice.client.resolveDocumentId('refusee.md')).toBeUndefined()
+  })
+
   it('une piece jointe passe par la session', async () => {
     const alice = await peer('alice')
     const bob = await peer('bob')

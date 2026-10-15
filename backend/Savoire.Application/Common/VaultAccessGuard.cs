@@ -9,8 +9,20 @@ namespace Savoire.Application.Common;
 
 public sealed class VaultAccessGuard(
     IVaultRepository vaults,
-    IResourcePermissionRepository permissions) : IVaultAccessGuard
+    IResourcePermissionRepository permissions,
+    IVaultDocumentRepository vaultDocuments) : IVaultAccessGuard
 {
+    /// <summary>
+    /// Le document doit etre inscrit dans le vault annonce. Sans ce controle,
+    /// un compte membre de SON vault pouvait annoncer ce vault avec
+    /// l'identifiant d'un document d'un autre vault.
+    /// </summary>
+    private async Task RequireDocumentInVaultAsync(string vaultId, string docId, CancellationToken ct)
+    {
+        string? owner = await vaultDocuments.GetVaultIdAsync(docId, ct);
+        if (owner != vaultId) throw new VaultNotFoundException(vaultId);
+    }
+
     public async Task RequireReadAsync(string callerId, string vaultId, CancellationToken ct = default)
     {
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
@@ -33,6 +45,7 @@ public sealed class VaultAccessGuard(
 
     public async Task RequireDocumentReadAsync(string callerId, string vaultId, string docId, CancellationToken ct = default)
     {
+        await RequireDocumentInVaultAsync(vaultId, docId, ct);
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
@@ -52,6 +65,7 @@ public sealed class VaultAccessGuard(
 
     public async Task RequireDocumentWriteAsync(string callerId, string vaultId, string docId, CancellationToken ct = default)
     {
+        await RequireDocumentInVaultAsync(vaultId, docId, ct);
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;

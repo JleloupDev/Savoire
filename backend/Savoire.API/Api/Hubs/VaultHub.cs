@@ -12,6 +12,7 @@ using Savoire.Application.Sync.PushVaultOperation;
 using Savoire.Application.Sync.SnapshotVault;
 using Savoire.Application.Sync.IndexChannel;
 using Savoire.Application.Sync.Access;
+using Savoire.Application.Sync.RegisterDocuments;
 using Savoire.Application.Common;
 
 namespace Savoire.Server.Hubs;
@@ -68,6 +69,21 @@ public sealed class VaultHub(
         }
         await mediator.Send(new SnapshotVaultCommand(GetCallerId(), vaultId, snapshotBytes));
         logger.LogInformation("Vault {VaultId} compacted by {ConnectionId}", vaultId, Context.ConnectionId);
+    }
+
+    // ── Registre « document -> vault » ────────────────────────────────────────
+    //
+    // En mode serveur, creer un document commence par l'inscrire ici : le
+    // serveur sait alors a quel vault il appartient, et refuse toute demande
+    // qui l'annonce dans un autre vault. Exige le droit d'ecrire dans le vault.
+
+    /// <summary>Inscrit des documents dans le vault. Rend ceux refuses (deja dans un autre vault).</summary>
+    public async Task<string[]> RegisterDocuments(string vaultId, string[] docIds)
+    {
+        IReadOnlyList<string> rejected = await mediator.Send(new RegisterDocumentsCommand(GetCallerId(), vaultId, docIds));
+        if (rejected.Count > 0)
+            logger.LogWarning("RegisterDocuments {VaultId} : {Count} document(s) deja dans un autre vault", vaultId, rejected.Count);
+        return [.. rejected];
     }
 
     // ── Index partagés ────────────────────────────────────────────────────────

@@ -140,6 +140,9 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
 
   // ── Documents snapshot et lecture ponctuelle ───────────────────────────────
 
+  /** Sans serveur, personne a prevenir : les pairs decouvrent les documents par le repertoire. */
+  async registerDocuments(_docIds: string[]): Promise<void> {}
+
   openSnapshot(docId: string): ISnapshotDocument {
     return this.snapshots.open(docId)
   }

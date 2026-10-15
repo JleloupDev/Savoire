@@ -166,7 +166,10 @@ export class VaultClient implements VaultAPI {
 
     // Documents are CRDT-only: adding to the directory emits a local vault op
     // that the hub pushes to the server and relays to peers. No REST round-trip.
+    // Mais le document est d'abord inscrit aupres de la session : en mode
+    // serveur, un document inconnu du registre serait refuse.
     const id = crypto.randomUUID()
+    await this.session?.registerDocuments([id])
     this.addDocument({ id, path: normalizedPath })
   }
 
@@ -199,7 +202,9 @@ export class VaultClient implements VaultAPI {
       : await this.storage.uploadAttachment(this.vaultId, file, this.token)
     const docPath = `attachments/${storagePath}`
     // Register the attachment as a CRDT directory entry (emits a local vault op).
-    this.addDocument({ id: crypto.randomUUID(), path: docPath })
+    const id = crypto.randomUUID()
+    await this.session?.registerDocuments([id])
+    this.addDocument({ id, path: docPath })
     return docPath
   }
 

@@ -248,7 +248,9 @@ public class SharingApiTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact]
     public async Task GET_share_access_DocumentLink_Returns_ResourceId()
     {
-        var docId = Guid.NewGuid().ToString();
+        // Document inscrit dans le vault de l'owner : un lien de partage ne se
+        // cree que sur un document dont on administre le vault.
+        var docId = await _factory.NewDocumentAsync(_owner.DefaultRequestHeaders.Authorization!.Parameter!, _vaultId);
 
         // Create a document-level share link (docId is a CRDT identifier)
         var linkResp = await _owner.PostAsJsonAsync(

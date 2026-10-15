@@ -151,6 +151,14 @@ export class VaultHubClient {
     }
   }
 
+  // ── Registre « document -> vault » ──────────────────────────────────────
+
+  /** Inscrit des documents dans le vault (mode serveur). Rend ceux refuses. */
+  async registerDocuments(docIds: string[]): Promise<string[]> {
+    const connection = await this._ensureConnected()
+    return connection.invoke<string[]>('RegisterDocuments', this.vaultId, docIds)
+  }
+
   // ── Index ops ─────────────────────────────────────────────────────────────
 
   /** Rejoint le canal d'index d'un namespace et rend les ops deja stockees. */

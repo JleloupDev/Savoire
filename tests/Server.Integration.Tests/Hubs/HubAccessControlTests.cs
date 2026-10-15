@@ -22,6 +22,7 @@ public class HubAccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     private readonly AppFactory _factory;
     private string _ownerToken = null!;
     private string _intruderToken = null!;
+    private string _intruderId = null!;
     private string _vaultId = null!;
     private HttpClient _owner = null!;
 
@@ -31,7 +32,7 @@ public class HubAccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     {
         var uid = Guid.NewGuid().ToString("N")[..8];
         (_ownerToken, var ownerId) = await _factory.CreateUserAndGetTokenAsync($"acl-owner-{uid}@test.com", displayName: "Owner");
-        (_intruderToken, _) = await _factory.CreateUserAndGetTokenAsync($"acl-intruder-{uid}@test.com", displayName: "Intruder");
+        (_intruderToken, _intruderId) = await _factory.CreateUserAndGetTokenAsync($"acl-intruder-{uid}@test.com", displayName: "Intruder");
 
         _owner = _factory.CreateClient();
         _owner.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _ownerToken);
@@ -127,7 +128,7 @@ public class HubAccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "DocumentRoomHub — un non-membre ne peut ni entrer ni ecrire un snapshot")]
     public async Task Room_NonMember_IsRejected()
     {
-        var docId = Guid.NewGuid().ToString();
+        var docId = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
         await using var owner = Connect("room", _ownerToken);
         await using var intruder = Connect("room", _intruderToken);
         var received = false;
@@ -144,13 +145,75 @@ public class HubAccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
         received.Should().BeFalse();
     }
 
+    // ── Registre « document -> vault » ────────────────────────────────────────
+
+    /// <summary>Vault de l'intrus : il en est proprietaire, donc il y a tous les droits.</summary>
+    private async Task<string> IntruderVaultAsync()
+    {
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _intruderToken);
+        var resp = await http.PostAsJsonAsync($"/api/v1/users/{_intruderId}/vaults", new { name = "Vault intrus" });
+        resp.EnsureSuccessStatusCode();
+        return (await resp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
+    }
+
+    [Fact(DisplayName = "Registre — annoncer SON vault avec le document d'un autre vault est refuse")]
+    public async Task OwnVault_WithForeignDocument_IsRejected()
+    {
+        var victimDoc = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
+        var intruderVault = await IntruderVaultAsync();
+
+        await using var sync = Connect("sync", _intruderToken);
+        await using var room = Connect("room", _intruderToken);
+        await sync.StartAsync();
+        await room.StartAsync();
+
+        var join  = () => sync.InvokeAsync("JoinDocument", intruderVault, victimDoc);
+        var push  = () => sync.InvokeAsync("PushOperation", intruderVault, victimDoc, "c", B64("op"));
+        var enter = () => room.InvokeAsync("JoinRoom", intruderVault, victimDoc);
+        await join.Should().ThrowAsync<HubException>();
+        await push.Should().ThrowAsync<HubException>();
+        await enter.Should().ThrowAsync<HubException>();
+    }
+
+    [Fact(DisplayName = "Registre — un document deja dans un vault ne peut pas etre inscrit dans un autre")]
+    public async Task RegisterForeignDocument_IsRejected()
+    {
+        var victimDoc = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
+        var intruderVault = await IntruderVaultAsync();
+
+        await using var vault = Connect("vault", _intruderToken);
+        await vault.StartAsync();
+        var rejected = await vault.InvokeAsync<string[]>("RegisterDocuments", intruderVault, new[] { victimDoc });
+        rejected.Should().Equal(victimDoc);
+    }
+
+    [Fact(DisplayName = "Registre — un document jamais inscrit est refuse, meme au proprietaire du vault")]
+    public async Task UnregisteredDocument_IsRejected()
+    {
+        await using var sync = Connect("sync", _ownerToken);
+        await sync.StartAsync();
+        var join = () => sync.InvokeAsync("JoinDocument", _vaultId, Guid.NewGuid().ToString());
+        await join.Should().ThrowAsync<HubException>();
+    }
+
+    [Fact(DisplayName = "Partage — on ne cree pas de lien vers le document d'un vault qu'on n'administre pas")]
+    public async Task ShareLinkOnForeignDocument_IsForbidden()
+    {
+        var victimDoc = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
+        var intruder = _factory.CreateClient();
+        intruder.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _intruderToken);
+        var resp = await intruder.PostAsJsonAsync($"/api/v1/documents/{victimDoc}/sharing/links", new { permission = "write" });
+        ((int)resp.StatusCode).Should().BeOneOf(403, 404);
+    }
+
     // ── Liens de partage ──────────────────────────────────────────────────────
 
     [Fact(DisplayName = "SyncHub — un lien vers UNE note n'ouvre pas les autres notes")]
     public async Task DocumentShareLink_OpensOnlyItsDocument()
     {
-        var sharedDoc = Guid.NewGuid().ToString();
-        var otherDoc  = Guid.NewGuid().ToString();
+        var sharedDoc = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
+        var otherDoc  = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
         var linkResp = await _owner.PostAsJsonAsync($"/api/v1/documents/{sharedDoc}/sharing/links", new { permission = "read" });
         linkResp.EnsureSuccessStatusCode();
         var link = await linkResp.Content.ReadFromJsonAsync<ShareLinkDto>();
@@ -168,7 +231,7 @@ public class HubAccessControlTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "SyncHub — un lien en lecture ne permet pas d'ecrire")]
     public async Task ReadShareLink_CannotWrite()
     {
-        var sharedDoc = Guid.NewGuid().ToString();
+        var sharedDoc = await _factory.NewDocumentAsync(_ownerToken, _vaultId);
         var linkResp = await _owner.PostAsJsonAsync($"/api/v1/documents/{sharedDoc}/sharing/links", new { permission = "read" });
         var link = await linkResp.Content.ReadFromJsonAsync<ShareLinkDto>();
         var access = await (await _factory.CreateClient().GetAsync($"/api/v1/share/{link!.Token}/access"))

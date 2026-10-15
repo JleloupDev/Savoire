@@ -89,6 +89,14 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     )
     const session = new SavoireServerVaultSession(opts, directory, hub)
     await hub.connect()
+    // Documents deja dans le repertoire mais pas encore inscrits (crees avant
+    // le registre) : les inscrire maintenant, avant toute ouverture. Exige le
+    // droit d'ecrire : chez un lecteur, l'echec est attendu et sans effet.
+    const known = directory.getAll().map(d => d.id)
+    if (known.length > 0) {
+      await session.registerDocuments(known).catch(err =>
+        console.warn('[SavoireServerVaultSession] inscription des documents existants refusee', err))
+    }
     return session
   }
 
@@ -118,6 +126,12 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     open.orchestrator.dispose()
     void open.transport.disconnect()
     open.crdt.dispose()
+  }
+
+  async registerDocuments(docIds: string[]): Promise<void> {
+    if (docIds.length === 0) return
+    const rejected = await this.hub.registerDocuments(docIds)
+    if (rejected.length > 0) throw new Error(`documents deja inscrits dans un autre vault : ${rejected.join(', ')}`)
   }
 
   openSnapshot(docId: string): ISnapshotDocument {

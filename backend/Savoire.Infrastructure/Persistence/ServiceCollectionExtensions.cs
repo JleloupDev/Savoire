@@ -143,6 +143,7 @@ public static class ServiceCollectionExtensions
 
         // Edgesync blob repository (blind per-vault backup store, see ADR-022-style stance)
         services.AddScoped<IEdgesyncBlobRepository, EfEdgesyncBlobRepository>();
+        services.AddScoped<IVaultDocumentRepository, EfVaultDocumentRepository>();
 
         // Vault key escrow (blind per-user key wraps — S3, see VaultKeyEscrow.ts)
         services.AddScoped<IVaultKeyWrapRepository, EfVaultKeyWrapRepository>();

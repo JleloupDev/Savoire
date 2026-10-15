@@ -113,6 +113,9 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     throw notPorted('documents snapshot')
   }
 
+  /** Pas de serveur gardien en P2P : rien a inscrire. */
+  async registerDocuments(_docIds: string[]): Promise<void> {}
+
   openSnapshot(_docId: string): ISnapshotDocument {
     throw notPorted('documents snapshot')
   }

@@ -26,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
     public DbSet<EdgesyncBlobEntity>        EdgesyncBlobs       => Set<EdgesyncBlobEntity>();
+    public DbSet<VaultDocumentEntity>       VaultDocuments      => Set<VaultDocumentEntity>();
     public DbSet<VaultKeyWrapEntity>        VaultKeyWraps       => Set<VaultKeyWrapEntity>();
     public DbSet<VaultMemberIdentityEntity> VaultMemberIdentities => Set<VaultMemberIdentityEntity>();
 
@@ -141,6 +142,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(b => b.Key).HasColumnName("key");
             e.Property(b => b.Bytes).HasColumnName("bytes").IsRequired();
             e.Property(b => b.UpdatedAt).HasColumnName("updated_at").IsRequired();
+        });
+
+        modelBuilder.Entity<VaultDocumentEntity>(e =>
+        {
+            e.ToTable("vault_documents");
+            // Un document appartient a un seul vault, pour toujours.
+            e.HasKey(d => d.DocId);
+            e.Property(d => d.DocId).HasColumnName("doc_id");
+            e.Property(d => d.VaultId).HasColumnName("vault_id").IsRequired();
+            e.Property(d => d.RegisteredBy).HasColumnName("registered_by").IsRequired();
+            e.Property(d => d.RegisteredAt).HasColumnName("registered_at").IsRequired();
+            e.HasIndex(d => d.VaultId);
+            e.HasOne<VaultEntity>()
+             .WithMany()
+             .HasForeignKey(d => d.VaultId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<VaultKeyWrapEntity>(e =>

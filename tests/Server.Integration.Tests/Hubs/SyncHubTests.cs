@@ -40,8 +40,9 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         vaultResp.EnsureSuccessStatusCode();
         _vaultId = (await vaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
 
-        // Documents are CRDT-only — the docId is a client-generated identifier.
-        _docId = Guid.NewGuid().ToString();
+        // Documents are CRDT-only — the docId is a client-generated identifier,
+        // inscrit dans le vault avant usage (registre « document -> vault »).
+        _docId = await _factory.NewDocumentAsync(_token, _vaultId);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -94,7 +95,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     [Fact(DisplayName = "JoinDocument — document sans ops retourne InitDocument vide")]
     public async Task JoinDocument_NonExistentDoc_ReceivesEmptyInitDocument()
     {
-        var newDocId = Guid.NewGuid().ToString();
+        var newDocId = await _factory.NewDocumentAsync(_token, _vaultId);
         await using var conn = CreateConnection();
 
         var tcs = new TaskCompletionSource<(string docId, string[] ops)>();

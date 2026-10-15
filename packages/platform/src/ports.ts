@@ -129,6 +129,14 @@ export interface IVaultContentSession {
   /** Rend une ouverture ; la synchro s'arrete quand il n'en reste aucune. */
   closeSnapshot(docId: string): void
   readonly files: IVaultFiles
+  /**
+   * Fait connaitre des documents au(x) gardien(s) du vault avant de les
+   * creer. En mode serveur, le serveur tient un registre « document -> vault »
+   * et refuse tout document qui n'y est pas inscrit dans le vault annonce :
+   * creer un document commence donc par la. Sans serveur, rien a faire.
+   * Echoue si l'inscription est refusee (droits, document d'un autre vault).
+   */
+  registerDocuments(docIds: string[]): Promise<void>
 }
 
 /** Port : lecture/écriture de fichiers dans un vault (attachments, notes). */

@@ -657,6 +657,33 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("sync_vectors", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultDocumentEntity", b =>
+                {
+                    b.Property<string>("DocId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("doc_id");
+
+                    b.Property<DateTime>("RegisteredAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("registered_at");
+
+                    b.Property<string>("RegisteredBy")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("registered_by");
+
+                    b.Property<string>("VaultId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.HasKey("DocId");
+
+                    b.HasIndex("VaultId");
+
+                    b.ToTable("vault_documents", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -853,6 +880,15 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ResourceType")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultDocumentEntity", b =>
+                {
+                    b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
+                        .WithMany()
+                        .HasForeignKey("VaultId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -9,7 +9,8 @@ namespace Savoire.Application.Sharing.RevokeShareLink;
 public sealed class RevokeShareLinkCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
-    IShareLinkRepository          shareLinks)
+    IShareLinkRepository          shareLinks,
+    IVaultDocumentRepository      vaultDocuments)
     : IRequestHandler<RevokeShareLinkCommand>
 {
     public async Task Handle(RevokeShareLinkCommand cmd, CancellationToken ct)
@@ -19,7 +20,7 @@ public sealed class RevokeShareLinkCommandHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, link.ResourceType, link.ResourceId,
-            vaults, permissions, ct);
+            vaults, permissions, vaultDocuments, ct);
 
         link.Revoke();
         await shareLinks.UpdateAsync(link, ct);

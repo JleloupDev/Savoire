@@ -7,6 +7,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 
@@ -79,6 +81,28 @@ public class AppFactory : WebApplicationFactory<Program>
         var body = await response.Content.ReadFromJsonAsync<AuthTokenResponse>()
             ?? throw new InvalidOperationException("Réponse login vide.");
         return body.AccessToken;
+    }
+
+    /// <summary>
+    /// Inscrit un nouveau document dans un vault, comme le fait le client
+    /// avant de le creer : en mode serveur, un document inconnu du registre
+    /// « document -> vault » est refuse.
+    /// </summary>
+    public async Task<string> NewDocumentAsync(string token, string vaultId)
+    {
+        string docId = Guid.NewGuid().ToString();
+        await using var conn = new HubConnectionBuilder()
+            .WithUrl("http://localhost/hubs/vault", options =>
+            {
+                options.HttpMessageHandlerFactory = _ => Server.CreateHandler();
+                options.Transports = HttpTransportType.LongPolling;
+                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
+            })
+            .Build();
+        await conn.StartAsync();
+        string[] rejected = await conn.InvokeAsync<string[]>("RegisterDocuments", vaultId, new[] { docId });
+        if (rejected.Length > 0) throw new InvalidOperationException($"inscription refusee : {docId}");
+        return docId;
     }
 
     /// <summary>

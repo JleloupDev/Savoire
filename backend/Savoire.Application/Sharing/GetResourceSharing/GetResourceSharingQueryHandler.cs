@@ -13,7 +13,8 @@ public sealed class GetResourceSharingQueryHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
     IShareLinkRepository          shareLinks,
-    IUserLookupService            users)
+    IUserLookupService            users,
+    IVaultDocumentRepository      vaultDocuments)
     : IRequestHandler<GetResourceSharingQuery, ResourceSharingDto>
 {
     public async Task<ResourceSharingDto> Handle(
@@ -23,7 +24,7 @@ public sealed class GetResourceSharingQueryHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             q.CallerId, resourceType, q.ResourceId,
-            vaults, permissions, ct);
+            vaults, permissions, vaultDocuments, ct);
 
         IReadOnlyList<ResourcePermission> perms =
             await permissions.ListForResourceAsync(resourceType, q.ResourceId, ct);

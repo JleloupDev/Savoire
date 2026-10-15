@@ -15,7 +15,8 @@ public sealed class GrantPermissionCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
     IUserLookupService            users,
-    IPublisher                    publisher)
+    IPublisher                    publisher,
+    IVaultDocumentRepository      vaultDocuments)
     : IRequestHandler<GrantPermissionCommand, ResourcePermissionDto>
 {
     public async Task<ResourcePermissionDto> Handle(
@@ -24,7 +25,7 @@ public sealed class GrantPermissionCommandHandler(
         ResourceType resourceType = cmd.ResourceType.ParseResourceType();
         Permission   permission   = cmd.Permission.ParsePermission();
 
-        await RequireShareRightAsync(cmd.CallerId, resourceType, cmd.ResourceId, vaults, permissions, ct);
+        await RequireShareRightAsync(cmd.CallerId, resourceType, cmd.ResourceId, vaults, permissions, vaultDocuments, ct);
 
         ResourcePermission? existing = await permissions.GetAsync(
             resourceType, cmd.ResourceId, SubjectType.User, cmd.TargetUserId, ct);
@@ -51,13 +52,16 @@ public sealed class GrantPermissionCommandHandler(
 
     internal static async Task RequireShareRightAsync(
         string callerId, ResourceType resourceType, string resourceId,
-        IVaultRepository vaults, IResourcePermissionRepository permissions, CancellationToken ct)
+        IVaultRepository vaults, IResourcePermissionRepository permissions,
+        IVaultDocumentRepository vaultDocuments, CancellationToken ct)
     {
-        // For document resources, vault ownership cannot be resolved without SQL projection.
-        // TODO(P4): resolve via ACL signed op log.
-        if (resourceType == ResourceType.Document) return;
-
-        string vaultId = resourceId;
+        // Un document se partage selon les droits sur SON vault, retrouve par le
+        // registre « document -> vault ». Avant ce registre, la verification
+        // etait sautee : n'importe quel compte partageait n'importe quel document.
+        string vaultId = resourceType == ResourceType.Document
+            ? await vaultDocuments.GetVaultIdAsync(resourceId, ct)
+              ?? throw new AccessDeniedException("Document inconnu : il n'appartient a aucun vault.")
+            : resourceId;
 
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
         if (vault is null) throw new VaultNotFoundException(vaultId);
@@ -72,9 +76,10 @@ public sealed class GrantPermissionCommandHandler(
 
     internal static Task RequireShareRightAsync(
         string callerId, string resourceType, string resourceId,
-        IVaultRepository vaults, IResourcePermissionRepository permissions, CancellationToken ct) =>
+        IVaultRepository vaults, IResourcePermissionRepository permissions,
+        IVaultDocumentRepository vaultDocuments, CancellationToken ct) =>
         RequireShareRightAsync(callerId, resourceType.ParseResourceType(), resourceId,
-            vaults, permissions, ct);
+            vaults, permissions, vaultDocuments, ct);
 
     internal static ResourcePermissionDto ToDto(ResourcePermission p, string? displayName) =>
         new(p.Id, p.ResourceType.ToApiString(), p.ResourceId,

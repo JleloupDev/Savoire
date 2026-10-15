@@ -74,6 +74,15 @@ public class EdgesyncBlobEntity
     public DateTime UpdatedAt { get; set; }
 }
 
+/// <summary>Registre « document -> vault » (voir IVaultDocumentRepository).</summary>
+public class VaultDocumentEntity
+{
+    public string   DocId        { get; set; } = null!;
+    public string   VaultId      { get; set; } = null!;
+    public string   RegisteredBy { get; set; } = null!;
+    public DateTime RegisteredAt { get; set; }
+}
+
 public class VaultKeyWrapEntity
 {
     public string   UserId          { get; set; } = null!;

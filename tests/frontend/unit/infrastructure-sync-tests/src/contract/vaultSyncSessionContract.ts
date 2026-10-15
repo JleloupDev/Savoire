@@ -234,6 +234,15 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
       })
     })
 
+    describe('inscription des documents', () => {
+      it('inscrire des documents de ce vault reussit, et c\'est idempotent', async () => {
+        const a = await open('alice')
+        await a.registerDocuments(['d1', 'd2'])
+        await a.registerDocuments(['d1'])
+        await a.registerDocuments([])
+      })
+    })
+
     describe('cartes partagees', () => {
       it('une entree converge et reste separee des reglages et des index du meme nom', async () => {
         const a = await open('alice')

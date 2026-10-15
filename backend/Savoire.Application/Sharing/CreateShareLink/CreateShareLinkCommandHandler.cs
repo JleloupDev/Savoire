@@ -12,7 +12,8 @@ namespace Savoire.Application.Sharing.CreateShareLink;
 public sealed class CreateShareLinkCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
-    IShareLinkRepository          shareLinks)
+    IShareLinkRepository          shareLinks,
+    IVaultDocumentRepository      vaultDocuments)
     : IRequestHandler<CreateShareLinkCommand, ShareLinkDto>
 {
     public async Task<ShareLinkDto> Handle(CreateShareLinkCommand cmd, CancellationToken ct)
@@ -25,7 +26,7 @@ public sealed class CreateShareLinkCommandHandler(
 
         await GrantPermission.GrantPermissionCommandHandler.RequireShareRightAsync(
             cmd.CallerId, resourceType, cmd.ResourceId,
-            vaults, permissions, ct);
+            vaults, permissions, vaultDocuments, ct);
 
         ShareLink link = ShareLink.Create(
             resourceType, cmd.ResourceId,
