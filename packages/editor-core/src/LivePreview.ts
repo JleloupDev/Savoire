@@ -149,6 +149,31 @@ function buildDecorations(
   const fmEnd = getFrontmatterEnd(state)
   const fmDeco = buildFrontmatterDecoration(state)
 
+  const claimedByPlugin = (text: string): boolean => {
+    if (!registry || !ctx) return false
+    const ids = getActiveScopeIds?.() ?? null
+    return !!(registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text))
+  }
+
+  const renderParagraphLines = (firstLine: number, lastLine: number): void => {
+    const cursorLine = state.doc.lineAt(cursorFrom).number
+    for (let n = firstLine; n <= lastLine; n++) {
+      const line = state.doc.line(n)
+      if (n === cursorLine) continue
+      if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      try {
+        const lineText = state.doc.sliceString(line.from, line.to)
+        const preprocessed = hooks ? hooks.runBeforeParseSync(lineText) : lineText
+        const html = marked.parse(preprocessed, { breaks: true }) as string
+        decorations.push(
+          Decoration.replace({ widget: new MarkdownWidget(html, 'vault-paragraph-line'), block: true }).range(line.from, line.to),
+        )
+      } catch {
+        // Ligne laissee en texte brut si le rendu echoue
+      }
+    }
+  }
+
   syntaxTree(state).iterate({
     enter(node) {
       if (!BLOCK_NODES.has(node.type.name)) return
@@ -174,6 +199,16 @@ function buildDecorations(
         }
         return false
       } else if (!isSingleLine) {
+        // Un paragraphe n'est qu'une suite de lignes : il est rendu LIGNE PAR
+        // LIGNE, et seule la ligne du curseur passe en edition. Chaque ligne
+        // garde aussi son numero dans la gouttiere (1, 2, 3) au lieu d'un
+        // bloc [1–3]. Un vrai bloc (callout, code, liste, citation...) passe,
+        // lui, entierement en edition des qu'on y entre.
+        // Exception : si un plugin revendique le paragraphe, c'est son bloc.
+        if (node.type.name === 'Paragraph' && !claimedByPlugin(state.doc.sliceString(node.from, node.to))) {
+          renderParagraphLines(blockStartLine, blockEndLine)
+          return false
+        }
         if (cursorFrom >= node.from && cursorFrom <= node.to) return false
       }
 
@@ -206,27 +241,6 @@ function buildDecorations(
       }
 
       // Level 2: fallback — render with marked (run beforeParse hooks first, e.g. wikilinks)
-
-      // Un paragraphe de plusieurs lignes est rendu LIGNE PAR LIGNE : chaque
-      // ligne garde son numero dans la gouttiere (1, 2, 3) au lieu d'un bloc
-      // agrege [1–3]. Rien ne justifie d'agreger de simples lignes de texte,
-      // et l'aspect est le meme, les retours a la ligne etant conserves.
-      if (node.type.name === 'Paragraph' && !isSingleLine) {
-        try {
-          for (let n = blockStartLine; n <= blockEndLine; n++) {
-            const line = state.doc.line(n)
-            const lineText = state.doc.sliceString(line.from, line.to)
-            const preprocessed = hooks ? hooks.runBeforeParseSync(lineText) : lineText
-            const html = marked.parse(preprocessed, { breaks: true }) as string
-            decorations.push(
-              Decoration.replace({ widget: new MarkdownWidget(html, 'vault-paragraph-line'), block: true }).range(line.from, line.to),
-            )
-          }
-        } catch {
-          // Leave block as plain text on parse error
-        }
-        return false
-      }
 
       try {
         const preprocessed = hooks ? hooks.runBeforeParseSync(text) : text
