@@ -4,6 +4,8 @@ using MediatR;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
 
+using Savoire.Application.Common;
+
 namespace Savoire.Application.Sync.IndexChannel;
 
 /// <summary>Clé de ressource d'un canal d'index dans le log d'ops générique.</summary>
@@ -12,8 +14,11 @@ public static class IndexResource
     public static string Id(string vaultId, string ns) => $"index:{vaultId}:{ns}";
 }
 
-public sealed record PushIndexUpdateCommand(string VaultId, string Namespace, byte[] OpBytes)
-    : IRequest;
+public sealed record PushIndexUpdateCommand(string CallerId, string VaultId, string Namespace, byte[] OpBytes)
+    : IRequest, IRequiresVaultAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+}
 
 public sealed class PushIndexUpdateCommandHandler(ICrdtOpRepository ops)
     : IRequestHandler<PushIndexUpdateCommand>

@@ -2,9 +2,14 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
 
+using Savoire.Application.Common;
+
 namespace Savoire.Application.Sync.JoinVault;
 
 public record JoinVaultResult(string[] Ops);
 
 public sealed record JoinVaultQuery(string CallerId, string VaultId)
-    : IRequest<JoinVaultResult>;
+    : IRequest<JoinVaultResult>, IRequiresVaultAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+}

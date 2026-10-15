@@ -3,9 +3,12 @@
 // Tests d'intégration — DocumentRoomHub (/hubs/room)
 // Stabilise le comportement observable avant refacto éventuel.
 
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Savoire.Application.Common;
 
 namespace Savoire.Server.Integration.Tests.Hubs;
 
@@ -16,6 +19,10 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
     private string _token  = null!;
     private string _userId = null!;
     private string _docId  = null!;
+    // Vault reel dont l'utilisateur est proprietaire : entrer dans une room
+    // exige desormais le droit de lire le document (avant : n'importe quel
+    // vaultId, meme fictif, etait accepte).
+    private string _vaultId = null!;
 
     public DocumentRoomHubTests(AppFactory factory) => _factory = factory;
 
@@ -27,6 +34,12 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
 
         // docId unique par instance pour éviter toute interférence avec le cache statique
         _docId = Guid.NewGuid().ToString();
+
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        var vaultResp = await http.PostAsJsonAsync($"/api/v1/users/{_userId}/vaults", new { name = "Room Hub Tests" });
+        vaultResp.EnsureSuccessStatusCode();
+        _vaultId = (await vaultResp.Content.ReadFromJsonAsync<VaultSummaryDto>())!.Id;
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -70,7 +83,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         conn.On<string, string?>("RoomJoined", (did, snap) => tcs.TrySetResult((did, snap)));
 
         await conn.StartAsync();
-        await conn.InvokeAsync("JoinRoom", "vault-id", freshDocId);
+        await conn.InvokeAsync("JoinRoom", _vaultId, freshDocId);
 
         var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         result.docId.Should().Be(freshDocId);
@@ -84,8 +97,8 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
 
         await using var sender = CreateConnection();
         await sender.StartAsync();
-        await sender.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await sender.InvokeAsync("PushSnapshot", "vault-id", _docId, snapshotJson);
+        await sender.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await sender.InvokeAsync("PushSnapshot", _vaultId, _docId, snapshotJson);
         await sender.StopAsync();
 
         await using var reader = CreateConnection();
@@ -93,7 +106,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         reader.On<string, string?>("RoomJoined", (did, snap) => tcs.TrySetResult((did, snap)));
 
         await reader.StartAsync();
-        await reader.InvokeAsync("JoinRoom", "vault-id", _docId);
+        await reader.InvokeAsync("JoinRoom", _vaultId, _docId);
 
         var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         result.docId.Should().Be(_docId);
@@ -115,11 +128,11 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await sender.StartAsync();
         await receiver.StartAsync();
 
-        await sender.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await receiver.InvokeAsync("JoinRoom", "vault-id", _docId);
+        await sender.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await receiver.InvokeAsync("JoinRoom", _vaultId, _docId);
 
         var payload = """{"content":"# Collaboration"}""";
-        await sender.InvokeAsync("PushSnapshot", "vault-id", _docId, payload);
+        await sender.InvokeAsync("PushSnapshot", _vaultId, _docId, payload);
 
         var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         result.docId.Should().Be(_docId);
@@ -136,8 +149,8 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         conn.On<string, string, string>("SnapshotReceived", (_, _, _) => received = true);
 
         await conn.StartAsync();
-        await conn.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await conn.InvokeAsync("PushSnapshot", "vault-id", _docId, """{"content":"solo"}""");
+        await conn.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await conn.InvokeAsync("PushSnapshot", _vaultId, _docId, """{"content":"solo"}""");
 
         await Task.Delay(300);
         received.Should().BeFalse();
@@ -151,8 +164,8 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
 
         await using var writer = CreateConnection();
         await writer.StartAsync();
-        await writer.InvokeAsync("JoinRoom", "vault-id", cacheDocId);
-        await writer.InvokeAsync("PushSnapshot", "vault-id", cacheDocId, snapshotJson);
+        await writer.InvokeAsync("JoinRoom", _vaultId, cacheDocId);
+        await writer.InvokeAsync("PushSnapshot", _vaultId, cacheDocId, snapshotJson);
         await writer.StopAsync();
 
         await using var reader = CreateConnection();
@@ -160,7 +173,7 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         reader.On<string, string?>("RoomJoined", (_, snap) => tcs.TrySetResult(snap));
 
         await reader.StartAsync();
-        await reader.InvokeAsync("JoinRoom", "vault-id", cacheDocId);
+        await reader.InvokeAsync("JoinRoom", _vaultId, cacheDocId);
 
         var snap = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         snap.Should().Be(snapshotJson);
@@ -181,11 +194,11 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await sender.StartAsync();
         await receiver.StartAsync();
 
-        await sender.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await receiver.InvokeAsync("JoinRoom", "vault-id", _docId);
+        await sender.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await receiver.InvokeAsync("JoinRoom", _vaultId, _docId);
 
         var presenceJson = """{"cursor":42,"user":"Alice"}""";
-        await sender.InvokeAsync("UpdatePresence", "vault-id", _docId, presenceJson);
+        await sender.InvokeAsync("UpdatePresence", _vaultId, _docId, presenceJson);
 
         var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
         result.docId.Should().Be(_docId);
@@ -202,8 +215,8 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         conn.On<string, string, string>("PresenceUpdated", (_, _, _) => received = true);
 
         await conn.StartAsync();
-        await conn.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await conn.InvokeAsync("UpdatePresence", "vault-id", _docId, """{"cursor":0}""");
+        await conn.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await conn.InvokeAsync("UpdatePresence", _vaultId, _docId, """{"cursor":0}""");
 
         await Task.Delay(300);
         received.Should().BeFalse();
@@ -225,10 +238,10 @@ public class DocumentRoomHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await sender.StartAsync();
         await outsider.StartAsync();
 
-        await sender.InvokeAsync("JoinRoom", "vault-id", _docId);
-        await outsider.InvokeAsync("JoinRoom", "vault-id", otherDocId);
+        await sender.InvokeAsync("JoinRoom", _vaultId, _docId);
+        await outsider.InvokeAsync("JoinRoom", _vaultId, otherDocId);
 
-        await sender.InvokeAsync("PushSnapshot", "vault-id", _docId, """{"content":"isolated"}""");
+        await sender.InvokeAsync("PushSnapshot", _vaultId, _docId, """{"content":"isolated"}""");
 
         await Task.Delay(300);
         outsiderReceived.Should().BeFalse();

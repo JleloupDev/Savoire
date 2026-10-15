@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.SignalR;
 using Savoire.Application.Sync.HubPushOperation;
 using Savoire.Application.Sync.HubSnapshotDocument;
 using Savoire.Application.Sync.JoinDocument;
+using Savoire.Application.Sync.Access;
+using Savoire.Application.Common;
 
 namespace Savoire.Server.Hubs;
 
@@ -19,6 +21,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
 
     public async Task JoinVault(string vaultId)
     {
+        await mediator.Send(new CheckVaultAccessQuery(GetCallerId(), vaultId, VaultAccessLevel.Read));
         await Groups.AddToGroupAsync(Context.ConnectionId, $"vault:{vaultId}");
         logger.LogInformation("Client {Id} joined vault {VaultId}", Context.ConnectionId, vaultId);
         await Clients.Caller.SendAsync("VaultJoined", vaultId);
@@ -33,6 +36,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
         JoinDocumentResult result = await mediator.Send(new JoinDocumentQuery(callerId, vaultId, docId));
 
         await Groups.AddToGroupAsync(Context.ConnectionId, $"doc:{docId}");
+        JoinedDocuments().Add(docId);
 
         // Non-vault-members with document-level permission subscribe to metadata
         // events (rename, delete, access revoke) via the doc-events group.
@@ -47,7 +51,10 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     }
 
     public async Task LeaveDocument(string vaultId, string docId)
-        => await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"doc:{docId}");
+    {
+        JoinedDocuments().Remove(docId);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"doc:{docId}");
+    }
 
     /// <summary>Pushes a CRDT operation (base64-encoded Yjs update).</summary>
     public async Task PushOperation(string vaultId, string docId, string clientId, string opBase64)
@@ -75,6 +82,8 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     /// </summary>
     public async Task UpdateAwareness(string vaultId, string docId, string awarenessBase64)
     {
+        // Relaye seulement pour un document ou l'appelant est entre (controle passe).
+        if (!JoinedDocuments().Contains(docId)) return;
         await Clients.OthersInGroup($"doc:{docId}")
             .SendAsync("AwarenessUpdated", docId, awarenessBase64);
     }
@@ -99,6 +108,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     /// <summary>Updates the cursor position visible to collaborators.</summary>
     public async Task UpdatePresence(string vaultId, string docId, int cursorPosition)
     {
+        if (!JoinedDocuments().Contains(docId)) return;
         string userId = GetCallerId();
         await Clients.OthersInGroup($"doc:{docId}")
             .SendAsync("PresenceUpdated", docId, userId, userId, cursorPosition);
@@ -108,6 +118,15 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     {
         logger.LogInformation("Client disconnected: {Id}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>Documents ou CETTE connexion est entree (controle passe).</summary>
+    private HashSet<string> JoinedDocuments()
+    {
+        if (Context.Items.TryGetValue("joined-docs", out object? value) && value is HashSet<string> set) return set;
+        var created = new HashSet<string>();
+        Context.Items["joined-docs"] = created;
+        return created;
     }
 
     private string GetCallerId()

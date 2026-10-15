@@ -11,8 +11,12 @@
 // not the relay's.
 
 using System.Collections.Concurrent;
+using System.Security.Claims;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Savoire.Application.Common;
+using Savoire.Application.Sync.Access;
 
 namespace Savoire.Server.Hubs;
 
@@ -30,6 +34,7 @@ public sealed class EdgeSyncRooms
 
 [Authorize]
 public sealed class EdgeSyncHub(
+    IMediator             mediator,
     EdgeSyncRooms         rooms,
     ILogger<EdgeSyncHub>  logger) : Hub
 {
@@ -40,6 +45,11 @@ public sealed class EdgeSyncHub(
     /// <summary>Enter a vault room. Returns the peer ids already present.</summary>
     public async Task<string[]> Join(string vaultId)
     {
+        // Seuls les membres du vault entrent dans sa room : le relais reste
+        // aveugle au contenu, pas a l'identite de ceux qu'il met en relation.
+        string callerId = Context.User?.FindFirstValue("sub") ?? throw new HubException("Not authenticated.");
+        await mediator.Send(new CheckVaultAccessQuery(callerId, vaultId, VaultAccessLevel.Read));
+
         var room = rooms.Rooms.GetOrAdd(vaultId, _ => new ConcurrentDictionary<string, byte>());
         string[] existing = [.. room.Keys.Where(id => id != Context.ConnectionId)];
 
@@ -64,7 +74,11 @@ public sealed class EdgeSyncHub(
     /// trust boundary as the presence/relay it already brokers.
     /// </summary>
     public bool ClaimOwner(string vaultId)
-        => rooms.Owners.TryAdd(vaultId, Context.ConnectionId);
+    {
+        // Il faut etre entre dans la room (donc membre) pour se porter candidat.
+        if (!rooms.Rooms.TryGetValue(vaultId, out var room) || !room.ContainsKey(Context.ConnectionId)) return false;
+        return rooms.Owners.TryAdd(vaultId, Context.ConnectionId);
+    }
 
     /// <summary>Forward one opaque frame to one peer of the same vault room.</summary>
     public Task Relay(string vaultId, string toPeer, string frameBase64)

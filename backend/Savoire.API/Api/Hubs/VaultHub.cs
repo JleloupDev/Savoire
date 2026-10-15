@@ -11,10 +11,15 @@ using Savoire.Application.Sync.JoinVault;
 using Savoire.Application.Sync.PushVaultOperation;
 using Savoire.Application.Sync.SnapshotVault;
 using Savoire.Application.Sync.IndexChannel;
+using Savoire.Application.Sync.Access;
 using Savoire.Application.Common;
 
 namespace Savoire.Server.Hubs;
 
+// Controle d'acces : chaque methode passe par une requete MediatR controlee
+// par VaultAccessBehavior (lecture pour entrer, ecriture pour modifier). Le
+// controle a lieu AVANT l'entree dans un groupe de diffusion : sinon, meme
+// refuse, l'appelant recevrait deja les mises a jour en direct.
 [Authorize]
 public sealed class VaultHub(
     IMediator             mediator,
@@ -25,9 +30,9 @@ public sealed class VaultHub(
 
     public async Task JoinVault(string vaultId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, vaultId);
-
         JoinVaultResult result = await mediator.Send(new JoinVaultQuery(GetCallerId(), vaultId));
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, vaultId);
 
         await Clients.Caller.SendAsync("InitVault", vaultId, result.Ops);
 
@@ -46,7 +51,7 @@ public sealed class VaultHub(
             return;
         }
 
-        await mediator.Send(new PushVaultOperationCommand(vaultId, opBytes));
+        await mediator.Send(new PushVaultOperationCommand(GetCallerId(), vaultId, opBytes));
 
         await Clients.OthersInGroup(vaultId)
             .SendAsync("VaultOperationReceived", vaultId, opBase64);
@@ -61,7 +66,7 @@ public sealed class VaultHub(
             logger.LogWarning(ex, "SnapshotVault: invalid base64 for {VaultId}", vaultId);
             return;
         }
-        await mediator.Send(new SnapshotVaultCommand(vaultId, snapshotBytes));
+        await mediator.Send(new SnapshotVaultCommand(GetCallerId(), vaultId, snapshotBytes));
         logger.LogInformation("Vault {VaultId} compacted by {ConnectionId}", vaultId, Context.ConnectionId);
     }
 
@@ -74,8 +79,8 @@ public sealed class VaultHub(
 
     public async Task<string[]> JoinIndex(string vaultId, string ns)
     {
+        JoinIndexResult result = await mediator.Send(new JoinIndexQuery(GetCallerId(), vaultId, ns));
         await Groups.AddToGroupAsync(Context.ConnectionId, IndexGroup(vaultId, ns));
-        JoinIndexResult result = await mediator.Send(new JoinIndexQuery(vaultId, ns));
         logger.LogInformation(
             "Client {ConnectionId} joined index {VaultId}/{Namespace} - {Count} op(s)",
             Context.ConnectionId, vaultId, ns, result.Ops.Length);
@@ -92,7 +97,7 @@ public sealed class VaultHub(
             return;
         }
 
-        await mediator.Send(new PushIndexUpdateCommand(vaultId, ns, bytes));
+        await mediator.Send(new PushIndexUpdateCommand(GetCallerId(), vaultId, ns, bytes));
 
         await Clients.OthersInGroup(IndexGroup(vaultId, ns))
             .SendAsync("IndexUpdateReceived", vaultId, ns, updateBase64);
@@ -114,6 +119,8 @@ public sealed class VaultHub(
     /// <summary>Prend le verrou s'il est libre. Rend le detenteur effectif.</summary>
     public async Task<DocumentLockDto> AcquireLock(string vaultId, string docId)
     {
+        // Prendre la main, c'est s'appreter a ecrire : un lecteur ne bloque pas les autres.
+        await RequireAsync(vaultId, VaultAccessLevel.Write);
         var candidate = new LockHolder(GetCallerId(), GetCallerName(), Context.ConnectionId);
         LockHolder holder = locks.TryAcquire(vaultId, docId, candidate);
         bool acquired = holder.ConnectionId == Context.ConnectionId;
@@ -129,12 +136,13 @@ public sealed class VaultHub(
     }
 
     /// <summary>Rend l'etat courant du verrou, sans le prendre.</summary>
-    public Task<DocumentLockDto?> GetLock(string vaultId, string docId)
+    public async Task<DocumentLockDto?> GetLock(string vaultId, string docId)
     {
+        await RequireAsync(vaultId, VaultAccessLevel.Read);
         LockHolder? holder = locks.Get(vaultId, docId);
-        return Task.FromResult(holder is null
+        return holder is null
             ? null
-            : new DocumentLockDto(holder.UserId, holder.DisplayName, holder.ConnectionId == Context.ConnectionId));
+            : new DocumentLockDto(holder.UserId, holder.DisplayName, holder.ConnectionId == Context.ConnectionId);
     }
 
     public async Task ReleaseLock(string vaultId, string docId)
@@ -151,11 +159,15 @@ public sealed class VaultHub(
     /// </summary>
     public async Task RequestLock(string vaultId, string docId)
     {
+        await RequireAsync(vaultId, VaultAccessLevel.Write);
         LockHolder? holder = locks.Get(vaultId, docId);
         if (holder is null) return;
         await Clients.Client(holder.ConnectionId)
             .SendAsync("LockRequested", vaultId, docId, GetCallerId(), GetCallerName());
     }
+
+    private Task RequireAsync(string vaultId, VaultAccessLevel level) =>
+        mediator.Send(new CheckVaultAccessQuery(GetCallerId(), vaultId, level));
 
     private string GetCallerName()
         => Context.User?.FindFirstValue("display_name")

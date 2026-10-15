@@ -4,11 +4,17 @@ using MediatR;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
 
+using Savoire.Application.Common;
+
 namespace Savoire.Application.Sync.IndexChannel;
 
 public record JoinIndexResult(string[] Ops);
 
-public sealed record JoinIndexQuery(string VaultId, string Namespace) : IRequest<JoinIndexResult>;
+public sealed record JoinIndexQuery(string CallerId, string VaultId, string Namespace)
+    : IRequest<JoinIndexResult>, IRequiresVaultAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+}
 
 public sealed class JoinIndexQueryHandler(ICrdtOpRepository ops)
     : IRequestHandler<JoinIndexQuery, JoinIndexResult>

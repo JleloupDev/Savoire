@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// DocumentRoomHub — Hub SignalR format-agnostic à /hubs/room.
+// DocumentRoomHub — Hub SignalR /hubs/room.
 //
-// see ADR-001
+// Synchronisation des documents « snapshot » (Excalidraw, table, mindmap...) :
+// dernier-ecrivain-gagne sur des snapshots JSON complets.
 //
-// Protocole :
 //   Client → Serveur : JoinRoom(vaultId, docId)
 //                      PushSnapshot(vaultId, docId, snapshotJson)
 //                      UpdatePresence(vaultId, docId, presenceJson)
@@ -14,33 +14,34 @@
 //                      SnapshotReceived(docId, fromUserId, snapshotJson)
 //                      PresenceUpdated(docId, userId, presenceJson)
 //
-// In-memory cache: last snapshot returned to any new joiner in the room.
+// Controle d'acces : entrer exige le droit de lire le document, ecrire celui
+// de le modifier (VaultAccessBehavior, comme les notes CRDT). Le controle a
+// lieu AVANT l'entree dans le groupe de diffusion. La presence n'est relayee
+// que pour une room ou l'appelant est entre.
 
 using System.Security.Claims;
-using System.Text;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using Savoire.Domain.Aggregates;
-using Savoire.Domain.Repositories;
+using Savoire.Application.Sync.DocumentRoom;
 
 namespace Savoire.Server.Hubs;
 
 [Authorize]
 public class DocumentRoomHub(
-    ICrdtOpRepository ops,
+    IMediator mediator,
     ILogger<DocumentRoomHub> logger) : Hub
 {
+    private const string JoinedRoomsKey = "joined-rooms";
+
     // ── Methods called by the client ───────────────────────────────────────────
 
     public async Task JoinRoom(string vaultId, string docId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(docId));
+        string? snapshot = await mediator.Send(new JoinRoomQuery(GetUserId(), vaultId, docId));
 
-        // The op log holds a single compacted snapshot per room (see PushSnapshot).
-        var history = await ops.GetAllAsync(CrdtResourceType.Room, docId);
-        string? snapshot = history.Count > 0
-            ? Encoding.UTF8.GetString(history[^1].OpBytes)
-            : null;
+        await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(docId));
+        JoinedRooms().Add(docId);
 
         logger.LogInformation(
             "[DocumentRoom] Client {Id} joined room {DocId} — snapshot {Status}",
@@ -50,27 +51,19 @@ public class DocumentRoomHub(
     }
 
     public async Task LeaveRoom(string vaultId, string docId)
-        => await Groups.RemoveFromGroupAsync(Context.ConnectionId, RoomGroup(docId));
+    {
+        JoinedRooms().Remove(docId);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, RoomGroup(docId));
+    }
 
     /// <summary>
     /// Receives a full snapshot, persists it, and broadcasts it to other clients in the room.
+    /// Refuse (exception) sans droit d'ecriture : rien n'est persiste ni rediffuse.
     /// </summary>
     public async Task PushSnapshot(string vaultId, string docId, string snapshotJson)
     {
         string userId = GetUserId();
-
-        // Persist to the CRDT op log (compacted: one snapshot per room).
-        // TODO(perf): CompactAsync does delete-all + insert per push. For busy
-        // rooms (excalidraw), replace with a dedicated single-row upsert.
-        try
-        {
-            await ops.CompactAsync(CrdtResourceType.Room, docId, Encoding.UTF8.GetBytes(snapshotJson), force: true);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[DocumentRoom] Failed to persist snapshot for {DocId}", docId);
-            // Persistence failure is non-fatal: the snapshot is broadcast regardless.
-        }
+        await mediator.Send(new PushRoomSnapshotCommand(userId, vaultId, docId, snapshotJson));
 
         logger.LogDebug(
             "[DocumentRoom] Snapshot from {UserId} for {DocId} — {Size} bytes",
@@ -85,9 +78,9 @@ public class DocumentRoomHub(
     /// </summary>
     public async Task UpdatePresence(string vaultId, string docId, string presenceJson)
     {
-        string userId = GetUserId();
+        if (!JoinedRooms().Contains(docId)) return;
         await Clients.OthersInGroup(RoomGroup(docId))
-            .SendAsync("PresenceUpdated", docId, userId, presenceJson);
+            .SendAsync("PresenceUpdated", docId, GetUserId(), presenceJson);
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)
@@ -100,7 +93,16 @@ public class DocumentRoomHub(
 
     private static string RoomGroup(string docId) => $"room:{docId}";
 
+    /// <summary>Rooms ou CETTE connexion est entree (controle passe).</summary>
+    private HashSet<string> JoinedRooms()
+    {
+        if (Context.Items.TryGetValue(JoinedRoomsKey, out object? value) && value is HashSet<string> set) return set;
+        var created = new HashSet<string>();
+        Context.Items[JoinedRoomsKey] = created;
+        return created;
+    }
+
     private string GetUserId()
         => Context.User?.FindFirstValue("sub")
-           ?? Context.ConnectionId;
+           ?? throw new HubException("Not authenticated.");
 }
