@@ -114,17 +114,17 @@ class PluginWidget extends WidgetType {
 }
 
 class MarkdownWidget extends WidgetType {
-  constructor(private readonly html: string) {
+  constructor(private readonly html: string, private readonly extraClass = '') {
     super()
   }
 
   eq(other: MarkdownWidget): boolean {
-    return this.html === other.html
+    return this.html === other.html && this.extraClass === other.extraClass
   }
 
   toDOM(): HTMLElement {
     const div = document.createElement('div')
-    div.className = 'vault-rendered-block'
+    div.className = this.extraClass ? `vault-rendered-block ${this.extraClass}` : 'vault-rendered-block'
     div.innerHTML = this.html
     return div
   }
@@ -206,6 +206,28 @@ function buildDecorations(
       }
 
       // Level 2: fallback — render with marked (run beforeParse hooks first, e.g. wikilinks)
+
+      // Un paragraphe de plusieurs lignes est rendu LIGNE PAR LIGNE : chaque
+      // ligne garde son numero dans la gouttiere (1, 2, 3) au lieu d'un bloc
+      // agrege [1–3]. Rien ne justifie d'agreger de simples lignes de texte,
+      // et l'aspect est le meme, les retours a la ligne etant conserves.
+      if (node.type.name === 'Paragraph' && !isSingleLine) {
+        try {
+          for (let n = blockStartLine; n <= blockEndLine; n++) {
+            const line = state.doc.line(n)
+            const lineText = state.doc.sliceString(line.from, line.to)
+            const preprocessed = hooks ? hooks.runBeforeParseSync(lineText) : lineText
+            const html = marked.parse(preprocessed, { breaks: true }) as string
+            decorations.push(
+              Decoration.replace({ widget: new MarkdownWidget(html, 'vault-paragraph-line'), block: true }).range(line.from, line.to),
+            )
+          }
+        } catch {
+          // Leave block as plain text on parse error
+        }
+        return false
+      }
+
       try {
         const preprocessed = hooks ? hooks.runBeforeParseSync(text) : text
         // breaks : un retour a la ligne simple reste un retour a la ligne,
@@ -269,7 +291,8 @@ const blockAwareLineNumbers = gutter({
     const { state } = view
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number
-    return new BlockLineNumberMarker(first, last)
+    // Un widget d'une seule ligne garde le style d'un numero ordinaire.
+    return first === last ? new SingleLineNumberMarker(first) : new BlockLineNumberMarker(first, last)
   },
   initialSpacer(view) {
     return new SingleLineNumberMarker(view.state.doc.lines)
@@ -390,6 +413,13 @@ export function createLivePreviewExtension(
       },
       '.vault-rendered-block p': {
         margin: '0.1em 0',
+      },
+      // Ligne d'un paragraphe rendu ligne par ligne : meme hauteur qu'une ligne brute.
+      '.vault-paragraph-line': {
+        padding: '0 4px',
+      },
+      '.vault-paragraph-line p': {
+        margin: '0',
       },
       '.vault-rendered-block pre': {
         background: '#1e1e2e',
