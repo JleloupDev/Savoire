@@ -65,6 +65,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.toolbar
   }
 
+  get hotkeys() {
+    this.require('ui:editor')
+    return this.inner.hotkeys
+  }
+
   get agents() {
     this.require('agents')
     return this.inner.agents

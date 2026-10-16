@@ -5,7 +5,10 @@
     "baseUrl": ".",
     "paths": {
       "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
-      "@savoire/editor-core": ["../../../../packages/editor-core/src/index.ts"]
+      "@savoire/editor-core": ["../../../../packages/editor-core/src/index.ts"],
+      "marked": ["../../../../packages/editor-core/node_modules/marked"],
+      "@codemirror/state": ["../../../../packages/editor-core/node_modules/@codemirror/state"],
+      "@codemirror/view": ["../../../../packages/editor-core/node_modules/@codemirror/view"]
     }
   },
   "include": ["src"]

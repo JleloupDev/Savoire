@@ -33,6 +33,7 @@ import type {
   ViewSpec,
 } from '@savoire/plugin-api'
 import type { PluginActivation } from './PluginActivation'
+import { HotkeyManager } from './HotkeyManager'
 
 // Chaque registre retient quel plugin a enregistre quoi, et filtre a la
 // lecture ce qui appartient a un plugin desactive. Voir PluginActivation.
@@ -287,6 +288,11 @@ export class CommandRegistryImpl implements CommandRegistry {
   getAll(): PluginCommand[] {
     return [...this.commands.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
   }
+
+  /** Commande enregistree, que son plugin soit actif ou non. */
+  getRegistered(id: string): PluginCommand | undefined {
+    return this.commands.get(id)?.item
+  }
 }
 
 // ─── FileTypeRegistryImpl ─────────────────────────────────────────────────
@@ -435,6 +441,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
     public readonly sync?: SyncAPI,
     public readonly index?: IndexRegistryImpl,
     public readonly agents: AgentRegistryImpl = new AgentRegistryImpl(),
+    public readonly hotkeys: HotkeyManager = new HotkeyManager(commands),
   ) {
     this.editor = editor ?? new EditorPositionAPIStub()
   }

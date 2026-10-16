@@ -6,6 +6,7 @@
 
 import { EditorView } from '@codemirror/view'
 import type { MarkdownFormat } from './types'
+import { COLOR_EMOJI_SOURCE, colorOfEmoji, emojiOf, type PlumeColor } from './PlumeMarkdown'
 
 export function toggleMarkdownFormat(view: EditorView, format: MarkdownFormat): void {
   if (format === 'hr') {
@@ -39,6 +40,9 @@ export function toggleMarkdownFormat(view: EditorView, format: MarkdownFormat): 
   if (format === 'blockquote') {
     toggleBlockquote(view); return
   }
+  if (format === 'highlight') {
+    toggleHighlight(view); return
+  }
   // Inline markers
   const marker = ({ bold: '**', italic: '*', strike: '~~', code: '`' } as Record<string, string>)[format]
   if (marker) toggleInline(view, marker)
@@ -51,7 +55,16 @@ function toggleInline(view: EditorView, marker: string): void {
   const before   = view.state.doc.sliceString(from - mLen, from)
   const after    = view.state.doc.sliceString(to, to + mLen)
 
-  if (before === marker && after === marker) {
+  // Italique dans du gras (**mot**) : les * voisins appartiennent au gras.
+  // Un seul * de chaque cote, ou trois, signale l'italique.
+  const run = (text: string) => text.length - text.replace(new RegExp(`[${marker}]+$`), '').length
+  const runAfter = (text: string) => text.length - text.replace(new RegExp(`^[${marker}]+`), '').length
+  const ownsMarker = marker !== '*' || (
+    run(view.state.doc.sliceString(Math.max(0, from - 3), from)) % 2 === 1 &&
+    runAfter(view.state.doc.sliceString(to, to + 3)) % 2 === 1
+  )
+
+  if (before === marker && after === marker && ownsMarker) {
     // Already wrapped — remove markers
     view.dispatch({
       changes: [
@@ -246,5 +259,107 @@ function insertImage(view: EditorView): void {
     changes: { from, to, insert },
     selection: { anchor: from + alt.length + 4, head: from + insert.length - 1 },
   })
+  view.focus()
+}
+
+// ─── Surlignage et couleur du texte (syntaxe Obsidian, voir PlumeMarkdown) ──
+
+const HL_OPEN_BEFORE = new RegExp(`==(${COLOR_EMOJI_SOURCE})?$`, 'u')
+const HL_WRAPPED = new RegExp(`^==(${COLOR_EMOJI_SOURCE})?([\\s\\S]*)==$`, 'u')
+
+/**
+ * Surligne la selection (`==texte==`, ou `==🔴texte==` en couleur).
+ * Deja surlignee de la meme couleur : le surlignage est retire. D'une autre
+ * couleur : la couleur change. Sans selection : insere `====` et place le
+ * curseur au milieu.
+ */
+export function toggleHighlight(view: EditorView, color?: PlumeColor): void {
+  const { state } = view
+  const { from, to } = state.selection.main
+  const open = `==${color ? emojiOf(color) : ''}`
+  const selected = state.doc.sliceString(from, to)
+
+  // La selection englobe les marqueurs : ==🔴texte==
+  const whole = HL_WRAPPED.exec(selected)
+  if (whole && selected.length >= 4) {
+    const current = whole[1] ? colorOfEmoji(whole[1]) : undefined
+    const inner = whole[2]
+    const insert = current === color ? inner : `${open}${inner}==`
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from, head: from + insert.length } })
+    view.focus()
+    return
+  }
+
+  // Les marqueurs entourent la selection : ==🔴[texte]==
+  const lineStart = state.doc.lineAt(from).from
+  const before = HL_OPEN_BEFORE.exec(state.doc.sliceString(Math.max(lineStart, from - 4), from))
+  const after = state.doc.sliceString(to, to + 2) === '=='
+  if (before && after) {
+    const current = before[1] ? colorOfEmoji(before[1]) : undefined
+    const openFrom = from - before[0].length
+    if (current === color) {
+      view.dispatch({
+        changes: [{ from: openFrom, to: from, insert: '' }, { from: to, to: to + 2, insert: '' }],
+        selection: { anchor: openFrom, head: openFrom + (to - from) },
+      })
+    } else {
+      const shift = open.length - before[0].length
+      view.dispatch({
+        changes: { from: openFrom, to: from, insert: open },
+        selection: { anchor: from + shift, head: to + shift },
+      })
+    }
+    view.focus()
+    return
+  }
+
+  view.dispatch({
+    changes: { from, to, insert: `${open}${selected}==` },
+    selection: { anchor: from + open.length, head: to + open.length },
+  })
+  view.focus()
+}
+
+// Debut structurel d'une ligne : indentation, citations, puce / numero /
+// case a cocher, ou titre. La couleur se place juste apres.
+const LINE_PREFIX_RE = /^(\s*(?:>\s?)*(?:#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?)/
+const LINE_COLOR_RE = new RegExp(`^\`(${COLOR_EMOJI_SOURCE})\` ?`, 'u')
+
+/** Couleur de texte d'une ligne, et ou se trouve son marqueur. */
+export function lineColorOf(text: string): { color: PlumeColor; from: number; to: number } | null {
+  const prefix = LINE_PREFIX_RE.exec(text)?.[1] ?? ''
+  const m = LINE_COLOR_RE.exec(text.slice(prefix.length))
+  if (!m) return null
+  return { color: colorOfEmoji(m[1])!, from: prefix.length, to: prefix.length + m[0].length }
+}
+
+/**
+ * Colore les lignes selectionnees : `🔴` en debut de ligne (apres la puce,
+ * le # ou le >). Si toutes ont deja cette couleur, elle est retiree ;
+ * null retire la couleur. Les lignes vides sont laissees.
+ */
+export function setLineColor(view: EditorView, color: PlumeColor | null): void {
+  const { state } = view
+  const { from, to } = state.selection.main
+  const first = state.doc.lineAt(from).number
+  const last = state.doc.lineAt(to).number
+  const lines = []
+  for (let n = first; n <= last; n++) {
+    const line = state.doc.line(n)
+    if (line.text.trim()) lines.push(line)
+  }
+  if (lines.length === 0 && first === last) lines.push(state.doc.line(first))
+  const target = color && lines.every(l => lineColorOf(l.text)?.color === color) ? null : color
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (const line of lines) {
+    const current = lineColorOf(line.text)
+    const insert = target ? `\`${emojiOf(target)}\` ` : ''
+    if (current) changes.push({ from: line.from + current.from, to: line.from + current.to, insert })
+    else if (target) {
+      const at = line.from + (LINE_PREFIX_RE.exec(line.text)?.[1].length ?? 0)
+      changes.push({ from: at, to: at, insert })
+    }
+  }
+  if (changes.length) view.dispatch({ changes })
   view.focus()
 }

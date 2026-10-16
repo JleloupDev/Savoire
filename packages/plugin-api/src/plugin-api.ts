@@ -11,7 +11,7 @@
 import type { PluginManifest } from './manifest'
 import type { VaultAPI } from './vault'
 import type { WorkspaceAPI } from './workspace'
-import type { CommandRegistry } from './commands'
+import type { CommandRegistry, HotkeyAPI, HotkeyHost } from './commands'
 import type { HookRegistry } from './hooks'
 import type { BlockRegistry } from './blocks'
 import type { FileTypeRegistry } from './files'
@@ -51,6 +51,8 @@ export interface IPluginAPI {
   index?: IPluginIndexAPI
   /** Agents proposes par le plugin (permission 'agents'). Voir agents.ts. */
   agents?: AgentRegistry
+  /** Moteur de raccourcis clavier : lire et changer les touches des commandes. */
+  hotkeys?: HotkeyAPI
 }
 
 export interface PluginAPI extends IPluginAPI {}
@@ -72,6 +74,8 @@ export interface VaultPlugin {
 export interface IEditorHostAPI extends PluginAPI {
   /** Post-construction wiring: EditorCore registers itself as the cursor/selection provider. */
   setEditorPositionAPI(api: EditorPositionAPI): void
+  /** L'editeur lui passe les touches pressees quand il a le focus. */
+  hotkeys?: HotkeyHost
 }
 
 // ─── Plugin loader abstraction ────────────────────────────────────────────

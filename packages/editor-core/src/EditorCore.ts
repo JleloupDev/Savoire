@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorView, keymap } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Prec } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
 import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand } from './types'
-import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader } from '@savoire/plugin-api'
+import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader, Hotkey, PluginCommand, PluginCommandContext } from '@savoire/plugin-api'
 import { resolveActivePlugins } from './PluginActivationResolver'
 import type { ActivationEntry } from './PluginActivationResolver'
-import { toggleMarkdownFormat } from './FormattingService'
+import { toggleMarkdownFormat, toggleHighlight, setLineColor } from './FormattingService'
+import { PLUME_COLORS } from './PlumeMarkdown'
 import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
@@ -20,6 +21,15 @@ import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
 
 const LONE_SYMBOL_RE = /^(#{1,6}|[-*+]|>)\s*$/
+
+const mod = (key: string, ...more: Hotkey['modifiers']): Hotkey[] => [{ modifiers: ['Mod', ...more], key }]
+
+/** Vue d'un contexte de commande ou de bouton, quand l'appelant la donne. */
+function viewOf(ctx: unknown): EditorView | undefined {
+  const c = ctx as { view?: unknown; editorView?: unknown } | null | undefined
+  const v = c?.view ?? c?.editorView
+  return v instanceof EditorView ? v : undefined
+}
 
 function indentListLine(view: EditorView): boolean {
   const { state } = view
@@ -170,7 +180,13 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     if (options.crdt && options.userId) {
       options.crdt.setLocalUser(options.userId)
     }
-    const ctx = { editorView: null as unknown }
+    const ctx = {
+      editorView: null as unknown,
+      edit: (from: number, to: number, insert: string) => {
+        if (options.readOnly) return
+        this.view.dispatch({ changes: { from, to, insert } })
+      },
+    }
 
     let lastCursorLine = -1
 
@@ -184,6 +200,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
           ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
           : [
               history(),
+              // Moteur de raccourcis (commandes de l'application et des
+              // plugins) : passe avant les touches de CodeMirror.
+              Prec.highest(EditorView.domEventHandlers({
+                keydown: (event, view) => this.pluginAPI.hotkeys?.handleKeyEvent(event, { editorView: view }) ?? false,
+              })),
               keymap.of([
                 { key: 'Tab', run: indentListLine },
                 { key: 'Shift-Tab', run: dedentListLine, preventDefault: true },
@@ -456,7 +477,14 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     // pas en dur dans le composant : c'est ce qui permet a un plugin d'en
     // ajouter les siennes (toolbar.register) et a l'hote de les reordonner.
     // Les groupes sont rendus separes par une barre verticale, dans cet ordre.
-    const F = (f: import('./types').MarkdownFormat) => () => this.toggleFormat(f)
+    // Le bouton agit sur l'editeur d'ou vient le clic : la barre est
+    // partagee par tous les editeurs ouverts.
+    const F = (f: import('./types').MarkdownFormat) => (ctx: EditorCommandContext) =>
+      toggleMarkdownFormat(viewOf(ctx) ?? this.view, f)
+    const highlightIn = (color?: (typeof PLUME_COLORS)[number]['color']) => (ctx: EditorCommandContext) =>
+      toggleHighlight(viewOf(ctx) ?? this.view, color)
+    const colorIn = (color: (typeof PLUME_COLORS)[number]['color'] | null) => (ctx: EditorCommandContext) =>
+      setLineColor(viewOf(ctx) ?? this.view, color)
     const toolbarCmds: ToolbarCommand[] = [
       // Menu deroulant : les six niveaux de titre existent dans
       // FormattingService, les etaler en boutons rendait la barre illisible.
@@ -474,23 +502,100 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         ],
       },
 
-      { id: 'tb-bold',      label: 'Gras',           icon: 'B',   group: 'format', requiresSelection: false, run: F('bold') },
-      { id: 'tb-italic',    label: 'Italique',       icon: 'I',   group: 'format', requiresSelection: false, run: F('italic') },
-      { id: 'tb-strike',    label: 'Barré',          icon: 'S',   group: 'format', requiresSelection: false, run: F('strike') },
-      { id: 'tb-code',      label: 'Code inline',    icon: '`c`', group: 'format', requiresSelection: false, run: F('code') },
+      { id: 'tb-bold',      label: 'Gras',           icon: 'B',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-bold', run: F('bold') },
+      { id: 'tb-italic',    label: 'Italique',       icon: 'I',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-italics', run: F('italic') },
+      { id: 'tb-strike',    label: 'Barré',          icon: 'S',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-strikethrough', run: F('strike') },
+      { id: 'tb-code',      label: 'Code inline',    icon: '`c`', group: 'format', requiresSelection: false, commandId: 'editor:toggle-code', run: F('code') },
+      // Surlignage : couleur du theme, ou l'une des six couleurs d'Obsidian.
+      {
+        id: 'tb-highlight', label: 'Surligner', icon: '🖍', group: 'format', requiresSelection: false,
+        commandId: 'editor:toggle-highlight', run: highlightIn(),
+        items: [
+          { id: 'tb-hl-default', label: 'Surligner', icon: '🖍', commandId: 'editor:toggle-highlight', run: highlightIn() },
+          ...PLUME_COLORS.map(c => ({
+            id: `tb-hl-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`, icon: c.emoji,
+            commandId: `editor:highlight-${c.color}`, run: highlightIn(c.color),
+          })),
+        ],
+      },
+      // Couleur du texte : toute la ligne, marquee par `🔴` en debut de ligne.
+      {
+        id: 'tb-text-color', label: 'Couleur du texte', icon: '🎨', group: 'format', requiresSelection: false,
+        run: colorIn(null),
+        items: [
+          ...PLUME_COLORS.map(c => ({
+            id: `tb-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`, icon: c.emoji,
+            commandId: `editor:text-color-${c.color}`, run: colorIn(c.color),
+          })),
+          { id: 'tb-color-none', label: 'Couleur par défaut', icon: '⊘', commandId: 'editor:text-color-none', run: colorIn(null) },
+        ],
+      },
 
-      { id: 'tb-ul',        label: 'Liste à puces',  icon: '•',   group: 'liste',  run: F('ul') },
-      { id: 'tb-ol',        label: 'Liste numérotée', icon: '1.', group: 'liste',  run: F('ol') },
-      { id: 'tb-task',      label: 'Liste de tâches', icon: '☑',  group: 'liste',  run: F('tasklist') },
+      { id: 'tb-ul',        label: 'Liste à puces',  icon: '•',   group: 'liste',  commandId: 'editor:toggle-bullet-list', run: F('ul') },
+      { id: 'tb-ol',        label: 'Liste numérotée', icon: '1.', group: 'liste',  commandId: 'editor:toggle-numbered-list', run: F('ol') },
+      { id: 'tb-task',      label: 'Liste de tâches', icon: '☑',  group: 'liste',  commandId: 'editor:toggle-checklist', run: F('tasklist') },
 
-      { id: 'tb-quote',     label: 'Citation',       icon: '❝',   group: 'insert', run: F('blockquote') },
-      { id: 'tb-codeblock', label: 'Bloc de code',   icon: '</>', group: 'insert', run: F('codeblock') },
-      { id: 'tb-table',     label: 'Tableau',        icon: '⊞',   group: 'insert', run: F('table') },
-      { id: 'tb-link',      label: 'Lien',           icon: '🔗',  group: 'insert', run: F('link') },
+      { id: 'tb-quote',     label: 'Citation',       icon: '❝',   group: 'insert', commandId: 'editor:toggle-blockquote', run: F('blockquote') },
+      { id: 'tb-codeblock', label: 'Bloc de code',   icon: '</>', group: 'insert', commandId: 'editor:insert-codeblock', run: F('codeblock') },
+      { id: 'tb-table',     label: 'Tableau',        icon: '⊞',   group: 'insert', commandId: 'editor:insert-table', run: F('table') },
+      { id: 'tb-link',      label: 'Lien',           icon: '🔗',  group: 'insert', commandId: 'editor:insert-link', run: F('link') },
       { id: 'tb-image',     label: 'Image',          icon: '🖼',  group: 'insert', run: F('image') },
       { id: 'tb-hr',        label: 'Séparateur',     icon: '—',   group: 'insert', run: F('hr') },
     ]
     for (const cmd of toolbarCmds) toolbar.register(cmd)
+
+    this.registerEditorCommands()
+  }
+
+  /**
+   * Commandes d'edition, declenchables au clavier (moteur de raccourcis).
+   * Elles agissent sur l'editeur qui a le focus, jamais sur une instance
+   * figee : le registre est partage par tous les editeurs. Seuls les
+   * raccourcis courants ont une touche par defaut ; les autres commandes
+   * existent pour qu'on puisse leur en donner une.
+   */
+  private registerEditorCommands(): void {
+    const on = (act: (view: EditorView) => void) => (ctx: PluginCommandContext) => {
+      const view = viewOf(ctx)
+      if (view) act(view)
+    }
+    const fmt = (f: import('./types').MarkdownFormat) => on(v => toggleMarkdownFormat(v, f))
+    const commands: PluginCommand[] = [
+      { id: 'editor:toggle-bold',           label: 'Gras',                  hotkeys: mod('b'),           run: fmt('bold') },
+      { id: 'editor:toggle-italics',        label: 'Italique',              hotkeys: mod('i'),           run: fmt('italic') },
+      { id: 'editor:toggle-strikethrough',  label: 'Barré',                 hotkeys: mod('x', 'Shift'),  run: fmt('strike') },
+      { id: 'editor:toggle-code',           label: 'Code inline',           hotkeys: mod('e'),           run: fmt('code') },
+      { id: 'editor:toggle-highlight',      label: 'Surligner',             hotkeys: mod('h', 'Shift'),  run: fmt('highlight') },
+      { id: 'editor:insert-link',           label: 'Insérer un lien',       hotkeys: mod('k'),           run: fmt('link') },
+      { id: 'editor:toggle-numbered-list',  label: 'Liste numérotée',       hotkeys: mod('7', 'Shift'),  run: fmt('ol') },
+      { id: 'editor:toggle-bullet-list',    label: 'Liste à puces',         hotkeys: mod('8', 'Shift'),  run: fmt('ul') },
+      { id: 'editor:toggle-checklist',      label: 'Liste de tâches',       hotkeys: mod('9', 'Shift'),  run: fmt('tasklist') },
+      { id: 'editor:toggle-blockquote',     label: 'Citation',                                           run: fmt('blockquote') },
+      { id: 'editor:set-paragraph',         label: 'Texte normal',                                       run: fmt('paragraph') },
+      ...([1, 2, 3, 4, 5, 6] as const).map(n => ({
+        id: `editor:set-heading-${n}`, label: `Titre ${n}`, run: fmt(`h${n}`),
+      })),
+      { id: 'editor:insert-codeblock',      label: 'Bloc de code',                                       run: fmt('codeblock') },
+      { id: 'editor:insert-table',          label: 'Tableau',                                            run: fmt('table') },
+      { id: 'editor:insert-image',          label: 'Image',                                              run: fmt('image') },
+      { id: 'editor:insert-horizontal-rule', label: 'Séparateur',                                        run: fmt('hr') },
+      ...PLUME_COLORS.map(c => ({
+        id: `editor:highlight-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`,
+        run: on(v => toggleHighlight(v, c.color)),
+      })),
+      ...PLUME_COLORS.map(c => ({
+        id: `editor:text-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`,
+        run: on(v => setLineColor(v, c.color)),
+      })),
+      { id: 'editor:text-color-none',       label: 'Couleur du texte par défaut',                        run: on(v => setLineColor(v, null)) },
+    ]
+    for (const cmd of commands) this.pluginAPI.commands.register({ ...cmd, editor: true })
+  }
+
+  describeHotkey(commandId: string): string | null {
+    const hotkeys = this.pluginAPI.hotkeys
+    const first = hotkeys?.get(commandId)[0]
+    return first && hotkeys ? hotkeys.format(first) : null
   }
 
   async openFile(path: string): Promise<void> {
@@ -619,8 +724,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
   runToolbarCommand(id: string): void {
-    const cmd = this.pluginAPI.toolbar.getAll().find(c => c.id === id)
-    const ctx: EditorCommandContext = {}
+    const all = this.pluginAPI.toolbar.getAll()
+    const cmd = all.find(c => c.id === id) ?? all.flatMap(c => c.items ?? []).find(c => c.id === id)
+    const ctx: EditorCommandContext = { view: this.view }
     cmd?.run(ctx)
   }
 

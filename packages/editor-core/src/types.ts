@@ -13,7 +13,7 @@ export type EditorEvent =
   | 'pluginLoaded'
 
 export type MarkdownFormat =
-  | 'bold' | 'italic' | 'strike' | 'code'
+  | 'bold' | 'italic' | 'strike' | 'code' | 'highlight'
   | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
   | 'paragraph'
   | 'ul' | 'ol' | 'tasklist' | 'blockquote'
@@ -63,6 +63,8 @@ export interface EditorController {
   insertText(text: string): void
   /** Returns the list of scoped plugins active for this note (loaded from extension or frontmatter). */
   getActivePlugins(): ActivePluginInfo[]
+  /** Raccourci en vigueur d'une commande, pret a afficher (« Ctrl+B »), ou null. */
+  describeHotkey?(commandId: string): string | null
 }
 
 import type { Extension } from '@codemirror/state'

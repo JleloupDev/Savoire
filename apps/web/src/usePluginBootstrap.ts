@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import type { MutableRefObject } from 'react'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import { STORE_CATALOG, type PluginLoadContext } from './pluginStore'
-import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI } from '@savoire/plugin-api'
+import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI, PluginCommand } from '@savoire/plugin-api'
 import {
   BlockRegistryImpl,
   CommandRegistryImpl,
@@ -45,6 +45,9 @@ interface PluginBootstrapOptions {
    * Holds the full EditorAreaRefs bag, assembled from vault refs + plugin refs returned here.
    */
   editorAreaRefsHolder: MutableRefObject<EditorAreaRefs | null>
+  /** Commandes de l'application (nouvelle note, ouverture rapide...), avec
+   *  leurs raccourcis : enregistrees avant les plugins. */
+  appCommands?: PluginCommand[]
 }
 
 export interface PluginBootstrapResult {
@@ -83,6 +86,7 @@ export function usePluginBootstrap({
   managerRef,
   vaultBrowserRefs,
   editorAreaRefsHolder,
+  appCommands = [],
 }: PluginBootstrapOptions): PluginBootstrapResult {
   const pluginAPIRef = useRef<IEditorHostAPI | null>(null)
   const pluginLoaderRef = useRef(new PluginLoader())
@@ -112,6 +116,16 @@ export function usePluginBootstrap({
     if (!api) return false
     return loadEntry(id, api)
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Moteur de raccourcis, hors editeur : l'editeur qui a le focus traite
+  // d'abord la touche (avec sa vue) ; ce qui reste arrive ici, sans vue.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      pluginAPIRef.current?.hotkeys?.handleKeyEvent(e, { editorView: null })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   const whenPluginsReady = useCallback(async () => {
@@ -237,6 +251,7 @@ export function usePluginBootstrap({
       // elle-meme (le type Markdown) n'appartient a aucun plugin, donc reste
       // toujours actif ; ce que chaque plugin enregistre porte son id.
       pluginApi.attachActivation(activationRef.current)
+      for (const cmd of appCommands) pluginApi.commands.register(cmd)
 
       // ContentIndexingService: wires hooks → contributors → storage.
       contentIndexingServiceRef.current = new ContentIndexingService(

@@ -11,7 +11,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
-import type { PluginManifest } from '@savoire/plugin-api'
+import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
 import { WorkspaceRoot } from '@savoire/workspace'
@@ -354,6 +354,15 @@ export function AppShell() {
     onOpenSharedNote: onOpenSharedNoteRef,
   }), [])
 
+  // Raccourcis de l'application : des commandes du moteur de raccourcis,
+  // comme celles des plugins. Le ref garde les gestionnaires a jour.
+  // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {} })
+  const appCommands = useMemo<PluginCommand[]>(() => [
+    { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
+    { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
+  ], [])
+
   const {
     onBeforeReady,
     pluginAPIRef,
@@ -373,6 +382,7 @@ export function AppShell() {
     managerRef,
     vaultBrowserRefs,
     editorAreaRefsHolder,
+    appCommands,
   })
 
   // ── Plugins : catalogue, installation, activation ──────────────────────────
@@ -850,22 +860,10 @@ export function AppShell() {
     }
   }, [])
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Ctrl+N is reserved by the browser (new window) and cannot be overridden.
-      // Ctrl+Alt+N is the standard alternative for "new file" in web editors.
-      if (e.ctrlKey && e.altKey && !e.shiftKey && e.key === 'n') {
-        e.preventDefault()
-        void handleNewNote()
-      }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'o') {
-        e.preventDefault()
-        setQuickOpenVisible(true)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleNewNote])
+  appActionsRef.current = {
+    newNote: () => void handleNewNote(),
+    quickOpen: () => setQuickOpenVisible(true),
+  }
 
   // ── Account ────────────────────────────────────────────────────────────────
 

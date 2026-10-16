@@ -43,11 +43,11 @@ export function createSearchPlugin(options: {
         },
       })
 
-      // Ctrl+Shift+F — ouvre le panneau et focus l'input.
-      // keybinding global géré dans l'app shell (Option A — voir TODO plugin API keybindings).
+      // Ctrl+Maj+F (Cmd+Maj+F sur Mac) : ouvre le panneau de recherche.
       api.commands.register({
         id: 'search:open',
         label: 'Rechercher dans le vault',
+        hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'f' }],
         run() {
           api.workspace.openPanel('search')
         },

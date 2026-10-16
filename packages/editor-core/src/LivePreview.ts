@@ -6,6 +6,9 @@
 import { EditorView, Decoration, DecorationSet, WidgetType, keymap, gutter, GutterMarker } from '@codemirror/view'
 import { StateField, StateEffect, EditorState, Range, Prec } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
+// Type des noeuds de l'arbre syntaxique (@lezer/common n'est pas une
+// dependance directe).
+type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolveInner']>
 
 // see ADR-005
 export const setRemoteCursorPositions = StateEffect.define<number[]>()
@@ -21,7 +24,9 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 })
 
 import { marked } from 'marked'
-import type { BlockRegistry, BlockContext, HookRegistry } from '@savoire/plugin-api'
+import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savoire/plugin-api'
+import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
+import { lineColorOf } from './FormattingService'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
@@ -134,6 +139,156 @@ class MarkdownWidget extends WidgetType {
   }
 }
 
+/** Une ligne rendue a part (liste, citation). Construite a la demande. */
+class LineWidget extends WidgetType {
+  constructor(private readonly key: string, private readonly build: () => HTMLElement) {
+    super()
+  }
+
+  eq(other: LineWidget): boolean {
+    return this.key === other.key
+  }
+
+  toDOM(): HTMLElement {
+    return this.build()
+  }
+
+  ignoreEvent(e: Event): boolean {
+    return e.type !== 'click' && e.type !== 'mousedown'
+  }
+}
+
+// ── Listes et citations, ligne par ligne ────────────────────────────────────
+//
+// Comme dans Obsidian : chaque ligne d'une liste ou d'une citation est rendue
+// a part, et seule la ligne du curseur passe en edition. Un plugin peut
+// fournir son propre rendu de ligne (BlockSpec.renderLine) ; sinon c'est le
+// rendu ci-dessous. Une liste qui contient un vrai bloc (code, tableau...)
+// reste rendue d'un seul tenant.
+
+const LINE_BLOCKS = new Set(['BulletList', 'OrderedList', 'Blockquote'])
+
+const NOT_LINE_RENDERABLE = new Set([
+  'FencedCode', 'CodeBlock', 'Table', 'HTMLBlock', 'HorizontalRule', 'LinkReference',
+  'ATXHeading1', 'ATXHeading2', 'ATXHeading3', 'ATXHeading4', 'ATXHeading5', 'ATXHeading6',
+  'SetextHeading1', 'SetextHeading2',
+])
+
+function containsAny(node: SyntaxNode, names: Set<string>, extra: string[]): boolean {
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (names.has(c.name) || extra.includes(c.name) || containsAny(c, names, extra)) return true
+  }
+  return false
+}
+
+function isLineRenderable(node: SyntaxNode): boolean {
+  const extra = node.name === 'Blockquote' ? ['BulletList', 'OrderedList'] : ['Blockquote']
+  return !containsAny(node, NOT_LINE_RENDERABLE, extra)
+}
+
+const LIST_ITEM_LINE_RE = /^(\s*)([-*+]|\d+[.)])(\s+)(?:\[([ xX])\]\s+)?(.*)$/
+const QUOTE_LINE_RE = /^\s*((?:>\s?)+)(.*)$/
+const BULLETS = ['•', '◦', '▪']
+
+/** Profondeur d'une ligne de liste : 0 au premier niveau. */
+function listDepth(state: EditorState, pos: number): number {
+  let depth = 0
+  for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
+    if (n.name === 'ListItem') depth++
+  }
+  return Math.max(0, depth - 1)
+}
+
+function inlineHtml(text: string, hooks?: HookRegistry): string {
+  const pre = hooks ? hooks.runBeforeParseSync(text) : text
+  return marked.parseInline(pre) as string
+}
+
+/** Rendu par defaut d'une ligne de liste ou de citation. */
+function renderCoreLine(text: string, depth: number, from: number, hooks?: HookRegistry, ctx?: BlockContext): HTMLElement {
+  const quote = QUOTE_LINE_RE.exec(text)
+  if (quote) {
+    const levels = (quote[1].match(/>/g) ?? []).length
+    const root = document.createElement('div')
+    root.className = 'vault-rendered-block vault-line-block'
+    let inner = root
+    for (let i = 0; i < levels; i++) {
+      const q = document.createElement('div')
+      q.className = 'vault-quote-line'
+      inner.appendChild(q)
+      inner = q
+    }
+    inner.innerHTML = inlineHtml(quote[2], hooks) || '&nbsp;'
+    return root
+  }
+
+  const div = document.createElement('div')
+  div.className = 'vault-rendered-block vault-line-block vault-list-line'
+  const item = LIST_ITEM_LINE_RE.exec(text)
+  if (!item) {
+    // Suite d'un element (texte sur plusieurs lignes) : aligne sur son texte.
+    div.style.paddingLeft = `${depth * 1.5 + 1.5}em`
+    div.innerHTML = inlineHtml(text.trim(), hooks)
+    return div
+  }
+  div.style.paddingLeft = `${depth * 1.5}em`
+  const [, indent, marker, space, task, body] = item
+  const mark = document.createElement('span')
+  mark.className = 'vault-list-marker'
+  if (task !== undefined) {
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    box.checked = task !== ' '
+    box.className = 'vault-task-checkbox'
+    const at = from + indent.length + marker.length + space.length + 1
+    box.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      ctx?.edit?.(at, at + 1, box.checked ? ' ' : 'x')
+    })
+    mark.appendChild(box)
+    if (box.checked) div.classList.add('vault-task-done')
+  } else {
+    mark.textContent = /\d/.test(marker) ? marker : BULLETS[depth % BULLETS.length]
+  }
+  const content = document.createElement('span')
+  content.className = 'vault-list-content'
+  content.innerHTML = inlineHtml(body, hooks)
+  div.append(mark, content)
+  return div
+}
+
+// ── Surlignage et couleur sur les lignes en edition ─────────────────────────
+
+const HIGHLIGHT_SPAN_RE = new RegExp(`==(?!=)(${COLOR_EMOJI_SOURCE})?([^\\n]*?[^\\s=]|)==(?!=)`, 'gu')
+const CODE_NODES = new Set(['FencedCode', 'CodeBlock', 'InlineCode', 'CodeText'])
+
+function inCode(state: EditorState, pos: number): boolean {
+  for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
+    if (CODE_NODES.has(n.name)) return true
+  }
+  return false
+}
+
+/** Montre surlignage et couleur sur le texte brut, marqueurs compris. */
+function rawLineMarks(state: EditorState, fromPos: number, out: Range<Decoration>[]): void {
+  for (let n = state.doc.lineAt(fromPos).number; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n)
+    const text = line.text
+    if (!text.includes('==') && !text.includes('`')) continue
+    if (inCode(state, line.from + (text.length - text.trimStart().length))) continue
+    for (const m of text.matchAll(HIGHLIGHT_SPAN_RE)) {
+      const start = line.from + (m.index ?? 0)
+      const color = m[1] ? colorOfEmoji(m[1]) : undefined
+      out.push(Decoration.mark({ class: color ? `plume-hl plume-hl-${color}` : 'plume-hl' }).range(start, start + m[0].length))
+    }
+    const c = lineColorOf(text)
+    if (c && line.from + c.to < line.to) {
+      out.push(Decoration.mark({ class: `plume-color-${c.color}` }).range(line.from + c.to, line.to))
+    }
+  }
+}
+
 function buildDecorations(
   state: EditorState,
   registry?: BlockRegistry,
@@ -174,11 +329,69 @@ function buildDecorations(
     }
   }
 
+  const detect = (text: string): { type: string; spec: BlockSpec } | null => {
+    if (!registry || !ctx) return null
+    const ids = getActiveScopeIds?.() ?? null
+    return registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text)
+  }
+
+  const renderBlockLines = (firstLine: number, lastLine: number, spec?: BlockSpec): void => {
+    const cursorLine = state.doc.lineAt(cursorFrom).number
+    for (let n = firstLine; n <= lastLine; n++) {
+      const line = state.doc.line(n)
+      if (!line.text.trim()) continue
+      const text = line.text
+      const indent = text.length - text.trimStart().length
+      const isQuote = /^\s*>/.test(text)
+      const depth = isQuote
+        ? Math.max(0, (/^\s*((?:>\s?)+)/.exec(text)![1].match(/>/g) ?? []).length - 1)
+        : listDepth(state, line.from + indent)
+      if (n === cursorLine) {
+        // La ligne en edition garde le retrait des lignes rendues : le
+        // tiret tombe a la place de la puce.
+        if (!isQuote) {
+          const pad = spec?.renderLine ? 2 * depth + 2 : depth * 1.5
+          decorations.push(Decoration.line({ attributes: { style: `padding-left: calc(${pad}em + 4px)` } }).range(line.from))
+        }
+        continue
+      }
+      if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      const from = line.from
+      const build = (): HTMLElement => {
+        try {
+          const el = spec?.renderLine?.({ text, depth, from }, ctx!)
+          if (el) return el
+        } catch (err) {
+          console.debug(`[LivePreview] plugin line render error (${spec?.type}):`, err)
+        }
+        return renderCoreLine(text, depth, from, hooks, ctx)
+      }
+      decorations.push(
+        Decoration.replace({ widget: new LineWidget(`${spec?.type ?? ''}|${depth}|${from}|${text}`, build), block: true })
+          .range(line.from, line.to),
+      )
+    }
+  }
+
   syntaxTree(state).iterate({
     enter(node) {
       if (!BLOCK_NODES.has(node.type.name)) return
       // Skip nodes inside collapsed frontmatter to avoid overlapping decorations
       if (fmDeco && node.from < fmEnd) return false
+
+      // Listes et citations : ligne par ligne, sauf si un plugin revendique
+      // le bloc sans savoir le rendre ligne par ligne (callout, par exemple).
+      if (LINE_BLOCKS.has(node.type.name) && isLineRenderable(node.node)) {
+        const detected = detect(state.doc.sliceString(node.from, node.to))
+        if (!detected || detected.spec.renderLine) {
+          renderBlockLines(
+            state.doc.lineAt(node.from).number,
+            state.doc.lineAt(Math.min(node.to, state.doc.length)).number,
+            detected?.spec,
+          )
+          return false
+        }
+      }
 
       // Cursor check — show raw text when editing this block.
       // For single-line blocks (@[[]], ![[]], callouts): raw only when cursor is on the same line.
@@ -261,6 +474,8 @@ function buildDecorations(
       return false
     },
   })
+
+  rawLineMarks(state, fmEnd, decorations)
 
   if (fmDeco) decorations.unshift(fmDeco)
 
@@ -462,6 +677,37 @@ export function createLivePreviewExtension(
       // marked wraps loose-list items in <p> — strip their margins.
       '.vault-rendered-block li > p': {
         margin: '0',
+      },
+      ...plumeColorTheme(),
+      // Lignes de liste et de citation rendues une a une.
+      '.vault-line-block': {
+        padding: '0 4px',
+        lineHeight: '1.5',
+      },
+      '.vault-list-line': {
+        display: 'flex',
+        alignItems: 'baseline',
+      },
+      '.vault-list-marker': {
+        flex: '0 0 auto',
+        minWidth: '1.5em',
+        color: 'var(--accent, #7c3aed)',
+        userSelect: 'none',
+      },
+      '.vault-task-checkbox': {
+        margin: '0 4px 0 0',
+        verticalAlign: 'middle',
+        accentColor: 'var(--accent, #7c3aed)',
+        cursor: 'pointer',
+      },
+      '.vault-task-done .vault-list-content': {
+        opacity: '0.6',
+        textDecoration: 'line-through',
+      },
+      '.vault-quote-line': {
+        borderLeft: '3px solid #7c3aed',
+        paddingLeft: '1em',
+        color: '#9ca3af',
       },
       '.vault-rendered-block blockquote': {
         borderLeft: '3px solid #7c3aed',

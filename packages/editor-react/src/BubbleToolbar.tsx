@@ -7,12 +7,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorContext } from './EditorContext'
+import { useCommandTitle } from './Toolbar'
 import type { ToolbarCommand } from '@savoire/plugin-api'
 
 export function BubbleToolbar() {
   const ctrl = useEditorContext()
   const [coords, setCoords] = useState<{ x: number; y: number } | null>(null)
   const [cmds, setCmds] = useState<ToolbarCommand[]>([])
+  // Menu deroulant ouvert (surlignage, couleur, titres...).
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const titleOf = useCommandTitle()
 
   const refresh = useCallback(() => {
     if (!ctrl) return
@@ -20,6 +24,7 @@ export function BubbleToolbar() {
     const text = ctrl.getSelectionText()
     const hasText = text.length > 0
     setCoords(hasText ? sel : null)
+    setOpenMenu(null)
     const allCmds = ctrl.getToolbarCommands()
     setCmds(allCmds.filter(c => !c.requiresSelection || hasText))
   }, [ctrl])
@@ -55,11 +60,47 @@ export function BubbleToolbar() {
         const prevGroup = i > 0 ? cmds[i - 1].group : cmd.group
         const showSep = i > 0 && prevGroup !== cmd.group
         return (
-          <span key={cmd.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <span key={cmd.id} style={{ display: 'flex', alignItems: 'center', gap: 2, position: 'relative' }}>
             {showSep && <span style={{ width: 1, height: 16, background: 'var(--border, #2f3745)', margin: '0 3px' }} />}
+            {openMenu === cmd.id && cmd.items && (
+              <span
+                style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 801, minWidth: 170,
+                  display: 'flex', flexDirection: 'column', padding: 4, gap: 1,
+                  background: 'var(--bg-elevated, #273147)',
+                  border: '1px solid var(--border, #2f3745)',
+                  borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                }}
+                onMouseDown={e => e.preventDefault()}
+              >
+                {cmd.items.map(sub => (
+                  <button
+                    key={sub.id}
+                    title={titleOf(sub)}
+                    data-testid="bubble-command"
+                    data-command-id={sub.id}
+                    onMouseDown={e => { e.preventDefault(); ctrl.runToolbarCommand(sub.id); setOpenMenu(null) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '3px 8px',
+                      background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer',
+                      color: 'var(--text-muted, #b2bfd6)', fontSize: '0.78rem', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ minWidth: 22, opacity: 0.75 }}>{sub.icon}</span>
+                    <span>{sub.label}</span>
+                  </button>
+                ))}
+              </span>
+            )}
             <button
-              title={cmd.label}
-              onMouseDown={e => { e.preventDefault(); ctrl.runToolbarCommand(cmd.id) }}
+              title={titleOf(cmd)}
+              data-testid="bubble-command"
+              data-command-id={cmd.id}
+              onMouseDown={e => {
+                e.preventDefault()
+                if (cmd.items?.length) { setOpenMenu(m => (m === cmd.id ? null : cmd.id)); return }
+                ctrl.runToolbarCommand(cmd.id)
+              }}
               style={{
                 padding: '2px 8px',
                 background: 'none',

@@ -13,6 +13,8 @@ export interface EditorPositionAPI {
 export interface EditorCommandContext {
   // opaque — passed from EditorCore to command handlers
   // plugins receive this but treat it as a black box
+  /** Editeur d'ou vient le clic, quand l'hote le connait. */
+  view?: unknown
 }
 
 export interface ToolbarCommand {
@@ -22,6 +24,9 @@ export interface ToolbarCommand {
   group?: string              // 'format' | 'insert' | 'action'
   requiresSelection?: boolean
   hotkeys?: Array<{ modifiers: string[]; key: string }>
+  /** Commande (registre des commandes) que ce bouton declenche aussi au
+   *  clavier : son raccourci s'affiche dans l'infobulle. */
+  commandId?: string
   /** Sous-commandes affichees dans un menu deroulant. Quand il est present,
    *  `run` sert de defaut (clic sur le bouton lui-meme). Permet a un plugin
    *  d'offrir un menu sans que la barre ne s'allonge indefiniment. */

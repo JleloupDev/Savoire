@@ -9,6 +9,9 @@ export interface BlockWidget {
 
 export interface BlockContext {
   editorView: unknown
+  /** Remplace un passage du document (cocher une case, par exemple), sans
+   *  passer par l'editeur. Absent ou sans effet en lecture seule. */
+  edit?(from: number, to: number, insert: string): void
 }
 
 /** Describes an entry in the slash command palette for this block type. */
@@ -21,6 +24,18 @@ export interface BlockTrigger {
   insert: string | ((ctx: { query: string }) => string)
 }
 
+/**
+ * Une ligne d'un bloc rendu ligne par ligne (voir BlockSpec.renderLine).
+ * Le texte est la ligne brute, indentation et marqueur compris.
+ */
+export interface BlockLine {
+  text: string
+  /** Profondeur d'imbrication : 0 pour un element de premier niveau. */
+  depth: number
+  /** Debut de la ligne dans le document : pour la modifier (case a cocher). */
+  from: number
+}
+
 export interface BlockSpec {
   type: string
   detect?: RegExp | ((text: string) => boolean)
@@ -28,6 +43,14 @@ export interface BlockSpec {
   deserialize(raw: string): unknown
   createEditorWidget(data: unknown, ctx: BlockContext): BlockWidget
   renderClient(data: unknown, ctx: BlockContext): HTMLElement
+  /**
+   * Rendu LIGNE PAR LIGNE, comme dans Obsidian. Quand il est fourni, chaque
+   * ligne du bloc est rendue a part et seule la ligne du curseur passe en
+   * edition (listes, citations). Sinon le bloc entier passe en edition des
+   * qu'on y entre (code, callout, diagramme). Rend null pour laisser une ligne
+   * telle quelle.
+   */
+  renderLine?(line: BlockLine, ctx: BlockContext): HTMLElement | null
   /** If defined, auto-registers slash command entries for this block. */
   trigger?: BlockTrigger | BlockTrigger[]
 }

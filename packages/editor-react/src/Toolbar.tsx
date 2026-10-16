@@ -52,8 +52,18 @@ function btnStyle(active = false): React.CSSProperties {
 
 // ── Bouton ────────────────────────────────────────────────────────────────────
 
+/** Libelle d'infobulle : avec le raccourci clavier en vigueur, s'il y en a un. */
+export function useCommandTitle(): (cmd: ToolbarCommand) => string {
+  const ctrl = useEditorContext()
+  return (cmd) => {
+    const hint = cmd.commandId ? ctrl?.describeHotkey?.(cmd.commandId) : null
+    return hint ? `${cmd.label} (${hint})` : cmd.label
+  }
+}
+
 function Btn({ cmd }: { cmd: ToolbarCommand }) {
   const ctrl = useEditorContext()
+  const titleOf = useCommandTitle()
   const [open, setOpen] = useState(false)
 
   function exec(target: ToolbarCommand) {
@@ -72,7 +82,7 @@ function Btn({ cmd }: { cmd: ToolbarCommand }) {
     return (
       <span style={{ position: 'relative', display: 'inline-flex' }}>
         <button
-          title={cmd.label}
+          title={titleOf(cmd)}
           data-testid="toolbar-command"
           data-command-id={cmd.id}
           onMouseDown={handleMouseDown}
@@ -96,7 +106,7 @@ function Btn({ cmd }: { cmd: ToolbarCommand }) {
                 key={sub.id}
                 data-testid="toolbar-command"
                 data-command-id={sub.id}
-                title={sub.label}
+                title={titleOf(sub)}
                 onMouseDown={() => { exec(sub); setOpen(false) }}
                 style={{ ...btnStyle(), justifyContent: 'flex-start', gap: 8, width: '100%', height: 24 }}
               >
@@ -112,7 +122,7 @@ function Btn({ cmd }: { cmd: ToolbarCommand }) {
 
   return (
     <button
-      title={cmd.label}
+      title={titleOf(cmd)}
       data-testid="toolbar-command"
       data-command-id={cmd.id}
       onMouseDown={handleMouseDown}

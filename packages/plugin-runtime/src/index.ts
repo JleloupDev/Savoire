@@ -4,6 +4,8 @@ export { PluginLoader } from './PluginLoader'
 export { PluginActivation } from './PluginActivation'
 export { PluginSandbox } from './PluginSandbox'
 export { PermissionFilteredAPI } from './PermissionFilteredAPI'
+export { HotkeyManager, detectPlatform, eventKey, formatHotkey } from './HotkeyManager'
+export type { HotkeyPlatform, HotkeyCommandSource } from './HotkeyManager'
 export type { PluginEntry } from './PluginLoader'
 export {
   BlockRegistryImpl,
