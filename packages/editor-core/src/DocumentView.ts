@@ -45,6 +45,14 @@ export interface DocumentViewOptions {
   userName?: string
   /** Donnees partagees du document, transmises aux vues de plugin. */
   shared?: import('@savoire/plugin-api').DocumentSharedData
+  /**
+   * Ouvre le texte partage du document (ISharedText). Appele seulement pour
+   * un type de plugin declare collaborationMode 'crdt' ; le resultat devient
+   * FileContext.text.
+   */
+  openText?: () => import('@savoire/plugin-api').ISharedText
+  /** Meme chose pour l'arbre partage (ISharedTree) : devient FileContext.tree. */
+  openTree?: () => import('@savoire/plugin-api').ISharedTree
 }
 
 /** Seul le Markdown est ouvert par l'editeur lui-meme ; tout autre type exige un plugin. */
@@ -98,6 +106,8 @@ export class DocumentView {
         userId: this.options.userId,
         userName: this.options.userName,
         shared: this.options.shared,
+        text: spec.collaborationMode === 'crdt' ? this.options.openText?.() : undefined,
+        tree: spec.collaborationMode === 'crdt' ? this.options.openTree?.() : undefined,
         vault: this.options.vault,
         readOnly: this.options.readOnly,
         onContentStabilized: spec.contentExtractor

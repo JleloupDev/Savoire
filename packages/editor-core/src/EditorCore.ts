@@ -16,6 +16,7 @@ import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
 import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
+import { imageInsertExtension, insertImageFiles } from './ImageInsert'
 
 // Detects a list item line: optional leading whitespace + bullet or ordered marker
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
@@ -249,7 +250,26 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         if (options.readOnly) return
         this.view.dispatch({ changes: { from, to, insert } })
       },
+      // Ligne qui porte un rendu de bloc : pour qu'un plugin y ecrive (taille d'une image).
+      locate: (el: HTMLElement) => {
+        if (options.readOnly) return null
+        try {
+          const line = this.view.state.doc.lineAt(this.view.posAtDOM(el))
+          return { from: line.from, to: line.to, text: line.text }
+        } catch {
+          return null
+        }
+      },
     }
+    // Images : coller, deposer, bouton Image. Le vault range le fichier,
+    // quel que soit le profil de synchro ; l'editeur n'insere que le lien.
+    const vault = options.vault
+    const uploadImage = vault?.uploadAttachment
+      ? async (file: File) => {
+          const path = await vault.uploadAttachment!(file)
+          return vault.linkTarget?.(path) ?? path
+        }
+      : null
 
     let lastCursorLine = -1
 
@@ -276,6 +296,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               ]),
             ]
         ),
+        ...(uploadImage ? [imageInsertExtension(uploadImage)] : []),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
@@ -727,6 +748,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       selection: { anchor: from + insert.length },
     })
     this.view.focus()
+  }
+
+  /** Envoie des images et insere leurs liens au curseur (meme chemin que coller/deposer). */
+  async insertImageFiles(files: File[]): Promise<void> {
+    await insertImageFiles(this.view, files, this.view.state.selection.main.head)
   }
 
   insertText(text: string): void {

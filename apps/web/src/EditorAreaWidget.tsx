@@ -225,6 +225,9 @@ function DocumentPanelHost({
       userName: refs.activeAccount.current?.displayName,
       // Cartes partagees propres a ce document, par la session (voir ISharedMap).
       shared: session ? { openMap: (name: string) => session.openSharedMap(`doc/${doc.id}/${name}`) } : undefined,
+      // Texte partage d'un type 'crdt' : celui du document ouvert juste au-dessus.
+      openText: session && crdt ? () => session.openText(doc.id) : undefined,
+      openTree: session && crdt ? () => session.openTree(doc.id) : undefined,
       onFileContentStabilized: (docId, path, shadowMarkdown) => {
         void refs.contentIndexingService.current?.indexNow(docId, path, shadowMarkdown)
       },
@@ -258,26 +261,21 @@ function DocumentPanelHost({
     }
   }, [doc.id, doc.path, refs, userId, vaultId, modeTick, remountKey])
 
+  // Images deposees : l'editeur (Plume) les prend lui-meme, au point de
+  // depot. Ici, seulement ce qui tombe a cote du texte (barre, marge) : meme
+  // chemin d'envoi, insere au curseur. Sans cela le navigateur ouvrirait le
+  // fichier a la place de l'application.
   const handleDrop = useCallback(async (e: React.DragEvent) => {
-    const vault = refs.vaultAPI.current
+    if (e.nativeEvent.defaultPrevented) return
     const ctrl = viewRef.current?.controller
-    if (!vault?.uploadAttachment || !ctrl) return
-
-    e.preventDefault()
     const files = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.split('.').at(-1)?.toLowerCase() ?? ''
       return IMAGE_EXTS.has(ext)
     })
-
-    for (const file of files) {
-      try {
-        const path = await vault.uploadAttachment(file)
-        ctrl.insertText(`![[${path}]]`)
-      } catch (err) {
-        console.error('[EditorArea] image upload error', err)
-      }
-    }
-  }, [refs])
+    if (files.length === 0) return
+    e.preventDefault()
+    await ctrl?.insertImageFiles?.(files)
+  }, [])
 
   const isMarkdown = (doc.path.split('.').pop()?.toLowerCase() ?? '') === 'md'
 

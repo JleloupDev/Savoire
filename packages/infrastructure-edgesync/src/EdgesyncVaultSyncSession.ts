@@ -10,7 +10,7 @@
 // YjsCrdtAdapter, ce qui est precisement ce que le port exige. Un connecteur
 // automerge-repo n'aurait pas cette gymnastique a faire : c'est son `Repo` qui
 // produit le document, donc il implementerait openDocument() directement.
-import type { ICRDT } from '@savoire/plugin-api'
+import type { ICRDT, ISharedText, ISharedTree } from '@savoire/plugin-api'
 import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory, IVaultFiles } from '@savoire/platform'
 import type { IVaultSyncSession, IKeyManagedVaultSession } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
@@ -94,6 +94,18 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     ytext.insert(ytext.length, text)
   }
 
+  openText(docId: string): ISharedText {
+    const open = this.crdts.get(docId)
+    if (!open) throw new Error(`openText : le document ${docId} n'est pas ouvert`)
+    return open.sharedText()
+  }
+
+  openTree(docId: string): ISharedTree {
+    const open = this.crdts.get(docId)
+    if (!open) throw new Error(`openTree : le document ${docId} n'est pas ouvert`)
+    return open.sharedTree()
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return 'connected'
   }
@@ -124,7 +136,7 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
 
   readonly files: IVaultFiles = {
     upload: async () => { throw notPorted('pieces jointes') },
-    url: () => '',
+    url: async () => { throw notPorted('pieces jointes') },
     read: async () => { throw notPorted('pieces jointes') },
   }
 

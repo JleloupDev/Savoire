@@ -61,6 +61,8 @@ export interface EditorController {
   runToolbarCommand(id: string): void
   /** Insert text at the current cursor position and focus the editor. */
   insertText(text: string): void
+  /** Envoie des images au vault et insere leurs liens `![[...]]` au curseur. */
+  insertImageFiles?(files: File[]): Promise<void>
   /** Returns the list of scoped plugins active for this note (loaded from extension or frontmatter). */
   getActivePlugins(): ActivePluginInfo[]
   /** Raccourci en vigueur d'une commande, pret a afficher (« Ctrl+B »), ou null. */

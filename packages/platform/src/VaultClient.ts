@@ -18,6 +18,7 @@
  */
 import type { VaultAPI } from '@savoire/plugin-api'
 import { documentSyncKind, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
+import { ATTACHMENTS_DIR, linkTargetFor, resolveLinkPath, uniqueAttachmentPath } from './attachments'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
@@ -91,9 +92,11 @@ export class VaultClient implements VaultAPI {
     const doc = this._resolveDocumentByPath(path)
     if (this.session) {
       // Une piece jointe est inscrite au repertoire, mais son contenu est un fichier.
-      if (path.startsWith('attachments/')) return this.session.files.read(attachmentStoragePath(path))
-      if (doc) return this.session.readDocument(doc.id, this.syncKindOf(doc.path))
-      return this.session.files.read(attachmentStoragePath(path))
+      if (path.startsWith(ATTACHMENTS_DIR) || !doc) {
+        const files = this.session.files
+        return this.withAttachment(path, key => files.read(key))
+      }
+      return this.session.readDocument(doc.id, this.syncKindOf(doc.path))
     }
     if (doc) {
       const ext = path.split('.').at(-1) ?? ''
@@ -196,22 +199,66 @@ export class VaultClient implements VaultAPI {
     }
   }
 
+  /**
+   * Envoie une piece jointe, comme Obsidian : elle va dans `attachments/`
+   * sous son nom d'origine (« Nom 1.png » si « Nom.png » est pris). Les
+   * octets sont ranges sous l'id du document : le nom reste renommable.
+   * Rend le chemin du document cree.
+   */
   async uploadAttachment(file: File): Promise<string> {
-    const { storagePath } = this.session
-      ? await this.session.files.upload(file)
-      : await this.storage.uploadAttachment(this.vaultId, file, this.token)
-    const docPath = `attachments/${storagePath}`
-    // Register the attachment as a CRDT directory entry (emits a local vault op).
+    if (!this.session) {
+      // Document partage isole : ancien chemin, nom genere par le serveur.
+      const { storagePath } = await this.storage.uploadAttachment(this.vaultId, file, this.token)
+      return `${ATTACHMENTS_DIR}${storagePath}`
+    }
+    const path = uniqueAttachmentPath(file.name, p => !!this._findDocumentByPath(p))
     const id = crypto.randomUUID()
-    await this.session?.registerDocuments([id])
-    this.addDocument({ id, path: docPath })
-    return docPath
+    await this.session.registerDocuments([id])
+    await this.session.files.upload(id, file)
+    // Le document n'apparait qu'une fois les octets en place.
+    this.addDocument({ id, path })
+    return path
   }
 
-  resolveAttachmentUrl(path: string): string {
-    const storagePath = attachmentStoragePath(path)
-    if (this.session) return this.session.files.url(storagePath)
-    return this.storage.resolveFileUrl(this.vaultId, storagePath)
+  /** Texte a mettre dans `![[...]]` : le nom seul s'il est unique, sinon le chemin. */
+  linkTarget(path: string): string {
+    return linkTargetFor(path, this.directory.getAll().map(d => d.path))
+  }
+
+  /** URL affichable d'une piece jointe, designee par son chemin ou son seul nom. */
+  async resolveAttachmentUrl(path: string): Promise<string> {
+    if (this.session) {
+      const files = this.session.files
+      return this.withAttachment(path, key => files.url(key))
+    }
+    const doc = this.resolveLinkDocument(path)
+    return this.storage.resolveFileUrl(this.vaultId, attachmentStoragePath(doc?.path ?? path))
+  }
+
+  /**
+   * Applique `op` a la piece jointe designee par `target` : d'abord sous l'id
+   * de son document, puis sous son ancien nom de stockage (pieces jointes
+   * d'avant le rangement par id, nommees `attachments/<guid>.png`).
+   */
+  private async withAttachment<T>(target: string, op: (key: string) => Promise<T>): Promise<T> {
+    const doc = this.resolveLinkDocument(target)
+    if (!doc) return op(attachmentStoragePath(target))
+    try {
+      return await op(doc.id)
+    } catch (err) {
+      const legacy = attachmentStoragePath(doc.path)
+      if (legacy === doc.path || legacy.includes('/')) throw err
+      return op(legacy)
+    }
+  }
+
+  /** Document vise par un lien : chemin exact, ou resolution par nom (Obsidian). */
+  private resolveLinkDocument(target: string): IDocumentMeta | undefined {
+    const exact = this._findDocumentByPath(target)
+    if (exact) return exact
+    const all = this.directory.getAll()
+    const path = resolveLinkPath(target, all.map(d => d.path))
+    return path ? all.find(d => d.path === path) : undefined
   }
 
   async renameDocument(documentId: string, newPath: string): Promise<void> {
@@ -242,5 +289,5 @@ export class VaultClient implements VaultAPI {
 
 /** Chemin de stockage d'une piece jointe : son chemin sans le prefixe `attachments/`. */
 function attachmentStoragePath(path: string): string {
-  return path.startsWith('attachments/') ? path.slice('attachments/'.length) : path
+  return path.startsWith(ATTACHMENTS_DIR) ? path.slice(ATTACHMENTS_DIR.length) : path
 }

@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useEffect, useState, useRef } from 'react'
 import type { ViewContext, VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
+import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
+import { createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
 
 // ─── FileTree component ───────────────────────────────────────────────────
 
@@ -14,11 +16,7 @@ interface FileTreeProps {
   readFileTypes?: () => FileTypeSpec[]
 }
 
-interface FileNode {
-  name: string
-  path: string
-  isDir: boolean
-}
+type FileNode = TreeNode
 
 function isDerivedDoc(path: string): boolean {
   return path.endsWith('.derived.md')
@@ -29,17 +27,23 @@ function displayName(name: string, fileTypes: FileTypeSpec[]): string {
   return spec ? name.slice(0, -(spec.extension.length + 1)) : name
 }
 
+/** Dossier dont la ligne montre les enfants : le dossier, ou celui de la note. */
+function folderPathOf(node: FileNode): string | undefined {
+  if (node.kind === 'folder') return node.path
+  if (node.kind === 'folderNote') return node.folderPath
+  return undefined
+}
+
+/** Nom de fichier de la ligne (extension comprise), ou undefined pour un dossier. */
+function fileNameOf(node: FileNode): string | undefined {
+  if (node.kind === 'file') return node.name
+  if (node.kind === 'folderNote') return node.fileName
+  return undefined
+}
+
 async function buildTree(vault: VaultAPI, dir: string): Promise<FileNode[]> {
   const entries = await vault.list(dir)
-  return entries
-    .filter(entry => !isDerivedDoc(entry))
-    .map(entry => {
-      const isDir = entry.endsWith('/')
-      const name = isDir
-        ? (entry.slice(0, -1).split('/').at(-1) ?? entry)
-        : (entry.split('/').at(-1) ?? entry)
-      return { name, path: entry, isDir }
-    })
+  return groupEntries(entries.filter(entry => !isDerivedDoc(entry)))
 }
 
 // ─── Row ─────────────────────────────────────────────────────────────────
@@ -73,11 +77,14 @@ function FileNodeRow({
   const [editValue, setEditValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
   const indent = depth * 12
+  const folderPath = folderPathOf(node)
+  const fileName = fileNameOf(node)
+  const isPlainFolder = node.kind === 'folder'
 
   useEffect(() => {
-    if (!expanded || !node.isDir) return
-    buildTree(vault, node.path).then(setChildren).catch(() => setChildren([]))
-  }, [expanded, node, vault, childTick])
+    if (!expanded || !folderPath) return
+    buildTree(vault, folderPath).then(setChildren).catch(() => setChildren([]))
+  }, [expanded, node, folderPath, vault, childTick])
 
   useEffect(() => {
     if (isEditing) {
@@ -86,17 +93,26 @@ function FileNodeRow({
     }
   }, [isEditing])
 
+  // Un dossier se deplie au clic ; un fichier ou une note de dossier s'ouvre.
   const handleClick = () => {
-    if (node.isDir) setExpanded(prev => !prev)
+    if (isPlainFolder) setExpanded(prev => !prev)
     else onOpenFile(node.path)
   }
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!confirm(`Supprimer "${node.name}" ?`)) return
+    const what = node.kind === 'folder' ? `le dossier "${node.name}" et tout son contenu` : `"${node.name}"`
+    if (!confirm(`Supprimer ${what} ?`)) return
     try {
-      if (node.isDir) await vault.deleteFolder?.(node.path)
+      // Un dossier part avec ses documents (avant, seule l'entree du dossier
+      // etait retiree : rien ne changeait a l'ecran).
+      if (node.kind === 'folder') await deleteFolderDeep(vault, node.path)
       else {
+        // Note de dossier : on demande pour les sous-pages. Sinon le dossier
+        // reste et redevient un dossier simple.
+        if (node.kind === 'folderNote' && confirm(`Supprimer aussi les sous-pages de "${node.name}" ?\n(Annuler : les garder dans le dossier)`)) {
+          await deleteFolderDeep(vault, node.folderPath)
+        }
         const docId = vault.resolveDocumentId(node.path)
         if (!docId) throw new Error(`Document not found: ${node.path}`)
         await vault.deleteFile?.(docId)
@@ -105,17 +121,30 @@ function FileNodeRow({
     } catch (err) { alert(String(err)) }
   }
 
+  /** Renomme la ligne vers un nouveau chemin (fichier) ou un nouveau dossier. */
+  async function renameTo(target: string) {
+    if (node.kind === 'folder') {
+      const to = target.endsWith('/') ? target : target + '/'
+      if (to === node.path) return
+      await moveFolder(vault, node.path, to)
+      return
+    }
+    // Sans extension, on garde celle du fichier (une page reste une page).
+    const normalized = lastSegment(target).includes('.') ? target : `${target}.${extensionOf(node.path) || 'md'}`
+    if (normalized === node.path) return
+    // Fichier ou note de dossier : le dossier frere suit s'il existe.
+    await moveNote(vault, node.path, normalized)
+  }
+
   async function handleRename(e: React.MouseEvent) {
     e.stopPropagation()
-    if (node.isDir || !vault.renameFile) return
-    const next = prompt('Nouveau chemin du document', node.path)
+    if (!vault.renameFile) return
+    const label = isPlainFolder ? 'Nouveau chemin du dossier' : 'Nouveau chemin du document'
+    const next = prompt(label, node.path)
     const trimmed = next?.trim()
     if (!trimmed || trimmed === node.path) return
     try {
-      const docId = vault.resolveDocumentId(node.path)
-      if (!docId) throw new Error(`Document not found: ${node.path}`)
-      const renamedPath = trimmed.includes('.') ? trimmed : `${trimmed}.md`
-      await vault.renameFile(docId, renamedPath)
+      await renameTo(trimmed)
       onRenamed()
     } catch (err) { alert(String(err)) }
   }
@@ -123,18 +152,22 @@ function FileNodeRow({
   async function handleRenameInline(newName: string) {
     const trimmed = newName.trim()
     setIsEditing(false)
-    if (!trimmed || trimmed === node.name || node.isDir || !vault.renameFile) return
-    const dir = node.path.includes('/')
-      ? node.path.slice(0, node.path.lastIndexOf('/') + 1)
-      : ''
-    const normalized = trimmed.includes('.') ? trimmed : `${trimmed}.md`
-    const newPath = dir + normalized
-    if (newPath === node.path) return
+    const current = fileName ?? node.name
+    if (!trimmed || trimmed === current || !vault.renameFile) return
     try {
-      const docId = vault.resolveDocumentId(node.path)
-      if (!docId) throw new Error(`Document not found: ${node.path}`)
-      await vault.renameFile(docId, newPath)
+      await renameTo(parentOf(node.path) + trimmed)
       onRenamed()
+    } catch (err) { alert(String(err)) }
+  }
+
+  async function handleNewSubPage(e: React.MouseEvent) {
+    e.stopPropagation()
+    try {
+      const path = await createSubPage(vault, node.path, fileTypes)
+      setExpanded(true)
+      setChildTick(t => t + 1)
+      onRenamed()
+      onOpenFile(path)
     } catch (err) { alert(String(err)) }
   }
 
@@ -145,17 +178,15 @@ function FileNodeRow({
     setIsDragOver(false)
     const dragged = draggedRef.current
     draggedRef.current = null
-    if (!dragged || dragged.isDir || !vault.renameFile) return
-    // Ne pas déplacer dans le même dossier
-    const currentFolder = dragged.path.includes('/')
-      ? dragged.path.slice(0, dragged.path.lastIndexOf('/') + 1)
-      : ''
-    if (currentFolder === node.path) return
-    const docId = vault.resolveDocumentId(dragged.path)
-    if (!docId) return
-    const newPath = node.path + dragged.name
+    if (!dragged || !folderPath || dragged.kind === 'folder' || !vault.renameFile) return
+    // Ne pas deplacer dans le meme dossier, ni une note dans son propre dossier.
+    if (parentOf(dragged.path) === folderPath) return
+    if (dragged.path === node.path) return
+    if (dragged.kind === 'folderNote' && (folderPath === dragged.folderPath || isInside(folderPath, dragged.folderPath))) return
+    const draggedFileName = fileNameOf(dragged)!
     try {
-      await vault.renameFile(docId, newPath)
+      // Une note de dossier emmene son dossier.
+      await moveNote(vault, dragged.path, folderPath + draggedFileName)
       onRenamed()
     } catch (err) { alert(String(err)) }
   }
@@ -169,26 +200,35 @@ function FileNodeRow({
     borderRadius: 3,
   }
 
+  const fileIcon = fileName ? (fileTypes.find(s => fileName.endsWith('.' + s.extension))?.icon ?? '·') : ''
+  const hoverBtn: React.CSSProperties = {
+    opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
+    cursor: 'pointer', fontSize: 10, padding: '0 3px', flexShrink: 0,
+    transition: 'opacity 0.1s',
+  }
+
   return (
     <div>
       <div
-        data-testid={node.isDir ? 'tree-folder' : 'tree-file'}
+        data-testid={isPlainFolder ? 'tree-folder' : 'tree-file'}
         data-path={node.path}
         data-name={node.name}
+        data-folder={folderPath}
+        data-folder-note={node.kind === 'folderNote' ? 'true' : undefined}
         style={rowStyle}
-        draggable={!node.isDir}
+        draggable={!isPlainFolder}
         onDragStart={e => {
           draggedRef.current = node
           // Also broadcast for dockview layout drop (drag to split editor)
-          if (!node.isDir) {
+          if (!isPlainFolder) {
             e.dataTransfer.setData('text/x-poc-file-path', node.path)
             e.dataTransfer.effectAllowed = 'link'
           }
         }}
         onDragEnd={() => { draggedRef.current = null }}
-        onDragOver={node.isDir ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
-        onDragLeave={node.isDir ? () => setIsDragOver(false) : undefined}
-        onDrop={node.isDir ? (e) => void handleDrop(e) : undefined}
+        onDragOver={folderPath ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
+        onDragLeave={folderPath ? () => setIsDragOver(false) : undefined}
+        onDrop={folderPath ? (e) => void handleDrop(e) : undefined}
         onMouseEnter={e => {
           ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'
           const buttons = (e.currentTarget as HTMLElement).querySelectorAll('.del-btn, .ren-btn, .add-btn')
@@ -201,7 +241,16 @@ function FileNodeRow({
         }}
       >
         <span onClick={handleClick} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          {node.isDir ? (expanded ? '▾' : '▸') : (fileTypes.find(s => node.name.endsWith('.' + s.extension))?.icon ?? '·')}
+          {node.kind === 'folderNote' && (
+            // Chevron a part : il deplie sans ouvrir la note.
+            <span
+              data-testid="tree-toggle"
+              onClick={e => { e.stopPropagation(); setExpanded(prev => !prev) }}
+              style={{ width: 10, flexShrink: 0 }}
+              title={expanded ? 'Replier' : 'Deplier'}
+            >{expanded ? '▾' : '▸'}</span>
+          )}
+          {isPlainFolder ? (expanded ? '▾' : '▸') : fileIcon}
           {isEditing ? (
             <input
               ref={editInputRef}
@@ -223,43 +272,45 @@ function FileNodeRow({
             <span
               style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               onDoubleClick={e => {
-                if (node.isDir || !vault.renameFile) return
+                if (!vault.renameFile) return
                 e.stopPropagation()
-                setEditValue(node.name)
+                setEditValue(fileName ?? node.name)
                 setIsEditing(true)
               }}
             >
-              {displayName(node.name, fileTypes)}
+              {node.kind === 'folderNote' ? node.name : displayName(node.name, fileTypes)}
             </span>
           )}
         </span>
-        {node.isDir && onCreateInside && (
+        {isPlainFolder && onCreateInside && (
           <>
             <button
               className="add-btn"
               onClick={e => { e.stopPropagation(); onCreateInside('file', node.path) }}
-              style={{
-                opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
-                cursor: 'pointer', fontSize: 10, padding: '0 3px', flexShrink: 0,
-                transition: 'opacity 0.1s',
-              }}
+              style={hoverBtn}
               title="Nouvelle note dans ce dossier"
             >+note</button>
             <button
               className="add-btn"
               onClick={e => { e.stopPropagation(); onCreateInside('folder', node.path) }}
-              style={{
-                opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
-                cursor: 'pointer', fontSize: 10, padding: '0 3px', flexShrink: 0,
-                transition: 'opacity 0.1s',
-              }}
+              style={hoverBtn}
               title="Nouveau dossier dans ce dossier"
             >+dir</button>
           </>
         )}
+        {!isPlainFolder && vault.createFile && stemOf(node.path) && (
+          <button
+            className="add-btn"
+            data-testid="tree-new-subpage"
+            onClick={e => void handleNewSubPage(e)}
+            style={hoverBtn}
+            title="Nouvelle sous-page"
+          >+sous</button>
+        )}
         {(vault.deleteFile ?? vault.deleteFolder) && (
           <button
             className="del-btn"
+            data-testid="tree-delete"
             onClick={handleDelete}
             style={{
               opacity: 0, background: 'none', border: 'none', color: 'var(--color-danger, #f66)',
@@ -269,9 +320,10 @@ function FileNodeRow({
             title="Supprimer"
           >✕</button>
         )}
-        {!node.isDir && vault.renameFile && (
+        {vault.renameFile && (
           <button
             className="ren-btn"
+            data-testid="tree-rename"
             onClick={handleRename}
             style={{
               opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
@@ -282,7 +334,7 @@ function FileNodeRow({
           >✎</button>
         )}
       </div>
-      {node.isDir && expanded && (
+      {folderPath && expanded && (
         children.map(c => (
           <FileNodeRow
             key={c.path}
@@ -344,15 +396,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
     try {
       if (creating === 'file') {
         const normalized = p.includes('.') ? p : `${p}.${selectedExtension}`
-        await vault.createFile?.(normalized)
-        const spec = fileTypes.find(s => s.extension === selectedExtension && s.creatable !== false)
-        if (spec) {
-          const initialContent = await spec.create()
-          if (initialContent) {
-            const docId = vault.resolveDocumentId(normalized)
-            if (docId) await vault.write(docId, initialContent)
-          }
-        }
+        await createDocument(vault, normalized, fileTypes)
         setCreating(null); setNewPath(''); setTick(t => t + 1)
         onOpenFile(normalized)
       } else {

@@ -24,7 +24,8 @@ export class WorkspaceService implements IWorkspaceAPI {
       deleteFile: (documentId: string) => getClient()?.deleteFile?.(documentId) ?? Promise.resolve(),
       deleteFolder: (path: string) => getClient()?.deleteFolder?.(path) ?? Promise.resolve(),
       uploadAttachment: (file: File) => getClient()?.uploadAttachment?.(file) ?? Promise.reject(new Error('No active vault')),
-      resolveAttachmentUrl: (path: string) => getClient()?.resolveAttachmentUrl?.(path) ?? '',
+      resolveAttachmentUrl: (path: string) => getClient()?.resolveAttachmentUrl?.(path) ?? Promise.reject(new Error('No active vault')),
+      linkTarget: (path: string) => getClient()?.linkTarget?.(path) ?? path,
     }
   }
 }

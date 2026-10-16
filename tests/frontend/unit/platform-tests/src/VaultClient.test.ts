@@ -156,9 +156,9 @@ describe('renameFile()', () => {
 })
 
 describe('resolveAttachmentUrl()', () => {
-  it('delegates to IVaultStorage.resolveFileUrl', () => {
+  it('delegates to IVaultStorage.resolveFileUrl', async () => {
     const client = makeClient(makeFetcher({}))
-    expect(client.resolveAttachmentUrl('img.png')).toBe('/attachments/img.png')
+    expect(await client.resolveAttachmentUrl('img.png')).toBe('/attachments/img.png')
   })
 })
 

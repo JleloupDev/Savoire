@@ -8,7 +8,7 @@
 // Les verrous sont une capacite optionnelle : ils ne sont pas testes ici.
 import { describe, it, expect, afterEach } from 'vitest'
 import type { IVaultSyncSession } from '@savoire/application'
-import type { ICRDT } from '@savoire/plugin-api'
+import type { ChangeOrigin, ICRDT, ITreeElement, ITreeText, TextDelta, TreeChangeInfo, TreeElementInit } from '@savoire/plugin-api'
 
 export interface VaultSyncSessionHarness {
   /** Ouvre une session sur le vault partage du test, comme un nouveau pair. */
@@ -276,16 +276,215 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
       })
     })
 
+    describe('texte partage (ISharedText)', () => {
+      type Seen = { delta: TextDelta; origin: ChangeOrigin }[]
+      const record = (seen: Seen) => (delta: TextDelta, origin: ChangeOrigin) => { seen.push({ delta, origin }) }
+
+      it('un pair ecrit, l\'autre recoit un delta distant et converge', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        a.openDocument('d1')
+        b.openDocument('d1')
+        const textA = a.openText('d1')
+        const textB = b.openText('d1')
+        await harness.settle()
+        const seen: Seen = []
+        textB.onChange(record(seen))
+        textA.insert(0, 'bonjour')
+        await harness.settle()
+        expect(textB.toString()).toBe('bonjour')
+        expect(textB.length).toBe(7)
+        expect(seen).toEqual([{ delta: [{ insert: 'bonjour' }], origin: 'remote' }])
+        expect(await b.readDocument('d1', 'crdt')).toBe('bonjour')
+      })
+
+      it('des ecritures concurrentes des deux cotes convergent', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        a.openDocument('d1')
+        b.openDocument('d1')
+        const textA = a.openText('d1')
+        const textB = b.openText('d1')
+        textA.insert(0, 'abc')
+        await harness.settle()
+        textA.applyDelta([{ retain: 1 }, { insert: 'X' }])
+        textB.applyDelta([{ retain: 2 }, { delete: 1 }, { insert: 'Y' }])
+        await harness.settle()
+        expect(textA.toString()).toBe(textB.toString())
+        expect(textA.toString()).toContain('X')
+        expect(textA.toString()).toContain('Y')
+        expect(textA.toString()).not.toContain('c')
+      })
+
+      it('ses propres ecritures arrivent en local, celles de l\'editeur aussi', async () => {
+        const a = await open('alice')
+        const crdt = a.openDocument('d1')
+        const text = a.openText('d1')
+        await harness.settle()
+        const seen: Seen = []
+        text.onChange(record(seen))
+        text.insert(0, 'ab')
+        text.delete(0, 1)
+        harness.insertText(crdt, 1, 'c')
+        expect(seen).toEqual([
+          { delta: [{ insert: 'ab' }], origin: 'local' },
+          { delta: [{ delete: 1 }], origin: 'local' },
+          { delta: [{ retain: 1 }, { insert: 'c' }], origin: 'local' },
+        ])
+        expect(text.toString()).toBe('bc')
+      })
+
+      it('le contenu deja present arrive en distant apres l\'ouverture', async () => {
+        const a = await open('alice')
+        harness.insertText(a.openDocument('d1'), 0, 'deja la')
+        await harness.settle()
+        const b = await open('bob')
+        b.openDocument('d1')
+        const text = b.openText('d1')
+        // Regle du port : vide a l'ouverture, l'etat arrive ensuite.
+        expect(text.toString()).toBe('')
+        const seen: Seen = []
+        text.onChange(record(seen))
+        await harness.settle()
+        expect(text.toString()).toBe('deja la')
+        expect(seen.length).toBeGreaterThan(0)
+        expect(seen.every(s => s.origin === 'remote')).toBe(true)
+      })
+
+      it('openText est idempotent et refuse un document qui n\'est pas ouvert', async () => {
+        const a = await open('alice')
+        expect(() => a.openText('jamais-ouvert')).toThrow('pas ouvert')
+        a.openDocument('d1')
+        expect(a.openText('d1')).toBe(a.openText('d1'))
+      })
+    })
+
+    describe('arbre partage (ISharedTree)', () => {
+      const page: TreeElementInit = { kind: 'element', name: 'doc', children: [
+        { kind: 'element', name: 'paragraph', children: [{ kind: 'text', delta: [{ insert: 'abc' }] }] },
+      ] }
+
+      it('un pair ecrit, l\'autre recoit un lot distant et converge', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        a.openDocument('d1')
+        b.openDocument('d1')
+        const treeA = a.openTree('d1')
+        const treeB = b.openTree('d1')
+        await harness.settle()
+        const seen: TreeChangeInfo[] = []
+        treeB.onChange((_c, info) => { seen.push(info) })
+        treeA.root.set('doc', page)
+        await harness.settle()
+        expect(treeB.root.toJSON()).toEqual(treeA.root.toJSON())
+        expect((treeB.root.get('doc') as ITreeElement).id).toBe((treeA.root.get('doc') as ITreeElement).id)
+        expect(seen).toEqual([{ origin: 'remote' }])
+      })
+
+      it('des ecritures concurrentes dans l\'arbre convergent', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        a.openDocument('d1')
+        b.openDocument('d1')
+        const treeA = a.openTree('d1')
+        const treeB = b.openTree('d1')
+        treeA.root.set('doc', page)
+        await harness.settle()
+        const docA = treeA.root.get('doc') as ITreeElement
+        const docB = treeB.root.get('doc') as ITreeElement
+        ;((docA.get(0) as ITreeElement).get(0) as ITreeText).insert(1, 'X')
+        ;((docB.get(0) as ITreeElement).get(0) as ITreeText).format(0, 3, { bold: true })
+        docA.push([{ kind: 'element', name: 'paragraph' }])
+        docB.insert(0, [{ kind: 'element', name: 'heading', attributes: { level: 1 } }])
+        treeA.root.set('a', 1)
+        treeB.root.set('b', 2)
+        await harness.settle()
+        expect(treeA.root.toJSON()).toEqual(treeB.root.toJSON())
+        expect(docA.length).toBe(3)
+        expect(treeA.root.keys().sort()).toEqual(['a', 'b', 'doc'])
+      })
+
+      it('ses propres ecritures arrivent en local, avec l\'etiquette', async () => {
+        const a = await open('alice')
+        a.openDocument('d1')
+        const tree = a.openTree('d1')
+        await harness.settle()
+        const seen: TreeChangeInfo[] = []
+        tree.onChange((_c, info) => { seen.push(info) })
+        tree.root.set('x', 1)
+        tree.transact(() => { tree.root.set('y', 2); tree.root.set('z', 3) }, 'miroir')
+        expect(seen).toEqual([{ origin: 'local' }, { origin: 'local', tag: 'miroir' }])
+      })
+
+      it('l\'etat deja present arrive en distant apres l\'ouverture', async () => {
+        const a = await open('alice')
+        a.openDocument('d1')
+        a.openTree('d1').root.set('doc', page)
+        await harness.settle()
+        const b = await open('bob')
+        b.openDocument('d1')
+        const tree = b.openTree('d1')
+        // Regle du port : vide a l'ouverture, l'etat arrive ensuite.
+        expect(tree.root.size).toBe(0)
+        const seen: TreeChangeInfo[] = []
+        tree.onChange((_c, info) => { seen.push(info) })
+        await harness.settle()
+        expect((tree.root.get('doc') as ITreeElement).toJSON()).toEqual({
+          name: 'doc', attributes: {}, children: [{ name: 'paragraph', attributes: {}, children: ['abc'] }],
+        })
+        expect(seen.length).toBeGreaterThan(0)
+        expect(seen.every(s => s.origin === 'remote')).toBe(true)
+      })
+
+      it('openTree est idempotent, refuse un document ferme, et ne touche pas au texte', async () => {
+        const a = await open('alice')
+        expect(() => a.openTree('jamais-ouvert')).toThrow('pas ouvert')
+        a.openDocument('d1')
+        expect(a.openTree('d1')).toBe(a.openTree('d1'))
+        a.openTree('d1').root.set('k', 'v')
+        expect(a.openText('d1').toString()).toBe('')
+      })
+    })
+
     describe('pieces jointes', () => {
+      // Les octets sont ranges sous l'id du document ; le nom lisible vit
+      // dans le repertoire. Aucune hypothese sur un serveur.
       it('un fichier envoye par un pair se lit et s\'affiche chez l\'autre', async () => {
         const a = await open('alice')
         const b = await open('bob')
-        const { fileName, storagePath } = await a.files.upload(new File(['contenu'], 'notes.txt', { type: 'text/plain' }))
+        await a.files.upload('f1', new File(['contenu'], 'notes.txt', { type: 'text/plain' }))
         await harness.settle()
-        expect(fileName).toBe('notes.txt')
-        expect(a.files.url(storagePath)).not.toBe('')
-        expect(b.files.url(storagePath)).not.toBe('')
-        expect(await b.files.read(storagePath)).toBe('contenu')
+        expect(await a.files.url('f1')).not.toBe('')
+        expect(await b.files.url('f1')).not.toBe('')
+        expect(await b.files.read('f1')).toBe('contenu')
+      })
+
+      it('une image deposee garde son nom lisible chez l\'autre pair', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'Mon image.png', { type: 'image/png' })
+        await a.registerDocuments(['img1'])
+        await a.files.upload('img1', png)
+        a.directory.add({ id: 'img1', path: 'attachments/Mon image.png' })
+        await harness.settle()
+        expect(b.directory.getById('img1')?.path).toBe('attachments/Mon image.png')
+        expect(await b.files.url('img1')).toMatch(/^(blob:|https?:|data:)/)
+      })
+
+      it('un pair arrive apres l\'envoi obtient aussi le fichier', async () => {
+        const a = await open('alice')
+        await a.files.upload('f2', new File(['tard'], 'tard.txt', { type: 'text/plain' }))
+        await harness.settle()
+        const b = await open('bob')
+        await harness.settle()
+        expect(await b.files.read('f2')).toBe('tard')
+        expect(await b.files.url('f2')).not.toBe('')
+      })
+
+      it('un fichier inconnu est refuse, pas une URL vide', async () => {
+        const a = await open('alice')
+        await expect(a.files.url('inconnu')).rejects.toThrow()
+        await expect(a.files.read('inconnu')).rejects.toThrow()
       })
     })
 

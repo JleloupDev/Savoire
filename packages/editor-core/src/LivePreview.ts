@@ -42,6 +42,9 @@ const BLOCK_NODES = new Set([
   'Table',
 ])
 
+/** Ligne faite d'une seule integration `![[...]]`. */
+const EMBED_LINE_RE = /^\s*!\[\[[^\]]+\]\]\s*$/
+
 // see ADR-005
 const HEADING_LINE_CLASSES: Partial<Record<string, string>> = {
   'ATXHeading1': 'vault-h1-live',
@@ -316,8 +319,20 @@ function buildDecorations(
       const line = state.doc.line(n)
       if (n === cursorLine) continue
       if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      const lineText = state.doc.sliceString(line.from, line.to)
+      // Une ligne d'integration seule (une image `![[x.png]]` collee entre
+      // deux lignes de texte) garde le rendu de son plugin.
+      const own = EMBED_LINE_RE.test(lineText) ? detect(lineText) : null
+      if (own) {
+        try {
+          const el = own.spec.renderClient(own.spec.deserialize(lineText), ctx!)
+          decorations.push(Decoration.replace({ widget: new PluginWidget(el, lineText), block: true }).range(line.from, line.to))
+          continue
+        } catch (err) {
+          console.debug(`[LivePreview] plugin render error (${own.type}):`, err)
+        }
+      }
       try {
-        const lineText = state.doc.sliceString(line.from, line.to)
         const preprocessed = hooks ? hooks.runBeforeParseSync(lineText) : lineText
         const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(

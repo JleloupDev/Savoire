@@ -26,6 +26,11 @@ export default defineConfig({
       '@savoire/plugin-chat': src('plugin-chat'),
       '@savoire/plugin-plaintext': src('plugin-plaintext'),
       '@savoire/plugin-backlinks': src('plugin-backlinks'),
+      '@savoire/plugin-outline': src('plugin-outline'),
+      // Avant '@savoire/plugin-page' : un alias vise aussi ses sous-chemins.
+      '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
+      '@savoire/plugin-page': src('plugin-page'),
+      '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
     },
   },
   test: {

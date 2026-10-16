@@ -72,6 +72,15 @@ export interface HotkeyAPI {
   fromEvent(event: HotkeyEvent): Hotkey | null
   /** Une association a change (personnalisation, chargement). */
   onChange(cb: () => void): () => void
+  /**
+   * Passe une touche au moteur. Un plugin qui a sa propre zone d'edition
+   * DOIT y faire passer toutes ses touches (keydown) : il ne gere jamais ses
+   * raccourcis lui-meme, il declare des commandes. Vrai si une commande a
+   * pris la touche (l'evenement est alors annule). Les touches qui
+   * n'ecrivent rien (Tab, Entree, fleches...) peuvent etre liees seules ;
+   * une lettre seule, jamais.
+   */
+  handleKeyEvent(event: HotkeyEvent, context: PluginCommandContext): boolean
 }
 
 /** Evenement clavier, au sens minimal : un KeyboardEvent du DOM convient. */
@@ -88,12 +97,8 @@ export interface HotkeyEvent {
 }
 
 /** Cote hote : l'application et l'editeur branchent le clavier ici. */
+/** Cote hote : l'application charge les personnalisations. */
 export interface HotkeyHost extends HotkeyAPI {
-  /**
-   * Execute la commande liee a cette touche. Vrai si une commande l'a prise :
-   * l'evenement est alors annule (preventDefault).
-   */
-  handleKeyEvent(event: HotkeyEvent, context: PluginCommandContext): boolean
   /** Charge des personnalisations sauvegardees (remplace les precedentes). */
   loadCustom(custom: Record<string, Hotkey[]>): void
 }

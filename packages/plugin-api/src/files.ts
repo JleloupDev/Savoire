@@ -5,6 +5,7 @@ import type { VaultAPI } from './vault'
 import type { ContentExtractor } from './indexing'
 import type { DocumentSharedData } from './sharedMap'
 import type { ISharedText } from './sharedText'
+import type { ISharedTree } from './sharedTree'
 
 export interface FileContext {
   vaultId: string
@@ -24,6 +25,13 @@ export interface FileContext {
    * session de vault. Voir ISharedText.
    */
   text?: ISharedText
+  /**
+   * Arbre partage du document (JSON structure : cartes, listes, textes
+   * riches, elements), pour un type declare 'crdt'. Meme document que
+   * `text`, autre racine : un plugin choisit l'un ou l'autre. Absent pour
+   * les autres types, ou sans session de vault. Voir ISharedTree.
+   */
+  tree?: ISharedTree
   /** VaultAPI injected so the plugin can read/write without depending on an internal import. */
   vault?: VaultAPI
   /** Vue ouverte en lecture seule (ACL, ou verrou detenu par quelqu'un d'autre). */

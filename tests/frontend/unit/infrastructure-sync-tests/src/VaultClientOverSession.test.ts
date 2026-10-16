@@ -109,8 +109,40 @@ describe('VaultClient sur une session de vault', () => {
     const path = await alice.client.uploadAttachment(new File(['abc'], 'a.txt', { type: 'text/plain' }))
     await settle()
     expect(path.startsWith('attachments/')).toBe(true)
-    expect(bob.client.resolveAttachmentUrl(path)).not.toBe('')
+    expect(await bob.client.resolveAttachmentUrl(path)).not.toBe('')
     expect(await bob.client.readDocumentByPath(path)).toBe('abc')
+  })
+
+  it('une image garde son nom d\'origine, suffixe en cas de collision, et se resout par son nom chez l\'autre pair', async () => {
+    const alice = await peer('alice')
+    const bob = await peer('bob')
+    const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'Photo.png', { type: 'image/png' })
+    const first = await alice.client.uploadAttachment(png())
+    const second = await alice.client.uploadAttachment(png())
+    await settle()
+    expect(first).toBe('attachments/Photo.png')
+    expect(second).toBe('attachments/Photo 1.png')
+    // Nom unique dans le vault : le lien se contente du nom, comme Obsidian.
+    expect(bob.client.linkTarget(second)).toBe('Photo 1.png')
+    expect(await bob.client.resolveAttachmentUrl('Photo 1.png')).toMatch(/^blob:/)
+    expect(await bob.client.resolveAttachmentUrl('attachments/Photo.png')).toMatch(/^blob:/)
+  })
+
+  it('renommer une image ne la casse pas : les octets suivent l\'id du document', async () => {
+    const alice = await peer('alice')
+    const bob = await peer('bob')
+    const path = await alice.client.uploadAttachment(new File(['img'], 'Avant.png', { type: 'image/png' }))
+    const id = alice.client.resolveDocumentId(path)!
+    await alice.client.renameFile(id, 'attachments/Apres.png')
+    await settle()
+    expect(await bob.client.readDocumentByPath('Apres.png')).toBe('img')
+  })
+
+  it('un nom present dans deux dossiers se lie par son chemin', async () => {
+    const alice = await peer('alice')
+    alice.client.addDocument({ id: 'x', path: 'autre/Photo.png' })
+    const path = await alice.client.uploadAttachment(new File(['p'], 'Photo.png', { type: 'image/png' }))
+    expect(alice.client.linkTarget(path)).toBe('attachments/Photo.png')
   })
 
 })

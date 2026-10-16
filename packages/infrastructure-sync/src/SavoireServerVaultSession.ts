@@ -11,8 +11,8 @@
 //
 // Tous les chemins reseau du contenu du vault partent d'ici : hub du vault,
 // hub des documents CRDT, rooms des documents snapshot, REST des pieces jointes.
-import type { DocumentRoomPresence, ICRDT, IIdentityProvider } from '@savoire/plugin-api'
-import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory, IVaultFiles } from '@savoire/platform'
+import type { DocumentRoomPresence, ICRDT, IIdentityProvider, ISharedText, ISharedTree } from '@savoire/plugin-api'
+import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory } from '@savoire/platform'
 import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IVaultSharing } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { YMapIndexChannel } from './YMapIndexChannel'
@@ -24,6 +24,7 @@ import { VaultHubClient } from './VaultHubClient'
 import { DocumentRoomClient, type JoinedDocumentRoom } from './DocumentRoomClient'
 import { CrdtDocumentFetcher } from './CrdtDocumentFetcher'
 import { RestVaultStorage } from './RestVaultStorage'
+import { ServerVaultFiles } from './ServerVaultFiles'
 import { HttpSharingBackend } from './HttpSharingBackend'
 import { SnapshotDocuments, type SnapshotChannel } from './SnapshotDocuments'
 
@@ -48,7 +49,7 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   private readonly snapshots: SnapshotDocuments
   /** Lecture ponctuelle des documents CRDT non ouverts. Cree a la premiere lecture. */
   private fetcher: CrdtDocumentFetcher | undefined
-  readonly files: IVaultFiles
+  readonly files: ServerVaultFiles
   /** Partage arbitre par le serveur (permissions et liens). */
   readonly sharing: IVaultSharing
 
@@ -69,11 +70,7 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
 
     const storage = new RestVaultStorage({ baseUrl: opts.serverUrl })
     const token = (): string => opts.getToken() ?? opts.token
-    this.files = {
-      upload: (file) => storage.uploadAttachment(opts.vaultId, file, token()),
-      url: (storagePath) => storage.resolveFileUrl(opts.vaultId, storagePath),
-      read: (storagePath) => storage.readFile(opts.vaultId, storagePath, token()),
-    }
+    this.files = new ServerVaultFiles(storage, opts.vaultId, token)
     this.sharing = new HttpSharingBackend(opts.serverUrl ?? '')
   }
 
@@ -199,6 +196,18 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     ytext.insert(ytext.length, text)
   }
 
+  openText(docId: string): ISharedText {
+    const open = this.docs.get(docId)
+    if (!open) throw new Error(`openText : le document ${docId} n'est pas ouvert`)
+    return open.crdt.sharedText()
+  }
+
+  openTree(docId: string): ISharedTree {
+    const open = this.docs.get(docId)
+    if (!open) throw new Error(`openTree : le document ${docId} n'est pas ouvert`)
+    return open.crdt.sharedTree()
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     // Le hub du vault porte le repertoire ; l'etat d'un document suit le sien.
     return this.hub.isConnected ? 'connected' : 'disconnected'
@@ -208,6 +217,7 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     this.unsubDirectory()
     for (const docId of [...this.docs.keys()]) this.closeDocument(docId)
     this.snapshots.dispose()
+    this.files.dispose()
     await this.fetcher?.dispose()
     for (const channel of this.indexes.values()) channel.dispose()
     this.indexes.clear()

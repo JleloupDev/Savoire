@@ -2,15 +2,16 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // plugin-chat — des discussions dans le vault, entre ses membres.
 //
-// Une discussion est un document .chat. Ses messages vivent dans une carte
-// partagee du document (ctx.shared), un CRDT ouvert par la session du vault :
-// en direct, sans perte quand deux personnes ecrivent en meme temps, avec ou
-// sans serveur. Pas de verrou : chacun ecrit quand il veut.
+// Une discussion est un document .chat. Ses messages vivent dans le CRDT du
+// document lui-meme (ctx.tree, voir messages.ts) : en direct, sans perte
+// quand deux personnes ecrivent en meme temps, avec ou sans serveur. Pas de
+// verrou : chacun ecrit quand il veut. Les messages ecrits avant, dans une
+// carte du vault a cote du document (ctx.shared), restent lisibles.
 
 import type { FileContext, FileView, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
-import { postMessage, readMessages, type ChatMessage } from './messages'
+import { mergedMessageMap, postMessage, readMessages, treeMessageMap, type ChatMessage } from './messages'
 
-export { postMessage, readMessages, type ChatMessage } from './messages'
+export { postMessage, readMessages, treeMessageMap, mergedMessageMap, type ChatMessage } from './messages'
 
 const MUTED = 'font-size:12px;color:var(--text-muted,#a6adc8)'
 
@@ -19,7 +20,9 @@ function createChatView(path: string, ctx: FileContext): FileView {
   let unsub: (() => void) | null = null
   let readOnly = !!ctx.readOnly
   const me = { id: ctx.userId ?? 'anonyme', name: ctx.userName ?? ctx.userId ?? 'Anonyme' }
-  const map = ctx.shared?.openMap('messages')
+  const legacy = ctx.shared?.openMap('messages')
+  const inDoc = ctx.tree ? treeMessageMap(ctx.tree) : undefined
+  const map = inDoc && legacy ? mergedMessageMap(inDoc, legacy) : inDoc ?? legacy
 
   function render(): void {
     if (!container) return
@@ -121,7 +124,7 @@ const plugin: VaultPlugin = {
       extension: 'chat',
       label: 'Discussion',
       icon: '💬',
-      // Les messages vivent dans une carte CRDT : edition simultanee, sans verrou.
+      // Les messages vivent dans le CRDT du document : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
       create: async () => '',
       open: (path: string, ctx: FileContext) => createChatView(path, ctx),

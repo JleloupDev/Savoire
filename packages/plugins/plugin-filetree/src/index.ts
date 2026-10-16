@@ -58,3 +58,5 @@ const plugin = createFileTreePlugin()
 export default plugin
 export { FileTreeWidget } from './FileTreeWidget'
 export { FileTree } from './FileTreeWidget'
+export * from './folderNotes'
+export { collectFolder, moveFolder, moveNote, deleteFolderDeep, createDocument, createSubPage } from './folderOps'

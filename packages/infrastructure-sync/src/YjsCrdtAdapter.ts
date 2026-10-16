@@ -13,6 +13,8 @@ import type { Extension } from '@codemirror/state'
 import type { ICRDT } from '@savoire/plugin-api'
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 import { YjsCollaborativeText } from './YjsCollaborativeText'
+import { YjsSharedText } from './YjsSharedText'
+import { YjsSharedTree } from './YjsSharedTree'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain for advanced APIs. Cast once; runtime behaviour is validated
@@ -37,6 +39,8 @@ export class YjsCrdtAdapter implements ICRDT {
   private readonly ydoc: ReturnType<typeof Y_.Doc>
   private readonly ytext: ReturnType<typeof Y_.Text>
   private readonly awareness: Awareness
+  private text: YjsSharedText | undefined
+  private tree: YjsSharedTree | undefined
 
   constructor() {
     this.ydoc = new Y_.Doc()
@@ -50,6 +54,24 @@ export class YjsCrdtAdapter implements ICRDT {
    */
   get rawDoc(): unknown {
     return this.ydoc
+  }
+
+  /**
+   * Le texte du document, vu par le contrat ISharedText des plugins (sans
+   * Yjs). Meme Y.Text que l'editeur. Cree au premier appel, puis le meme.
+   */
+  sharedText(): YjsSharedText {
+    this.text ??= new YjsSharedText(this.ytext)
+    return this.text
+  }
+
+  /**
+   * Le document vu comme un arbre JSON (contrat ISharedTree des plugins).
+   * Meme Y.Doc, racine separee du texte. Cree au premier appel, puis le meme.
+   */
+  sharedTree(): YjsSharedTree {
+    this.tree ??= new YjsSharedTree(this.ydoc)
+    return this.tree
   }
 
   setLocalUser(cursorId: string): void {
@@ -128,6 +150,7 @@ export class YjsCrdtAdapter implements ICRDT {
   }
 
   dispose(): void {
+    this.text?.dispose()
     removeAwarenessStates(this.awareness, [this.ydoc.clientID], 'local')
     this.awareness.destroy()
     this.ydoc.destroy()

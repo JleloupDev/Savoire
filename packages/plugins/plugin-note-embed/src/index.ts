@@ -2,6 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { marked } from 'marked'
+import { renderImageEmbed } from './image'
+
+export { parseImageEmbed, withImageWidth, applyImageSize, renderImageEmbed } from './image'
+export type { ImageEmbed } from './image'
 
 const FULL_EMBED_RE = /^\s*!\[\[([^\]]+)\]\]\s*$/
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
@@ -81,12 +85,15 @@ const plugin: VaultPlugin = {
             mount(el: HTMLElement) {
               container = el
               el.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;overflow:auto;padding:24px;box-sizing:border-box'
-              const url = api.vault.resolveAttachmentUrl?.(path) ?? ''
               const img = document.createElement('img')
-              img.src = url
               img.alt = path.split('/').at(-1) ?? path
-              img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;border-radius:6px'
+              // Jamais deformee : contenue dans la vue, ratio garde.
+              img.style.cssText = 'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:6px'
               el.appendChild(img)
+              void api.vault.resolveAttachmentUrl?.(path).then(
+                url => { img.src = url },
+                () => { el.textContent = `⚠ Image introuvable : ${path}` },
+              )
             },
             destroy() {
               if (container) container.innerHTML = ''
@@ -136,14 +143,7 @@ const plugin: VaultPlugin = {
         }
 
         const ext = targetPath.split('.').at(-1)?.toLowerCase() ?? ''
-        if (IMAGE_EXTS.has(ext)) {
-          const url = api.vault.resolveAttachmentUrl?.(targetPath) ?? ''
-          const img = document.createElement('img')
-          img.src = url
-          img.alt = targetPath.split('/').at(-1) ?? targetPath
-          img.style.cssText = 'max-width:100%;border-radius:4px;display:block'
-          return img
-        }
+        if (IMAGE_EXTS.has(ext)) return renderImageEmbed(raw, api.vault, ctx)
 
         // DECISION: reuse cached elements per (editorInstance, targetPath).
         // PluginWidget.eq() returns true when the embed text is unchanged, causing

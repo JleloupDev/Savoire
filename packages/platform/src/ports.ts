@@ -106,14 +106,28 @@ export interface ISnapshotDocument {
   onPresence(cb: (userId: string, presence: DocumentRoomPresence) => void): () => void
 }
 
-/** Fichiers binaires du vault (pieces jointes : images, PDF). */
+/**
+ * Fichiers binaires du vault (pieces jointes : images, PDF).
+ *
+ * Un fichier est range sous un IDENTIFIANT, celui de son document dans le
+ * repertoire. Son nom affiche (`attachments/Mon image.png`) vit dans le
+ * repertoire, pas ici : il reste libre, lisible et renommable sans toucher
+ * aux octets. Le nommage, l'insertion et la taille sont l'affaire de
+ * l'application ; le port ne fait que stocker et rendre.
+ *
+ * Anciennes pieces jointes : rangees sous leur nom de stockage
+ * (`<guid>.png`). `url` et `read` acceptent aussi ce nom.
+ */
 export interface IVaultFiles {
-  /** Stocke le fichier ; rend son chemin de stockage, relatif a `attachments/`. */
-  upload(file: File): Promise<{ fileName: string; storagePath: string }>
-  /** URL affichable tout de suite (balise <img>). Chaine vide si inconnue. */
-  url(storagePath: string): string
-  /** Contenu texte d'un fichier qui n'est pas un document du repertoire. */
-  read(storagePath: string): Promise<string>
+  /** Stocke (ou remplace) le fichier sous `fileId`, et le rend lisible aux autres pairs. */
+  upload(fileId: string, file: Blob): Promise<void>
+  /**
+   * URL affichable (balise <img>), apres une lecture autorisee : une URL
+   * blob: le plus souvent. Rejette si le fichier est introuvable.
+   */
+  url(fileId: string): Promise<string>
+  /** Contenu texte du fichier. Rejette s'il est introuvable. */
+  read(fileId: string): Promise<string>
 }
 
 /**

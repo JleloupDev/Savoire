@@ -6,6 +6,7 @@
 
 import { EditorView } from '@codemirror/view'
 import type { MarkdownFormat } from './types'
+import { pickAndInsertImages } from './ImageInsert'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, emojiOf, type PlumeColor } from './PlumeMarkdown'
 
 export function toggleMarkdownFormat(view: EditorView, format: MarkdownFormat): void {
@@ -250,16 +251,10 @@ function insertTable(view: EditorView): void {
   insertBlock(view, '| Colonne 1 | Colonne 2 |\n| --- | --- |\n|  |  |\n', 2)
 }
 
+// Le bouton et la commande Image passent par le meme chemin que coller et
+// deposer : choix du fichier, envoi au vault, puis `![[Nom.png]]`.
 function insertImage(view: EditorView): void {
-  const { from, to } = view.state.selection.main
-  const selected = view.state.doc.sliceString(from, to)
-  const alt = selected || 'description'
-  const insert = `![${alt}](url)`
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: from + alt.length + 4, head: from + insert.length - 1 },
-  })
-  view.focus()
+  pickAndInsertImages(view)
 }
 
 // ─── Surlignage et couleur du texte (syntaxe Obsidian, voir PlumeMarkdown) ──

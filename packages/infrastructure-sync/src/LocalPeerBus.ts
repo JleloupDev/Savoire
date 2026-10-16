@@ -24,7 +24,8 @@ export type LocalPeerPayload =
   | { t: 'snapshot-open'; docId: string }
   | { t: 'snapshot'; docId: string; content: string; stamp: SnapshotStamp }
   | { t: 'presence'; docId: string; presence: DocumentRoomPresence }
-  | { t: 'file'; storagePath: string; fileName: string; type: string; bytes: Uint8Array }
+  | { t: 'file-open'; fileId: string }
+  | { t: 'file'; fileId: string; type: string; bytes: Uint8Array }
 
 export type LocalPeerMessage = LocalPeerPayload & {
   vaultId: string

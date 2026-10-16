@@ -77,6 +77,28 @@ export class RestVaultStorage implements IVaultStorage {
     return { fileName: dto.fileName, storagePath: dto.path }
   }
 
+  /** Range un fichier sous l'id de son document (POST .../attachments/{fileId}). */
+  async putAttachment(vaultId: string, fileId: string, file: Blob, token: string): Promise<void> {
+    const form = new FormData()
+    // Le serveur controle l'extension : le nom d'origine la porte.
+    form.append('file', file, file instanceof File ? file.name : fileId)
+    const res = await this.fetchFn(
+      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(fileId)}`),
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form },
+    )
+    if (!res.ok) throw new Error(`${res.status}`)
+  }
+
+  /** Lit une piece jointe en requete authentifiee (une <img> ne sait pas porter le jeton). */
+  async fetchAttachment(vaultId: string, path: string, token: string): Promise<Blob> {
+    const res = await this.fetchFn(
+      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(path)}`),
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) throw new Error(`${res.status}`)
+    return res.blob()
+  }
+
   private resolve(path: string): string {
     return this.baseUrl ? `${this.baseUrl}${path}` : path
   }

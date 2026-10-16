@@ -139,6 +139,32 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-chat')).default,
   },
   {
+    id: 'plugin-outline', preinstalled: false,
+    manifest: {
+      id: 'plugin-outline',
+      name: 'Plans',
+      version: '0.0.1',
+      description: 'Des plans à la Workflowy : listes imbriquées, pliage, zoom (fichiers .outline)',
+      scope: 'vault',
+      permissions: ['ui:editor'],
+    },
+    extensions: ['outline'],
+    load: async () => (await import('@savoire/plugin-outline')).default,
+  },
+  {
+    id: 'plugin-page', preinstalled: false,
+    manifest: {
+      id: 'plugin-page',
+      name: 'Pages',
+      version: '0.0.1',
+      description: 'Des pages facon Notion : blocs, menu /, sous-pages (fichiers .page)',
+      scope: 'vault',
+      permissions: ['ui:editor'],
+    },
+    extensions: ['page'],
+    load: async () => (await import('@savoire/plugin-page')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

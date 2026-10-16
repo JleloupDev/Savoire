@@ -429,11 +429,11 @@ public sealed class CrossCuttingTests
     [Fact(DisplayName = "Architecture — les Controllers dépendent de IMediator")]
     public void Api_Controllers_DependOn_IMediator()
     {
-        // AttachmentsController injecte IContentStore directement (uploads/downloads binaires).
+        // AttachmentsController passe maintenant par MediatR (controle d'acces
+        // au vault) : plus d'exception.
         var result = Types.InAssembly(Assemblies.Api)
             .That().Inherit(typeof(Microsoft.AspNetCore.Mvc.ControllerBase))
             .And().AreNotAbstract()
-            .And().DoNotHaveNameEndingWith("AttachmentsController")
             .Should().HaveDependencyOn("MediatR")
             .GetResult();
         Assert.True(result.IsSuccessful, Helpers.Format(result));

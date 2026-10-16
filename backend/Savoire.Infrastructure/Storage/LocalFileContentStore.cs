@@ -42,6 +42,9 @@ public class LocalFileContentStore(string storageRoot) : IContentStore
         return storagePath;
     }
 
+    public Task PutAttachmentAsync(string vaultId, string storagePath, Stream content, CancellationToken ct = default)
+        => WriteAtomicAsync(AttachPath(vaultId, storagePath), content, ct);
+
     public Task DeleteAttachmentAsync(string vaultId, string storagePath, CancellationToken ct = default)
     {
         string path = AttachPath(vaultId, storagePath);

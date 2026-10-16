@@ -48,6 +48,13 @@ public class AzureBlobContentStore(
         return storagePath;
     }
 
+    public async Task PutAttachmentAsync(
+        string vaultId, string storagePath, Stream content, CancellationToken ct = default)
+    {
+        var blob = _container.GetBlobClient(AttachBlobName(vaultId, storagePath));
+        await blob.UploadAsync(content, overwrite: true, cancellationToken: ct);
+    }
+
     public async Task DeleteAttachmentAsync(
         string vaultId, string storagePath, CancellationToken ct = default)
     {

@@ -93,8 +93,12 @@ const LABELS: Record<Physical, string> = { Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'OS', 'CapsLock'])
 
 /** Touche qui peut servir de raccourci : avec Ctrl, Alt ou Cmd, ou F1-F12. */
+// Touches qui n'ecrivent rien : elles peuvent servir seules (Tab dans un
+// plan, Entree...). Une lettre seule, elle, sert toujours a ecrire.
+const NON_PRINTING = /^(?:F\d{1,2}|Tab|Enter|Backspace|Delete|Escape|Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/
+
 function isCommandKey(e: Pick<HotkeyEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
-  return e.ctrlKey || e.metaKey || e.altKey || /^F\d{1,2}$/.test(e.key)
+  return e.ctrlKey || e.metaKey || e.altKey || NON_PRINTING.test(e.key)
 }
 
 /** Raccourci d'une touche pressee ; 'Mod' remplace Ctrl (ou Cmd sur Mac). */
@@ -194,7 +198,7 @@ export class HotkeyManager implements HotkeyHost {
     if (event.defaultPrevented) return false
     // AltGr (Ctrl+Alt sous Windows) sert a taper des caracteres : @, #, {...
     if (event.getModifierState?.('AltGraph')) return false
-    // Une touche seule (sans Ctrl, Alt ni Cmd) sert a ecrire, sauf F1-F12.
+    // Une lettre seule (sans Ctrl, Alt ni Cmd) sert a ecrire : jamais prise.
     if (!isCommandKey(event)) return false
     for (const cmd of this.commands.getAll()) {
       if (!this.get(cmd.id).some(h => matches(h, event, this.platform))) continue

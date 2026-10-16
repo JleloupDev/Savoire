@@ -9,5 +9,7 @@ public interface IContentStore
 {
     Task<Stream?> ReadAttachmentAsync(string vaultId, string storagePath, CancellationToken ct = default);
     Task<string> WriteAttachmentAsync(string vaultId, string filename, Stream content, CancellationToken ct = default);
+    /// <summary>Ecrit (ou remplace) une piece jointe sous un chemin de stockage choisi par l'appelant.</summary>
+    Task PutAttachmentAsync(string vaultId, string storagePath, Stream content, CancellationToken ct = default);
     Task DeleteAttachmentAsync(string vaultId, string storagePath, CancellationToken ct = default);
 }

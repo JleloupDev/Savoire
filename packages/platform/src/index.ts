@@ -8,4 +8,8 @@ export { documentSyncKind } from './ports'
 export type { OpenDocument } from './DocumentStore'
 export { DocumentStore } from './DocumentStore'
 export { VaultClient } from './VaultClient'
+export {
+  ATTACHMENTS_DIR, sanitizeFileName,
+  uniqueAttachmentPath, resolveLinkPath, linkTargetFor,
+} from './attachments'
 export { InMemoryIndexStorage, LocalStorageIndexStorage } from './LocalIndexStorage'

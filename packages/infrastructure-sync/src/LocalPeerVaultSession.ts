@@ -14,7 +14,7 @@
 // Si l'application fonctionne sur ce connecteur, elle ne depend du serveur que
 // par ce que le port declare.
 import * as Y from 'yjs'
-import type { ICRDT, IIndexChannel, DocumentRoomPresence } from '@savoire/plugin-api'
+import type { ICRDT, IIndexChannel, DocumentRoomPresence, ISharedText, ISharedTree } from '@savoire/plugin-api'
 import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory, IVaultFiles } from '@savoire/platform'
 import type { IVaultSyncSession, IVaultSyncSessionFactory, VaultSyncSessionFactoryParams } from '@savoire/application'
 import { YMapVaultDirectory } from './YMapVaultDirectory'
@@ -43,7 +43,6 @@ interface StoredSnapshot {
 }
 
 interface StoredFile {
-  fileName: string
   type: string
   bytes: Uint8Array
   url?: string
@@ -92,13 +91,9 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
     this.unsubDirectoryChange = directory.onChange(params.onChanged)
     this.snapshots = new SnapshotDocuments(docId => this.snapshotChannel(docId))
     this.files = {
-      upload: file => this.uploadFile(file),
-      url: storagePath => this.fileUrl(storagePath),
-      read: async storagePath => {
-        const file = this.fileStore.get(storagePath)
-        if (!file) throw new Error(`fichier inconnu des pairs en ligne : ${storagePath}`)
-        return new TextDecoder().decode(file.bytes)
-      },
+      upload: (fileId, file) => this.uploadFile(fileId, file),
+      url: async fileId => this.fileUrl(await this.requireFile(fileId)),
+      read: async fileId => new TextDecoder().decode((await this.requireFile(fileId)).bytes),
     }
     this.unsubBus = bus.subscribe(msg => this.receive(msg))
     this.send({ t: 'hello' })
@@ -192,6 +187,18 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
     ytext.insert(ytext.length, text)
   }
 
+  openText(docId: string): ISharedText {
+    const open = this.openDocs.get(docId)
+    if (!open) throw new Error(`openText : le document ${docId} n'est pas ouvert`)
+    return open.crdt.sharedText()
+  }
+
+  openTree(docId: string): ISharedTree {
+    const open = this.openDocs.get(docId)
+    if (!open) throw new Error(`openTree : le document ${docId} n'est pas ouvert`)
+    return open.crdt.sharedTree()
+  }
+
   getState(): 'connected' | 'connecting' | 'disconnected' {
     return this.disposed ? 'disconnected' : 'connected'
   }
@@ -227,8 +234,8 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
     switch (msg.t) {
       case 'hello':
         this.send({ t: 'dir', update: this.directory.encodeFullState() }, msg.from)
-        for (const [storagePath, f] of this.fileStore) {
-          this.send({ t: 'file', storagePath, fileName: f.fileName, type: f.type, bytes: f.bytes }, msg.from)
+        for (const [fileId, f] of this.fileStore) {
+          this.send({ t: 'file', fileId, type: f.type, bytes: f.bytes }, msg.from)
         }
         return
       case 'dir':
@@ -265,10 +272,15 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
       case 'presence':
         for (const cb of this.presenceListeners.get(msg.docId) ?? []) cb(msg.userId, msg.presence)
         return
+      case 'file-open': {
+        const f = this.fileStore.get(msg.fileId)
+        if (f) this.send({ t: 'file', fileId: msg.fileId, type: f.type, bytes: f.bytes }, msg.from)
+        return
+      }
       case 'file':
-        if (!this.fileStore.has(msg.storagePath)) {
-          this.fileStore.set(msg.storagePath, { fileName: msg.fileName, type: msg.type, bytes: msg.bytes })
-        }
+        // Plusieurs pairs peuvent repondre : le premier suffit, et une URL
+        // deja affichee ne doit pas etre revoquee sous l'image.
+        if (!this.fileStore.has(msg.fileId)) this.storeFile(msg.fileId, { type: msg.type, bytes: msg.bytes })
         return
     }
   }
@@ -316,18 +328,36 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
 
   // ── Fichiers ───────────────────────────────────────────────────────────────
 
-  private async uploadFile(file: File): Promise<{ fileName: string; storagePath: string }> {
+  private async uploadFile(fileId: string, file: Blob): Promise<void> {
     const bytes = new Uint8Array(await file.arrayBuffer())
-    const storagePath = `${crypto.randomUUID()}-${file.name}`
     const type = file.type || 'application/octet-stream'
-    this.fileStore.set(storagePath, { fileName: file.name, type, bytes })
-    this.send({ t: 'file', storagePath, fileName: file.name, type, bytes })
-    return { fileName: file.name, storagePath }
+    this.storeFile(fileId, { type, bytes })
+    this.send({ t: 'file', fileId, type, bytes })
   }
 
-  private fileUrl(storagePath: string): string {
-    const file = this.fileStore.get(storagePath)
-    if (!file) return ''
+  /** Range un fichier ; un envoi local remplace l'ancien. */
+  private storeFile(fileId: string, file: StoredFile): void {
+    const old = this.fileStore.get(fileId)
+    if (old?.url) URL.revokeObjectURL(old.url)
+    this.fileStore.set(fileId, file)
+  }
+
+  /**
+   * Le fichier, d'ici ou d'un pair en ligne. Un pair arrive apres l'envoi le
+   * recoit deja au « hello » ; sinon on le demande et on laisse aux pairs le
+   * temps de repondre.
+   */
+  private async requireFile(fileId: string): Promise<StoredFile> {
+    if (!this.fileStore.has(fileId)) {
+      this.send({ t: 'file-open', fileId })
+      await wait(this.settleMs)
+    }
+    const file = this.fileStore.get(fileId)
+    if (!file) throw new Error(`fichier inconnu des pairs en ligne : ${fileId}`)
+    return file
+  }
+
+  private fileUrl(file: StoredFile): string {
     file.url ??= URL.createObjectURL(new Blob([file.bytes as BlobPart], { type: file.type }))
     return file.url
   }

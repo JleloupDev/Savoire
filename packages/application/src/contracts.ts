@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
 import type { DocumentStore, DocumentSyncKind, IDocumentMeta, IVaultContentSession, IVaultDirectory, VaultClient } from '@savoire/platform'
-import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel } from '@savoire/plugin-api'
+import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel, ISharedText, ISharedTree } from '@savoire/plugin-api'
 
 export interface AppVaultSummary {
   id: string
@@ -109,6 +109,24 @@ export interface IVaultSyncSession extends IVaultContentSession {
    * et le texte risquerait de se placer avant le contenu existant.
    */
   appendText(docId: string, text: string): void
+  /**
+   * Le texte d'un document CRDT OUVERT (openDocument), pour un plugin : le
+   * contrat ISharedText, sans bibliotheque CRDT visible. Meme texte que
+   * l'editeur. Idempotent ; devient inerte a la fermeture du document.
+   * Echoue si le document n'est pas ouvert, comme appendText.
+   *
+   * Meme regle qu'openDocument : le texte est vide a l'ouverture et l'etat
+   * connu arrive ensuite en deltas d'origine 'remote'. Un plugin qui ouvre
+   * le texte plus tard lit toString() puis suit les deltas.
+   */
+  openText(docId: string): ISharedText
+  /**
+   * Le meme document CRDT OUVERT, vu comme un arbre JSON (ISharedTree) :
+   * cartes, listes, textes riches, elements. Racine separee du texte.
+   * Memes regles qu'openText : idempotent, echoue si le document n'est pas
+   * ouvert, racine vide a l'ouverture et etat connu en lot 'remote' ensuite.
+   */
+  openTree(docId: string): ISharedTree
   /**
    * Verrous d'edition, pour les types de documents qui ne sont pas des CRDT.
    * Absent d'un profil qui n'a pas d'arbitre : sans arbitrage central, deux

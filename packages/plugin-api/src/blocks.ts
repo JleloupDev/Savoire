@@ -12,6 +12,8 @@ export interface BlockContext {
   /** Remplace un passage du document (cocher une case, par exemple), sans
    *  passer par l'editeur. Absent ou sans effet en lecture seule. */
   edit?(from: number, to: number, insert: string): void
+  /** Ligne du document qui porte ce rendu (pour la reecrire avec edit). Null si introuvable. */
+  locate?(el: HTMLElement): { from: number; to: number; text: string } | null
 }
 
 /** Describes an entry in the slash command palette for this block type. */
