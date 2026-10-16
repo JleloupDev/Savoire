@@ -14,6 +14,7 @@ import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
+import { loadCustomHotkeys, saveCustomHotkeys } from './hotkeyPreferences'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -357,10 +358,11 @@ export function AppShell() {
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
   // comme celles des plugins. Le ref garde les gestionnaires a jour.
   // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
-  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {} })
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {} })
   const appCommands = useMemo<PluginCommand[]>(() => [
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
+    { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
   ], [])
 
   const {
@@ -375,6 +377,7 @@ export function AppShell() {
     onCrdtTextChangeRef,
     activationRef,
     whenPluginsReady,
+    whenPluginAPIReady,
     loadStoreEntry,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
@@ -863,7 +866,24 @@ export function AppShell() {
   appActionsRef.current = {
     newNote: () => void handleNewNote(),
     quickOpen: () => setQuickOpenVisible(true),
+    openSettings: () => setSettingsOpen(true),
   }
+
+  // Raccourcis personnalises de la personne connectee : charges a la
+  // connexion (ou au changement de compte), sauvegardes a chaque changement.
+  const hotkeyUserId = activeAccount?.userId
+  useEffect(() => {
+    if (!hotkeyUserId) return
+    let unsubscribe: (() => void) | undefined
+    let cancelled = false
+    void whenPluginAPIReady().then(api => {
+      const hotkeys = api.hotkeys
+      if (cancelled || !hotkeys) return
+      hotkeys.loadCustom(loadCustomHotkeys(hotkeyUserId))
+      unsubscribe = hotkeys.onChange(() => saveCustomHotkeys(hotkeyUserId, hotkeys.getCustom()))
+    })
+    return () => { cancelled = true; unsubscribe?.() }
+  }, [hotkeyUserId, whenPluginAPIReady])
 
   // ── Account ────────────────────────────────────────────────────────────────
 
@@ -1056,7 +1076,7 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
+            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
           </div>
         </div>

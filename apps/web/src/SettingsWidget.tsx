@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // SettingsWidget — écran de paramètres style Obsidian.
-// Tabs: Plugins, Triggers, Thèmes.
+// Tabs: Plugins, Raccourcis, Triggers, Thèmes.
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
 import { useState, useEffect } from 'react'
 import type { Widget } from '@savoire/plugin-api'
-import type { InputTrigger, TriggerRegistry } from '@savoire/plugin-api'
+import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } from '@savoire/plugin-api'
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
@@ -42,15 +42,20 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'triggers' | 'themes'
+type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes'
 
 export function SettingsPanel({
   loader,
   triggers,
   pluginSettings,
+  hotkeys,
+  commands,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
+  /** Moteur de raccourcis et commandes : onglet Raccourcis. */
+  hotkeys?: HotkeyAPI
+  commands?: { getAll(): PluginCommand[] }
   /** Catalogue et activation. Absent : simple liste des plugins charges. */
   pluginSettings?: PluginSettingsService
 }) {
@@ -89,6 +94,9 @@ export function SettingsPanel({
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
         <div style={{ display: 'flex', gap: 0 }}>
           <button style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
+          {hotkeys && commands && (
+            <button data-testid="settings-tab-hotkeys" style={tabStyle(tab === 'hotkeys')} onClick={() => setTab('hotkeys')}>{t('app', 'settings.tab.hotkeys')}</button>
+          )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
           <button style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
         </div>
@@ -99,6 +107,7 @@ export function SettingsPanel({
         {tab === 'plugins'  && (pluginSettings
           ? <PluginStore service={pluginSettings} />
           : <PluginsTab plugins={plugins} />)}
+        {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
       </div>
@@ -266,6 +275,149 @@ function PluginsTab({ plugins }: { plugins: PluginEntry[] }) {
                 {t('app', 'settings.plugins.active')}
               </span>
             </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Raccourcis ────────────────────────────────────────────────────────────────
+//
+// Chaque commande (application, editeur, plugins) avec ses raccourcis. On en
+// ajoute un en cliquant sur + puis en tapant la combinaison ; un raccourci
+// choisi remplace ceux par defaut ; ↺ revient au defaut.
+
+function groupOf(id: string): 'editor' | 'app' | 'plugins' {
+  if (id.startsWith('editor:')) return 'editor'
+  if (id.startsWith('app:')) return 'app'
+  return 'plugins'
+}
+
+const GROUP_LABEL = {
+  editor: 'settings.hotkeys.group.editor',
+  app: 'settings.hotkeys.group.app',
+  plugins: 'settings.hotkeys.group.plugins',
+} as const
+
+const sameHotkey = (a: Hotkey, b: Hotkey) =>
+  a.key.toLowerCase() === b.key.toLowerCase() &&
+  a.modifiers.length === b.modifiers.length && a.modifiers.every(m => b.modifiers.includes(m))
+
+const chip: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 8px', borderRadius: 4,
+  background: 'var(--bg-elevated)', border: '1px solid var(--border)', fontSize: '0.75rem', fontFamily: 'monospace',
+  color: 'var(--text)', whiteSpace: 'nowrap',
+}
+const iconBtn: React.CSSProperties = {
+  border: 'none', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', padding: '0 4px', fontSize: '0.8rem', lineHeight: 1,
+}
+
+function HotkeysTab({ hotkeys, commands }: { hotkeys: HotkeyAPI; commands: { getAll(): PluginCommand[] } }) {
+  const [, setVersion] = useState(0)
+  const [filter, setFilter] = useState('')
+  const [recording, setRecording] = useState<string | null>(null)
+  const [conflict, setConflict] = useState<{ id: string; text: string } | null>(null)
+
+  useEffect(() => hotkeys.onChange(() => setVersion(v => v + 1)), [hotkeys])
+
+  // Enregistrement : la prochaine combinaison est captee avant tout le reste
+  // (editeur, autres raccourcis).
+  useEffect(() => {
+    if (!recording) return
+    const commandId = recording
+    function onKey(e: KeyboardEvent) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') { setRecording(null); return }
+      const hotkey = hotkeys.fromEvent(e)
+      if (!hotkey) return
+      const current = hotkeys.get(commandId)
+      if (!current.some(h => sameHotkey(h, hotkey))) hotkeys.setCustom(commandId, [...current, hotkey])
+      const others = hotkeys.findConflicts(hotkey).filter(id => id !== commandId)
+      setConflict(others.length ? { id: commandId, text: `${t('app', 'settings.hotkeys.conflict')} ${others.map(labelOf).join(', ')}` } : null)
+      setRecording(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, hotkeys])
+
+  const all = commands.getAll()
+  function labelOf(id: string): string {
+    return all.find(c => c.id === id)?.label ?? id
+  }
+  const q = filter.trim().toLowerCase()
+  const shown = all
+    .filter(c => !q || (c.label ?? c.id).toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+      || hotkeys.get(c.id).some(h => hotkeys.format(h).toLowerCase().includes(q)))
+    .sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id))
+  const custom = hotkeys.getCustom()
+
+  return (
+    <div data-testid="hotkeys-tab">
+      <p style={{ color: 'var(--text-faint)', marginTop: 0, marginBottom: 10, fontSize: '0.78rem' }}>{t('app', 'settings.hotkeys.intro')}</p>
+      <input
+        data-testid="hotkeys-filter"
+        value={filter}
+        onChange={e => setFilter(e.target.value)}
+        placeholder={t('app', 'settings.hotkeys.search')}
+        style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', marginBottom: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.8rem' }}
+      />
+      {shown.length === 0 && <div style={{ color: 'var(--text-faint)' }}>{t('app', 'settings.hotkeys.empty')}</div>}
+      {(['editor', 'app', 'plugins'] as const).map(group => {
+        const rows = shown.filter(c => groupOf(c.id) === group)
+        if (rows.length === 0) return null
+        return (
+          <div key={group} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 4 }}>
+              {t('app', GROUP_LABEL[group])}
+            </div>
+            {rows.map(cmd => {
+              const keys = hotkeys.get(cmd.id)
+              const isCustom = cmd.id in custom
+              return (
+                <div key={cmd.id} data-testid="hotkey-row" data-command-id={cmd.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {cmd.label ?? cmd.id}
+                      {isCustom && <span style={{ marginLeft: 6, fontSize: '0.68rem', color: 'var(--accent)' }}>{t('app', 'settings.hotkeys.customized')}</span>}
+                    </span>
+                    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                      {keys.length === 0 && recording !== cmd.id && <span style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.hotkeys.none')}</span>}
+                      {keys.map((h, i) => (
+                        <span key={i} style={chip} data-testid="hotkey-chip">
+                          {hotkeys.format(h)}
+                          <button
+                            title={t('app', 'settings.hotkeys.remove')}
+                            data-testid="hotkey-remove"
+                            style={iconBtn}
+                            onClick={() => hotkeys.setCustom(cmd.id, keys.filter((_, j) => j !== i))}
+                          >✕</button>
+                        </span>
+                      ))}
+                      {recording === cmd.id && (
+                        <span style={{ ...chip, borderColor: 'var(--accent)', color: 'var(--accent)', paddingRight: 8 }} data-testid="hotkey-recording">
+                          {t('app', 'settings.hotkeys.recording')}
+                        </span>
+                      )}
+                    </span>
+                    {isCustom && (
+                      <button title={t('app', 'settings.hotkeys.reset')} data-testid="hotkey-reset" style={iconBtn} onClick={() => { hotkeys.setCustom(cmd.id, null); setConflict(null) }}>↺</button>
+                    )}
+                    <button
+                      title={t('app', 'settings.hotkeys.add')}
+                      data-testid="hotkey-add"
+                      style={{ ...iconBtn, fontSize: '1rem', color: 'var(--text-muted)' }}
+                      onClick={() => { setConflict(null); setRecording(r => (r === cmd.id ? null : cmd.id)) }}
+                    >+</button>
+                  </div>
+                  {conflict?.id === cmd.id && (
+                    <div data-testid="hotkey-conflict" style={{ marginTop: 4, fontSize: '0.72rem', color: 'var(--color-warning, #b45309)' }}>{conflict.text}</div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )
       })}

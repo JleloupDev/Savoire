@@ -4,7 +4,7 @@
 // Moteur de raccourcis : une touche declenche la commande qui y repond, avec
 // les raccourcis par defaut ou ceux choisis par la personne.
 import { describe, it, expect, vi } from 'vitest'
-import { HotkeyManager, PluginActivation, PluginAPIImpl, PluginLoader, formatHotkey } from '@savoire/plugin-runtime'
+import { HotkeyManager, PluginActivation, PluginAPIImpl, PluginLoader, formatHotkey, sanitizeCustomHotkeys } from '@savoire/plugin-runtime'
 import type { HotkeyEvent } from '@savoire/plugin-api'
 
 function key(k: string, mods: Partial<Pick<HotkeyEvent, 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>> = {}, code?: string): HotkeyEvent & { prevented: boolean } {
@@ -149,5 +149,38 @@ describe('HotkeyManager', () => {
     activation.setDisabled([])
     expect(api.hotkeys.handleKeyEvent(key('j', { ctrlKey: true }), { editorView: null })).toBe(true)
     expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('enregistre un raccourci depuis une touche pressee', () => {
+    const { hotkeys } = setup()
+    // AZERTY : Alt+touche 1 produit « & ».
+    expect(hotkeys.fromEvent(key('&', { altKey: true }, 'Digit1'))).toEqual({ modifiers: ['Alt'], key: '1' })
+    expect(hotkeys.fromEvent(key('H', { ctrlKey: true, shiftKey: true }))).toEqual({ modifiers: ['Mod', 'Shift'], key: 'h' })
+    // Touche de modification seule, ou touche qui sert a ecrire : pas un raccourci.
+    expect(hotkeys.fromEvent(key('Control', { ctrlKey: true }, 'ControlLeft'))).toBeNull()
+    expect(hotkeys.fromEvent(key('a'))).toBeNull()
+  })
+
+  it('Alt+1 enregistre declenche bien la commande (titres a la Obsidian)', () => {
+    const { api, hotkeys } = setup()
+    const h1 = vi.fn()
+    api.commands.register({ id: 'editor:set-heading-1', editor: true, run: h1 })
+    hotkeys.setCustom('editor:set-heading-1', [hotkeys.fromEvent(key('&', { altKey: true }, 'Digit1'))!])
+    expect(hotkeys.handleKeyEvent(key('&', { altKey: true }, 'Digit1'), { editorView: {} })).toBe(true)
+    expect(h1).toHaveBeenCalled()
+  })
+
+  it('Ctrl+virgule en AZERTY reste une virgule (la touche physique est KeyM)', () => {
+    const { hotkeys } = setup()
+    expect(hotkeys.fromEvent(key(',', { ctrlKey: true }, 'KeyM'))).toEqual({ modifiers: ['Mod'], key: ',' })
+  })
+
+  it('ne recharge que des raccourcis bien formes', () => {
+    expect(sanitizeCustomHotkeys({
+      ok: [{ modifiers: ['Alt'], key: '1' }],
+      bad: [{ modifiers: ['Hyper'], key: '1' }, { modifiers: [], key: '' }, 'x'],
+      nope: 'x',
+    })).toEqual({ ok: [{ modifiers: ['Alt'], key: '1' }], bad: [] })
+    expect(sanitizeCustomHotkeys(null)).toEqual({})
   })
 })

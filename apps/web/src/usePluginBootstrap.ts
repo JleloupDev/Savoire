@@ -24,7 +24,7 @@ import type { ITextChangeSource } from '@savoire/application'
 import { IndexEngine } from '@savoire/domain-index'
 import type { ICollaborativeText, AnchorContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
-import type { EditorController } from '@savoire/editor-core'
+import { plumeCommands, type EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
@@ -69,6 +69,9 @@ export interface PluginBootstrapResult {
   activationRef: MutableRefObject<PluginActivation>
   /** Resolu quand les plugins preinstalles sont charges. */
   whenPluginsReady: () => Promise<void>
+  /** Resolu une fois l'API des plugins creee et le coeur charge, meme si
+   *  on le demande avant que le chargement ait commence. */
+  whenPluginAPIReady: () => Promise<IEditorHostAPI>
   /** Charge un plugin du store a chaud (installation). False s'il l'etait deja. */
   loadStoreEntry: (id: string) => Promise<boolean>
 }
@@ -95,6 +98,13 @@ export function usePluginBootstrap({
   const defaultPluginsRef = useRef<VaultPlugin[]>([])
   const pluginsBootstrappedRef = useRef(false)
   const pluginsBootstrapPromiseRef = useRef<Promise<void> | null>(null)
+  const apiReadyRef = useRef<{ promise: Promise<IEditorHostAPI>; resolve: (api: IEditorHostAPI) => void } | null>(null)
+  if (!apiReadyRef.current) {
+    let resolve!: (api: IEditorHostAPI) => void
+    const promise = new Promise<IEditorHostAPI>(r => { resolve = r })
+    apiReadyRef.current = { promise, resolve }
+  }
+  const whenPluginAPIReady = useCallback(() => apiReadyRef.current!.promise, [])
   // Contexte de construction des plugins du coeur (voir pluginStore).
   const loadContext: PluginLoadContext = {
     vaultBrowserRefs,
@@ -252,6 +262,9 @@ export function usePluginBootstrap({
       // toujours actif ; ce que chaque plugin enregistre porte son id.
       pluginApi.attachActivation(activationRef.current)
       for (const cmd of appCommands) pluginApi.commands.register(cmd)
+      // Commandes de l'editeur : connues des le depart, meme sans note
+      // ouverte (pour leur choisir un raccourci).
+      for (const cmd of plumeCommands()) pluginApi.commands.register(cmd)
 
       // ContentIndexingService: wires hooks → contributors → storage.
       contentIndexingServiceRef.current = new ContentIndexingService(
@@ -295,6 +308,7 @@ export function usePluginBootstrap({
         // Register EditorCore built-in trigger so it appears in Settings
         triggers.register({ id: 'slash-command', character: '/', description: 'Palette de commandes' })
         pluginsBootstrappedRef.current = true
+        apiReadyRef.current?.resolve(pluginApi)
 
         // Contributeur relais : redistribue onTextChange a tous les contributeurs
         // du registre. Purement local (chemin des ancres) — il ne produit
@@ -347,6 +361,7 @@ export function usePluginBootstrap({
     onCrdtTextChangeRef,
     activationRef,
     whenPluginsReady,
+    whenPluginAPIReady,
     loadStoreEntry,
   }
 }

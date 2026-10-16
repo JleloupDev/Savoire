@@ -363,3 +363,70 @@ export function setLineColor(view: EditorView, color: PlumeColor | null): void {
   if (changes.length) view.dispatch({ changes })
   view.focus()
 }
+
+// ─── Autres actions (commandes du moteur de raccourcis) ──────────────────────
+
+/**
+ * Coche ou decoche la case des lignes selectionnees (comme Ctrl+Entree dans
+ * Obsidian). Une ligne sans case en recoit une.
+ */
+export function toggleChecklistStatus(view: EditorView): void {
+  const { state } = view
+  const { from, to } = state.selection.main
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = state.doc.lineAt(from).number; n <= state.doc.lineAt(to).number; n++) {
+    const line = state.doc.line(n)
+    const box = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/.exec(line.text)
+    if (box) {
+      const at = line.from + box[1].length + 1
+      changes.push({ from: at, to: at + 1, insert: box[2] === ' ' ? 'x' : ' ' })
+      continue
+    }
+    const item = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line.text)
+    const at = line.from + (item ? item[1].length : (/^\s*/.exec(line.text)?.[0].length ?? 0))
+    changes.push({ from: at, to: at, insert: item ? '[ ] ' : '- [ ] ' })
+  }
+  view.dispatch({ changes })
+  view.focus()
+}
+
+const INLINE_MARKS_RE = new RegExp(`\\*\\*|__|~~|==(?:${COLOR_EMOJI_SOURCE})?|(?<![\\w*])[*_](?![\\s*])|(?<![\\s*])[*_](?![\\w*])|\``, 'gu')
+
+/** Retire gras, italique, barre, surlignage et code de la selection. */
+export function clearInlineFormatting(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  if (from === to) { view.focus(); return }
+  const text = view.state.doc.sliceString(from, to)
+  const insert = text.replace(INLINE_MARKS_RE, '')
+  view.dispatch({ changes: { from, to, insert }, selection: { anchor: from, head: from + insert.length } })
+  view.focus()
+}
+
+/**
+ * Entoure la selection de `before` et `after` ; sans selection, place le
+ * curseur entre les deux ([[ ]], ![[ ]]...).
+ */
+export function wrapSelection(view: EditorView, before: string, after: string): void {
+  const { from, to } = view.state.selection.main
+  const selected = view.state.doc.sliceString(from, to)
+  view.dispatch({
+    changes: { from, to, insert: `${before}${selected}${after}` },
+    selection: { anchor: from + before.length, head: from + before.length + selected.length },
+  })
+  view.focus()
+}
+
+/** Insere un callout sous la ligne courante, curseur sur son titre. */
+export function insertCallout(view: EditorView, kind = 'note'): void {
+  const { from } = view.state.selection.main
+  const line = view.state.doc.lineAt(from)
+  const prefix = line.text.trim() ? '\n\n' : ''
+  const head = `> [!${kind}] `
+  const insert = `${prefix}${head}\n> `
+  const at = line.text.trim() ? line.to : line.from
+  view.dispatch({
+    changes: { from: at, to: line.text.trim() ? at : line.to, insert },
+    selection: { anchor: at + prefix.length + head.length },
+  })
+  view.focus()
+}

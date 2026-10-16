@@ -127,3 +127,20 @@ describe('Gras puis italique', () => {
     expect(v.state.doc.toString()).toBe('**mot**')
   })
 })
+
+describe('Autres actions', () => {
+  it('cocher / decocher, et ajouter une case a une ligne qui n\'en a pas', async () => {
+    const { toggleChecklistStatus } = await import('../../../../../packages/editor-core/src/FormattingService')
+    const v = view('- [ ] a\n- b\nc', 0, 13)
+    toggleChecklistStatus(v)
+    expect(v.state.doc.toString()).toBe('- [x] a\n- [ ] b\n- [ ] c')
+  })
+
+  it('effacer la mise en forme', async () => {
+    const { clearInlineFormatting } = await import('../../../../../packages/editor-core/src/FormattingService')
+    const text = '**gras** *ital* ~~barre~~ ==🔴hl== `code` 2*3'
+    const v = view(text, 0, text.length)
+    clearInlineFormatting(v)
+    expect(v.state.doc.toString()).toBe('gras ital barre hl code 2*3')
+  })
+})

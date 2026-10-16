@@ -60,11 +60,14 @@ function normalizeKey(key: string): string {
  * quand le caractere produit ne convient pas : Maj+7 en AZERTY, Alt+lettre
  * sur Mac (qui produit un symbole).
  */
-export function eventKey(e: Pick<HotkeyEvent, 'key' | 'code'>): string {
+export function eventKey(e: Pick<HotkeyEvent, 'key' | 'code'> & { altKey?: boolean }): string {
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code ?? '')
   if (digit) return digit[1]
+  // Seulement avec Alt (Option sur Mac, qui change la lettre en symbole) :
+  // sinon une ponctuation AZERTY placee sur une touche « lettre » (la
+  // virgule est sur KeyM) serait lue comme cette lettre.
   const letter = /^Key([A-Z])$/.exec(e.code ?? '')
-  if (letter && !/^[a-z]$/i.test(e.key)) return letter[1].toLowerCase()
+  if (letter && e.altKey && !/^[a-z]$/i.test(e.key)) return letter[1].toLowerCase()
   return normalizeKey(e.key)
 }
 
@@ -87,9 +90,48 @@ function sameHotkey(a: Hotkey, b: Hotkey, platform: HotkeyPlatform): boolean {
 const MAC_SYMBOLS: Record<Physical, string> = { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘' }
 const LABELS: Record<Physical, string> = { Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Maj', Meta: 'Meta' }
 
+const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'OS', 'CapsLock'])
+
+/** Touche qui peut servir de raccourci : avec Ctrl, Alt ou Cmd, ou F1-F12. */
+function isCommandKey(e: Pick<HotkeyEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
+  return e.ctrlKey || e.metaKey || e.altKey || /^F\d{1,2}$/.test(e.key)
+}
+
+/** Raccourci d'une touche pressee ; 'Mod' remplace Ctrl (ou Cmd sur Mac). */
+export function hotkeyFromEvent(e: HotkeyEvent, platform: HotkeyPlatform): Hotkey | null {
+  if (MODIFIER_KEYS.has(e.key) || !isCommandKey(e)) return null
+  if (e.getModifierState?.('AltGraph')) return null
+  const modifiers: HotkeyModifier[] = []
+  const modIsMeta = platform === 'mac'
+  if (modIsMeta ? e.metaKey : e.ctrlKey) modifiers.push('Mod')
+  if (modIsMeta ? e.ctrlKey : e.metaKey) modifiers.push(modIsMeta ? 'Ctrl' : 'Meta')
+  if (e.altKey) modifiers.push('Alt')
+  if (e.shiftKey) modifiers.push('Shift')
+  return { modifiers, key: eventKey(e) }
+}
+
+/** Raccourcis lus depuis un stockage : on ne garde que ce qui est bien forme. */
+export function sanitizeCustomHotkeys(raw: unknown): Record<string, Hotkey[]> {
+  const out: Record<string, Hotkey[]> = {}
+  if (!raw || typeof raw !== 'object') return out
+  const allowed = new Set<HotkeyModifier>(['Mod', 'Ctrl', 'Meta', 'Shift', 'Alt'])
+  for (const [id, list] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(list)) continue
+    out[id] = list.filter((h): h is Hotkey =>
+      !!h && typeof (h as Hotkey).key === 'string' && (h as Hotkey).key.length > 0 &&
+      Array.isArray((h as Hotkey).modifiers) && (h as Hotkey).modifiers.every(m => allowed.has(m)))
+  }
+  return out
+}
+
+const KEY_LABELS: Record<string, string> = {
+  Enter: 'Entrée', Escape: 'Échap', Backspace: 'Retour arrière', Delete: 'Suppr', ' ': 'Espace',
+  ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+}
+
 export function formatHotkey(hotkey: Hotkey, platform: HotkeyPlatform): string {
   const mods = physicalModifiers(hotkey.modifiers, platform)
-  const key = hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key
+  const key = KEY_LABELS[hotkey.key] ?? (hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key)
   const ordered = ORDER.filter(m => mods.has(m))
   if (platform === 'mac') return ordered.map(m => MAC_SYMBOLS[m]).join('') + key
   return [...ordered.map(m => LABELS[m]), key].join('+')
@@ -125,7 +167,7 @@ export class HotkeyManager implements HotkeyHost {
   }
 
   loadCustom(custom: Record<string, Hotkey[]>): void {
-    this.custom = new Map(Object.entries(custom))
+    this.custom = new Map(Object.entries(sanitizeCustomHotkeys(custom)))
     this.notify()
   }
 
@@ -139,6 +181,10 @@ export class HotkeyManager implements HotkeyHost {
     return formatHotkey(hotkey, this.platform)
   }
 
+  fromEvent(event: HotkeyEvent): Hotkey | null {
+    return hotkeyFromEvent(event, this.platform)
+  }
+
   onChange(cb: () => void): () => void {
     this.listeners.add(cb)
     return () => { this.listeners.delete(cb) }
@@ -149,7 +195,7 @@ export class HotkeyManager implements HotkeyHost {
     // AltGr (Ctrl+Alt sous Windows) sert a taper des caracteres : @, #, {...
     if (event.getModifierState?.('AltGraph')) return false
     // Une touche seule (sans Ctrl, Alt ni Cmd) sert a ecrire, sauf F1-F12.
-    if (!event.ctrlKey && !event.metaKey && !event.altKey && !/^F\d{1,2}$/.test(event.key)) return false
+    if (!isCommandKey(event)) return false
     for (const cmd of this.commands.getAll()) {
       if (!this.get(cmd.id).some(h => matches(h, event, this.platform))) continue
       if (cmd.editor && !context.editorView) continue

@@ -64,6 +64,12 @@ export interface HotkeyAPI {
   findConflicts(hotkey: Hotkey): string[]
   /** Texte a afficher : « Ctrl+Maj+H », ou « ⇧⌘H » sur Mac. */
   format(hotkey: Hotkey): string
+  /**
+   * Raccourci correspondant a une touche pressee, pour en enregistrer un.
+   * null pour une touche de modification seule (Ctrl, Maj...) ou une touche
+   * qui sert a ecrire (sans Ctrl, Alt ni Cmd).
+   */
+  fromEvent(event: HotkeyEvent): Hotkey | null
   /** Une association a change (personnalisation, chargement). */
   onChange(cb: () => void): () => void
 }

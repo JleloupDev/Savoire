@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
@@ -10,7 +10,7 @@ import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, 
 import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader, Hotkey, PluginCommand, PluginCommandContext } from '@savoire/plugin-api'
 import { resolveActivePlugins } from './PluginActivationResolver'
 import type { ActivationEntry } from './PluginActivationResolver'
-import { toggleMarkdownFormat, toggleHighlight, setLineColor } from './FormattingService'
+import { toggleMarkdownFormat, toggleHighlight, setLineColor, toggleChecklistStatus, clearInlineFormatting, wrapSelection, insertCallout } from './FormattingService'
 import { PLUME_COLORS } from './PlumeMarkdown'
 import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
@@ -50,6 +50,69 @@ function dedentListLine(view: EditorView): boolean {
   return true
 }
 
+
+/**
+ * Commandes d'edition, declenchables au clavier (moteur de raccourcis).
+ * Elles agissent sur l'editeur qui a le focus, jamais sur une instance
+ * figee : le registre est partage par tous les editeurs. Seuls les
+ * raccourcis courants ont une touche par defaut ; les autres commandes
+ * existent pour qu'on puisse leur en donner une.
+ */
+export function plumeCommands(): PluginCommand[] {
+  const on = (act: (view: EditorView) => void) => (ctx: PluginCommandContext) => {
+    const view = viewOf(ctx)
+    if (view) act(view)
+  }
+  const fmt = (f: import('./types').MarkdownFormat) => on(v => toggleMarkdownFormat(v, f))
+  const commands: PluginCommand[] = [
+    { id: 'editor:toggle-bold',           label: 'Gras',                  hotkeys: mod('b'),           run: fmt('bold') },
+    { id: 'editor:toggle-italics',        label: 'Italique',              hotkeys: mod('i'),           run: fmt('italic') },
+    { id: 'editor:toggle-strikethrough',  label: 'Barré',                 hotkeys: mod('x', 'Shift'),  run: fmt('strike') },
+    { id: 'editor:toggle-code',           label: 'Code inline',           hotkeys: mod('e'),           run: fmt('code') },
+    { id: 'editor:toggle-highlight',      label: 'Surligner',             hotkeys: mod('h', 'Shift'),  run: fmt('highlight') },
+    { id: 'editor:insert-link',           label: 'Insérer un lien',       hotkeys: mod('k'),           run: fmt('link') },
+    { id: 'editor:toggle-numbered-list',  label: 'Liste numérotée',       hotkeys: mod('7', 'Shift'),  run: fmt('ol') },
+    { id: 'editor:toggle-bullet-list',    label: 'Liste à puces',         hotkeys: mod('8', 'Shift'),  run: fmt('ul') },
+    { id: 'editor:toggle-checklist',      label: 'Liste de tâches',       hotkeys: mod('9', 'Shift'),  run: fmt('tasklist') },
+    { id: 'editor:toggle-blockquote',     label: 'Citation',                                           run: fmt('blockquote') },
+    { id: 'editor:set-paragraph',         label: 'Texte normal',                                       run: fmt('paragraph') },
+    ...([1, 2, 3, 4, 5, 6] as const).map(n => ({
+      id: `editor:set-heading-${n}`, label: `Titre ${n}`, run: fmt(`h${n}`),
+    })),
+    { id: 'editor:insert-codeblock',      label: 'Bloc de code',                                       run: fmt('codeblock') },
+    { id: 'editor:insert-table',          label: 'Tableau',                                            run: fmt('table') },
+    { id: 'editor:insert-image',          label: 'Image',                                              run: fmt('image') },
+    { id: 'editor:insert-horizontal-rule', label: 'Séparateur',                                        run: fmt('hr') },
+    ...PLUME_COLORS.map(c => ({
+      id: `editor:highlight-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`,
+      run: on(v => toggleHighlight(v, c.color)),
+    })),
+    ...PLUME_COLORS.map(c => ({
+      id: `editor:text-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`,
+      run: on(v => setLineColor(v, c.color)),
+    })),
+    { id: 'editor:text-color-none',       label: 'Couleur du texte par défaut',                        run: on(v => setLineColor(v, null)) },
+
+    // Autres actions. Celles qui ont une touche reprennent celle de
+    // CodeMirror : la liste des raccourcis dit ainsi ce qui marche vraiment.
+    { id: 'editor:toggle-checklist-status', label: 'Cocher / décocher la case', hotkeys: mod('Enter'), run: on(toggleChecklistStatus) },
+    { id: 'editor:clear-formatting',      label: 'Effacer la mise en forme',                           run: on(clearInlineFormatting) },
+    { id: 'editor:indent-list',           label: 'Indenter l\'élément de liste',                       run: on(v => { indentListLine(v) }) },
+    { id: 'editor:unindent-list',         label: 'Désindenter l\'élément de liste',                    run: on(v => { dedentListLine(v) }) },
+    { id: 'editor:swap-line-up',          label: 'Monter la ligne',          hotkeys: [{ modifiers: ['Alt'], key: 'ArrowUp' }], run: on(v => { moveLineUp(v) }) },
+    { id: 'editor:swap-line-down',        label: 'Descendre la ligne',       hotkeys: [{ modifiers: ['Alt'], key: 'ArrowDown' }], run: on(v => { moveLineDown(v) }) },
+    { id: 'editor:duplicate-line',        label: 'Dupliquer la ligne',       hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'ArrowDown' }], run: on(v => { copyLineDown(v) }) },
+    { id: 'editor:delete-line',           label: 'Supprimer la ligne',       hotkeys: mod('k', 'Shift'), run: on(v => { deleteLine(v) }) },
+    { id: 'editor:select-line',           label: 'Sélectionner la ligne',    hotkeys: [{ modifiers: ['Alt'], key: 'l' }], run: on(v => { selectLine(v) }) },
+    { id: 'editor:undo',                  label: 'Annuler',                  hotkeys: mod('z'), run: on(v => { undo(v) }) },
+    { id: 'editor:redo',                  label: 'Rétablir',                 hotkeys: [...mod('y'), ...mod('z', 'Shift')], run: on(v => { redo(v) }) },
+    { id: 'editor:insert-wikilink',       label: 'Insérer un lien vers une note',                      run: on(v => wrapSelection(v, '[[', ']]')) },
+    { id: 'editor:insert-embed',          label: 'Intégrer une note',                                  run: on(v => wrapSelection(v, '![[', ']]')) },
+    { id: 'editor:insert-callout',        label: 'Insérer un callout',                                 run: on(v => insertCallout(v)) },
+    { id: 'editor:insert-tag',            label: 'Insérer un tag',                                     run: on(v => wrapSelection(v, '#', '')) },
+  ]
+  return commands.map(cmd => ({ ...cmd, editor: true }))
+}
 
 // ── Noop host API — used when no PluginAPIImpl is provided (standalone / playground) ──
 
@@ -544,53 +607,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     ]
     for (const cmd of toolbarCmds) toolbar.register(cmd)
 
-    this.registerEditorCommands()
+    for (const cmd of plumeCommands()) this.pluginAPI.commands.register(cmd)
   }
 
-  /**
-   * Commandes d'edition, declenchables au clavier (moteur de raccourcis).
-   * Elles agissent sur l'editeur qui a le focus, jamais sur une instance
-   * figee : le registre est partage par tous les editeurs. Seuls les
-   * raccourcis courants ont une touche par defaut ; les autres commandes
-   * existent pour qu'on puisse leur en donner une.
-   */
-  private registerEditorCommands(): void {
-    const on = (act: (view: EditorView) => void) => (ctx: PluginCommandContext) => {
-      const view = viewOf(ctx)
-      if (view) act(view)
-    }
-    const fmt = (f: import('./types').MarkdownFormat) => on(v => toggleMarkdownFormat(v, f))
-    const commands: PluginCommand[] = [
-      { id: 'editor:toggle-bold',           label: 'Gras',                  hotkeys: mod('b'),           run: fmt('bold') },
-      { id: 'editor:toggle-italics',        label: 'Italique',              hotkeys: mod('i'),           run: fmt('italic') },
-      { id: 'editor:toggle-strikethrough',  label: 'Barré',                 hotkeys: mod('x', 'Shift'),  run: fmt('strike') },
-      { id: 'editor:toggle-code',           label: 'Code inline',           hotkeys: mod('e'),           run: fmt('code') },
-      { id: 'editor:toggle-highlight',      label: 'Surligner',             hotkeys: mod('h', 'Shift'),  run: fmt('highlight') },
-      { id: 'editor:insert-link',           label: 'Insérer un lien',       hotkeys: mod('k'),           run: fmt('link') },
-      { id: 'editor:toggle-numbered-list',  label: 'Liste numérotée',       hotkeys: mod('7', 'Shift'),  run: fmt('ol') },
-      { id: 'editor:toggle-bullet-list',    label: 'Liste à puces',         hotkeys: mod('8', 'Shift'),  run: fmt('ul') },
-      { id: 'editor:toggle-checklist',      label: 'Liste de tâches',       hotkeys: mod('9', 'Shift'),  run: fmt('tasklist') },
-      { id: 'editor:toggle-blockquote',     label: 'Citation',                                           run: fmt('blockquote') },
-      { id: 'editor:set-paragraph',         label: 'Texte normal',                                       run: fmt('paragraph') },
-      ...([1, 2, 3, 4, 5, 6] as const).map(n => ({
-        id: `editor:set-heading-${n}`, label: `Titre ${n}`, run: fmt(`h${n}`),
-      })),
-      { id: 'editor:insert-codeblock',      label: 'Bloc de code',                                       run: fmt('codeblock') },
-      { id: 'editor:insert-table',          label: 'Tableau',                                            run: fmt('table') },
-      { id: 'editor:insert-image',          label: 'Image',                                              run: fmt('image') },
-      { id: 'editor:insert-horizontal-rule', label: 'Séparateur',                                        run: fmt('hr') },
-      ...PLUME_COLORS.map(c => ({
-        id: `editor:highlight-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`,
-        run: on(v => toggleHighlight(v, c.color)),
-      })),
-      ...PLUME_COLORS.map(c => ({
-        id: `editor:text-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`,
-        run: on(v => setLineColor(v, c.color)),
-      })),
-      { id: 'editor:text-color-none',       label: 'Couleur du texte par défaut',                        run: on(v => setLineColor(v, null)) },
-    ]
-    for (const cmd of commands) this.pluginAPI.commands.register({ ...cmd, editor: true })
-  }
 
   describeHotkey(commandId: string): string | null {
     const hotkeys = this.pluginAPI.hotkeys
