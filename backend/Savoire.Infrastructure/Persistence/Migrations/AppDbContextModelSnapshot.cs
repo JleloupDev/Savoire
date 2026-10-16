@@ -663,6 +663,14 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("doc_id");
 
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ParentDocId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("parent_doc_id");
+
                     b.Property<DateTime>("RegisteredAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("registered_at");
@@ -678,6 +686,8 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnName("vault_id");
 
                     b.HasKey("DocId");
+
+                    b.HasIndex("ParentDocId");
 
                     b.HasIndex("VaultId");
 

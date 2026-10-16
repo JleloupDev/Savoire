@@ -26,13 +26,19 @@ function BacklinksPanel({
 
   const refresh = useCallback((path: string | null) => {
     if (!path) { setBacklinks([]); return }
-    setBacklinks(contributor.getBacklinks(path))
-  }, [contributor])
+    // Une note de la corbeille ne compte plus comme lien entrant.
+    setBacklinks(contributor.getBacklinks(path).filter(bl => !ctx.vault.isTrashed?.(bl.docId)))
+  }, [contributor, ctx])
 
   // Refresh on path change
   useEffect(() => {
     refresh(currentPath)
   }, [currentPath, refresh])
+
+  // Mise a la corbeille ou restauration : la liste change sans indexation.
+  useEffect(() => {
+    return workspace.subscribeVaultChange?.(() => refresh(currentPath))
+  }, [workspace, currentPath, refresh])
 
   // Subscribe to active-document changes (tab switch + file open)
   useEffect(() => {

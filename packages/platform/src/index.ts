@@ -3,6 +3,7 @@
 export type {
   IDocumentMeta, IDocumentFetcher, IVaultStorage, ILocalIndexStorage, IVaultDirectory,
   DocumentSyncKind, ISnapshotDocument, IVaultFiles, IVaultContentSession,
+  FileUploadOptions, AttachmentPlacement,
 } from './ports'
 export { documentSyncKind } from './ports'
 export type { OpenDocument } from './DocumentStore'
@@ -11,5 +12,11 @@ export { VaultClient } from './VaultClient'
 export {
   ATTACHMENTS_DIR, sanitizeFileName,
   uniqueAttachmentPath, resolveLinkPath, linkTargetFor,
+  ATTACHMENT_LOCATION, ATTACHMENT_EXTENSIONS, isAttachmentPath,
+  noteFolderOf, attachmentFolderFor, folderNoteOf,
 } from './attachments'
+export type { AttachmentLocation } from './attachments'
+export { UploadTracker, uploadTracker, subscribeUploads, uploadErrorReason } from './uploads'
+export type { UploadEvent, UploadReport } from './uploads'
 export { InMemoryIndexStorage, LocalStorageIndexStorage } from './LocalIndexStorage'
+export { TRASH_DIR, isTrashPath, trashPathFor, originalPathOf, restorePathFor } from './trash'

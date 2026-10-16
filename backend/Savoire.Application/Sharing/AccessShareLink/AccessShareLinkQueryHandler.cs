@@ -10,8 +10,9 @@ using Savoire.Domain.Repositories;
 namespace Savoire.Application.Sharing.AccessShareLink;
 
 public sealed class AccessShareLinkQueryHandler(
-    IShareLinkRepository shareLinks,
-    ITokenService        tokenService)
+    IShareLinkRepository     shareLinks,
+    ITokenService            tokenService,
+    IVaultDocumentRepository vaultDocuments)
     : IRequestHandler<AccessShareLinkQuery, ShareLinkAccessDto>
 {
     public async Task<ShareLinkAccessDto> Handle(
@@ -24,10 +25,14 @@ public sealed class AccessShareLinkQueryHandler(
 
         string jwt = tokenService.GenerateShareLinkAccessToken(link);
 
-        // vaultId and path are unknown without SQL document projection.
-        // TODO(P4): resolve via CRDT vault directory.
+        // Le vault se lit dans le registre « document -> vault » (la page de
+        // partage en a besoin pour lire les images de la note). Le chemin
+        // reste inconnu : il n'est que dans le repertoire CRDT du vault.
+        string? vaultId = link.ResourceType == ResourceType.Vault
+            ? link.ResourceId
+            : await vaultDocuments.GetVaultIdAsync(link.ResourceId, ct);
         return new ShareLinkAccessDto(
             jwt, link.ResourceType.ToApiString(), link.ResourceId,
-            link.Permission.ToApiString(), link.ExpiresAt, null, null);
+            link.Permission.ToApiString(), link.ExpiresAt, vaultId, null);
     }
 }

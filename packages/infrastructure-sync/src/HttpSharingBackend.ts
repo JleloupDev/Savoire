@@ -7,6 +7,8 @@ import type {
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
 import { DocumentRoomClient } from './DocumentRoomClient'
+import { RestVaultStorage } from './RestVaultStorage'
+import { SharedNoteAttachments } from './SharedNoteAttachments'
 
 export class HttpSharingBackend implements ISharingBackend {
   constructor(private readonly baseUrl: string = '') {}
@@ -91,10 +93,16 @@ export class HttpSharingBackend implements ISharingBackend {
       getToken: () => access.accessToken,
     })
 
+    // Les images rangees dans le dossier de la note, lues avec le jeton du lien.
+    const attachments = access.vaultId
+      ? new SharedNoteAttachments(new RestVaultStorage({ baseUrl: this.baseUrl }), access.vaultId, access.resourceId, () => access.accessToken)
+      : undefined
+
     return {
       crdt,
       transport,
       sync,
+      attachments,
       docId: access.resourceId,
       vaultId: access.vaultId ?? '',
       path,

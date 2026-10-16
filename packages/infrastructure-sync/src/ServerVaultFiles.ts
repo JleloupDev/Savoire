@@ -5,7 +5,7 @@
 // image : une balise <img> ne sait pas l'envoyer. On lit donc l'image en
 // fetch authentifie et on l'affiche par une URL blob:, gardee en cache le
 // temps de la session (le profil pair a pair fait de meme).
-import type { IVaultFiles } from '@savoire/platform'
+import type { AttachmentPlacement, FileUploadOptions, IVaultFiles } from '@savoire/platform'
 import type { RestVaultStorage } from './RestVaultStorage'
 
 export class ServerVaultFiles implements IVaultFiles {
@@ -18,10 +18,15 @@ export class ServerVaultFiles implements IVaultFiles {
     private readonly token: () => string,
   ) {}
 
-  async upload(fileId: string, file: Blob): Promise<void> {
-    await this.storage.putAttachment(this.vaultId, fileId, file, this.token())
+  async upload(fileId: string, file: Blob, options?: FileUploadOptions): Promise<void> {
+    await this.storage.putAttachment(this.vaultId, fileId, file, this.token(), options?.onProgress)
     // Un fichier remplace ne doit pas garder l'ancienne image en cache.
     this.urls.delete(fileId)
+  }
+
+  /** Le serveur apprend dans quelle note la piece jointe est rangee (partage d'une note). */
+  place(fileId: string, placement: AttachmentPlacement): Promise<void> {
+    return this.storage.placeAttachment(this.vaultId, fileId, placement, this.token())
   }
 
   url(fileId: string): Promise<string> {

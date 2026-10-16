@@ -22,6 +22,13 @@ export interface DocumentRoomPresence {
 }
 
 export interface DocumentRoom {
+  /**
+   * Dernier snapshot connu a l'ouverture de la room (null = jamais ecrit).
+   * Optionnel : une room qui ne le connait pas le laisse absent. Sert a
+   * relire l'ancien contenu d'un type passe en 'crdt' pour le migrer.
+   * Peut etre une promesse (room du serveur : le snapshot arrive au join).
+   */
+  readonly initialSnapshot?: string | null | Promise<string | null>
   /** Envoie un snapshot complet à la room (broadcast + persistance côté serveur). */
   pushSnapshot(snapshotJson: string): Promise<void>
   /** Diffuse la présence locale (curseur, avatar) — éphémère. */

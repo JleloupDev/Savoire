@@ -419,7 +419,16 @@ function EditorAreaPanel({
     return manager.subscribeVaultChange?.(() => {
       bumpVaultTick(v => v + 1)
       const currentId = refs.selectedVault.current?.id ?? null
-      if (currentId === lastVaultIdRef.current) return
+      if (currentId === lastVaultIdRef.current) {
+        // Un document mis a la corbeille (ici ou chez un pair) : son onglet se ferme.
+        const api = dockviewRef.current
+        const client = refs.vaultAPI.current
+        if (!api || !client) return
+        for (const panel of [...api.panels]) {
+          if (panel.id.startsWith('doc-') && client.isTrashed(panel.id.slice(4))) api.removePanel(panel)
+        }
+        return
+      }
       lastVaultIdRef.current = currentId
       pendingOpenPathsRef.current = []
       const api = dockviewRef.current

@@ -4,6 +4,7 @@
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
+using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Sharing;
@@ -59,6 +60,35 @@ public static class ShareLinkGuard
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
         if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId && link.AllowsWrite()) return;
         throw new AccessDeniedException("Lien de partage sans permission d'écriture sur ce vault.");
+    }
+
+    // ── Attachment access ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lecture d'une piece jointe par un lien. Un lien (ou un jeton view) qui
+    /// ouvre le vault suffit. Un lien limite a une note ouvre aussi les pieces
+    /// jointes rangees dans le dossier de cette note (registre vault_documents,
+    /// rangement annonce par le client) : rien d'autre. Une image rangee
+    /// ailleurs dans le vault, meme liee depuis la note, reste fermee.
+    /// </summary>
+    public static async Task RequireAttachmentReadAsync(
+        string callerId, string vaultId, string attachmentId,
+        IShareLinkRepository shareLinks, IVaultDocumentRepository vaultDocuments, CancellationToken ct)
+    {
+        if (IsViewCaller(callerId))
+        {
+            await RequireVaultReadAsync(callerId, vaultId, shareLinks, ct);
+            return;
+        }
+
+        ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
+        if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId) return;
+        if (link.ResourceType == ResourceType.Document)
+        {
+            VaultDocumentRecord? file = await vaultDocuments.GetAsync(attachmentId, ct);
+            if (file is not null && file.VaultId == vaultId && file.ParentDocId == link.ResourceId) return;
+        }
+        throw new AccessDeniedException("Lien de partage non valide pour cette piece jointe.");
     }
 
     // ── Document access ───────────────────────────────────────────────────────

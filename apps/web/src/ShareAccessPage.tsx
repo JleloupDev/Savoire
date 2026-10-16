@@ -40,6 +40,9 @@ function createShareVault(handle: SharedDocumentHandle): VaultAPI {
     resolveDocumentId:   (path) => path === handle.path ? handle.docId : undefined,
     getVaultId:          () => handle.vaultId,
     getToken:            () => handle.accessToken,
+    // Les images de la note : seulement celles rangees dans son dossier.
+    resolveAttachmentUrl: (target) => handle.attachments?.url(target)
+      ?? Promise.reject(new Error(`resolveAttachmentUrl(${target}): aucune image lisible par ce lien`)),
   }
 }
 

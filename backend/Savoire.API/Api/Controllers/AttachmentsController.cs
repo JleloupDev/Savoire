@@ -68,6 +68,24 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
             ContentType: file.ContentType));
     }
 
+    // PUT /api/v1/vaults/{vaultId}/attachments/{fileId}/placement
+    // Rangement annonce par le client : la note dont le dossier contient la
+    // piece jointe (null : ailleurs) et son nom. Sert au partage d'une note.
+    [HttpPut("{fileId}/placement")]
+    public async Task<IActionResult> Place(string vaultId, string fileId, [FromBody] AttachmentPlacementRequest body, CancellationToken ct)
+    {
+        if (!FileIdRegex().IsMatch(fileId)) return BadRequest("Invalid file id.");
+        if (body.NoteId is not null && !FileIdRegex().IsMatch(body.NoteId)) return BadRequest("Invalid note id.");
+        await Mediator.Send(new PlaceAttachmentCommand(vaultId, fileId, body.NoteId, body.Name, GetCallerId()), ct);
+        return NoContent();
+    }
+
+    // GET /api/v1/vaults/{vaultId}/documents/{docId}/attachments
+    // Pieces jointes rangees dans le dossier d'une note (page de partage).
+    [HttpGet("~/api/v1/vaults/{vaultId}/documents/{docId}/attachments")]
+    public async Task<ActionResult<IReadOnlyList<NoteAttachmentDto>>> ListOfNote(string vaultId, string docId, CancellationToken ct)
+        => Ok(await Mediator.Send(new ListNoteAttachmentsQuery(vaultId, docId, GetCallerId()), ct));
+
     // GET /api/v1/vaults/{vaultId}/attachments/{path}
     [HttpGet("{*path}")]
     public async Task<IActionResult> Download(string vaultId, string path, CancellationToken ct)

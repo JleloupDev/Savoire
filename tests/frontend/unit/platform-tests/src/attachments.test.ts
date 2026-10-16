@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect } from 'vitest'
-import { sanitizeFileName, uniqueAttachmentPath, resolveLinkPath, linkTargetFor } from '@savoire/platform'
+import {
+  sanitizeFileName, uniqueAttachmentPath, resolveLinkPath, linkTargetFor,
+  ATTACHMENT_LOCATION, attachmentFolderFor, folderNoteOf, isAttachmentPath, noteFolderOf,
+} from '@savoire/platform'
 
 describe('nommage des pieces jointes (comme Obsidian)', () => {
   it('un fichier depose garde son nom, dans attachments/', () => {
@@ -41,5 +44,35 @@ describe('resolution d\'un lien par nom', () => {
   it('le lien insere est le nom s\'il est unique, sinon le chemin', () => {
     expect(linkTargetFor('attachments/Logo.svg', paths)).toBe('Logo.svg')
     expect(linkTargetFor('attachments/Photo.png', paths)).toBe('attachments/Photo.png')
+  })
+})
+
+describe('images rangees avec leur note', () => {
+  it('le dossier d\'une note porte son nom, a cote d\'elle', () => {
+    expect(noteFolderOf('Dossier/Ma note.md')).toBe('Dossier/Ma note/')
+    expect(noteFolderOf('Ma note.md')).toBe('Ma note/')
+    expect(noteFolderOf('Sans extension')).toBe('')
+  })
+
+  it('par defaut, une image envoyee depuis une note va dans le dossier de la note', () => {
+    expect(ATTACHMENT_LOCATION).toBe('note-folder')
+    expect(attachmentFolderFor('Dossier/Ma note.md')).toBe('Dossier/Ma note/')
+    expect(attachmentFolderFor(undefined)).toBe('attachments/')
+    expect(attachmentFolderFor('Dossier/Ma note.md', 'attachments')).toBe('attachments/')
+  })
+
+  it('uniqueAttachmentPath range dans le dossier demande', () => {
+    expect(uniqueAttachmentPath('Photo.png', p => p === 'A/Photo.png', 'A/')).toBe('A/Photo 1.png')
+  })
+
+  it('la note d\'un dossier suit la regle de l\'arborescence (.page, puis .md)', () => {
+    expect(folderNoteOf('A/Projet/', ['A/Projet.md', 'A/Projet.page', 'A/Projet/x.png'])).toBe('A/Projet.page')
+    expect(folderNoteOf('A/Projet/', ['A/Projet.md'])).toBe('A/Projet.md')
+    expect(folderNoteOf('attachments/', ['attachments/x.png'])).toBeUndefined()
+  })
+
+  it('une piece jointe se reconnait a son extension d\'image', () => {
+    expect(isAttachmentPath('Note/Photo.PNG')).toBe(true)
+    expect(isAttachmentPath('Note.md')).toBe(false)
   })
 })

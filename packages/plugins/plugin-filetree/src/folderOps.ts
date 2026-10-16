@@ -88,7 +88,7 @@ export async function moveNote(vault: VaultAPI, filePath: string, newFilePath: s
   await vault.renameFile(id, newFilePath)
 }
 
-/** Supprime un dossier et tous ses documents. */
+/** Met un dossier et tous ses documents a la corbeille (VaultAPI.deleteFile). */
 export async function deleteFolderDeep(vault: VaultAPI, folderPath: string): Promise<void> {
   const { files } = await collectFolder(vault, folderPath)
   for (const file of files) {

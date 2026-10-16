@@ -19,8 +19,9 @@ namespace Savoire.Application.Behaviors;
 /// none did, so a link to ONE document opened every document of the server.
 /// </summary>
 public class VaultAccessBehavior<TRequest, TResponse>(
-    IVaultAccessGuard    guard,
-    IShareLinkRepository shareLinks)
+    IVaultAccessGuard        guard,
+    IShareLinkRepository     shareLinks,
+    IVaultDocumentRepository vaultDocuments)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -49,7 +50,12 @@ public class VaultAccessBehavior<TRequest, TResponse>(
                 case VaultAccessLevel.Admin:
                     throw new AccessDeniedException("Un lien de partage ne donne jamais l'administration d'un vault.");
                 default:
-                    await ShareLinkGuard.RequireVaultReadAsync(req.CallerId, req.VaultId, shareLinks, ct);
+                    // Piece jointe : un lien vers une note lit aussi les images de son dossier.
+                    if (req is IRequiresAttachmentAccess att)
+                        await ShareLinkGuard.RequireAttachmentReadAsync(
+                            req.CallerId, req.VaultId, att.AttachmentId, shareLinks, vaultDocuments, ct);
+                    else
+                        await ShareLinkGuard.RequireVaultReadAsync(req.CallerId, req.VaultId, shareLinks, ct);
                     return;
             }
         }

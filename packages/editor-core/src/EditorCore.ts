@@ -262,11 +262,13 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       },
     }
     // Images : coller, deposer, bouton Image. Le vault range le fichier,
-    // quel que soit le profil de synchro ; l'editeur n'insere que le lien.
+    // quel que soit le profil de synchro (dans le dossier de cette note) ;
+    // l'editeur n'insere que le lien.
     const vault = options.vault
     const uploadImage = vault?.uploadAttachment
       ? async (file: File) => {
-          const path = await vault.uploadAttachment!(file)
+          const notePath = this.activeFile ?? undefined
+          const path = await vault.uploadAttachment!(file, notePath ? { notePath } : undefined)
           return vault.linkTarget?.(path) ?? path
         }
       : null

@@ -153,7 +153,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(d => d.VaultId).HasColumnName("vault_id").IsRequired();
             e.Property(d => d.RegisteredBy).HasColumnName("registered_by").IsRequired();
             e.Property(d => d.RegisteredAt).HasColumnName("registered_at").IsRequired();
+            e.Property(d => d.ParentDocId).HasColumnName("parent_doc_id");
+            e.Property(d => d.Name).HasColumnName("name");
             e.HasIndex(d => d.VaultId);
+            e.HasIndex(d => d.ParentDocId);
             e.HasOne<VaultEntity>()
              .WithMany()
              .HasForeignKey(d => d.VaultId)

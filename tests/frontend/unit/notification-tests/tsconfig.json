@@ -4,7 +4,8 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@savoire/notifications": ["../../../../packages/notifications/src/index.ts"]
+      "@savoire/notifications": ["../../../../packages/notifications/src/index.ts"],
+      "@savoire/platform": ["../../../../packages/platform/src/index.ts"]
     }
   },
   "include": ["src"]

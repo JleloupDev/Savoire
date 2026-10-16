@@ -151,7 +151,10 @@ function GraphPanel({ getContributor, workspace, vault }: {
   const vaultNodesRef = useRef<GraphNode[]>([])
 
   const rebuild = useCallback(() => {
-    const indexed = getContributor().getNodes()
+    // Un document mis a la corbeille garde ses entrees d'index (une
+    // restauration le fait revenir tel quel) : on le masque ici.
+    const trashed = (id: string) => vault.isTrashed?.(id) ?? false
+    const indexed = getContributor().getNodes().filter(n => !trashed(n.docId))
     // Fusion par CHEMIN, pas par docId : le repertoire du vault et l'index ne
     // s'accordent pas toujours sur l'identifiant d'une note (resolveDocumentId
     // peut echouer et retomber sur le chemin), et fusionner par docId
@@ -162,11 +165,11 @@ function GraphPanel({ getContributor, workspace, vault }: {
     const merged = new Map<string, GraphNode>()
     for (const n of vaultNodesRef.current) merged.set(key(n.path), n)
     for (const n of indexed) merged.set(key(n.path), n)
-    const edges = getContributor().getAllEdges()
+    const edges = getContributor().getAllEdges().filter(e => !trashed(e.sourceId))
     const { simNodes, simEdges } = buildSimulation([...merged.values()], edges, sizeRef.current)
     simRef.current = { nodes: simNodes, edges: simEdges }
     setTick(t => t + 1)
-  }, [getContributor])
+  }, [getContributor, vault])
 
   const reloadVaultNodes = useCallback(async () => {
     try {

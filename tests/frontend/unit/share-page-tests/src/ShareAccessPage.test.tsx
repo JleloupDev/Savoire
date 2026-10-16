@@ -232,3 +232,23 @@ describe('ShareAccessPage — CRDT wiring', () => {
     expect(handle.dispose).toHaveBeenCalled()
   })
 })
+
+// ─── Images de la note ────────────────────────────────────────────────────────
+
+describe('ShareAccessPage — images de la note partagee', () => {
+  beforeEach(() => { DocumentView.lastOptions = {} })
+
+  it('le vault de la page resout les images par le resolveur du lien (dossier de la note)', async () => {
+    const url = vi.fn(async (target: string) => `blob:${target}`)
+    await renderPage('tok', makeSharingApi(makeHandle({ attachments: { url, dispose: vi.fn() } })))
+    const vault = DocumentView.lastOptions.vault as { resolveAttachmentUrl?(t: string): Promise<string> }
+    await expect(vault.resolveAttachmentUrl!('Photo.png')).resolves.toBe('blob:Photo.png')
+    expect(url).toHaveBeenCalledWith('Photo.png')
+  })
+
+  it('sans resolveur (vault inconnu), une image est introuvable au lieu de casser la page', async () => {
+    await renderPage('tok', makeSharingApi(makeHandle()))
+    const vault = DocumentView.lastOptions.vault as { resolveAttachmentUrl?(t: string): Promise<string> }
+    await expect(vault.resolveAttachmentUrl!('Photo.png')).rejects.toThrow()
+  })
+})

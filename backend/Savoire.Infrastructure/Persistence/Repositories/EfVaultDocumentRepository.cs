@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
+using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Infrastructure.Persistence.Repositories;
@@ -40,4 +41,26 @@ public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentReposito
         await db.SaveChangesAsync(ct);
         return rejected;
     }
+
+    public async Task<VaultDocumentRecord?> GetAsync(string docId, CancellationToken ct = default) =>
+        await db.VaultDocuments
+            .Where(d => d.DocId == docId)
+            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name))
+            .FirstOrDefaultAsync(ct);
+
+    public async Task SetPlacementAsync(string docId, string? parentDocId, string? name, CancellationToken ct = default)
+    {
+        VaultDocumentEntity? doc = await db.VaultDocuments.FirstOrDefaultAsync(d => d.DocId == docId, ct);
+        if (doc is null) return;
+        doc.ParentDocId = parentDocId;
+        doc.Name = name;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<VaultDocumentRecord>> ListChildrenAsync(
+        string vaultId, string parentDocId, CancellationToken ct = default) =>
+        await db.VaultDocuments
+            .Where(d => d.VaultId == vaultId && d.ParentDocId == parentDocId)
+            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name))
+            .ToListAsync(ct);
 }

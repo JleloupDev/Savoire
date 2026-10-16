@@ -676,8 +676,19 @@ export function AppShell() {
     const vault = selectedVaultRef.current
     const tok = tokenRef.current
     if (!vault || !tok) return ''
-    if (activeDoc) application.documentSession.close(vault.id, activeDoc.id)
-    const opened = await application.documentSession.open(vault.id, doc.id, doc, tok)
+    // Le contenu passe par la session du vault (le port de synchro) : en pair
+    // a pair, il n'y a pas de serveur a qui demander le document.
+    const session = vaultSessionRef.current
+    let opened: string
+    if (session) {
+      const ext = doc.path.split('.').pop()?.toLowerCase() ?? ''
+      const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
+      const kind = spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
+      opened = await session.readDocument(doc.id, kind)
+    } else {
+      if (activeDoc) application.documentSession.close(vault.id, activeDoc.id)
+      opened = await application.documentSession.open(vault.id, doc.id, doc, tok)
+    }
     setActiveDoc(doc)
     // Push the CRDT content so plugins (backlinks…) can read it via getActiveDocument().content
     managerRef.current?.setActiveDocumentContent(opened)

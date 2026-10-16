@@ -8,6 +8,7 @@
 // Les verrous sont une capacite optionnelle : ils ne sont pas testes ici.
 import { describe, it, expect, afterEach } from 'vitest'
 import type { IVaultSyncSession } from '@savoire/application'
+import { DocumentStore, VaultClient, type IVaultStorage } from '@savoire/platform'
 import type { ChangeOrigin, ICRDT, ITreeElement, ITreeText, TextDelta, TreeChangeInfo, TreeElementInit } from '@savoire/plugin-api'
 
 export interface VaultSyncSessionHarness {
@@ -485,6 +486,42 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
         const a = await open('alice')
         await expect(a.files.url('inconnu')).rejects.toThrow()
         await expect(a.files.read('inconnu')).rejects.toThrow()
+      })
+    })
+
+    describe('corbeille', () => {
+      // Mettre a la corbeille n'est qu'un renommage sous `.trash/` dans le
+      // repertoire : aucune hypothese sur un serveur.
+      const clientOf = (session: IVaultSyncSession): VaultClient => {
+        const fail = async (): Promise<never> => { throw new Error('stockage direct appele') }
+        const storage: IVaultStorage = {
+          readFile: fail, writeFile: fail, resolveFileUrl: () => '', listDocuments: fail, uploadAttachment: fail,
+        }
+        const store = new DocumentStore({ getDocumentContent: fail, writeDocumentContent: fail })
+        return new VaultClient('v1', '', storage, store, session.directory, () => undefined, session)
+      }
+
+      it('un pair met a la corbeille, l\'autre la voit dans sa corbeille et peut restaurer', async () => {
+        const a = clientOf(await open('alice'))
+        const bSession = await open('bob')
+        const b = clientOf(bSession)
+        await a.createFile('Projet/note.md')
+        await harness.settle()
+        const id = b.resolveDocumentId('Projet/note.md')!
+        expect(id).toBeDefined()
+
+        await a.deleteFile(id)
+        await harness.settle()
+        expect(b.isTrashed(id)).toBe(true)
+        expect(b.listTrash()).toEqual([{ documentId: id, path: '.trash/Projet/note.md', originalPath: 'Projet/note.md' }])
+        expect(await b.list()).toEqual([])
+        expect(b.documents).toEqual([])
+
+        expect(await b.restoreFromTrash(id)).toBe('Projet/note.md')
+        await harness.settle()
+        expect(a.isTrashed(id)).toBe(false)
+        expect(a.resolveDocumentId('Projet/note.md')).toBe(id)
+        expect(a.listTrash()).toEqual([])
       })
     })
 

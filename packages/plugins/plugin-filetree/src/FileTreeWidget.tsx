@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import type { ViewContext, VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
 import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
-import { createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
+import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
+import { ConfirmDialog, TrashSection, type DialogChoice, type DialogRequest } from './TrashPanel'
+import { trashFolderRequest, trashSubPagesRequest } from './trashMessages'
 
 // ─── FileTree component ───────────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ function FileNodeRow({
   draggedRef,
   onCreateInside,
   fileTypes,
+  ask,
 }: {
   node: FileNode
   onOpenFile: (p: string) => void
@@ -68,6 +71,8 @@ function FileNodeRow({
   draggedRef: React.MutableRefObject<FileNode | null>
   onCreateInside?: (type: 'file' | 'folder', folderPath: string) => void
   fileTypes: FileTypeSpec[]
+  /** Fenetre de confirmation de l'explorateur. */
+  ask: (request: DialogRequest) => Promise<DialogChoice>
 }) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileNode[]>([])
@@ -99,19 +104,27 @@ function FileNodeRow({
     else onOpenFile(node.path)
   }
 
+  // Supprimer = mettre a la corbeille (VaultAPI.deleteFile) : rien n'est
+  // efface, tout se restaure depuis la corbeille en bas de l'explorateur.
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
-    const what = node.kind === 'folder' ? `le dossier "${node.name}" et tout son contenu` : `"${node.name}"`
-    if (!confirm(`Supprimer ${what} ?`)) return
     try {
-      // Un dossier part avec ses documents (avant, seule l'entree du dossier
-      // etait retiree : rien ne changeait a l'ecran).
-      if (node.kind === 'folder') await deleteFolderDeep(vault, node.path)
-      else {
-        // Note de dossier : on demande pour les sous-pages. Sinon le dossier
-        // reste et redevient un dossier simple.
-        if (node.kind === 'folderNote' && confirm(`Supprimer aussi les sous-pages de "${node.name}" ?\n(Annuler : les garder dans le dossier)`)) {
-          await deleteFolderDeep(vault, node.folderPath)
+      if (node.kind === 'folder') {
+        // Un dossier part avec ses documents : on dit combien.
+        const { files } = await collectFolder(vault, node.path)
+        const choice = await ask(trashFolderRequest(node.name, files.length))
+        if (choice !== 'confirm') return
+        await deleteFolderDeep(vault, node.path)
+      } else {
+        // Note de dossier : on demande pour les sous-pages. « Garder » laisse
+        // le dossier, qui redevient un dossier simple.
+        if (node.kind === 'folderNote') {
+          const { files } = await collectFolder(vault, node.folderPath)
+          if (files.length > 0) {
+            const choice = await ask(trashSubPagesRequest(node.name, files.length))
+            if (choice === 'cancel') return
+            if (choice === 'confirm') await deleteFolderDeep(vault, node.folderPath)
+          }
         }
         const docId = vault.resolveDocumentId(node.path)
         if (!docId) throw new Error(`Document not found: ${node.path}`)
@@ -317,7 +330,7 @@ function FileNodeRow({
               cursor: 'pointer', fontSize: 11, padding: '0 4px', flexShrink: 0,
               transition: 'opacity 0.1s',
             }}
-            title="Supprimer"
+            title="Mettre a la corbeille"
           >✕</button>
         )}
         {vault.renameFile && (
@@ -347,6 +360,7 @@ function FileNodeRow({
             draggedRef={draggedRef}
             onCreateInside={onCreateInside}
             fileTypes={fileTypes}
+            ask={ask}
           />
         ))
       )}
@@ -376,6 +390,15 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
 
   // ── Drag state (shared across all rows) ─────────────────────────────────
   const draggedRef = useRef<FileNode | null>(null)
+
+  // ── Fenetre de confirmation (une a la fois) ──────────────────────────────
+  const [dialog, setDialog] = useState<{ request: DialogRequest; resolve: (c: DialogChoice) => void } | null>(null)
+  const ask = useCallback((request: DialogRequest) => new Promise<DialogChoice>(resolve => {
+    setDialog({ request, resolve })
+  }), [])
+  const choose = useCallback((choice: DialogChoice) => {
+    setDialog(current => { current?.resolve(choice); return null })
+  }, [])
 
   useEffect(() => {
     const manager = workspace as unknown as { subscribeVaultChange?: (cb: () => void) => () => void }
@@ -455,6 +478,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
             onRenamed={() => setTick(t => t + 1)}
             draggedRef={draggedRef}
             fileTypes={fileTypes}
+            ask={ask}
             onCreateInside={(type, folderPath) => {
               setCreating(type)
               setNewPath(folderPath)
@@ -463,6 +487,10 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
           />
         ))}
       </div>
+
+      <TrashSection vault={vault} tick={tick} onChanged={() => setTick(t => t + 1)} ask={ask} />
+
+      {dialog && <ConfirmDialog request={dialog.request} onChoose={choose} />}
 
       {/* Footer: create controls */}
       {(canCreateFile || canCreateFolder) && (

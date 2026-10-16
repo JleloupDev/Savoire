@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@savoire/notifications': path.resolve(__dirname, '../../../../packages/notifications/src/index.ts'),
+      '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
     },
   },
   test: {

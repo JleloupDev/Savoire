@@ -2,6 +2,21 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // ─── Vault API ─────────────────────────────────────────────────────────────
 
+/** Un document de la corbeille. */
+export interface TrashEntry {
+  documentId: string
+  /** Chemin dans la corbeille, par exemple ".trash/Projet/Note.md". */
+  path: string
+  /** Chemin d'origine, par exemple "Projet/Note.md". */
+  originalPath: string
+}
+
+/** Options d'envoi d'une piece jointe. */
+export interface AttachmentUploadOptions {
+  /** Note depuis laquelle on envoie : la piece jointe va dans son dossier. */
+  notePath?: string
+}
+
 export interface VaultAPI {
   read(documentId: string): Promise<string>
   /** Seule exception path-based: lecture d'un document/attachment via son chemin. */
@@ -14,14 +29,31 @@ export interface VaultAPI {
   createFile?(path: string): Promise<void>
   createFolder?(path: string): Promise<void>
   renameFile?(documentId: string, newPath: string): Promise<void>
-  deleteFile?(documentId: string): Promise<void>
-  deleteFolder?(path: string): Promise<void>
   /**
-   * Envoie un fichier (image, PDF...) dans `attachments/`, sous son nom
-   * d'origine (« Nom 1.png » en cas de collision). Rend le chemin lisible,
-   * par exemple "attachments/Nom.png".
+   * Met le document a la corbeille (`.trash/`, comme Obsidian) : rien n'est
+   * efface. Voir restoreFromTrash et deleteFilePermanently.
    */
-  uploadAttachment?(file: File): Promise<string>
+  deleteFile?(documentId: string): Promise<void>
+  /**
+   * Met a la corbeille tous les documents du dossier, a toute profondeur, et
+   * retire ses entrees de dossier (les dossiers vides ne sont pas gardes).
+   */
+  deleteFolder?(path: string): Promise<void>
+  /** Documents de la corbeille. */
+  listTrash?(): TrashEntry[]
+  /** Vrai si le document est dans la corbeille. */
+  isTrashed?(documentId: string): boolean
+  /** Remet le document a son chemin d'origine (suffixe s'il est pris). Rend le chemin restaure. */
+  restoreFromTrash?(documentId: string): Promise<string>
+  /** Supprime definitivement un document de la corbeille. Refuse un document hors corbeille. */
+  deleteFilePermanently?(documentId: string): Promise<void>
+  /**
+   * Envoie un fichier (image...) sous son nom d'origine (« Nom 1.png » en cas
+   * de collision). Avec `notePath`, il est range dans le dossier de cette
+   * note (`Dossier/Ma note.md` -> `Dossier/Ma note/`, comme une note de
+   * dossier) ; sans, dans `attachments/`. Rend le chemin cree.
+   */
+  uploadAttachment?(file: File, options?: AttachmentUploadOptions): Promise<string>
   /**
    * URL affichable (<img src>) d'une piece jointe, designee par son chemin ou
    * par son seul nom (« Nom.png », comme Obsidian). Asynchrone : la lecture

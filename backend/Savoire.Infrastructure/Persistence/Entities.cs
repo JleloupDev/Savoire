@@ -81,6 +81,10 @@ public class VaultDocumentEntity
     public string   VaultId      { get; set; } = null!;
     public string   RegisteredBy { get; set; } = null!;
     public DateTime RegisteredAt { get; set; }
+    /// <summary>Piece jointe rangee dans le dossier de cette note (null : ailleurs).</summary>
+    public string?  ParentDocId  { get; set; }
+    /// <summary>Nom affiche d'une piece jointe (« Photo.png »), pour la page de partage.</summary>
+    public string?  Name         { get; set; }
 }
 
 public class VaultKeyWrapEntity

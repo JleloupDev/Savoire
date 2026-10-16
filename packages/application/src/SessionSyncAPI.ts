@@ -25,13 +25,14 @@ export class SessionSyncAPI implements SyncAPI {
 
     const doc = session.openSnapshot(docId)
     // Comme l'ancienne room : rendue une fois le document rejoint.
-    await doc.load()
+    const initialSnapshot = await doc.load()
 
     let closed = false
     const unsubs: (() => void)[] = []
     const track = (unsub: () => void): (() => void) => { unsubs.push(unsub); return unsub }
 
     return {
+      initialSnapshot,
       pushSnapshot: async (json) => { if (!closed) await doc.write(json) },
       updatePresence: async (presence) => { if (!closed) await doc.updatePresence(presence) },
       onSnapshot: (cb) => track(doc.onRemoteWrite(cb)),

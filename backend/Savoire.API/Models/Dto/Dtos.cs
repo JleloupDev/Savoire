@@ -75,3 +75,6 @@ public record AddMemberRequest(string UserId, string Role);
 // ── Attachments ──────────────────────────────────────────────────────────────
 
 public record AttachmentDto(string FileName, string Path, long Size, string ContentType);
+
+/// <summary>Corps de PUT .../attachments/{fileId}/placement : note qui range la piece jointe (null : ailleurs) et son nom.</summary>
+public record AttachmentPlacementRequest(string? NoteId, string? Name);

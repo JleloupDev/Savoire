@@ -29,9 +29,11 @@ function SearchPanel({ ctx, getContributor }: { ctx: ViewContext; getContributor
     setQuery(q)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      setResults(q.trim() ? getContributor().search(q) : [])
+      // La corbeille garde son index (restauration immediate) : on la masque.
+      const results = q.trim() ? getContributor().search(q) : []
+      setResults(results.filter(r => !ctx.vault.isTrashed?.(r.docId)))
     }, 100)
-  }, [getContributor])
+  }, [getContributor, ctx])
 
   const openResult = useCallback((path: string) => {
     if (path) void workspace.openFile(path)

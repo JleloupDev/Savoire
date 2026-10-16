@@ -5,9 +5,13 @@
 // VaultAccessBehavior : lire exige le droit de lecture sur le vault, ecrire
 // ou supprimer le droit d'ecriture. Avant, la lecture etait anonyme et
 // l'ecriture ouverte a tout compte connecte, quel que soit le vault.
+using FluentValidation;
 using MediatR;
 using Savoire.Application.Abstractions;
 using Savoire.Application.Common;
+using Savoire.Domain.Exceptions;
+using Savoire.Domain.ReadModels;
+using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Attachments;
 
@@ -41,9 +45,10 @@ public sealed class StoreAttachmentCommandHandler(IContentStore store)
 
 /// <summary>Lit une piece jointe. Null si elle n'existe pas.</summary>
 public sealed record ReadAttachmentQuery(string VaultId, string StoragePath, string CallerId)
-    : IRequest<Stream?>, IRequiresVaultAccess
+    : IRequest<Stream?>, IRequiresAttachmentAccess
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+    public string AttachmentId => StoragePath;
 }
 
 public sealed class ReadAttachmentQueryHandler(IContentStore store)
@@ -64,4 +69,70 @@ public sealed class DeleteAttachmentCommandHandler(IContentStore store)
 {
     public Task Handle(DeleteAttachmentCommand cmd, CancellationToken ct)
         => store.DeleteAttachmentAsync(cmd.VaultId, cmd.StoragePath, ct);
+}
+
+/// <summary>
+/// Annonce le rangement d'une piece jointe : la note dont le dossier la
+/// contient (null : rangee ailleurs, par exemple `attachments/`) et son nom
+/// affiche. Le serveur ne lit pas les chemins (repertoire CRDT) : c'est le
+/// client qui le dit, a l'envoi et a chaque deplacement. Exige le droit
+/// d'ecrire, et que la piece jointe ET la note soient inscrites dans CE vault.
+/// Sert seulement au partage d'une note (lecture de ses images).
+/// </summary>
+public sealed record PlaceAttachmentCommand(
+    string VaultId,
+    string FileId,
+    string? NoteId,
+    string? Name,
+    string CallerId
+) : IRequest, IRequiresVaultAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+}
+
+public sealed class PlaceAttachmentCommandHandler(IVaultDocumentRepository vaultDocuments)
+    : IRequestHandler<PlaceAttachmentCommand>
+{
+    public async Task Handle(PlaceAttachmentCommand cmd, CancellationToken ct)
+    {
+        if (cmd.Name is { } name && (name.Length > 255 || name.Contains('/')))
+            throw new ValidationException("Nom de piece jointe invalide.");
+        if (cmd.NoteId == cmd.FileId)
+            throw new ValidationException("Une piece jointe ne se range pas sous elle-meme.");
+
+        VaultDocumentRecord? file = await vaultDocuments.GetAsync(cmd.FileId, ct);
+        if (file is null || file.VaultId != cmd.VaultId)
+            throw new AccessDeniedException("Piece jointe inconnue dans ce vault.");
+        if (cmd.NoteId is not null)
+        {
+            VaultDocumentRecord? note = await vaultDocuments.GetAsync(cmd.NoteId, ct);
+            if (note is null || note.VaultId != cmd.VaultId)
+                throw new AccessDeniedException("Note inconnue dans ce vault.");
+        }
+        await vaultDocuments.SetPlacementAsync(cmd.FileId, cmd.NoteId, cmd.Name, ct);
+    }
+}
+
+/// <summary>Une piece jointe rangee dans le dossier d'une note.</summary>
+public sealed record NoteAttachmentDto(string Id, string? Name);
+
+/// <summary>
+/// Pieces jointes rangees dans le dossier d'une note : ce qu'il faut a la
+/// page de partage pour afficher `![[Photo.png]]`. Exige le droit de lire la
+/// note (un lien de partage vers cette note suffit).
+/// </summary>
+public sealed record ListNoteAttachmentsQuery(string VaultId, string DocId, string CallerId)
+    : IRequest<IReadOnlyList<NoteAttachmentDto>>, IRequiresDocumentAccess
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Read;
+}
+
+public sealed class ListNoteAttachmentsQueryHandler(IVaultDocumentRepository vaultDocuments)
+    : IRequestHandler<ListNoteAttachmentsQuery, IReadOnlyList<NoteAttachmentDto>>
+{
+    public async Task<IReadOnlyList<NoteAttachmentDto>> Handle(ListNoteAttachmentsQuery q, CancellationToken ct)
+    {
+        IReadOnlyList<VaultDocumentRecord> children = await vaultDocuments.ListChildrenAsync(q.VaultId, q.DocId, ct);
+        return children.Select(c => new NoteAttachmentDto(c.DocId, c.Name)).ToList();
+    }
 }

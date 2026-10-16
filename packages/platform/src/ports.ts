@@ -118,9 +118,30 @@ export interface ISnapshotDocument {
  * Anciennes pieces jointes : rangees sous leur nom de stockage
  * (`<guid>.png`). `url` et `read` acceptent aussi ce nom.
  */
+/** Options d'un envoi de fichier. */
+export interface FileUploadOptions {
+  /** Progression 0..1, quand le transport sait la mesurer (envoi HTTP). */
+  onProgress?(fraction: number): void
+}
+
+/**
+ * Rangement d'une piece jointe, annonce au gardien du vault : la note dont
+ * le dossier la contient (null : rangee ailleurs) et son nom affiche. Sert
+ * au partage d'une note (le serveur ne lit pas les chemins).
+ */
+export interface AttachmentPlacement {
+  noteId: string | null
+  name: string
+}
+
 export interface IVaultFiles {
   /** Stocke (ou remplace) le fichier sous `fileId`, et le rend lisible aux autres pairs. */
-  upload(fileId: string, file: Blob): Promise<void>
+  upload(fileId: string, file: Blob, options?: FileUploadOptions): Promise<void>
+  /**
+   * Annonce le rangement d'une piece jointe. Absent : rien a annoncer (pair a
+   * pair, ou le partage par lien n'existe pas).
+   */
+  place?(fileId: string, placement: AttachmentPlacement): Promise<void>
   /**
    * URL affichable (balise <img>), apres une lecture autorisee : une URL
    * blob: le plus souvent. Rejette si le fichier est introuvable.

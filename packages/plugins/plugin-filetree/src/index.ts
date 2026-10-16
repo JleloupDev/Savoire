@@ -59,4 +59,6 @@ export default plugin
 export { FileTreeWidget } from './FileTreeWidget'
 export { FileTree } from './FileTreeWidget'
 export * from './folderNotes'
+export { filesLabel, trashFolderRequest, trashSubPagesRequest, emptyTrashRequest } from './trashMessages'
+export type { DialogRequest, DialogChoice } from './TrashPanel'
 export { collectFolder, moveFolder, moveNote, deleteFolderDeep, createDocument, createSubPage } from './folderOps'

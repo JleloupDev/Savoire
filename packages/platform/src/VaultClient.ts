@@ -16,9 +16,13 @@
  * (serveur Savoire, pair a pair). Sans session (document partage isole), les
  * anciens chemins `documentStore` / `storage` restent utilises.
  */
-import type { VaultAPI } from '@savoire/plugin-api'
+import type { AttachmentUploadOptions, TrashEntry, VaultAPI } from '@savoire/plugin-api'
 import { documentSyncKind, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
-import { ATTACHMENTS_DIR, linkTargetFor, resolveLinkPath, uniqueAttachmentPath } from './attachments'
+import {
+  ATTACHMENTS_DIR, attachmentFolderFor, folderNoteOf, isAttachmentPath, linkTargetFor, resolveLinkPath, uniqueAttachmentPath,
+} from './attachments'
+import { uploadTracker, type UploadTracker } from './uploads'
+import { isTrashPath, originalPathOf, restorePathFor, trashPathFor } from './trash'
 import type { DocumentStore } from './DocumentStore'
 
 export class VaultClient implements VaultAPI {
@@ -34,6 +38,8 @@ export class VaultClient implements VaultAPI {
     private readonly session?: IVaultContentSession,
     /** Famille de synchro d'un document. Defaut : seul le Markdown est un CRDT. */
     private readonly syncKindOf: (path: string) => DocumentSyncKind = documentSyncKind,
+    /** Ou annoncer les envois (progression, succes, echec). */
+    private readonly uploads: UploadTracker = uploadTracker,
   ) {}
 
   /** Met à jour le token Bearer (appelé après refresh du token d'accès). */
@@ -61,9 +67,13 @@ export class VaultClient implements VaultAPI {
     return this.directory.onChange(cb)
   }
 
-  /** Get current document list. */
+  /**
+   * Documents du vault, HORS corbeille : c'est la liste que voient l'ouverture
+   * rapide, les agents, la resolution des liens. La corbeille se lit par
+   * listTrash().
+   */
   get documents(): readonly IDocumentMeta[] {
-    return this.directory.getAll()
+    return this.directory.getAll().filter(d => !isTrashPath(d.path))
   }
 
   // ── CRDT sync (wired by VaultHubClient when the server supports binary ops) ──
@@ -92,7 +102,7 @@ export class VaultClient implements VaultAPI {
     const doc = this._resolveDocumentByPath(path)
     if (this.session) {
       // Une piece jointe est inscrite au repertoire, mais son contenu est un fichier.
-      if (path.startsWith(ATTACHMENTS_DIR) || !doc) {
+      if (path.startsWith(ATTACHMENTS_DIR) || isAttachmentPath(path) || !doc) {
         const files = this.session.files
         return this.withAttachment(path, key => files.read(key))
       }
@@ -129,9 +139,12 @@ export class VaultClient implements VaultAPI {
   // see ADR-010
   async list(dir?: string): Promise<string[]> {
     const prefix = !dir ? '' : dir.endsWith('/') ? dir : dir + '/'
+    // La corbeille n'apparait que si on la demande : list('.trash/').
+    const hideTrash = !isTrashPath(prefix)
     const result = new Set<string>()
     for (const doc of this.directory.getAll()) {
       if (!doc.path.startsWith(prefix)) continue
+      if (hideTrash && isTrashPath(doc.path)) continue
       const rest = doc.path.slice(prefix.length)
       const slashIdx = rest.indexOf('/')
       if (slashIdx === -1) result.add(prefix + rest)
@@ -187,42 +200,166 @@ export class VaultClient implements VaultAPI {
     await this.renameDocument(documentId, newPath)
   }
 
+  /**
+   * Supprimer = mettre a la corbeille. Tous les appelants (arborescence,
+   * notes de dossier, plugins) passent par ici. Un document deja dans la
+   * corbeille n'y bouge pas : l'effacer est deleteFilePermanently.
+   */
   async deleteFile(documentId: string): Promise<void> {
-    await this.deleteDocument(documentId)
+    this.trash(documentId)
   }
 
+  /**
+   * Met a la corbeille les documents du dossier (toute profondeur), puis
+   * retire le dossier et ses sous-dossiers du repertoire CRDT. Un dossier
+   * deja vide (apres un deplacement) ne fait que perdre ses entrees.
+   */
   async deleteFolder(path: string): Promise<void> {
-    // Remove the folder and any sub-folders from the CRDT directory.
     const prefix = path.endsWith('/') ? path : path + '/'
+    for (const doc of this.directory.getAll()) {
+      if (doc.path.startsWith(prefix)) this.trash(doc.id)
+    }
     for (const f of this.directory.getFolders()) {
       if (f === prefix || f.startsWith(prefix)) this.directory.removeFolder(f)
     }
   }
 
+  // ── Corbeille ─────────────────────────────────────────────────────────────
+
   /**
-   * Envoie une piece jointe, comme Obsidian : elle va dans `attachments/`
-   * sous son nom d'origine (« Nom 1.png » si « Nom.png » est pris). Les
-   * octets sont ranges sous l'id du document : le nom reste renommable.
-   * Rend le chemin du document cree.
+   * Met un document a la corbeille : simple renommage sous `.trash/` dans le
+   * repertoire CRDT, chemin d'origine conserve (suffixe en cas de collision).
+   * Les octets d'une piece jointe restent stockes. Rend le nouveau chemin.
    */
-  async uploadAttachment(file: File): Promise<string> {
+  trash(documentId: string): string | undefined {
+    const meta = this.directory.getById(documentId)
+    if (!meta) return undefined
+    if (isTrashPath(meta.path)) return meta.path
+    const target = trashPathFor(meta.path, p => !!this._findDocumentByPath(p))
+    this.renameDocumentInCache(documentId, target)
+    return target
+  }
+
+  listTrash(): TrashEntry[] {
+    return this.directory.getAll()
+      .filter(d => isTrashPath(d.path))
+      .map(d => ({ documentId: d.id, path: d.path, originalPath: originalPathOf(d.path) }))
+      .sort((a, b) => a.originalPath.localeCompare(b.originalPath))
+  }
+
+  isTrashed(documentId: string): boolean {
+    const meta = this.directory.getById(documentId)
+    return !!meta && isTrashPath(meta.path)
+  }
+
+  async restoreFromTrash(documentId: string): Promise<string> {
+    const meta = this.directory.getById(documentId)
+    if (!meta) throw new Error(`Document not found: ${documentId}`)
+    if (!isTrashPath(meta.path)) return meta.path
+    const target = restorePathFor(meta.path, p => !!this._findDocumentByPath(p))
+    this.renameDocumentInCache(documentId, target)
+    return target
+  }
+
+  /**
+   * Efface un document de la corbeille : il quitte le repertoire. Les octets
+   * d'une piece jointe ne sont pas encore effaces du stockage.
+   */
+  async deleteFilePermanently(documentId: string): Promise<void> {
+    const meta = this.directory.getById(documentId)
+    if (!meta) return
+    if (!isTrashPath(meta.path)) throw new Error('Seul un document de la corbeille peut etre supprime definitivement.')
+    this.removeDocument(documentId)
+  }
+
+  /**
+   * Envoie une piece jointe sous son nom d'origine (« Nom 1.png » si
+   * « Nom.png » est pris). Depuis une note (`notePath`), elle va dans le
+   * dossier de la note (ATTACHMENT_LOCATION, attachments.ts) ; sinon dans
+   * `attachments/`. Les octets sont ranges sous l'id du document : le nom
+   * reste renommable. L'envoi est annonce (progression, succes, echec) au
+   * suivi des envois. Rend le chemin du document cree.
+   */
+  async uploadAttachment(file: File, options: AttachmentUploadOptions = {}): Promise<string> {
+    const report = this.uploads.begin(file.name)
+    try {
+      const path = await this.storeAttachment(file, options.notePath, f => report.progress(f))
+      report.done(path)
+      return path
+    } catch (err) {
+      report.fail(err)
+      throw err
+    }
+  }
+
+  private async storeAttachment(file: File, notePath: string | undefined, onProgress: (f: number) => void): Promise<string> {
     if (!this.session) {
       // Document partage isole : ancien chemin, nom genere par le serveur.
       const { storagePath } = await this.storage.uploadAttachment(this.vaultId, file, this.token)
       return `${ATTACHMENTS_DIR}${storagePath}`
     }
-    const path = uniqueAttachmentPath(file.name, p => !!this._findDocumentByPath(p))
+    const folder = attachmentFolderFor(notePath)
+    const path = uniqueAttachmentPath(file.name, p => !!this._findDocumentByPath(p), folder)
     const id = crypto.randomUUID()
     await this.session.registerDocuments([id])
-    await this.session.files.upload(id, file)
+    await this.session.files.upload(id, file, { onProgress })
     // Le document n'apparait qu'une fois les octets en place.
     this.addDocument({ id, path })
+    // Rangee avec sa note : on l'annonce (partage de la note). Un echec ne
+    // gache pas l'envoi, l'image est la ; seul le partage ne la verra pas.
+    const noteId = notePath && folder !== ATTACHMENTS_DIR ? this._findDocumentByPath(notePath)?.id : undefined
+    if (noteId) void this.announcePlacement(id, noteId, path)
     return path
+  }
+
+  // ── Rangement des pieces jointes (partage d'une note) ─────────────────────
+
+  private readonly placementsToAnnounce = new Set<string>()
+  private placementTimer: ReturnType<typeof setTimeout> | null = null
+
+  private async announcePlacement(fileId: string, noteId: string | null, path: string): Promise<void> {
+    const place = this.session?.files.place
+    if (!place) return
+    try {
+      await place.call(this.session!.files, fileId, { noteId, name: path.slice(path.lastIndexOf('/') + 1) })
+    } catch (err) {
+      console.warn('[VaultClient] rangement de la piece jointe non annonce', fileId, err)
+    }
+  }
+
+  /**
+   * Une piece jointe a bouge : on annonce sa nouvelle note un peu plus tard.
+   * Deplacer une note de dossier renomme d'abord son contenu, puis la note :
+   * on attend la fin du mouvement pour trouver la note du nouveau dossier.
+   */
+  private schedulePlacement(fileId: string): void {
+    if (!this.session?.files.place) return
+    this.placementsToAnnounce.add(fileId)
+    if (this.placementTimer) clearTimeout(this.placementTimer)
+    this.placementTimer = setTimeout(() => void this.flushPlacements(), 300)
+  }
+
+  /** Annonce le rangement des pieces jointes deplacees. Rend quand c'est fait (tests). */
+  async flushPlacements(): Promise<void> {
+    if (this.placementTimer) { clearTimeout(this.placementTimer); this.placementTimer = null }
+    const ids = [...this.placementsToAnnounce]
+    this.placementsToAnnounce.clear()
+    const all = this.directory.getAll()
+    const paths = all.map(d => d.path)
+    await Promise.all(ids.map(async id => {
+      const meta = this.directory.getById(id)
+      // Une image a la corbeille garde son rangement : la restaurer le retrouve.
+      if (!meta || isTrashPath(meta.path)) return
+      const folder = meta.path.slice(0, meta.path.lastIndexOf('/') + 1)
+      const notePath = folder ? folderNoteOf(folder, paths) : undefined
+      const noteId = notePath ? all.find(d => d.path === notePath)?.id ?? null : null
+      await this.announcePlacement(id, noteId, meta.path)
+    }))
   }
 
   /** Texte a mettre dans `![[...]]` : le nom seul s'il est unique, sinon le chemin. */
   linkTarget(path: string): string {
-    return linkTargetFor(path, this.directory.getAll().map(d => d.path))
+    return linkTargetFor(path, this.documents.map(d => d.path))
   }
 
   /** URL affichable d'une piece jointe, designee par son chemin ou son seul nom. */
@@ -256,7 +393,8 @@ export class VaultClient implements VaultAPI {
   private resolveLinkDocument(target: string): IDocumentMeta | undefined {
     const exact = this._findDocumentByPath(target)
     if (exact) return exact
-    const all = this.directory.getAll()
+    // La corbeille ne repond pas aux liens par nom (comme Obsidian).
+    const all = this.documents
     const path = resolveLinkPath(target, all.map(d => d.path))
     return path ? all.find(d => d.path === path) : undefined
   }
@@ -264,6 +402,7 @@ export class VaultClient implements VaultAPI {
   async renameDocument(documentId: string, newPath: string): Promise<void> {
     const normalizedNewPath = newPath.includes('.') ? newPath : `${newPath}.md`
     this.renameDocumentInCache(documentId, normalizedNewPath)
+    if (isAttachmentPath(normalizedNewPath)) this.schedulePlacement(documentId)
   }
 
   async deleteDocument(documentId: string): Promise<void> {

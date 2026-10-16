@@ -21,6 +21,7 @@ import type {
   IPluginWorkspaceAPI,
   SlashRegistry,
   ToolbarCommandRegistry,
+  TrashEntry,
   TriggerRegistry,
   VaultAPI,
   ViewRegistry,
@@ -47,10 +48,18 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   }
   deleteFile(documentId: string): Promise<void> { return this.inner.deleteFile?.(documentId) ?? Promise.resolve() }
   deleteFolder(path: string): Promise<void> { return this.inner.deleteFolder?.(path) ?? Promise.resolve() }
+  listTrash(): TrashEntry[] { return this.inner.listTrash?.() ?? [] }
+  isTrashed(documentId: string): boolean { return this.inner.isTrashed?.(documentId) ?? false }
+  restoreFromTrash(documentId: string): Promise<string> {
+    return this.inner.restoreFromTrash?.(documentId) ?? Promise.reject(new Error('Corbeille indisponible.'))
+  }
+  deleteFilePermanently(documentId: string): Promise<void> {
+    return this.inner.deleteFilePermanently?.(documentId) ?? Promise.resolve()
+  }
   getVaultId(): string { return this.inner.getVaultId?.() ?? '' }
   getToken(): string { return this.inner.getToken?.() ?? '' }
   getFileTree(): FileTreeEntry[] {
-    return this.metadata?.getAllMetadata().map(m => ({ docId: m.docId, path: m.path, crdtVersion: m.crdtVersion })) ?? []
+    return this.metadata?.getAllMetadata().filter(m => !this.inner.isTrashed?.(m.docId)).map(m => ({ docId: m.docId, path: m.path, crdtVersion: m.crdtVersion })) ?? []
   }
   getMetadata(docId: string): DocMetadata | null {
     return this.metadata?.getMetadata(docId) ?? null

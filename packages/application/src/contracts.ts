@@ -358,6 +358,11 @@ export interface SharedDocumentHandle {
   transport: ITransport
   /** SyncAPI for snapshot-based plugins (excalidraw, mindmap). */
   sync: SyncAPI
+  /**
+   * Images rangees dans le dossier de la note partagee (les seules que le
+   * lien peut lire). Absent si le vault de la note est inconnu.
+   */
+  attachments?: { url(target: string): Promise<string>; dispose(): void }
   docId: string
   vaultId: string
   path: string

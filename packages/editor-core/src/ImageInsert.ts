@@ -7,7 +7,8 @@
 // `![[Nom.png]]` est insere, chacun sur sa ligne pour etre rendu en image.
 //
 // L'editeur ne stocke rien lui-meme : il ne connait que l'envoyeur. Le
-// nommage dans `attachments/` et les collisions sont l'affaire du vault.
+// dossier (celui de la note), les collisions et l'annonce de l'envoi
+// (progression, succes, echec) sont l'affaire du vault.
 
 import { EditorView } from '@codemirror/view'
 import { Facet, StateEffect, StateField, type Extension, type Text } from '@codemirror/state'
@@ -102,6 +103,7 @@ export async function insertImageFiles(view: EditorView, files: readonly File[],
     try {
       targets.push(await upload(named))
     } catch (err) {
+      // L'echec est annonce a la personne par le vault (notification).
       console.error('[Plume] envoi de l\'image impossible', err)
     }
   }

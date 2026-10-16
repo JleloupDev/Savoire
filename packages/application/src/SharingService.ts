@@ -45,6 +45,7 @@ export class SharingService implements ISharingAPI {
       ...raw,
       dispose() {
         orchestrator.dispose()
+        raw.attachments?.dispose()
         raw.crdt.dispose()
         void raw.transport.disconnect()
       },

@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react'
 import { subscribeToasts, dismiss } from '@savoire/notifications'
 import type { Toast, ToastType } from '@savoire/notifications'
+import { showUploadsAsToasts } from './uploadToasts'
 
 const DURATION = 4000
+/** Une erreur reste plus longtemps : on doit avoir le temps de lire la raison. */
+const ERROR_DURATION = 8000
 
 const ICONS: Record<ToastType, React.ReactNode> = {
   success: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
@@ -24,13 +27,21 @@ function ToastItem({ toast }: { toast: Toast }) {
   const [visible, setVisible] = useState(false)
   const [progress, setProgress] = useState(100)
   const color = COLORS[toast.type]
+  const pending = !!toast.pending
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
+  }, [toast.id])
+
+  // Compte a rebours de fermeture. Une notification en cours (envoi) n'en a
+  // pas : il demarre quand elle se termine (succes ou erreur).
+  useEffect(() => {
+    if (pending) return
+    const duration = toast.type === 'danger' ? ERROR_DURATION : DURATION
     const start = Date.now()
     const tick = setInterval(() => {
       const elapsed = Date.now() - start
-      const remaining = Math.max(0, 100 - (elapsed / DURATION) * 100)
+      const remaining = Math.max(0, 100 - (elapsed / duration) * 100)
       setProgress(remaining)
       if (remaining === 0) {
         clearInterval(tick)
@@ -38,10 +49,10 @@ function ToastItem({ toast }: { toast: Toast }) {
       }
     }, 50)
     return () => clearInterval(tick)
-  }, [toast.id])
+  }, [toast.id, pending, toast.type])
 
   return (
-    <div style={{
+    <div data-testid="toast" data-toast-type={toast.type} data-pending={String(pending)} style={{
       background: 'var(--bg-surface)',
       border: '1px solid var(--border)',
       borderLeft: `3px solid ${color}`,
@@ -70,17 +81,44 @@ function ToastItem({ toast }: { toast: Toast }) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div style={{ height: 2, background: 'var(--bg-elevated)' }}>
-        <div style={{ height: '100%', width: `${progress}%`, background: color, transition: 'width 0.05s linear', opacity: 0.6 }} />
-      </div>
+      {pending
+        ? <UploadBar progress={toast.progress ?? null} color={color} />
+        : (
+          <div style={{ height: 2, background: 'var(--bg-elevated)' }}>
+            <div style={{ height: '100%', width: `${progress}%`, background: color, transition: 'width 0.05s linear', opacity: 0.6 }} />
+          </div>
+        )}
     </div>
   )
 }
+
+/** Barre d'une notification en cours : mesuree (0..1), ou animee si la progression est inconnue. */
+function UploadBar({ progress, color }: { progress: number | null; color: string }) {
+  const known = progress !== null
+  return (
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={known ? Math.round(progress * 100) : undefined}
+      data-testid="toast-progress"
+      style={{ height: 4, background: 'var(--bg-elevated)', overflow: 'hidden', position: 'relative' }}
+    >
+      {known
+        ? <div style={{ height: '100%', width: `${Math.round(progress * 100)}%`, background: color, transition: 'width 0.15s linear' }} />
+        : <div style={{ position: 'absolute', top: 0, bottom: 0, width: '35%', background: color, animation: 'savoire-toast-indeterminate 1.1s ease-in-out infinite' }} />}
+    </div>
+  )
+}
+
+const INDETERMINATE_KEYFRAMES = '@keyframes savoire-toast-indeterminate { 0% { left: -35%; } 100% { left: 100%; } }'
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   useEffect(() => subscribeToasts(setToasts), [])
+  // Les envois de pieces jointes s'affichent ici, avec leur progression.
+  useEffect(() => showUploadsAsToasts(), [])
 
   if (toasts.length === 0) return null
 
@@ -90,6 +128,7 @@ export function ToastContainer() {
       display: 'flex', flexDirection: 'column', gap: 8,
       zIndex: 9000, alignItems: 'flex-end', pointerEvents: 'none',
     }}>
+      <style>{INDETERMINATE_KEYFRAMES}</style>
       {toasts.map(t => (
         <div key={t.id} style={{ pointerEvents: 'all' }}>
           <ToastItem toast={t} />

@@ -23,3 +23,7 @@ export class SignalRTransport {
   disconnect() { return Promise.resolve() }
   getState(): 'disconnected' { return 'disconnected' }
 }
+
+export class LocalKeyProvider {
+  init() { return Promise.resolve() }
+}
