@@ -4,6 +4,7 @@
 import type { VaultAPI } from './vault'
 import type { ContentExtractor } from './indexing'
 import type { DocumentSharedData } from './sharedMap'
+import type { ISharedText } from './sharedText'
 
 export interface FileContext {
   vaultId: string
@@ -17,6 +18,12 @@ export interface FileContext {
    * membres. Absent sans session de vault (document partage isole).
    */
   shared?: DocumentSharedData
+  /**
+   * Texte partage du document, pour un type declare 'crdt' : plusieurs
+   * membres l'editent en meme temps. Absent pour les autres types, ou sans
+   * session de vault. Voir ISharedText.
+   */
+  text?: ISharedText
   /** VaultAPI injected so the plugin can read/write without depending on an internal import. */
   vault?: VaultAPI
   /** Vue ouverte en lecture seule (ACL, ou verrou detenu par quelqu'un d'autre). */
