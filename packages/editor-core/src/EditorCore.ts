@@ -299,6 +299,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
             ]
         ),
         ...(uploadImage ? [imageInsertExtension(uploadImage)] : []),
+        // Une longue ligne passe a la ligne, en edition comme une fois rendue.
+        EditorView.lineWrapping,
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
