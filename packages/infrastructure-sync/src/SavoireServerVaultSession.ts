@@ -16,7 +16,8 @@ import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory } from '@savo
 import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IVaultSharing } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { YMapIndexChannel } from './YMapIndexChannel'
-import { CollabOrchestrator } from '@savoire/application'
+import { CollabOrchestrator, VaultGoneError } from '@savoire/application'
+import { VaultGoneSignal } from './vaultGone'
 import { YMapVaultDirectory } from './YMapVaultDirectory'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
@@ -52,6 +53,11 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   readonly files: ServerVaultFiles
   /** Partage arbitre par le serveur (permissions et liens). */
   readonly sharing: IVaultSharing
+  /** Allume au premier « vault-not-found » d'un hub : tout le reseau du vault s'arrete. */
+  private readonly gone: VaultGoneSignal
+  /** Vrai une fois open() termine : avant, la perte du vault fait rejeter open(). */
+  private opened = false
+  private disposed = false
 
   private constructor(
     private readonly opts: SavoireServerVaultSessionOptions,
@@ -60,11 +66,13 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   ) {
     this.directory = directory
     this.hub = hub
+    this.gone = hub.gone
+    this.gone.onGone(() => this.onGone())
     // Le repertoire est la source de verite du « la liste a change » : les
     // edits locaux comme les ops distantes appliquees par le hub y passent.
     this.unsubDirectory = directory.onChange(opts.onChanged)
 
-    this.rooms = new DocumentRoomClient({ serverUrl: opts.serverUrl, getToken: opts.getToken })
+    this.rooms = new DocumentRoomClient({ serverUrl: opts.serverUrl, getToken: opts.getToken, gone: this.gone })
     this.snapshots = new SnapshotDocuments((docId) =>
       roomChannel(this.rooms, opts.vaultId, docId, opts.userId))
 
@@ -86,15 +94,31 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     )
     const session = new SavoireServerVaultSession(opts, directory, hub)
     await hub.connect()
+    if (hub.gone.gone) return session.rejectOpen()
     // Documents deja dans le repertoire mais pas encore inscrits (crees avant
     // le registre) : les inscrire maintenant, avant toute ouverture. Exige le
     // droit d'ecrire : chez un lecteur, l'echec est attendu et sans effet.
     const known = directory.getAll().map(d => d.id)
     if (known.length > 0) {
       await session.registerDocuments(known).catch(err =>
-        console.warn('[SavoireServerVaultSession] inscription des documents existants refusee', err))
+        { if (!(err instanceof VaultGoneError)) console.warn('[SavoireServerVaultSession] inscription des documents existants refusee', err) })
     }
+    if (hub.gone.gone) return session.rejectOpen()
+    session.opened = true
     return session
+  }
+
+  /** Vault perdu des l'ouverture : rien a fermer cote app, open() rejette. */
+  private async rejectOpen(): Promise<never> {
+    await this.dispose()
+    throw new VaultGoneError(this.opts.vaultId)
+  }
+
+  /** Vault perdu : arreter les documents ouverts, puis prevenir l'app une fois. */
+  private onGone(): void {
+    for (const open of this.docs.values()) void open.transport.disconnect().catch(() => {})
+    // Fermee entre-temps (changement de vault) : plus personne a prevenir.
+    if (this.opened && !this.disposed) this.opts.onVaultGone?.()
   }
 
   openDocument(docId: string): ICRDT {
@@ -109,6 +133,7 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       serverUrl: this.opts.serverUrl ?? '',
       userId: this.opts.userId,
       getToken: this.opts.getToken,
+      gone: this.gone,
     })
     const orchestrator = new CollabOrchestrator(crdt, transport, identity)
     this.docs.set(docId, { crdt, transport, orchestrator })
@@ -149,7 +174,13 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       getToken: this.opts.getToken,
       getUserId: () => this.opts.userId,
     })
-    return this.fetcher.getDocumentContent(this.opts.vaultId, docId, '')
+    if (this.gone.gone) throw new VaultGoneError(this.opts.vaultId)
+    try {
+      return await this.fetcher.getDocumentContent(this.opts.vaultId, docId, '')
+    } catch (err) {
+      if (this.gone.check(err)) throw new VaultGoneError(this.opts.vaultId)
+      throw err
+    }
   }
 
   /** Arbitrage des verrous : delegue au hub, seul point central du profil. */
@@ -210,10 +241,11 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
 
   getState(): 'connected' | 'connecting' | 'disconnected' {
     // Le hub du vault porte le repertoire ; l'etat d'un document suit le sien.
-    return this.hub.isConnected ? 'connected' : 'disconnected'
+    return this.hub.isConnected && !this.gone.gone ? 'connected' : 'disconnected'
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true
     this.unsubDirectory()
     for (const docId of [...this.docs.keys()]) this.closeDocument(docId)
     this.snapshots.dispose()

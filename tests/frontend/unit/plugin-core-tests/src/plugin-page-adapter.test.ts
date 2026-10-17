@@ -283,3 +283,64 @@ describe('plugin-page — export Markdown, sous-pages, menu /', () => {
     expect(filterBlocks('sous').map(b => b.id)).toEqual(['subpage'])
   })
 })
+
+describe('plugin-page — surlignage dans l\'arbre et en Markdown', () => {
+  const HL: PmJson = {
+    type: 'doc',
+    content: [{
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'jaune', marks: [{ type: 'highlight', attrs: { color: null } }] },
+        { type: 'text', text: ' et ' },
+        { type: 'text', text: 'rouge', marks: [{ type: 'bold' }, { type: 'highlight', attrs: { color: 'red' } }] },
+      ],
+    }],
+  }
+
+  it('une marque highlight devient un attribut de format : true sans couleur, { color } sinon', () => {
+    const para = pmToInit(HL).children![0] as TreeElementInit
+    expect(para.children).toEqual([{
+      kind: 'text',
+      delta: [
+        { insert: 'jaune', attributes: { highlight: true } },
+        { insert: ' et ' },
+        { insert: 'rouge', attributes: { bold: true, highlight: { color: 'red' } } },
+      ],
+    }])
+  })
+
+  it('aller-retour JSON -> Y.Doc -> arbre -> JSON : la couleur est gardee', () => {
+    const { doc, fragment } = createPageDoc()
+    doc.transact(() => replaceFragment(fragment, pmToInit(HL)))
+    const back = fragmentToPm(fragment)
+    const texts = (back.content![0].content ?? []) as PmJson[]
+    expect(texts[0].marks).toEqual([{ type: 'highlight' }])
+    expect(texts[2].marks).toEqual([{ type: 'bold' }, { type: 'highlight', attrs: { color: 'red' } }])
+  })
+
+  it('un surlignage pose dans le Y.Doc arrive dans l\'arbre, sans attribut null', () => {
+    const tree = new InMemorySharedTree()
+    tree.root.set('doc', pmToInit(DOC))
+    const a = member(tree)
+    a.mirror.attach()
+    // Ce qu'ecrit y-prosemirror pour une marque { color: null } puis { color: 'blue' }.
+    a.doc.transact(() => firstText(a.fragment, 0).format(0, 2, { highlight: { color: null } }), LOCAL)
+    a.doc.transact(() => firstText(a.fragment, 0).format(2, 2, { highlight: { color: 'blue' } }), LOCAL)
+    type El = { get(i: number): El; toDelta(): unknown }
+    const heading = (tree.root.get('doc') as unknown as El).get(0)
+    expect(heading.get(0).toDelta()).toEqual([
+      { insert: 'Pr', attributes: { highlight: true } },
+      { insert: 'oj', attributes: { highlight: { color: 'blue' } } },
+      { insert: 'et' },
+    ])
+    a.mirror.detach()
+  })
+
+  it('exporte ==texte== et ==🔴texte==, comme Obsidian et Plume', () => {
+    expect(pageToMarkdown(HL)).toBe('==jaune== et ==🔴**rouge**==\n')
+    const unknown: PmJson = { type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'x', marks: [{ type: 'highlight', attrs: { color: 'rose' } }] },
+    ] }] }
+    expect(pageToMarkdown(unknown)).toBe('==x==\n')
+  })
+})

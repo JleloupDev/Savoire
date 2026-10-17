@@ -8,6 +8,8 @@ import {
 } from '@microsoft/signalr'
 import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 import type { DocumentLockState } from '@savoire/application'
+import { VaultGoneError } from '@savoire/application'
+import { VaultGoneSignal } from './vaultGone'
 
 const VAULT_COMPACT_THRESHOLD = 100
 
@@ -38,6 +40,7 @@ export class VaultHubClient {
   private lockChangedCallbacks: ((docId: string, holder: DocumentLockState | null) => void)[] = []
   private lockRequestedCallbacks: ((docId: string, requesterName: string) => void)[] = []
   private unsubLocalVaultUpdate: (() => void) | null = null
+  private readonly unsubGone: () => void
 
   constructor(
     private readonly serverUrl: string,
@@ -46,14 +49,21 @@ export class VaultHubClient {
     private readonly onChanged: () => void,
     private readonly getToken: () => string | null = () => null,
     private readonly onConnectionChange?: (state: 'connected' | 'disconnected') => void,
+    /** Partage avec les autres clients du vault : le premier « vault-not-found » arrete tout. */
+    readonly gone: VaultGoneSignal = new VaultGoneSignal(vaultId),
   ) {
     this.unsubLocalVaultUpdate = this.directory.onLocalUpdate(
       (update) => void this.pushVaultUpdate(update),
     )
+    // Vault perdu : plus de reconnexion automatique ni de nouvel essai.
+    this.unsubGone = this.gone.onGone(() => {
+      if (this.connection && this.connection.state !== HubConnectionState.Disconnected)
+        void this.connection.stop().catch(() => {})
+    })
   }
 
   async connect(): Promise<void> {
-    if (this.disposed) return
+    if (this.disposed || this.gone.gone) return
     if (Date.now() < this.authBlockedUntil) return
     if (this.connection?.state === HubConnectionState.Connected) return
     if (this.connectPromise) return this.connectPromise
@@ -72,7 +82,8 @@ export class VaultHubClient {
         for (const op of ops) this.directory.applyUpdate(fromBase64(op))
         if (ops.length > VAULT_COMPACT_THRESHOLD) {
           const snapshot = toBase64(this.directory.encodeFullState())
-          void this.connection?.invoke('SnapshotVault', this.vaultId, snapshot).catch(console.error)
+          void this.connection?.invoke('SnapshotVault', this.vaultId, snapshot)
+            .catch(err => { if (!this.gone.check(err)) console.error(err) })
         }
         this.onChanged()
       })
@@ -102,19 +113,27 @@ export class VaultHubClient {
         for (const cb of this.lockRequestedCallbacks) cb(docId, name)
       })
 
+      // ── Acces au vault modifie (membre retire, vault supprime) ────────────
+      // Le serveur ne dit pas qui est concerne : chacun reverifie le sien.
+      this.connection.on('VaultAccessChanged', () => { void this.checkAccess() })
+
       // ── Reconnection: rejoin to get fresh vault CRDT state ────────────────
       this.connection.onreconnected(async () => {
-        this.onConnectionChange?.('connected')
+        if (this.gone.gone || this.disposed || !this.connection) return
         try {
           await this.connection!.invoke('JoinVault', this.vaultId)
+          this.onConnectionChange?.('connected')
         } catch (err) {
+          if (this.gone.check(err)) return
+          this.onConnectionChange?.('connected')
           console.error('[VaultHub] Failed to rejoin after reconnect', err)
           if (this.isUnauthorizedError(err)) this.blockOnUnauthorized()
         }
       })
 
       this.connection.onclose((err?: Error) => {
-        if (!this.disposing) this.onConnectionChange?.('disconnected')
+        // Vault perdu : la session previent deja, pas de « deconnecte » en plus.
+        if (!this.disposing && !this.gone.gone) this.onConnectionChange?.('disconnected')
         if (this.isUnauthorizedError(err)) this.blockOnUnauthorized()
       })
     }
@@ -126,6 +145,7 @@ export class VaultHubClient {
         if (this.connection!.state === HubConnectionState.Connected)
           await this.connection!.invoke('JoinVault', this.vaultId)
       } catch (err) {
+        if (this.gone.check(err)) return
         if (this.isUnauthorizedError(err)) this.blockOnUnauthorized()
         console.warn('[VaultHub] Connection failed — filetree may be stale', err)
       } finally {
@@ -147,7 +167,17 @@ export class VaultHubClient {
     try {
       await this.connection!.invoke('PushVaultOperation', this.vaultId, toBase64(update))
     } catch (err) {
-      console.warn('[VaultHub] pushVaultUpdate failed', err)
+      if (!this.gone.check(err)) console.warn('[VaultHub] pushVaultUpdate failed', err)
+    }
+  }
+
+  /** Reverifie le droit de lire le vault. Un refus « vault-not-found » allume le signal. */
+  async checkAccess(): Promise<void> {
+    if (!this.isConnected || this.gone.gone) return
+    try {
+      await this.connection!.invoke('CheckVaultAccess', this.vaultId)
+    } catch (err) {
+      if (!this.gone.check(err)) console.warn('[VaultHub] checkAccess failed', err)
     }
   }
 
@@ -156,20 +186,25 @@ export class VaultHubClient {
   /** Inscrit des documents dans le vault (mode serveur). Rend ceux refuses. */
   async registerDocuments(docIds: string[]): Promise<string[]> {
     const connection = await this._ensureConnected()
-    return connection.invoke<string[]>('RegisterDocuments', this.vaultId, docIds)
+    try {
+      return await connection.invoke<string[]>('RegisterDocuments', this.vaultId, docIds)
+    } catch (err) {
+      if (this.gone.check(err)) throw new VaultGoneError(this.vaultId)
+      throw err
+    }
   }
 
   // ── Index ops ─────────────────────────────────────────────────────────────
 
   /** Rejoint le canal d'index d'un namespace et rend les ops deja stockees. */
   async joinIndex(namespace: string): Promise<Uint8Array[]> {
-    if (this.disposed) return []
+    if (this.disposed || this.gone.gone) return []
     try {
       const connection = await this._ensureConnected()
       const ops = await connection.invoke<string[]>('JoinIndex', this.vaultId, namespace)
       return ops.map(fromBase64)
     } catch (err) {
-      console.warn('[VaultHub] joinIndex failed', err)
+      if (!this.gone.check(err)) console.warn('[VaultHub] joinIndex failed', err)
       return []
     }
   }
@@ -179,7 +214,7 @@ export class VaultHubClient {
     try {
       await this.connection!.invoke('PushIndexUpdate', this.vaultId, namespace, toBase64(update))
     } catch (err) {
-      console.warn('[VaultHub] pushIndexUpdate failed', err)
+      if (!this.gone.check(err)) console.warn('[VaultHub] pushIndexUpdate failed', err)
     }
   }
 
@@ -201,7 +236,7 @@ export class VaultHubClient {
       const connection = await this._ensureConnected()
       return await connection.invoke<DocumentLockState | null>('AcquireLock', this.vaultId, docId)
     } catch (err) {
-      console.warn('[VaultHub] acquireLock failed', err)
+      if (!this.gone.check(err)) console.warn('[VaultHub] acquireLock failed', err)
       return null
     }
   }
@@ -210,19 +245,19 @@ export class VaultHubClient {
     try {
       const connection = await this._ensureConnected()
       return await connection.invoke<DocumentLockState | null>('GetLock', this.vaultId, docId)
-    } catch { return null }
+    } catch (err) { this.gone.check(err); return null }
   }
 
   async releaseLock(docId: string): Promise<void> {
     if (!this.isConnected) return
     try { await this.connection!.invoke('ReleaseLock', this.vaultId, docId) }
-    catch (err) { console.warn('[VaultHub] releaseLock failed', err) }
+    catch (err) { if (!this.gone.check(err)) console.warn('[VaultHub] releaseLock failed', err) }
   }
 
   async requestLock(docId: string): Promise<void> {
     if (!this.isConnected) return
     try { await this.connection!.invoke('RequestLock', this.vaultId, docId) }
-    catch (err) { console.warn('[VaultHub] requestLock failed', err) }
+    catch (err) { if (!this.gone.check(err)) console.warn('[VaultHub] requestLock failed', err) }
   }
 
   onLockChanged(cb: (docId: string, holder: DocumentLockState | null) => void): () => void {
@@ -240,6 +275,7 @@ export class VaultHubClient {
   async dispose(): Promise<void> {
     this.disposed = true
     this.disposing = true
+    this.unsubGone()
     this.unsubLocalVaultUpdate?.()
     this.unsubLocalVaultUpdate = null
     this.pendingCreates.clear()
@@ -250,7 +286,9 @@ export class VaultHubClient {
   }
 
   private async _ensureConnected(): Promise<HubConnection> {
+    if (this.gone.gone) throw new VaultGoneError(this.vaultId)
     await this.connect()
+    if (this.gone.gone) throw new VaultGoneError(this.vaultId)
     if (!this.connection || this.connection.state !== HubConnectionState.Connected)
       throw new Error('VaultHub not connected')
     return this.connection

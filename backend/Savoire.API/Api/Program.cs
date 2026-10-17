@@ -7,6 +7,7 @@ using System.Reflection;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Savoire.Application.Behaviors;
@@ -84,7 +85,9 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // 6. SignalR
-builder.Services.AddSignalR();
+// Erreurs des hubs : un code stable (vault-not-found...) plutot que
+// « unexpected error ». Voir HubErrorFilter.
+builder.Services.AddSignalR(o => o.AddFilter<HubErrorFilter>());
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.DocumentLockRegistry>();
 

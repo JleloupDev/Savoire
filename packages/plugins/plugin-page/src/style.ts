@@ -2,6 +2,13 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Styles de la vue, limites a .savoire-page. Couleurs : les variables du
 // theme de l'application, avec une valeur de repli.
+import { PAGE_COLORS, PAGE_HIGHLIGHT_VALUES } from './highlight'
+
+/** Surlignage : couleur du theme, ou l'une des six couleurs (fond translucide). */
+const HIGHLIGHT_CSS = PAGE_COLORS
+  .map(({ color }) => `.savoire-page .page-hl.page-hl-${color} { background: ${PAGE_HIGHLIGHT_VALUES[color]}; }`)
+  .join('\n')
+
 export const PAGE_CSS = `
 .savoire-page {
   height: 100%; overflow-y: auto; box-sizing: border-box;
@@ -50,7 +57,7 @@ export const PAGE_CSS = `
 }
 .savoire-page .page-prosemirror pre code { background: none; padding: 0; color: inherit; }
 .savoire-page .page-prosemirror hr { border: none; border-top: 1px solid var(--border, #313244); margin: 14px 0; }
-.savoire-page .page-prosemirror a { color: var(--accent-text, var(--accent, #0d9488)); }
+.savoire-page .page-prosemirror a { color: var(--accent, #0d9488); }
 .savoire-page .page-prosemirror .ProseMirror-selectednode { outline: 2px solid var(--accent, #0d9488); border-radius: 4px; }
 .savoire-page .page-prosemirror p.is-empty::before,
 .savoire-page .page-prosemirror h1.is-empty::before,
@@ -88,6 +95,43 @@ export const PAGE_CSS = `
   width: 240px; box-sizing: border-box; padding: 6px 8px; border-radius: 4px; font: inherit;
   border: 1px solid var(--accent, #0d9488); background: var(--bg-base, #1e1e2e); color: var(--text, #cdd6f4); outline: none;
 }
+.savoire-page .page-hl {
+  background: var(--text-highlight-bg, rgba(255, 208, 0, 0.4)); color: inherit; border-radius: 2px; padding: 0 1px;
+}
+${HIGHLIGHT_CSS}
+.savoire-page .page-toolbar {
+  position: absolute; z-index: 25; display: flex; align-items: center; gap: 2px; padding: 3px 4px;
+  background: var(--bg-elevated, #313244); border: 1px solid var(--border, #45475a);
+  border-radius: var(--radius-lg, 8px); box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.35));
+  font-family: var(--font-ui, sans-serif); font-size: var(--font-size-sm, 13px); white-space: nowrap; user-select: none;
+}
+.savoire-page .page-toolbar[hidden] { display: none; }
+.savoire-page .page-toolbar-group { position: relative; display: inline-flex; }
+.savoire-page .page-toolbar-group + .page-toolbar-group:nth-child(2) { margin-left: 3px; padding-left: 3px; border-left: 1px solid var(--border, #45475a); }
+.savoire-page .page-toolbar-button {
+  min-width: 28px; height: 26px; padding: 0 7px; border: none; border-radius: 4px; background: none; cursor: pointer;
+  color: var(--text-muted, #a6adc8); font: inherit; font-weight: 700;
+}
+.savoire-page .page-toolbar-button:hover { background: var(--bg-hover, #45475a); color: var(--text, #cdd6f4); }
+.savoire-page .page-toolbar-button.is-active { color: var(--accent, #0d9488); }
+.savoire-page .page-toolbar-button[data-key="italic"] { font-style: italic; }
+.savoire-page .page-toolbar-button[data-key="strike"] { text-decoration: line-through; }
+.savoire-page .page-toolbar-button[data-key="code"] { font-family: var(--font-code, monospace); font-weight: 400; }
+.savoire-page .page-toolbar-button[data-key="block"] { font-weight: 500; }
+.savoire-page .page-toolbar-menu {
+  position: absolute; top: 100%; left: 0; margin-top: 6px; min-width: 180px; padding: 4px;
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--bg-elevated, #313244); border: 1px solid var(--border, #45475a);
+  border-radius: var(--radius-md, 6px); box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.35));
+}
+.savoire-page .page-toolbar-menu[hidden] { display: none; }
+.savoire-page .page-toolbar-item {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: none; border-radius: 4px;
+  background: none; cursor: pointer; color: var(--text, #cdd6f4); font: inherit; text-align: left;
+}
+.savoire-page .page-toolbar-item:hover { background: var(--bg-hover, #45475a); }
+.savoire-page .page-toolbar-item.is-active { color: var(--accent, #0d9488); }
+.savoire-page .page-toolbar-item-icon { min-width: 22px; text-align: center; color: var(--text-muted, #a6adc8); }
 @media (max-width: 600px) {
   .savoire-page .page-header, .savoire-page .page-status, .savoire-page .page-body { padding-left: 16px; padding-right: 16px; }
   .savoire-page .page-handle { display: none; }

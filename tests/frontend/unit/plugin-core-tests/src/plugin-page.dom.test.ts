@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CommandRegistryImpl, HotkeyManager, InMemorySharedTree } from '@savoire/plugin-runtime'
 import type { FileContext, PluginCommand, TreeChangeInfo, VaultAPI } from '@savoire/plugin-api'
-import plugin, { createPageView, focusedPageEditor, pageCommands, pageEditorOf } from '@savoire/plugin-page'
+import plugin, { createPageView, focusedPageEditor, pageCommands, pageEditorOf, runPageCommand } from '@savoire/plugin-page'
 import { pmToInit, stringifyPageFile } from '@savoire/plugin-page/adapter'
 
 function mount(ctx: Partial<FileContext>, deps = {}) {
@@ -241,5 +241,183 @@ describe('plugin-page — vue', () => {
     expect(focusedPageEditor()).toBeNull()
     await plugin.onunload()
     expect(api.commands.unregister).toHaveBeenCalledWith('page:toggle-bold')
+  })
+})
+
+describe('plugin-page — surlignage et barre d\'edition', () => {
+  function withEngine(ctx: Partial<FileContext> = {}) {
+    const registry = new CommandRegistryImpl()
+    for (const c of pageCommands()) registry.register(c)
+    const hotkeys = new HotkeyManager(registry, 'other')
+    const tree = new InMemorySharedTree()
+    tree.root.set('doc', pmToInit(DOC))
+    const m = mount({ tree, ...ctx }, { hotkeys })
+    return { ...m, hotkeys, tree }
+  }
+  const key = (target: HTMLElement, key: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(ev)
+    return ev
+  }
+  const down = (el: Element) => {
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    el.dispatchEvent(ev)
+    return ev
+  }
+  const marksOf = (editor: ReturnType<typeof mount>['editor']) =>
+    (editor.getJSON().content![0].content ?? []).map(t => ({ text: (t as { text?: string }).text, marks: t.marks }))
+
+  it('la marque s\'affiche en <mark>, avec la classe de sa couleur', async () => {
+    const tree = new InMemorySharedTree()
+    tree.root.set('doc', pmToInit({ type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'a', marks: [{ type: 'highlight' }] },
+      { type: 'text', text: 'b', marks: [{ type: 'highlight', attrs: { color: 'green' } }] },
+    ] }] }))
+    const { container, view } = mount({ tree })
+    await flush()
+    const marks = Array.from(container.querySelectorAll('mark'))
+    expect(marks.map(m => m.className)).toEqual(['page-hl', 'page-hl page-hl-green'])
+    expect(marks[1].getAttribute('data-color')).toBe('green')
+    view.destroy()
+  })
+
+  it('Ctrl+Maj+H surligne via page:toggle-highlight, et le retire au second appui', async () => {
+    const { editor, view } = withEngine()
+    await flush()
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    const ev = key(editor.view.dom, 'H', { code: 'KeyH', ctrlKey: true, shiftKey: true })
+    expect(ev.defaultPrevented).toBe(true)
+    expect(marksOf(editor)).toEqual([{ text: 'Bonjour', marks: [{ type: 'highlight', attrs: { color: null } }] }])
+    key(editor.view.dom, 'H', { code: 'KeyH', ctrlKey: true, shiftKey: true })
+    expect(editor.isActive('highlight')).toBe(false)
+    view.destroy()
+  })
+
+  it('une commande par couleur, sans touche par defaut ; une autre couleur remplace la premiere', async () => {
+    const cmds = pageCommands()
+    const colors = cmds.filter(c => /^page:highlight-/.test(c.id))
+    expect(colors.map(c => c.id)).toEqual(['red', 'orange', 'yellow', 'green', 'blue', 'purple'].map(c => `page:highlight-${c}`))
+    expect(colors.every(c => !c.hotkeys?.length)).toBe(true)
+    expect(cmds.find(c => c.id === 'page:toggle-highlight')!.hotkeys).toEqual([{ modifiers: ['Mod', 'Shift'], key: 'h' }])
+
+    const { editor, view } = withEngine()
+    await flush()
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    expect(runPageCommand(editor, 'page:highlight-red')).toBe(true)
+    expect(editor.isActive('highlight', { color: 'red' })).toBe(true)
+    runPageCommand(editor, 'page:highlight-blue')
+    expect(marksOf(editor)).toEqual([{ text: 'Bonjour', marks: [{ type: 'highlight', attrs: { color: 'blue' } }] }])
+    runPageCommand(editor, 'page:remove-highlight')
+    expect(editor.isActive('highlight')).toBe(false)
+    view.destroy()
+  })
+
+  it('deux vues reliees : la couleur passe par l\'arbre partage', async () => {
+    const ta = new InMemorySharedTree()
+    const tb = new InMemorySharedTree()
+    InMemorySharedTree.link(ta, tb)
+    ta.root.set('doc', pmToInit(DOC))
+    const a = mount({ tree: ta })
+    const b = mount({ tree: tb })
+    await flush()
+    a.editor.chain().setTextSelection({ from: 1, to: 4 }).setMark('highlight', { color: 'purple' }).run()
+    a.editor.chain().setTextSelection({ from: 4, to: 8 }).setMark('highlight').run()
+    await flush()
+    expect(marksOf(b.editor)).toEqual([
+      { text: 'Bon', marks: [{ type: 'highlight', attrs: { color: 'purple' } }] },
+      { text: 'jour', marks: [{ type: 'highlight', attrs: { color: null } }] },
+    ])
+    a.view.destroy()
+    b.view.destroy()
+  })
+
+  it('la barre apparait sur une selection, disparait sans selection', async () => {
+    const { editor, view, container } = withEngine()
+    await flush()
+    const bar = container.querySelector<HTMLElement>('[data-testid="page-toolbar"]')!
+    expect(bar.hidden).toBe(true)
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    expect(bar.hidden).toBe(false)
+    editor.commands.setTextSelection(3)
+    expect(bar.hidden).toBe(true)
+    editor.commands.setTextSelection({ from: 1, to: 4 })
+    expect(bar.hidden).toBe(false)
+    editor.commands.blur()
+    await settle()
+    expect(bar.hidden).toBe(true)
+    view.destroy()
+  })
+
+  it('un bouton lance la meme commande que la touche, sans voler le focus', async () => {
+    const { editor, view, container, hotkeys } = withEngine()
+    await flush()
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    const bar = container.querySelector<HTMLElement>('[data-testid="page-toolbar"]')!
+    const bold = bar.querySelector<HTMLElement>('[data-command-id="page:toggle-bold"]')!
+    expect(bold.title).toBe('Gras (Ctrl+B)')
+    // L'infobulle suit la touche choisie dans les parametres.
+    hotkeys.setCustom('page:toggle-bold', [{ modifiers: ['Mod'], key: 'g' }])
+    editor.commands.setTextSelection({ from: 1, to: 8 })
+    expect(bold.title).toBe('Gras (Ctrl+G)')
+    expect(down(bold).defaultPrevented).toBe(true)
+    expect(editor.isActive('bold')).toBe(true)
+    expect(bold.classList.contains('is-active')).toBe(true)
+    expect(editor.isFocused).toBe(true)
+
+    // Surligner : un menu de couleurs, « sans couleur » et « retirer ».
+    const hl = bar.querySelector<HTMLElement>('[data-key="highlight"]')!
+    const menu = bar.querySelector<HTMLElement>('[data-testid="page-toolbar-menu-highlight"]')!
+    expect(menu.hidden).toBe(true)
+    down(hl)
+    expect(menu.hidden).toBe(false)
+    expect(Array.from(menu.querySelectorAll('[data-command-id]')).map(e => e.getAttribute('data-command-id'))).toEqual([
+      'page:toggle-highlight', ...['red', 'orange', 'yellow', 'green', 'blue', 'purple'].map(c => `page:highlight-${c}`), 'page:remove-highlight',
+    ])
+    expect(menu.querySelector<HTMLElement>('[data-command-id="page:toggle-highlight"]')!.title).toBe('Sans couleur (Ctrl+Maj+H)')
+    down(menu.querySelector('[data-command-id="page:highlight-orange"]')!)
+    expect(editor.isActive('highlight', { color: 'orange' })).toBe(true)
+    expect(menu.hidden).toBe(true)
+    down(hl)
+    down(menu.querySelector('[data-command-id="page:remove-highlight"]')!)
+    expect(editor.isActive('highlight')).toBe(false)
+    view.destroy()
+  })
+
+  it('transforme le bloc depuis la barre', async () => {
+    const { editor, view, container } = withEngine()
+    await flush()
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    const bar = container.querySelector<HTMLElement>('[data-testid="page-toolbar"]')!
+    const block = bar.querySelector<HTMLElement>('[data-key="block"]')!
+    expect(block.textContent).toBe('Texte ▾')
+    down(block)
+    down(bar.querySelector('[data-command-id="page:heading-2"]')!)
+    expect(editor.getJSON().content![0]).toMatchObject({ type: 'heading', attrs: { level: 2 } })
+    expect(block.textContent).toBe('Titre 2 ▾')
+    // Choisir le type deja en place ne l'annule pas.
+    down(block)
+    down(bar.querySelector('[data-command-id="page:heading-2"]')!)
+    expect(editor.getJSON().content![0].type).toBe('heading')
+    down(block)
+    down(bar.querySelector('[data-command-id="page:toggle-checklist"]')!)
+    expect(editor.getJSON().content![0].type).toBe('taskList')
+    down(block)
+    down(bar.querySelector('[data-command-id="page:set-paragraph"]')!)
+    expect(editor.getJSON().content![0].type).toBe('paragraph')
+    view.destroy()
+  })
+
+  it('pas de barre en lecture seule', async () => {
+    const { editor, view, container } = withEngine({ readOnly: true })
+    await flush()
+    editor.chain().focus().setTextSelection({ from: 1, to: 8 }).run()
+    await settle()
+    expect(container.querySelector<HTMLElement>('[data-testid="page-toolbar"]')!.hidden).toBe(true)
+    view.destroy()
   })
 })

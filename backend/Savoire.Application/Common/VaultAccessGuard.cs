@@ -20,7 +20,7 @@ public sealed class VaultAccessGuard(
     private async Task RequireDocumentInVaultAsync(string vaultId, string docId, CancellationToken ct)
     {
         string? owner = await vaultDocuments.GetVaultIdAsync(docId, ct);
-        if (owner != vaultId) throw new VaultNotFoundException(vaultId);
+        if (owner != vaultId) throw new DocumentNotInVaultException(vaultId);
     }
 
     public async Task RequireReadAsync(string callerId, string vaultId, CancellationToken ct = default)

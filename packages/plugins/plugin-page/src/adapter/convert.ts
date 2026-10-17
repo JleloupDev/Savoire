@@ -9,7 +9,8 @@
 // element (nom + attributs + enfants) ; les textes qui se suivent forment un
 // seul texte riche, dont les marques sont des attributs de format.
 // Convention de l'arbre : une marque sans attribut vaut `true` ; dans le
-// Y.Doc, y-prosemirror l'ecrit `{}`.
+// Y.Doc, y-prosemirror l'ecrit `{}`. Les attributs null d'une marque (valeur
+// par defaut) ne vont pas dans l'arbre : `{ color: null }` y vaut `true`.
 import * as Y from 'yjs'
 import type {
   JsonValue, RichTextDelta, TextAttributes, TreeElementChildInit, TreeElementInit,
@@ -33,13 +34,26 @@ function isEmptyObject(v: unknown): boolean {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length === 0
 }
 
-/** Attributs de format Y.Doc -> arbre. */
+/**
+ * Valeur d'une marque dans l'arbre : ses attributs sans les null (valeurs
+ * par defaut, que y-prosemirror et toJSON() ecrivent quand meme), ou `true`
+ * s'il n'en reste aucun. Un surlignage sans couleur vaut donc `true`, un
+ * surlignage rouge `{ color: 'red' }`.
+ */
+function markValue(attrs: unknown): JsonValue {
+  if (typeof attrs !== 'object' || attrs === null || Array.isArray(attrs)) return true
+  const out: Record<string, JsonValue> = {}
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) out[k] = v as JsonValue
+  return Object.keys(out).length ? out : true
+}
+
+/** Attributs de format Y.Doc -> arbre. null (retrait) reste null. */
 export function formatToTree(attrs: Record<string, unknown> | undefined): TextAttributes | undefined {
   if (!attrs) return undefined
   const out: TextAttributes = {}
   for (const [k, v] of Object.entries(attrs)) {
     if (v === undefined) continue
-    out[k] = isEmptyObject(v) ? true : (v as JsonValue)
+    out[k] = v === null ? null : markValue(v)
   }
   return Object.keys(out).length ? out : undefined
 }
@@ -109,7 +123,7 @@ export function yChildren(parent: Y.XmlElement | Y.XmlFragment): (Y.XmlElement |
 function marksToAttributes(marks: PmJson['marks']): TextAttributes | undefined {
   if (!marks?.length) return undefined
   const out: TextAttributes = {}
-  for (const m of marks) out[m.type] = m.attrs && Object.keys(m.attrs).length ? (m.attrs as JsonValue) : true
+  for (const m of marks) out[m.type] = markValue(m.attrs)
   return out
 }
 

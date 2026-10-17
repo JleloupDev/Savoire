@@ -9,7 +9,7 @@ import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/p
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
-import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
+import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
@@ -325,6 +325,9 @@ export function AppShell() {
 
   const switchChainRef = useRef<Promise<void>>(Promise.resolve())
   const lastSwitchTsRef = useRef(0)
+  // Vault supprime ou acces retire pendant qu'il est ouvert (ou juste avant de
+  // l'ouvrir). Defini plus bas : il a besoin de loadVaults.
+  const closeGoneVaultRef = useRef<(vault: VaultSummary) => Promise<void>>(async () => {})
 
   // ── Plugin bootstrap ───────────────────────────────────────────────────────
 
@@ -553,6 +556,13 @@ export function AppShell() {
         onChanged,
         identitySeed,
         identity: identityProviderRef.current,
+        // La session a deja coupe son reseau : on ferme le vault, dans la meme
+        // file que les changements de vault pour ne pas croiser une activation.
+        onVaultGone: () => {
+          switchChainRef.current = switchChainRef.current
+            .then(() => closeGoneVaultRef.current(vault))
+            .catch(err => console.error('[EditorPage] closeGoneVault failed', err))
+        },
       })
       vaultAPIRef.current = active.client
       vaultSessionRef.current = active.session
@@ -577,7 +587,12 @@ export function AppShell() {
       managerRef.current?.notifyDocumentIndexed('', '')
     }
 
-    switchChainRef.current = switchChainRef.current.then(run).catch((err) => {
+    switchChainRef.current = switchChainRef.current.then(run).catch(async (err) => {
+      // Le vault n'existe plus (ou plus pour nous) : pas de nouvel essai.
+      if (err instanceof VaultGoneError) {
+        await closeGoneVaultRef.current(vault).catch(e => console.error('[EditorPage] closeGoneVault failed', e))
+        return
+      }
       if (keyCustodyRef.current?.isWrongKeyError(err)) {
         // Distinct from "nothing escrowed yet" (which never throws — see
         // EdgesyncVaultSession.restore()): the server DOES have a wrapped
@@ -601,7 +616,7 @@ export function AppShell() {
   // managerRef) and state setters — application.documents is stable (created once in appRootRef).
   }, [application.documents])
 
-  const loadVaults = useCallback(async () => {
+  const loadVaults = useCallback(async (opts: { autoOpen?: boolean } = {}) => {
     const account = activeAccount ?? accounts[0] ?? null
     if (!token || !account) return
     try {
@@ -615,11 +630,33 @@ export function AppShell() {
       sharedWithMeRef.current = shared
       vaultsRef.current = withLocked // sync ref before notify so VaultBrowserPanel.sync() reads fresh data
       managerRef.current?.notifyVaultChange()
-      if (list.length === 1) void switchToVault(withLocked[0], token)
+      if (list.length === 1 && opts.autoOpen !== false) void switchToVault(withLocked[0], token)
     } catch (err) {
       console.error(err)
     }
   }, [token, activeAccount, accounts, application.vaults, switchToVault])
+
+  closeGoneVaultRef.current = async (vault: VaultSummary) => {
+    // Seulement si c'est encore le vault actif : entre-temps, la personne a
+    // pu en ouvrir un autre.
+    if (application.documents.getActiveClient()?.getVaultId() === vault.id)
+      await application.documents.disposeActiveVault()
+    if (vaultAPIRef.current?.getVaultId() === vault.id || selectedVaultRef.current?.id === vault.id) {
+      vaultAPIRef.current = undefined
+      vaultSessionRef.current = undefined
+      pluginSettingsRef.current?.attachVault(undefined)
+      selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
+      setSelectedVault(null); setDocuments([]); setActiveDoc(null)
+    }
+    const name = vaultsRef.current.find(v => v.id === vault.id)?.name ?? vault.name
+    const filtered = vaultsRef.current.filter(v => v.id !== vault.id)
+    setVaults(filtered)
+    vaultsRef.current = filtered
+    managerRef.current?.notifyVaultChange()
+    notify('warn', 'Vault fermé', `Le vault « ${name} » n'existe plus ou vous n'y avez plus accès. Il a été fermé.`)
+    // La liste du serveur fait foi ; ne rien rouvrir tout seul.
+    await loadVaults({ autoOpen: false })
+  }
 
   // Load vaults on mount / auth changes
   useEffect(() => {

@@ -38,6 +38,7 @@ export class DocumentsService implements IDocumentsAPI {
       identity: params.identity,
       onChanged: params.onChanged,
       onConnectionChange: params.onConnectionChange,
+      onVaultGone: params.onVaultGone,
     })
 
     // Tout le contenu passe par la session : le VaultClient ne recoit aucun

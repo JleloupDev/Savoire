@@ -32,3 +32,16 @@ public class EdgeSyncHubMembershipChangedHandler(IHubContext<EdgeSyncHub> hub)
         hub.Clients.Group($"edge:{n.VaultId}").SendAsync(
             "MembershipChanged", n.VaultId, ct);
 }
+
+/// <summary>
+/// Pushes VaultAccessChanged to the vault's live group (members who joined it
+/// on VaultHub) when its membership changes or the vault is deleted. Carries
+/// no detail: each client re-checks its own access (CheckVaultAccess) and, if
+/// refused, closes the vault instead of retrying.
+/// </summary>
+public class VaultHubAccessChangedHandler(IHubContext<VaultHub> hub)
+    : INotificationHandler<VaultMembershipChangedNotification>
+{
+    public Task Handle(VaultMembershipChangedNotification n, CancellationToken ct) =>
+        hub.Clients.Group(n.VaultId).SendAsync("VaultAccessChanged", n.VaultId, ct);
+}

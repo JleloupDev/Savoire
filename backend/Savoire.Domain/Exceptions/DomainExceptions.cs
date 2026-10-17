@@ -8,6 +8,12 @@ namespace Savoire.Domain.Exceptions;
 public class VaultNotFoundException(string vaultId)
     : Exception($"Le vault '{vaultId}' n'existe pas ou vous n'y avez pas accès.");
 
+// Le document n'est pas inscrit dans le vault annonce. Meme reponse que
+// VaultNotFoundException cote REST (masque) ; les hubs, eux, la distinguent :
+// le vault existe peut-etre, il ne faut pas le fermer pour autant.
+public class DocumentNotInVaultException(string vaultId)
+    : VaultNotFoundException(vaultId);
+
 public class DocumentNotFoundException(string docId)
     : Exception($"Le document '{docId}' n'existe pas.");
 

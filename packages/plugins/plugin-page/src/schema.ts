@@ -16,6 +16,7 @@ import { Node, extensions as core, flattenExtensions, mergeAttributes, type AnyE
 import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Placeholder } from '@tiptap/extensions'
+import { Highlight } from './highlight'
 
 /** Une touche avec modificateur (Maj comprise) : c'est une action. */
 const MODIFIED_KEY = /(^|-)(Mod|Ctrl|Alt|Meta|Cmd|Shift)-/
@@ -109,6 +110,8 @@ export function pageExtensions(options: PageExtensionOptions = {}): AnyExtension
     ...kitParts,
     TaskList,
     TaskItem.configure({ nested: true }),
+    // Surlignage, avec l'une des six couleurs d'Obsidian (highlight.ts).
+    Highlight,
     options.pageLink ?? PageLink,
     Placeholder.configure({
       placeholder: options.placeholder ?? 'Tapez / pour les commandes',

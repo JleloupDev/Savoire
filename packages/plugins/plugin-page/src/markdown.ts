@@ -7,6 +7,7 @@
 // titres, les [[liens]] vers les sous-pages.
 import type { PmJson } from './adapter/convert'
 import { parsePageFile } from './adapter/pageFile'
+import { emojiOfColor, pageColorOf } from './highlight'
 
 const MARK_DELIMS: Record<string, [string, string]> = {
   bold: ['**', '**'],
@@ -25,6 +26,11 @@ function inline(nodes: PmJson[] | undefined): string {
     for (const m of n.marks ?? []) {
       const d = MARK_DELIMS[m.type]
       if (d) text = d[0] + text + d[1]
+      // Surlignage : ==texte==, ou ==🔴texte== en couleur (Obsidian, Plume).
+      if (m.type === 'highlight') {
+        const color = pageColorOf(m.attrs?.color)
+        text = `==${color ? emojiOfColor(color) : ''}${text}==`
+      }
       if (m.type === 'link' && typeof m.attrs?.href === 'string') link = m.attrs.href
     }
     out += link ? `[${text}](${link})` : text

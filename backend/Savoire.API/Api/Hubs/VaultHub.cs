@@ -42,6 +42,15 @@ public sealed class VaultHub(
             Context.ConnectionId, vaultId, result.Ops.Length);
     }
 
+    /// <summary>
+    /// Verifie seulement que l'appelant peut encore lire le vault. Le client
+    /// l'appelle a la reception de VaultAccessChanged : un refus
+    /// (« vault-not-found ») lui dit que le vault est supprime ou que son
+    /// acces a ete retire. Ne rend rien, ne renvoie pas l'etat du vault.
+    /// </summary>
+    public Task CheckVaultAccess(string vaultId) =>
+        mediator.Send(new CheckVaultAccessQuery(GetCallerId(), vaultId, VaultAccessLevel.Read));
+
     public async Task PushVaultOperation(string vaultId, string opBase64)
     {
         byte[] opBytes;

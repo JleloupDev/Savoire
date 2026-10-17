@@ -12,6 +12,8 @@ import {
   LogLevel,
 } from '@microsoft/signalr'
 import type { DocumentRoom, DocumentRoomPresence, SyncAPI } from '@savoire/plugin-api'
+import { VaultGoneError } from '@savoire/application'
+import type { VaultGoneSignal } from './vaultGone'
 
 /** Room rejointe : expose en plus le snapshot que le serveur renvoie a l'entree. */
 export interface JoinedDocumentRoom extends DocumentRoom {
@@ -36,6 +38,8 @@ class DocumentRoomHandle implements JoinedDocumentRoom {
     _userId: string,
     /** Called by DocumentRoomClient when close() is invoked. */
     private readonly onClose: (docId: string, handle: DocumentRoomHandle) => void,
+    /** Remonte une erreur du hub au signal du vault (« vault-not-found »). */
+    private readonly onError: (err: unknown) => void = () => {},
   ) {}
 
   // Called by DocumentRoomClient on RoomJoined. Only the first call counts.
@@ -56,7 +60,12 @@ class DocumentRoomHandle implements JoinedDocumentRoom {
   async pushSnapshot(snapshotJson: string): Promise<void> {
     if (this.closed) return
     if (this.conn.state !== HubConnectionState.Connected) return
-    await this.conn.invoke('PushSnapshot', this.vaultId, this.docId, snapshotJson)
+    try {
+      await this.conn.invoke('PushSnapshot', this.vaultId, this.docId, snapshotJson)
+    } catch (err) {
+      this.onError(err)
+      throw err
+    }
   }
 
   async updatePresence(presence: DocumentRoomPresence): Promise<void> {
@@ -97,6 +106,8 @@ class DocumentRoomHandle implements JoinedDocumentRoom {
 export interface DocumentRoomClientOptions {
   serverUrl?: string
   getToken?: () => string | null | undefined
+  /** Signal du vault (profil serveur) : « vault-not-found » l'allume, le client s'arrete. */
+  gone?: VaultGoneSignal
 }
 
 export class DocumentRoomClient implements SyncAPI {
@@ -106,13 +117,20 @@ export class DocumentRoomClient implements SyncAPI {
   private connectedUserId: string | null = null
   private readonly rooms = new Map<string, DocumentRoomHandle>()
   private startPromise: Promise<void> | null = null
+  private readonly gone: VaultGoneSignal | undefined
 
   constructor(options: DocumentRoomClientOptions = {}) {
     this.serverUrl = options.serverUrl ?? ''
     this.getToken = options.getToken ?? (() => null)
+    this.gone = options.gone
+    // Vault perdu : plus de reconnexion automatique.
+    this.gone?.onGone(() => { void this.connection?.stop().catch(() => {}) })
   }
 
+  private readonly reportError = (err: unknown): void => { this.gone?.check(err) }
+
   async openRoom(vaultId: string, docId: string, userId: string): Promise<JoinedDocumentRoom> {
+    if (this.gone?.gone) throw new VaultGoneError(vaultId)
     const conn = this.ensureConnection(userId)
     if (conn.state === HubConnectionState.Disconnected) {
       // Start and store the promise so concurrent callers can await it.
@@ -128,10 +146,17 @@ export class DocumentRoomClient implements SyncAPI {
 
     const handle = new DocumentRoomHandle(conn, vaultId, docId, userId, (id, closing) => {
       if (this.rooms.get(id) === closing) this.rooms.delete(id)
-    })
+    }, this.reportError)
     this.rooms.set(docId, handle)
 
-    await conn.invoke('JoinRoom', vaultId, docId)
+    try {
+      await conn.invoke('JoinRoom', vaultId, docId)
+    } catch (err) {
+      // Sans ce retrait, la poignee morte serait rendue au prochain openRoom.
+      if (this.rooms.get(docId) === handle) this.rooms.delete(docId)
+      if (this.gone?.check(err)) throw new VaultGoneError(vaultId)
+      throw err
+    }
     // Le serveur envoie RoomJoined AVANT de terminer JoinRoom. S'il ne l'a pas
     // fait (serveur ancien), le document est considere comme jamais ecrit.
     handle._dispatchJoined(null)

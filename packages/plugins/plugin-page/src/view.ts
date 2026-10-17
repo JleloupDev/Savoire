@@ -24,6 +24,7 @@ import { VaultMirror } from './adapter/VaultMirror'
 import { PageFileError } from './adapter/pageFile'
 import { linkTargetOf, resolveLinkTarget, subPageFolder, subPagePath } from './subpage'
 import { PAGE_CSS } from './style'
+import { createSelectionToolbar, type SelectionToolbar } from './toolbar'
 
 export interface PageViewDeps {
   workspace?: Pick<WorkspaceAPI, 'openFile'>
@@ -33,7 +34,7 @@ export interface PageViewDeps {
    * Moteur de raccourcis : la vue lui passe TOUTES ses touches. Sans lui,
    * aucune action clavier (seule la frappe ordinaire marche).
    */
-  hotkeys?: Pick<HotkeyAPI, 'handleKeyEvent'>
+  hotkeys?: Pick<HotkeyAPI, 'handleKeyEvent'> & Partial<Pick<HotkeyAPI, 'get' | 'format'>>
 }
 
 /** Editeur d'une vue montee, par conteneur (tests, outils). */
@@ -77,6 +78,8 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
   let treeMirror: TreeMirror | null = null
   let vaultMirror: VaultMirror | null = null
   let destroyed = false
+  /** Barre d'edition flottante, au-dessus de la selection. */
+  let toolbar: SelectionToolbar | null = null
   const cleanups: (() => void)[] = []
 
   const fileName = path.split('/').at(-1)?.replace(/\.page$/i, '') ?? path
@@ -92,6 +95,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     const editable = !readOnly && !forcedReadOnly
     editor?.setEditable(editable)
     root?.classList.toggle('is-readonly', !editable)
+    toolbar?.update()
   }
 
   function exists(p: string): boolean {
@@ -415,6 +419,9 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       cleanups.push(trackPageEditor(editor, controller))
       editorsByContainer.set(container, editor)
       cleanups.push(() => editorsByContainer.delete(container))
+      toolbar = createSelectionToolbar(editor, body, deps.hotkeys)
+      const bar = toolbar
+      cleanups.push(() => bar.destroy())
       editor.on('transaction', () => updateMenu())
       editor.on('blur', () => { if (!menu.naming) closeMenu() })
 
@@ -446,6 +453,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     destroy() {
       destroyed = true
       for (const c of cleanups.splice(0)) c()
+      toolbar = null
       treeMirror?.detach()
       treeMirror = null
       void vaultMirror?.destroy()

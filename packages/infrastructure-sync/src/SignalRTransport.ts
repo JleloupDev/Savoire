@@ -8,12 +8,15 @@ import {
   type HubConnection,
 } from '@microsoft/signalr'
 import type { ITransport } from '@savoire/plugin-api'
+import type { VaultGoneSignal } from './vaultGone'
 
 export interface SignalRTransportOptions {
   serverUrl: string
   userId?: string
   clientId?: string
   getToken?: () => string | null
+  /** Signal du vault : « vault-not-found » l'allume, et le transport s'arrete. */
+  gone?: VaultGoneSignal
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -34,10 +37,13 @@ export class SignalRTransport implements ITransport {
   private readonly clientId: string
   private vaultId = ''
   private docId = ''
+  private readonly gone: VaultGoneSignal | undefined
+  private readonly unsubGone: () => void
 
   constructor(options: SignalRTransportOptions) {
-    const { serverUrl, userId = 'anon', clientId = 'anon', getToken } = options
+    const { serverUrl, userId = 'anon', clientId = 'anon', getToken, gone } = options
     this.clientId = clientId
+    this.gone = gone
     this.connection = new HubConnectionBuilder()
       .withUrl(`${serverUrl}/hubs/sync?userId=${encodeURIComponent(userId)}`, {
         ...(getToken ? { accessTokenFactory: () => getToken() ?? '' } : {}),
@@ -45,15 +51,28 @@ export class SignalRTransport implements ITransport {
       .configureLogging(LogLevel.None)
       .withAutomaticReconnect()
       .build()
+    // Vault perdu : plus de reconnexion, plus d'envoi.
+    this.unsubGone = gone?.onGone(() => { void this.connection.stop().catch(() => {}) }) ?? (() => {})
+  }
+
+  /** Rapporte l'erreur au signal du vault ; rend true si le vault est perdu. */
+  private isGone(err: unknown): boolean {
+    return this.gone?.check(err) ?? false
+  }
+
+  private report = (err: unknown): void => {
+    if (!this.isGone(err)) console.error(err)
   }
 
   async join(vaultId: string, docId: string): Promise<void> {
     this.vaultId = vaultId
     this.docId = docId
+    if (this.gone?.gone) return
     try {
       await this.connection.start()
       await this.connection.invoke('JoinDocument', vaultId, docId)
-    } catch {
+    } catch (err) {
+      if (this.isGone(err)) return
       console.debug('[SignalRTransport] unavailable — offline mode')
     }
   }
@@ -62,21 +81,21 @@ export class SignalRTransport implements ITransport {
     if (this.connection.state !== HubConnectionState.Connected) return
     await this.connection
       .invoke('PushOperation', this.vaultId, this.docId, this.clientId, toBase64(op))
-      .catch(console.error)
+      .catch(this.report)
   }
 
   async pushSnapshot(snapshot: Uint8Array): Promise<void> {
     if (this.connection.state !== HubConnectionState.Connected) return
     await this.connection
       .invoke('SnapshotDocument', this.vaultId, this.docId, toBase64(snapshot))
-      .catch(console.error)
+      .catch(this.report)
   }
 
   async pushPresence(bytes: Uint8Array): Promise<void> {
     if (this.connection.state !== HubConnectionState.Connected) return
     await this.connection
       .invoke('UpdateAwareness', this.vaultId, this.docId, toBase64(bytes))
-      .catch(console.error)
+      .catch(this.report)
   }
 
   onInit(cb: (ops: Uint8Array[]) => void): () => void {
@@ -113,6 +132,7 @@ export class SignalRTransport implements ITransport {
   }
 
   async disconnect(): Promise<void> {
+    this.unsubGone()
     await this.connection.stop()
   }
 }

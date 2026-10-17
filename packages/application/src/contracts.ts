@@ -201,6 +201,30 @@ export interface VaultSyncSessionFactoryParams {
   onChanged: () => void
   /** Remonte l'etat de connexion du transport a l'UI. */
   onConnectionChange?: (state: 'connected' | 'disconnected') => void
+  /**
+   * Le vault n'existe plus, ou on n'y a plus acces (supprime par son
+   * proprietaire, acces retire). Ce n'est pas une coupure : la session a deja
+   * arrete ses reessais et ses reconnexions. Appele une seule fois, apres
+   * l'ouverture ; l'appelant ferme la session (dispose) et previent la
+   * personne. Si le vault est deja perdu a l'ouverture, open() rejette avec
+   * VaultGoneError a la place.
+   *
+   * Optionnel et agnostique : un profil qui ne sait pas le detecter ne
+   * l'appelle jamais (le profil local pourra le faire a la revocation).
+   */
+  onVaultGone?: () => void
+}
+
+/**
+ * Le vault n'existe plus, ou on n'y a plus acces. Rendue par open() d'une
+ * session, ou par un appel fait apres la perte du vault. Distincte d'une
+ * erreur reseau : reessayer ne sert a rien.
+ */
+export class VaultGoneError extends Error {
+  constructor(readonly vaultId: string) {
+    super(`Le vault ${vaultId} n'existe plus ou vous n'y avez plus acces.`)
+    this.name = 'VaultGoneError'
+  }
 }
 
 export interface IVaultSyncSessionFactory {
@@ -245,6 +269,8 @@ export interface ActivateVaultParams {
   identitySeed?: Uint8Array
   identity?: IIdentityProvider
   onConnectionChange?: (state: 'connected' | 'disconnected') => void
+  /** Transmis tel quel a la fabrique : voir VaultSyncSessionFactoryParams.onVaultGone. */
+  onVaultGone?: () => void
 }
 
 export interface ActivateSharedDocParams {
