@@ -97,31 +97,14 @@ builder.Services.AddSignalR(o =>
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.DocumentLockRegistry>();
 
-// 7. CORS — configurable via AllowedOrigins, fallback permissif en dev
+// 7. CORS : origines web (AllowedOrigins) + application de bureau
+// (DesktopAppOrigins, origines Tauri par defaut). Jamais « toutes les
+// origines » : voir CorsOrigins.
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-    {
-        string[]? allowedOrigins = builder.Configuration
-            .GetSection("AllowedOrigins")
-            .Get<string[]>();
-
-        if (allowedOrigins is { Length: > 0 })
-        {
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyMethod()
-                  .AllowAnyHeader()
-                  .AllowCredentials();
-        }
-        else
-        {
-            // TODO: restrict allowed origins before production — see GitHub issue "CORS: restrict dev fallback"
-            policy.SetIsOriginAllowed(_ => true)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        }
-    });
+        Savoire.Server.Extensions.CorsOrigins.Configure(
+            policy, builder.Configuration, builder.Environment.IsDevelopment()));
 });
 
 WebApplication app = builder.Build();

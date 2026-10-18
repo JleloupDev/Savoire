@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-server-session-set"
+description = "Enables the server_session_set command without any pre-configured scope."
+commands.allow = ["server_session_set"]
+
+[[permission]]
+identifier = "deny-server-session-set"
+description = "Denies the server_session_set command without any pre-configured scope."
+commands.deny = ["server_session_set"]

@@ -4,18 +4,17 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type { IAuthAPI } from '@savoire/application'
 import type { AccountEntry } from './types'
+import { getAccountStorage } from './accountStorage'
+import { isNetworkError } from './serverErrors'
 
-const STORE_KEY = 'vault_accounts'
-
+// Navigateur : sessionStorage. Version bureau : la session du serveur
+// choisi, gardee sur la machine (voir accountStorage.ts, serverConnection.ts).
 function loadAccounts(): AccountEntry[] {
-  try {
-    const raw = sessionStorage.getItem(STORE_KEY)
-    return raw ? (JSON.parse(raw) as AccountEntry[]) : []
-  } catch { return [] }
+  return getAccountStorage().load()
 }
 
 function saveAccounts(accounts: AccountEntry[]) {
-  sessionStorage.setItem(STORE_KEY, JSON.stringify(accounts))
+  getAccountStorage().save(accounts)
 }
 
 interface AuthContextValue {
@@ -29,6 +28,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   switchAccount: (userId: string) => Promise<boolean>
+  /** Relit les comptes gardes (version bureau : apres un changement de serveur). */
+  reloadAccounts: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -86,13 +87,20 @@ export function AuthProvider({ children, authApi }: { children: ReactNode; authA
       setAccounts(updated)
       setToken(res.accessToken)
       return true
-    } catch {
+    } catch (err) {
+      // Serveur injoignable : le compte reste garde, on reessaiera plus tard.
+      if (isNetworkError(err)) return false
       // Refresh token expired — remove that account
       const filtered = stored.filter(a => a.userId !== userId)
       saveAccounts(filtered)
       setAccounts(filtered)
       return false
     }
+  }, [])
+
+  const reloadAccounts = useCallback(() => {
+    setAccounts(loadAccounts())
+    setToken(null)
   }, [])
 
   // On mount: restore session from stored refresh token — delegates to switchAccount
@@ -104,7 +112,7 @@ export function AuthProvider({ children, authApi }: { children: ReactNode; authA
   }, [switchAccount])
 
   return (
-    <AuthContext.Provider value={{ token, accounts, activeAccount, isReady, login, logout, switchAccount }}>
+    <AuthContext.Provider value={{ token, accounts, activeAccount, isReady, login, logout, switchAccount, reloadAccounts }}>
       {children}
     </AuthContext.Provider>
   )

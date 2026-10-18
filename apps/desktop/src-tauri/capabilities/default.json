@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenetre principale : les commandes de vault et la reception des evenements du disque. Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page.",
+  "description": "Fenetre principale : les commandes de vault, la liste des serveurs Savoire et leurs sessions, et la reception des evenements du disque. Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page.",
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "vault"
+    "vault",
+    "server"
   ]
 }

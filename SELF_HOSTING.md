@@ -33,6 +33,15 @@ Copy `.env.example` to `.env` and fill in the values:
 | `JWT_AUDIENCE` | No | JWT audience claim (default: `savoire-client`) |
 | `ALLOWED_ORIGIN_1` | No | Extra CORS origin to allow (e.g. `http://your-server:8082`) |
 
+CORS accepts only the listed origins (`AllowedOrigins`) plus the Savoire
+desktop app (`DesktopAppOrigins`, default `tauri://localhost`,
+`http://tauri.localhost`, `https://tauri.localhost`; set
+`DesktopAppOrigins=` to an empty value to refuse it). With nothing configured,
+only the desktop app is accepted, plus local addresses (`localhost`,
+`127.0.0.1`) in Development. Authentication never uses cookies: the token
+travels in the `Authorization` header (and `access_token` for SignalR
+WebSockets).
+
 Generate a secure JWT secret:
 
 ```bash

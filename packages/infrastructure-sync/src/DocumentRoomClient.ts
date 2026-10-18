@@ -5,6 +5,7 @@
 // Uses a separate hub from the CRDT hub (/hubs/sync): last-write-wins on full JSON
 // snapshots, suited for non-textual documents (Excalidraw, diagrams, tables).
 
+import { serverUrl } from './serverAddress'
 import {
   HubConnection,
   HubConnectionBuilder,
@@ -174,7 +175,7 @@ export class DocumentRoomClient implements SyncAPI {
 
     this.connectedUserId = userId
     this.connection = new HubConnectionBuilder()
-      .withUrl(`${this.serverUrl}/hubs/room?userId=${encodeURIComponent(userId)}`, {
+      .withUrl(serverUrl(`/hubs/room?userId=${encodeURIComponent(userId)}`, this.serverUrl), {
         accessTokenFactory: () => this.getToken() ?? '',
       })
       .configureLogging(LogLevel.None)

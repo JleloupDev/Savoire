@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultSummary, DocumentDto, AuthResponse, AdminUserDto, UserDto, ResourceSharingDto, ResourcePermissionDto, ShareLinkDto, ShareLinkAccessDto } from './types'
+import { serverUrl } from '@savoire/infrastructure-sync'
 
 async function apiFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -22,7 +23,7 @@ async function apiFetch<T>(url: string, token: string, init?: RequestInit): Prom
 export const api = {
   // ── Auth ─────────────────────────────────────────────────────────────────
   login: (email: string, password: string): Promise<AuthResponse> =>
-    fetch('/api/v1/auth/login', {
+    fetch(serverUrl('/api/v1/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -32,7 +33,7 @@ export const api = {
     }),
 
   refresh: (refreshToken: string): Promise<AuthResponse> =>
-    fetch('/api/v1/auth/refresh', {
+    fetch(serverUrl('/api/v1/auth/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -42,44 +43,44 @@ export const api = {
     }),
 
   logout: (accessToken: string, refreshToken: string): Promise<void> =>
-    fetch('/api/v1/auth/logout', {
+    fetch(serverUrl('/api/v1/auth/logout'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ refreshToken }),
     }).then(() => undefined),
 
   changePassword: (token: string, currentPassword: string, newPassword: string): Promise<void> =>
-    apiFetch('/api/v1/auth/change-password', token, {
+    apiFetch(serverUrl('/api/v1/auth/change-password'), token, {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
   // ── Vaults ───────────────────────────────────────────────────────────────
   listVaults: (userId: string, token: string): Promise<VaultSummary[]> =>
-    apiFetch(`/api/v1/users/${encodeURIComponent(userId)}/vaults`, token),
+    apiFetch(serverUrl(`/api/v1/users/${encodeURIComponent(userId)}/vaults`), token),
 
   createVault: (userId: string, name: string, token: string): Promise<VaultSummary> =>
-    apiFetch(`/api/v1/users/${encodeURIComponent(userId)}/vaults`, token, {
+    apiFetch(serverUrl(`/api/v1/users/${encodeURIComponent(userId)}/vaults`), token, {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
 
   renameVault: (vaultId: string, name: string, token: string): Promise<VaultSummary> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}`, token, {
+    apiFetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}`), token, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
 
   deleteVault: (vaultId: string, token: string): Promise<void> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}`, token, { method: 'DELETE' }),
+    apiFetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}`), token, { method: 'DELETE' }),
 
   // ── Documents ────────────────────────────────────────────────────────────
   listDocuments: (vaultId: string, token: string): Promise<DocumentDto[]> =>
-    apiFetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`, token),
+    apiFetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents`), token),
 
   // ── Attachments (accès direct pour usage interne si besoin) ─────────────
   attachmentUrl: (vaultId: string, path: string): string =>
-    `/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(path)}`,
+    serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(path)}`),
 
   // ── Sharing ───────────────────────────────────────────────────────────────
 
@@ -102,10 +103,10 @@ export const api = {
     }),
 
   revokeShareLink: (linkId: string, token: string): Promise<void> =>
-    apiFetch(`/api/v1/sharing/links/${encodeURIComponent(linkId)}`, token, { method: 'DELETE' }),
+    apiFetch(serverUrl(`/api/v1/sharing/links/${encodeURIComponent(linkId)}`), token, { method: 'DELETE' }),
 
   getDocumentContent: (vaultId: string, docId: string, token: string): Promise<string> =>
-    fetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/content`, {
+    fetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/content`), {
       headers: { Authorization: `Bearer ${token}` },
     }).then(async res => {
       if (res.status === 404) return ''
@@ -114,7 +115,7 @@ export const api = {
     }),
 
   putDocumentContent: (vaultId: string, docId: string, token: string, content: string): Promise<void> =>
-    fetch(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/content`, {
+    fetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/content`), {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -126,7 +127,7 @@ export const api = {
     }),
 
   accessShareLink: (shareToken: string): Promise<ShareLinkAccessDto> =>
-    fetch(`/api/v1/share/${encodeURIComponent(shareToken)}/access`)
+    fetch(serverUrl(`/api/v1/share/${encodeURIComponent(shareToken)}/access`))
       .then(async res => {
         if (!res.ok) throw new Error(`${res.status}`)
         return res.json()
@@ -134,7 +135,7 @@ export const api = {
 
   // ── Users ─────────────────────────────────────────────────────────────────
   lookupUserByEmail: (email: string, token: string): Promise<UserDto | null> =>
-    fetch(`/api/v1/users?email=${encodeURIComponent(email)}`, {
+    fetch(serverUrl(`/api/v1/users?email=${encodeURIComponent(email)}`), {
       headers: { Authorization: `Bearer ${token}` },
     }).then(async res => {
       if (res.status === 404) return null
@@ -144,23 +145,23 @@ export const api = {
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   listUsers: (token: string): Promise<AdminUserDto[]> =>
-    apiFetch('/api/v1/admin/users', token),
+    apiFetch(serverUrl('/api/v1/admin/users'), token),
 
   createUser: (token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void> =>
-    apiFetch('/api/v1/admin/users', token, {
+    apiFetch(serverUrl('/api/v1/admin/users'), token, {
       method: 'POST',
       body: JSON.stringify({ email, password, displayName, isAdmin }),
     }),
 
   resetPassword: (token: string, userId: string, newPassword: string): Promise<void> =>
-    apiFetch(`/api/v1/admin/users/${userId}/reset-password`, token, {
+    apiFetch(serverUrl(`/api/v1/admin/users/${userId}/reset-password`), token, {
       method: 'POST',
       body: JSON.stringify({ newPassword }),
     }),
 
   revokeSessions: (token: string, userId: string): Promise<void> =>
-    apiFetch(`/api/v1/admin/users/${userId}/revoke-sessions`, token, { method: 'POST' }),
+    apiFetch(serverUrl(`/api/v1/admin/users/${userId}/revoke-sessions`), token, { method: 'POST' }),
 
   disableUser: (token: string, userId: string): Promise<void> =>
-    apiFetch(`/api/v1/admin/users/${userId}/disable`, token, { method: 'POST' }),
+    apiFetch(serverUrl(`/api/v1/admin/users/${userId}/disable`), token, { method: 'POST' }),
 }

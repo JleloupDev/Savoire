@@ -9,6 +9,7 @@ import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/p
 import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
+import { getServerChoice } from './serverConnection'
 import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
@@ -1126,6 +1127,18 @@ export function AppShell() {
             style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', fontSize: 11.5, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}
           >
             Vaults…
+          </button>
+        )}
+
+        {/* Bureau, profil serveur : revenir aux vaults du poste, sans relancer */}
+        {!activeProfile.desktop && getServerChoice().configurable && (
+          <button
+            data-testid="server-back-to-desktop"
+            onClick={() => { window.location.href = '/' }}
+            title={`Connecté à ${getServerChoice().current ?? 'aucun serveur'}. Revenir aux vaults de cet ordinateur.`}
+            style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', fontSize: 11.5, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}
+          >
+            ← Ce poste
           </button>
         )}
 

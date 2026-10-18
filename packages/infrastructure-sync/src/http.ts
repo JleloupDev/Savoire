@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 export interface HttpClientOptions {
   baseUrl?: string
   getToken?: () => string | null | undefined
@@ -65,7 +66,6 @@ export class HttpClient {
   }
 
   private resolve(path: string): string {
-    if (!this.baseUrl) return path
-    return `${this.baseUrl}${path}`
+    return serverUrl(path, this.baseUrl)
   }
 }

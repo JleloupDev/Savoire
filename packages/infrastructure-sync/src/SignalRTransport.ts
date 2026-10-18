@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
+import { serverUrl as resolveServerUrl } from './serverAddress'
 import {
   HubConnectionBuilder,
   LogLevel,
@@ -45,7 +46,7 @@ export class SignalRTransport implements ITransport {
     this.clientId = clientId
     this.gone = gone
     this.connection = new HubConnectionBuilder()
-      .withUrl(`${serverUrl}/hubs/sync?userId=${encodeURIComponent(userId)}`, {
+      .withUrl(resolveServerUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, serverUrl), {
         ...(getToken ? { accessTokenFactory: () => getToken() ?? '' } : {}),
       })
       .configureLogging(LogLevel.None)

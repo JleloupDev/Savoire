@@ -4,6 +4,9 @@ import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { t } from '@savoire/i18n'
+import { ServerAddressError, normalizeServerAddress } from '@savoire/infrastructure-sync'
+import { chooseServer, forgetServer, getServerChoice } from './serverConnection'
+import { classifyLoginError, describeLoginError } from './serverErrors'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: '📝', key: 'login.feature.markdown' },
@@ -13,7 +16,7 @@ const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.fea
 ]
 
 function InputField({
-  label, type, value, onChange, placeholder, onEnter, testId,
+  label, type, value, onChange, placeholder, onEnter, testId, list,
 }: {
   label: string
   type: string
@@ -22,6 +25,8 @@ function InputField({
   placeholder: string
   onEnter: () => void
   testId?: string
+  /** Suggestions (id d'un <datalist>). */
+  list?: string
 }) {
   const [focused, setFocused] = useState(false)
   return (
@@ -31,6 +36,7 @@ function InputField({
       </label>
       <input
         data-testid={testId}
+        list={list}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -62,8 +68,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState<string | null>(null)
   const [loading, setLoading]   = useState(false)
-  const { token, login }        = useAuth()
+  const { token, login, reloadAccounts } = useAuth()
   const navigate                = useNavigate()
+  // Version bureau : la personne saisit l'adresse du serveur.
+  const serverChoice            = getServerChoice()
+  const [server, setServer]     = useState(serverChoice.current ?? '')
 
   useEffect(() => {
     if (token) navigate('/', { replace: true })
@@ -73,12 +82,28 @@ export function LoginPage() {
     if (!email || !password) return
     setLoading(true)
     setError(null)
+    let address: string | null = null
+    let isNew = false
     try {
+      if (serverChoice.configurable) {
+        const before = getServerChoice().current
+        isNew = !getServerChoice().servers.includes(normalizeServerAddress(server))
+        address = await chooseServer(server)
+        setServer(address)
+        // Autre serveur : ses comptes a lui.
+        if (address !== before) reloadAccounts()
+      }
       await login(email.trim(), password)
       navigate('/')
     } catch (e) {
-      const msg = String(e)
-      setError(msg.includes('401') ? t('app', 'login.error.credentials') : `Erreur serveur : ${msg}`)
+      // Une adresse neuve qui ne mene a aucun serveur Savoire n'est pas gardee.
+      const kind = classifyLoginError(e)
+      if (address && isNew && (kind === 'unreachable' || kind === 'not-savoire')) {
+        void forgetServer(address).catch(() => {})
+      }
+      setError(e instanceof ServerAddressError
+        ? e.message
+        : describeLoginError(e, { server: address, credentials: t('app', 'login.error.credentials') }))
     } finally {
       setLoading(false)
     }
@@ -158,6 +183,17 @@ export function LoginPage() {
 
         {/* Fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 24 }}>
+          {serverChoice.configurable && (
+            <div>
+              <InputField testId="login-server" label="Serveur" type="url" value={server} onChange={setServer} placeholder="https://savoire.exemple.fr" onEnter={handleLogin} list="login-server-list" />
+              <datalist id="login-server-list">
+                {serverChoice.servers.map(s => <option key={s} value={s} />)}
+              </datalist>
+              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
+                Adresse du serveur Savoire, par exemple https://savoire.exemple.fr ou http://192.168.1.10:5000.
+              </div>
+            </div>
+          )}
           <InputField testId="login-email" label={t('app', 'login.email')} type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
           <div>
             <InputField testId="login-password" label={t('app', 'login.password')} type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
@@ -171,11 +207,21 @@ export function LoginPage() {
         <button
           data-testid="login-submit"
           onClick={handleLogin}
-          disabled={loading || !email || !password}
+          disabled={loading || !email || !password || (serverChoice.configurable && !server.trim())}
           style={{ padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: (!email || !password || loading) ? 'not-allowed' : 'pointer', opacity: (!email || !password) ? 0.45 : 1, transition: 'opacity 0.15s, filter 0.12s', letterSpacing: '0.01em', marginBottom: 28, width: '100%', fontFamily: 'var(--font-ui)' }}
         >
           {loading ? t('app', 'login.submitting') : t('app', 'login.submit')}
         </button>
+
+        {serverChoice.configurable && (
+          <button
+            data-testid="login-back-to-desktop"
+            onClick={() => { window.location.href = '/' }}
+            style={{ padding: 9, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)', marginTop: -12, marginBottom: 28, width: '100%' }}
+          >
+            ← Vaults sur cet ordinateur
+          </button>
+        )}
 
         {/* Divider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>

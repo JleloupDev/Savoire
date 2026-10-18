@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Les serveurs Savoire connus et leurs sessions : deux fichiers fixes du
+# dossier de configuration de l'application (voir src/servers.rs).
+
+[[set]]
+identifier = "server"
+description = "Lire et choisir les serveurs Savoire connus, garder la session de chacun."
+permissions = [
+  "allow-server-list",
+  "allow-server-select",
+  "allow-server-forget",
+  "allow-server-session-get",
+  "allow-server-session-set",
+]

@@ -10,6 +10,7 @@
 
 mod folders;
 mod paths;
+mod servers;
 mod vault_fs;
 mod vaults;
 mod watch;
@@ -24,6 +25,8 @@ fn main() {
             let file = app.path().app_config_dir()?.join("recent-vaults.json");
             app.manage(vaults::VaultRegistry::load(file));
             app.manage(watch::Watches::default());
+            // Serveurs Savoire connus et leurs sessions (servers.json, server-sessions.json).
+            app.manage(servers::ServerSettings::load(&app.path().app_config_dir()?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -45,6 +48,11 @@ fn main() {
             vault_fs::vault_remove,
             watch::vault_watch,
             watch::vault_unwatch,
+            servers::server_list,
+            servers::server_select,
+            servers::server_forget,
+            servers::server_session_get,
+            servers::server_session_set,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");

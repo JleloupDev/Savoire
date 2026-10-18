@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import {
   HubConnectionBuilder,
   HubConnection,
@@ -74,7 +75,7 @@ export class VaultHubClient {
 
     if (!this.connection) {
       this.connection = new HubConnectionBuilder()
-        .withUrl(`${this.serverUrl}/hubs/vault`, {
+        .withUrl(serverUrl(`/hubs/vault`, this.serverUrl), {
           accessTokenFactory: () => this.getToken() ?? '',
         })
         .configureLogging(LogLevel.None)

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 export * from './base64'
 export * from './http'
+export * from './serverAddress'
 export * from './mappers'
 export * from './HttpAccountRepository'
 export * from './HttpAdminBackend'

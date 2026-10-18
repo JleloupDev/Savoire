@@ -26,6 +26,7 @@
 import { makeLocalPeerVaultSessionFactory } from './createWebAppRoot'
 import { isTauriRuntime } from './tauriRuntime'
 import { OFFLINE_ACCOUNT, OFFLINE_TOKEN } from './desktopAccount'
+import { installDesktopServers } from './serverConnection'
 
 export type SyncProfileName = 'server' | 'edgesync' | 'local' | 'desktop'
 
@@ -191,7 +192,10 @@ export async function initProfile(): Promise<LoadedProfile> {
   if (isTauriRuntime()) {
     try {
       const mod = await import('./createDesktopRoot')
-      mod.installVaultFolderHost(await mod.loadDesktopProfile(), () => runtimeDeps.getServerAuth?.() ?? null)
+      const parts = await mod.loadDesktopProfile()
+      mod.installVaultFolderHost(parts, () => runtimeDeps.getServerAuth?.() ?? null)
+      // Le serveur choisi par la personne : base des URL, comptes gardes.
+      await installDesktopServers(parts.serverSettings)
     } catch (err) {
       console.error('[profile] disque indisponible pour les transferts', err)
     }

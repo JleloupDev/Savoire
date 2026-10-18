@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import type {
   ISharingBackend, SharedDocumentHandle,
   AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
@@ -14,7 +15,7 @@ export class HttpSharingBackend implements ISharingBackend {
   constructor(private readonly baseUrl: string = '') {}
 
   private resourcePath(resourceType: 'vault' | 'document', id: string): string {
-    return `${this.baseUrl}/api/v1/${resourceType === 'vault' ? 'vaults' : 'documents'}/${encodeURIComponent(id)}`
+    return serverUrl(`/api/v1/${resourceType === 'vault' ? 'vaults' : 'documents'}/${encodeURIComponent(id)}`, this.baseUrl)
   }
 
   private async fetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
@@ -49,7 +50,7 @@ export class HttpSharingBackend implements ISharingBackend {
   }
 
   async lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null> {
-    const res = await fetch(`${this.baseUrl}/api/v1/users?email=${encodeURIComponent(email)}`, {
+    const res = await fetch(serverUrl(`/api/v1/users?email=${encodeURIComponent(email)}`, this.baseUrl), {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (res.status === 404) return null
@@ -65,19 +66,19 @@ export class HttpSharingBackend implements ISharingBackend {
   }
 
   revokeShareLink(linkId: string, token: string): Promise<void> {
-    return this.fetch(`${this.baseUrl}/api/v1/sharing/links/${encodeURIComponent(linkId)}`, token, {
+    return this.fetch(serverUrl(`/api/v1/sharing/links/${encodeURIComponent(linkId)}`, this.baseUrl), token, {
       method: 'DELETE',
     })
   }
 
   async accessShareLink(shareToken: string): Promise<AppShareLinkAccess> {
-    const res = await fetch(`${this.baseUrl}/api/v1/share/${encodeURIComponent(shareToken)}/access`)
+    const res = await fetch(serverUrl(`/api/v1/share/${encodeURIComponent(shareToken)}/access`, this.baseUrl))
     if (!res.ok) throw new Error(`${res.status}`)
     return res.json() as Promise<AppShareLinkAccess>
   }
 
   async openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>> {
-    const res = await fetch(`${this.baseUrl}/api/v1/share/${encodeURIComponent(shareToken)}/access`)
+    const res = await fetch(serverUrl(`/api/v1/share/${encodeURIComponent(shareToken)}/access`, this.baseUrl))
     if (!res.ok) throw new Error(`${res.status}`)
     const access = await res.json() as AppShareLinkAccess
 

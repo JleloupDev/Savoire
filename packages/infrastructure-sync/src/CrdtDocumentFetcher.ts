@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 
+import { serverUrl as resolveServerUrl } from './serverAddress'
 import * as Y from 'yjs'
 import {
   HubConnection,
@@ -21,7 +22,7 @@ function defaultConnectionFactory(
   userId: string,
 ): HubConnection {
   return new HubConnectionBuilder()
-    .withUrl(`${serverUrl}/hubs/sync?userId=${encodeURIComponent(userId)}`, {
+    .withUrl(resolveServerUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, serverUrl), {
       accessTokenFactory: () => getToken() ?? '',
     })
     .withAutomaticReconnect()

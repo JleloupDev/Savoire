@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import type { IDocumentMeta, IVaultStorage } from '@savoire/platform'
 
 export interface RestVaultStorageOptions {
@@ -154,6 +155,6 @@ export class RestVaultStorage implements IVaultStorage {
   }
 
   private resolve(path: string): string {
-    return this.baseUrl ? `${this.baseUrl}${path}` : path
+    return serverUrl(path, this.baseUrl)
   }
 }

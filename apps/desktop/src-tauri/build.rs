@@ -23,6 +23,11 @@ const COMMANDS: &[&str] = &[
     "vault_remove",
     "vault_watch",
     "vault_unwatch",
+    "server_list",
+    "server_select",
+    "server_forget",
+    "server_session_get",
+    "server_session_set",
 ];
 
 fn main() {

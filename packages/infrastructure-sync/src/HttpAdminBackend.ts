@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import type { IAdminBackend, AppAdminUser } from '@savoire/application'
 
 export class HttpAdminBackend implements IAdminBackend {
@@ -20,31 +21,31 @@ export class HttpAdminBackend implements IAdminBackend {
   }
 
   listUsers(token: string): Promise<AppAdminUser[]> {
-    return this.fetch(`${this.baseUrl}/api/v1/admin/users`, token)
+    return this.fetch(serverUrl(`/api/v1/admin/users`, this.baseUrl), token)
   }
 
   createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void> {
-    return this.fetch(`${this.baseUrl}/api/v1/admin/users`, token, {
+    return this.fetch(serverUrl(`/api/v1/admin/users`, this.baseUrl), token, {
       method: 'POST',
       body: JSON.stringify({ email, password, displayName, isAdmin }),
     })
   }
 
   resetPassword(token: string, userId: string, newPassword: string): Promise<void> {
-    return this.fetch(`${this.baseUrl}/api/v1/admin/users/${encodeURIComponent(userId)}/reset-password`, token, {
+    return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/reset-password`, this.baseUrl), token, {
       method: 'POST',
       body: JSON.stringify({ newPassword }),
     })
   }
 
   revokeSessions(token: string, userId: string): Promise<void> {
-    return this.fetch(`${this.baseUrl}/api/v1/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, token, {
+    return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, this.baseUrl), token, {
       method: 'POST',
     })
   }
 
   disableUser(token: string, userId: string): Promise<void> {
-    return this.fetch(`${this.baseUrl}/api/v1/admin/users/${encodeURIComponent(userId)}/disable`, token, {
+    return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/disable`, this.baseUrl), token, {
       method: 'POST',
     })
   }

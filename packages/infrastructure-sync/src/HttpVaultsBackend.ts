@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import type { AppVaultSummary, AppWorkspace, IVaultsBackend } from '@savoire/application'
 
 export interface HttpVaultsBackendOptions {
@@ -66,6 +67,6 @@ export class HttpVaultsBackend implements IVaultsBackend {
   }
 
   private resolve(path: string): string {
-    return this.baseUrl ? `${this.baseUrl}${path}` : path
+    return serverUrl(path, this.baseUrl)
   }
 }

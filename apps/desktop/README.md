@@ -17,8 +17,28 @@ rouvre le dernier vault ; sinon elle affiche l'écran « Vaults sur cet
 ordinateur » (dossiers récents, « Ouvrir un dossier… », « Nouveau vault… »).
 Le bouton « Serveur Savoire… » recharge l'app en profil serveur
 (`?profile=server`) pour télécharger un vault du serveur dans un dossier
-(menu ⚙ du vault, « Télécharger sur ce poste… »). Le profil bureau revient au
-lancement suivant.
+(menu ⚙ du vault, « Télécharger sur ce poste… »). Le bouton « ← Ce poste »
+(barre du haut, ou écran de connexion) revient aux vaults locaux sans
+relancer l'app. Dans le profil bureau, une fois connecté, le menu ⚙ d'un
+vault local propose « Envoyer sur le serveur… ».
+
+## Adresse du serveur
+
+L'écran de connexion de l'app de bureau demande l'**adresse du serveur**
+(`https://savoire.exemple.fr`, `http://192.168.1.10:5000`). Sans `http://`
+ni `https://`, `https://` est supposé. Les adresses déjà utilisées sont
+proposées (10 au plus) ; la dernière est choisie au lancement suivant. Chaque
+serveur garde sa propre session : la personne reste connectée après un
+redémarrage. En développement, l'adresse par défaut est celle du Vite
+(`http://127.0.0.1:3002`), dont le proxy mène au backend.
+
+Toutes les URL du client (REST et SignalR) passent par cette adresse
+(`serverUrl` / `setServerBaseUrl`, `packages/infrastructure-sync/src/serverAddress.ts`).
+Dans le navigateur, rien ne change : URL relatives.
+
+Côté serveur, CORS doit accepter l'origine de l'app : `tauri://localhost`
+(macOS, Linux) ou `http://tauri.localhost` (Windows). C'est le cas par
+défaut (réglage `DesktopAppOrigins`, voir `SELF_HOSTING.md`).
 
 ## Prérequis
 
@@ -65,7 +85,14 @@ Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
   pas (état CRDT, identifiants) est dans `<vault>/.savoire/`. Les écritures
   sont atomiques (fichier temporaire dans `.savoire/tmp/`, puis renommage).
 - **La liste des vaults récents** : `recent-vaults.json` dans le dossier de
-  configuration de l'application (Linux : `~/.config/org.savoire.desktop/`).
+  configuration de l'application (Linux : `~/.config/org.savoire.desktop/`,
+  macOS : `~/Library/Application Support/org.savoire.desktop/`).
+- **Les serveurs connus** : `servers.json`, au même endroit. **Les sessions**
+  (comptes connectés, jeton de renouvellement compris) : `server-sessions.json`,
+  droits `0600` sous Linux et macOS. Ce n'est pas le trousseau du système :
+  Tauri n'a pas de greffon officiel léger pour ça, il faudrait une
+  dépendance de plus. Le fichier est lisible par les programmes de la
+  personne, comme le stockage d'un navigateur. « Se déconnecter » l'efface.
 - **Le reste de l'app** (réglages, clé d'identité locale, index plein texte) :
   stockage de la fenêtre (Linux : `~/.local/share/org.savoire.desktop/`).
 
@@ -79,19 +106,28 @@ Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
   dialogue native (ouverte côté Rust, jamais depuis la page), ou si elle est
   déjà dans sa liste de vaults récents. Aucune commande ne permet à la page
   d'ajouter un chemin.
-- Capacités (`src-tauri/capabilities/default.json`) : les commandes de vault
-  et l'écoute d'événements, rien d'autre (ni dialogue, ni shell, ni http).
+- Capacités (`src-tauri/capabilities/default.json`) : les commandes de vault,
+  celles des serveurs (`src-tauri/src/servers.rs` : deux fichiers fixes, aucun
+  chemin venu de la page) et l'écoute d'événements, rien d'autre (ni dialogue,
+  ni shell, ni http).
+- CSP (`tauri.conf.json`) : tout est limité à `'self'`, sauf `connect-src`,
+  ouvert à `http: https: ws: wss:`. Une CSP est fixe, alors que l'adresse du
+  serveur est choisie à l'exécution. Le compromis : la page peut ouvrir une
+  connexion vers n'importe quel hôte, mais elle ne peut charger aucun script,
+  style, image ou cadre d'ailleurs. Passer tout le réseau par une commande
+  Rust aurait demandé un client HTTP et un client SignalR côté Rust, pour un
+  gain faible : le code de la page est déjà celui du paquet.
 - « Supprimer » un vault local le retire de la liste ; le dossier n'est
   jamais effacé.
 
 ## Limites
 
-- En build de production, la page est servie par Tauri : les appels `/api`
-  relatifs ne joignent aucun serveur. Le profil serveur (et donc le
-  téléchargement / l'envoi) ne marche aujourd'hui qu'en développement, via le
-  proxy de Vite. Il faudra une adresse de serveur configurable.
-- Pas encore de bouton pour revenir du profil serveur au profil bureau sans
-  relancer l'app.
+- Passer d'un profil à l'autre recharge la page (pas l'app).
+- Un certificat invalide, un serveur éteint, une mauvaise adresse ou une
+  origine refusée par CORS donnent la même erreur réseau au navigateur :
+  le message de connexion les cite toutes, sans pouvoir dire laquelle.
+- Le module ancien `plugin-module` (cadres `/share/...`) n'est pas passé à
+  l'adresse du serveur : il ne marche pas dans l'app de bureau installée.
 - Les liens symboliques ne sont pas suivis dans un vault.
 - Une écriture atomique est vue par la surveillance comme une création
   (renommage), pas comme une modification.

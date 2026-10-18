@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { serverUrl } from './serverAddress'
 import {
   HubConnection,
   HubConnectionBuilder,
@@ -75,7 +76,7 @@ export class SignalRDocumentSyncGateway implements IDocumentSyncGateway {
     }
     this.connectedUserId = userId
     this.connection = new HubConnectionBuilder()
-      .withUrl(`${this.serverUrl}/hubs/sync?userId=${encodeURIComponent(userId)}`, {
+      .withUrl(serverUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, this.serverUrl), {
         accessTokenFactory: () => this.getToken() ?? '',
       })
       .configureLogging(LogLevel.None)

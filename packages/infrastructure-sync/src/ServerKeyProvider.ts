@@ -4,6 +4,7 @@
 // Async variants: they derive SHA-512 via WebCrypto (subtle.digest), so the
 // package's sync `hashes.sha512` hook does not need wiring. Both call sites
 // here are already async.
+import { serverUrl } from './serverAddress'
 import { signAsync, getPublicKeyAsync } from '@noble/ed25519'
 import type { ISeedExportingIdentityProvider } from '@savoire/plugin-api'
 import { fromHex } from '@savoire/plugin-api'
@@ -30,7 +31,7 @@ export class ServerKeyProvider implements ISeedExportingIdentityProvider {
   private async _fetchKey(): Promise<void> {
     const token = this.options.getToken()
     if (!token) throw new Error('ServerKeyProvider: no auth token')
-    const res = await fetch(`${this.options.baseUrl ?? ''}/api/v1/identity/key`, {
+    const res = await fetch(serverUrl('/api/v1/identity/key', this.options.baseUrl), {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) throw new Error(`ServerKeyProvider: ${res.status}`)

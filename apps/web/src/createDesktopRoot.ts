@@ -22,8 +22,8 @@ import { FileSystemVaultSession, LocalKeyProvider } from '@savoire/infrastructur
 import type { IVaultFileSystem } from '@savoire/platform'
 import type { IIdentityProvider } from '@savoire/plugin-api'
 import {
-  createDesktopHost, loadTauriBridge, pathForVaultId, vaultIdForPath,
-  type DesktopHost, type OpenedVaultFolder, type RecentVault,
+  createDesktopHost, createServerSettings, loadTauriBridge, pathForVaultId, vaultIdForPath,
+  type DesktopHost, type DesktopServerSettings, type OpenedVaultFolder, type RecentVault,
 } from '@savoire/desktop'
 import { LOCAL_VAULT_ROLE, MISSING_VAULT_ROLE } from './desktopAccount'
 import { setVaultFolderHost } from './vaultTransfer'
@@ -146,6 +146,8 @@ export interface DesktopProfileParts {
   vaultSyncSessionFactory: IVaultSyncSessionFactory
   identityProvider: IIdentityProvider
   openOnDisk: DiskSessionOpener
+  /** Serveurs Savoire connus et leurs sessions (voir serverConnection.ts). */
+  serverSettings: DesktopServerSettings
 }
 
 let loaded: Promise<DesktopProfileParts> | null = null
@@ -153,7 +155,8 @@ let loaded: Promise<DesktopProfileParts> | null = null
 /** Une seule instance par fenetre : le profil bureau et l'hote de transfert la partagent. */
 export function loadDesktopProfile(openOnDisk: DiskSessionOpener = openOnDiskDefault): Promise<DesktopProfileParts> {
   loaded ??= (async () => {
-    const host = createDesktopHost(await loadTauriBridge())
+    const bridge = await loadTauriBridge()
+    const host = createDesktopHost(bridge)
     const opened = new OpenedFolders(host)
     return {
       host,
@@ -164,6 +167,7 @@ export function loadDesktopProfile(openOnDisk: DiskSessionOpener = openOnDiskDef
       // les modifications sans compte ni serveur.
       identityProvider: new LocalKeyProvider(),
       openOnDisk,
+      serverSettings: createServerSettings(bridge),
     }
   })()
   return loaded

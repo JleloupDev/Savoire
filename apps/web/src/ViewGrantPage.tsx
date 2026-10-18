@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
-import { YjsCrdtAdapter, SignalRTransport, DocumentRoomClient, LocalKeyProvider } from '@savoire/infrastructure-sync'
+import { YjsCrdtAdapter, SignalRTransport, DocumentRoomClient, LocalKeyProvider, serverUrl } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
@@ -45,7 +45,7 @@ const fileTypePlugins: VaultPlugin[] = [
 ]
 
 async function redeemGrant(grantToken: string): Promise<ViewAccessDto> {
-  const res = await fetch('/api/v1/view/grants/redeem', {
+  const res = await fetch(serverUrl('/api/v1/view/grants/redeem'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grantToken }),
