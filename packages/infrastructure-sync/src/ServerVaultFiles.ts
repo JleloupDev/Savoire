@@ -48,6 +48,11 @@ export class ServerVaultFiles implements IVaultFiles {
     return this.storage.readFile(this.vaultId, fileId, this.token())
   }
 
+  async readBytes(fileId: string): Promise<{ bytes: Uint8Array; type: string }> {
+    const blob = await this.storage.fetchAttachment(this.vaultId, fileId, this.token())
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), type: blob.type || 'application/octet-stream' }
+  }
+
   dispose(): void {
     for (const u of this.created.splice(0)) URL.revokeObjectURL(u)
     this.urls.clear()

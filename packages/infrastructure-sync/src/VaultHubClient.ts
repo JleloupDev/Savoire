@@ -41,6 +41,10 @@ export class VaultHubClient {
   private lockRequestedCallbacks: ((docId: string, requesterName: string) => void)[] = []
   private unsubLocalVaultUpdate: (() => void) | null = null
   private readonly unsubGone: () => void
+  /** Envois en cours (repertoire, index), pour flush(). */
+  private readonly inFlight = new Set<Promise<void>>()
+  /** Envois perdus (hub coupe, refus) depuis le dernier settle(). */
+  private lostPushes = 0
 
   constructor(
     private readonly serverUrl: string,
@@ -163,12 +167,47 @@ export class VaultHubClient {
   // ── Vault CRDT ────────────────────────────────────────────────────────────
 
   async pushVaultUpdate(update: Uint8Array): Promise<void> {
-    if (!this.isConnected) return
-    try {
-      await this.connection!.invoke('PushVaultOperation', this.vaultId, toBase64(update))
-    } catch (err) {
-      if (!this.gone.check(err)) console.warn('[VaultHub] pushVaultUpdate failed', err)
-    }
+    if (!this.isConnected) { this.lostPushes++; return }
+    await this.track((async () => {
+      try {
+        await this.connection!.invoke('PushVaultOperation', this.vaultId, toBase64(update))
+      } catch (err) {
+        this.lostPushes++
+        if (!this.gone.check(err)) console.warn('[VaultHub] pushVaultUpdate failed', err)
+      }
+    })())
+  }
+
+  /** Envoie un etat complet du repertoire, et rejette en cas d'echec (rattrapage de flush). */
+  async pushVaultStateOrThrow(state: Uint8Array): Promise<void> {
+    const connection = await this._ensureConnected()
+    await connection.invoke('PushVaultOperation', this.vaultId, toBase64(state))
+  }
+
+  /** Envoie un etat complet d'index, et rejette en cas d'echec (rattrapage de flush). */
+  async pushIndexStateOrThrow(namespace: string, state: Uint8Array): Promise<void> {
+    const connection = await this._ensureConnected()
+    await connection.invoke('PushIndexUpdate', this.vaultId, namespace, toBase64(state))
+  }
+
+  /**
+   * Attend la fin des envois en cours. Rend le nombre d'envois perdus : a
+   * l'appelant de renvoyer l'etat, puis de l'acquitter (acknowledgeLost).
+   */
+  async settle(): Promise<number> {
+    while (this.inFlight.size > 0) await Promise.all([...this.inFlight])
+    return this.lostPushes
+  }
+
+  /** L'etat complet a ete renvoye : ces pertes sont rattrapees. */
+  acknowledgeLost(count: number): void {
+    this.lostPushes = Math.max(0, this.lostPushes - count)
+  }
+
+  private track(p: Promise<void>): Promise<void> {
+    this.inFlight.add(p)
+    void p.finally(() => this.inFlight.delete(p))
+    return p
   }
 
   /** Reverifie le droit de lire le vault. Un refus « vault-not-found » allume le signal. */
@@ -210,12 +249,15 @@ export class VaultHubClient {
   }
 
   async pushIndexUpdate(namespace: string, update: Uint8Array): Promise<void> {
-    if (!this.isConnected) return
-    try {
-      await this.connection!.invoke('PushIndexUpdate', this.vaultId, namespace, toBase64(update))
-    } catch (err) {
-      if (!this.gone.check(err)) console.warn('[VaultHub] pushIndexUpdate failed', err)
-    }
+    if (!this.isConnected) { this.lostPushes++; return }
+    await this.track((async () => {
+      try {
+        await this.connection!.invoke('PushIndexUpdate', this.vaultId, namespace, toBase64(update))
+      } catch (err) {
+        this.lostPushes++
+        if (!this.gone.check(err)) console.warn('[VaultHub] pushIndexUpdate failed', err)
+      }
+    })())
   }
 
   onIndexUpdate(namespace: string, cb: (update: Uint8Array) => void): () => void {

@@ -15,7 +15,16 @@ import type { DocumentRoomPresence, ICRDT, IIdentityProvider, ISharedText, IShar
 import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory } from '@savoire/platform'
 import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IVaultSharing } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
+import { encodeSignedOp } from '@savoire/plugin-api'
+import * as Y from 'yjs'
 import { YMapIndexChannel } from './YMapIndexChannel'
+import { bytesToBase64 } from './base64'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Y_ = Y as Record<string, any>
+
+/** Taille maximale d'un message recu par un hub SignalR, par defaut (32 Kio). */
+const SIGNALR_DEFAULT_MAX_MESSAGE = 32 * 1024
 import { CollabOrchestrator, VaultGoneError } from '@savoire/application'
 import { VaultGoneSignal } from './vaultGone'
 import { YMapVaultDirectory } from './YMapVaultDirectory'
@@ -169,18 +178,76 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     // Document ouvert dans un editeur : son etat local est le plus frais.
     const open = this.docs.get(docId)
     if (open) return (open.crdt.rawDoc as { getText(name: string): { toString(): string } }).getText('codemirror').toString()
+    if (this.gone.gone) throw new VaultGoneError(this.opts.vaultId)
+    try {
+      return await this.documentFetcher().getDocumentContent(this.opts.vaultId, docId, '')
+    } catch (err) {
+      if (this.gone.check(err)) throw new VaultGoneError(this.opts.vaultId)
+      throw err
+    }
+  }
+
+  /** Connexion de lecture/ecriture ponctuelle des documents CRDT (hors editeur). */
+  private documentFetcher(): CrdtDocumentFetcher {
     this.fetcher ??= new CrdtDocumentFetcher({
       serverUrl: this.opts.serverUrl,
       getToken: this.opts.getToken,
       getUserId: () => this.opts.userId,
     })
+    return this.fetcher
+  }
+
+  async readDocumentState(docId: string): Promise<Uint8Array> {
     if (this.gone.gone) throw new VaultGoneError(this.opts.vaultId)
     try {
-      return await this.fetcher.getDocumentContent(this.opts.vaultId, docId, '')
+      // L'etat persiste par le serveur, plus celui d'un editeur ouvert (le
+      // plus frais) : la fusion des deux ne perd rien.
+      const stored = await this.documentFetcher().getDocumentState(this.opts.vaultId, docId)
+      const open = this.docs.get(docId)
+      return open ? (Y_.mergeUpdates([stored, open.crdt.getSnapshot()]) as Uint8Array) : stored
     } catch (err) {
       if (this.gone.check(err)) throw new VaultGoneError(this.opts.vaultId)
       throw err
     }
+  }
+
+  /**
+   * Pousse l'etat comme une op signee, par la connexion ponctuelle : un echec
+   * remonte (le transport d'un editeur, lui, se tait hors ligne). Un editeur
+   * ouvert sur ce document la recoit du serveur comme une op distante.
+   */
+  async mergeDocumentState(docId: string, state: Uint8Array): Promise<void> {
+    if (this.gone.gone) throw new VaultGoneError(this.opts.vaultId)
+    const identity = this.opts.identity
+    if (!identity) throw new Error('SavoireServerVaultSession requires an identity provider to sign ops')
+    const signed = encodeSignedOp(state, await identity.sign(state), identity.getPublicKey())
+    const message = bytesToBase64(signed)
+    try {
+      await this.documentFetcher().pushOperation(this.opts.vaultId, docId, this.opts.userId, message)
+    } catch (err) {
+      if (this.gone.check(err)) throw new VaultGoneError(this.opts.vaultId)
+      // Le hub refuse les messages de plus de 32 Kio (reglage par defaut de
+      // SignalR cote serveur) : le dire, plutot qu'une coupure sans raison.
+      if (message.length > SIGNALR_DEFAULT_MAX_MESSAGE) {
+        throw new Error(`document trop gros pour un message du serveur (${Math.round(message.length / 1024)} Kio, limite 32 Kio) : ${err instanceof Error ? err.message : String(err)}`)
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Attend les envois du hub. Si certains se sont perdus (coupure, refus),
+   * renvoie l'etat complet du repertoire et des cartes ouvertes : une fusion
+   * CRDT, sans doublon. Rejette si ce renvoi echoue aussi.
+   */
+  async flush(): Promise<void> {
+    const lost = await this.hub.settle()
+    if (lost === 0) return
+    await this.hub.pushVaultStateOrThrow(this.directory.encodeFullState())
+    for (const [namespace, channel] of this.indexes) {
+      await this.hub.pushIndexStateOrThrow(namespace, channel.encodeState())
+    }
+    this.hub.acknowledgeLost(lost)
   }
 
   /** Arbitrage des verrous : delegue au hub, seul point central du profil. */
@@ -205,9 +272,9 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       subscribe: (ns, cb) => this.hub.onIndexUpdate(ns, cb),
     })
     this.indexes.set(namespace, channel)
-    void this.hub.joinIndex(namespace).then(ops => {
+    channel.markLoaded(this.hub.joinIndex(namespace).then(ops => {
       for (const op of ops) channel.applyUpdate(op)
-    })
+    }))
     return channel
   }
 

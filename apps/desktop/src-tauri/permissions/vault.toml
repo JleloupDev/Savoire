@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Les commandes de vault : elles ne touchent qu'aux dossiers choisis par la
+# personne (la verification est cote Rust, voir src/vaults.rs et src/paths.rs).
+
+[[set]]
+identifier = "vault"
+description = "Choisir des dossiers de vault, lire et ecrire dedans, surveiller leurs changements."
+permissions = [
+  "allow-vault-pick-folder",
+  "allow-vault-create-folder",
+  "allow-vault-recent-list",
+  "allow-vault-recent-open",
+  "allow-vault-recent-forget",
+  "allow-vault-recent-rename",
+  "allow-vault-read-text",
+  "allow-vault-read-bytes",
+  "allow-vault-write-text",
+  "allow-vault-write-bytes",
+  "allow-vault-exists",
+  "allow-vault-stat",
+  "allow-vault-list",
+  "allow-vault-mkdir",
+  "allow-vault-rename",
+  "allow-vault-remove",
+  "allow-vault-watch",
+  "allow-vault-unwatch",
+]

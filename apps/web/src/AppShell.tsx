@@ -25,13 +25,21 @@ import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './type
 import { SharingPanel } from './SharingPanel'
 import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
-import { createWebAppRoot, createWebInfrastructure } from './createWebAppRoot'
+import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
 import type { Locale } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
+import { DesktopVaultPicker } from './DesktopVaultPicker'
+import { VaultTransferDialog } from './VaultTransferDialog'
+import { vaultTransferActions, type VaultTransferRun } from './vaultTransfer'
+import type { VaultTransferActions } from '@savoire/plugin-vault-browser'
+import { FileSystemVaultSession } from '@savoire/infrastructure-sync'
+import { InMemoryVaultFileSystem } from '@savoire/platform'
+import { MISSING_VAULT_ROLE } from './desktopAccount'
+import type { OpenedVaultFolder } from '@savoire/desktop'
 
 initTheme()
 
@@ -39,7 +47,7 @@ initTheme()
 
 import type { RibbonItem } from '@savoire/workspace'
 
-function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, onQuickOpen, activeAccount, accounts, onSwitchAccount, onAdmin, onManageKey, onLogout }: {
+function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, onQuickOpen, activeAccount, accounts, onSwitchAccount, onAdmin, onManageKey, onLogout, serverAccount = true }: {
   ribbonItems: RibbonItem[]
   activeViewId: string | null
   onRibbonClick: (item: RibbonItem) => void
@@ -51,6 +59,8 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
   onAdmin: () => void
   onManageKey: () => void
   onLogout: () => void
+  /** false = compte local de la version bureau : ni administration ni deconnexion. */
+  serverAccount?: boolean
 }) {
   const [avatarOpen, setAvatarOpen] = useState(false)
 
@@ -158,8 +168,10 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
                 {requiresUserKey() && (
                   <button onClick={() => { onManageKey(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>🔑 Ma clé de chiffrement</button>
                 )}
+                {serverAccount && <>
                 <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer' }}>⚙ Administration</button>
                 <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}>✕ Déconnexion</button>
+                </>}
               </div>
             </>
           )}
@@ -194,7 +206,13 @@ type KeyModalRequest =
 // ── Main editor page ──────────────────────────────────────────────────────────
 
 export function AppShell() {
-  const { token, accounts, activeAccount, isReady, logout, switchAccount } = useAuth()
+  const auth = useAuth()
+  const { accounts, isReady, logout, switchAccount } = auth
+  // Profil sans compte (version bureau) : personne n'est connecte, on
+  // travaille avec un compte et un jeton locaux, jamais envoyes nulle part.
+  const offline = getActiveProfile().offline
+  const token = auth.token ?? offline?.token ?? null
+  const activeAccount = auth.token ? auth.activeAccount : (auth.activeAccount ?? offline?.account ?? null)
   const { getVaultKey, clearVaultKey, keyVersion } = useVaultKey()
   const navigate = useNavigate()
 
@@ -214,7 +232,10 @@ export function AppShell() {
 
   // Le profil a ete resolu avant le premier rendu (main.tsx) ; on lui donne
   // ici de quoi lire le jeton et K_User quand il en aura besoin.
+  const serverAuthRef = useRef<{ token: string; userId: string } | null>(null)
+  serverAuthRef.current = auth.token && auth.activeAccount ? { token: auth.token, userId: auth.activeAccount.userId } : null
   setProfileRuntimeDeps({
+    getServerAuth: () => serverAuthRef.current,
     getToken: () => tokenRef.current,
     getVaultKey: () => {
       const userId = activeAccountRef.current?.userId
@@ -226,6 +247,8 @@ export function AppShell() {
   const appRootRef = useRef(createWebAppRoot({
     documentStore: documentStore,
     vaultSyncSessionFactory: activeProfile.vaultSyncSessionFactory,
+    vaultsBackend: activeProfile.vaultsBackend,
+    identityProvider: activeProfile.identityProvider,
     getToken: () => tokenRef.current,
     getVaultKey: () => {
       const userId = activeAccountRef.current?.userId
@@ -273,6 +296,8 @@ export function AppShell() {
   // basculait vers le Markdown brut a ete retire.
   const [markdownEditorMode] = useState<'source' | 'rich'>('rich')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
+  // Bureau : ecran de choix du vault (dossiers recents, ouvrir, creer).
+  const [desktopPickerOpen, setDesktopPickerOpen] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
 
   useEffect(() => subscribeLocale(setLocaleState), [])
@@ -344,6 +369,9 @@ export function AppShell() {
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
   const onOpenSharedNoteRef = useRef<(note: SharedNote) => void>(() => {})
   const docEventUnsubRef = useRef<(() => void) | null>(null)
+  // Copie d'un vault vers le poste et retour (menu d'un vault), et sa fenetre de progression.
+  const vaultTransferRef = useRef<VaultTransferActions<VaultSummary> | null>(null)
+  const [transferRun, setTransferRun] = useState<VaultTransferRun | null>(null)
 
   // All values are useRef objects — stable, so useMemo([]) is correct.
   const vaultBrowserRefs: VaultBrowserRefs<VaultSummary> = useMemo(() => ({
@@ -356,6 +384,7 @@ export function AppShell() {
     onRefresh: onRefreshRef,
     sharedWithMe: sharedWithMeRef,
     onOpenSharedNote: onOpenSharedNoteRef,
+    vaultTransfer: vaultTransferRef,
   }), [])
 
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
@@ -630,11 +659,16 @@ export function AppShell() {
       sharedWithMeRef.current = shared
       vaultsRef.current = withLocked // sync ref before notify so VaultBrowserPanel.sync() reads fresh data
       managerRef.current?.notifyVaultChange()
-      if (list.length === 1 && opts.autoOpen !== false) void switchToVault(withLocked[0], token)
+      // Bureau : on rouvre le dernier vault, comme Obsidian (la liste vient
+      // triee, les plus recents d'abord). Ailleurs : seulement s'il est seul.
+      const autoVault = activeProfile.desktop
+        ? withLocked.find(v => v.role !== MISSING_VAULT_ROLE)
+        : list.length === 1 ? withLocked[0] : undefined
+      if (autoVault && opts.autoOpen !== false) void switchToVault(autoVault, token)
     } catch (err) {
       console.error(err)
     }
-  }, [token, activeAccount, accounts, application.vaults, switchToVault])
+  }, [token, activeAccount, accounts, application.vaults, switchToVault, activeProfile.desktop])
 
   closeGoneVaultRef.current = async (vault: VaultSummary) => {
     // Seulement si c'est encore le vault actif : entre-temps, la personne a
@@ -877,6 +911,36 @@ export function AppShell() {
     }
   }
 
+  // Telecharger / exporter un vault du serveur, envoyer un vault du poste.
+  // Le serveur est celui du profil de l'app ; en version bureau (vaults =
+  // dossiers), c'est l'hote bureau qui le fournit (voir vaultTransfer.ts).
+  vaultTransferRef.current = activeProfile.name === 'edgesync' ? null : vaultTransferActions<VaultSummary>({
+    profile: activeProfile.name,
+    appRemote: async () => {
+      const tok = tokenRef.current
+      const userId = activeAccountRef.current?.userId
+      if (!tok || !userId) throw new Error('Connectez-vous au serveur pour copier un vault.')
+      const identity = identityProviderRef.current
+      await identity?.init()
+      return {
+        sessions: activeProfile.vaultSyncSessionFactory ?? makeServerVaultSessionFactory(() => tokenRef.current),
+        vaults: application.vaults,
+        auth: { userId, token: tok, identity },
+      }
+    },
+    activeSession: (vaultId) => (selectedVaultRef.current?.id === vaultId ? vaultSessionRef.current : undefined),
+    syncKindOf: (path) => {
+      const ext = path.split('.').pop()?.toLowerCase() ?? ''
+      const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
+      return spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
+    },
+    memoryDiskSession: (fs, params) => FileSystemVaultSession.open(fs, params),
+    memoryFolder: (name) => new InMemoryVaultFileSystem({ rootLabel: name, watch: false }),
+    show: setTransferRun,
+    refreshVaults: () => onRefreshRef.current(),
+    onError: (message) => notify('danger', 'Copie du vault impossible', message),
+  })
+
   onDeleteVaultRef.current = async (vault: VaultSummary) => {
     if (!token) throw new Error('no token')
     await application.vaults.delete(vault.id, token)
@@ -910,6 +974,16 @@ export function AppShell() {
       console.error('[Ctrl+N]', err)
     }
   }, [])
+
+  // Bureau : un dossier vient d'etre choisi (ou rouvert) dans l'ecran de choix.
+  async function handleDesktopFolderOpened(folder: OpenedVaultFolder) {
+    const desktop = activeProfile.desktop
+    if (!desktop || !token) return
+    const vault: VaultSummary = { ...desktop.rememberFolder(folder), locked: false }
+    setDesktopPickerOpen(false)
+    await loadVaults({ autoOpen: false })
+    await switchToVault(vault, token)
+  }
 
   appActionsRef.current = {
     newNote: () => void handleNewNote(),
@@ -1034,13 +1108,26 @@ export function AppShell() {
         onAdmin={() => void navigate('/admin')}
         onManageKey={() => setKeyModalRequest({ kind: 'manage' })}
         onLogout={() => void handleLogout()}
+        serverAccount={!!auth.token || !offline}
       />
 
       {/* ── Main area (topbar + workspace stacked) ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
 
       {/* ── Breadcrumb bar ── */}
       <div style={{ height: 42, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 6, flexShrink: 0 }}>
+
+        {/* Bureau : revenir a l'ecran de choix du vault */}
+        {activeProfile.desktop && (
+          <button
+            data-testid="desktop-vaults-button"
+            onClick={() => setDesktopPickerOpen(true)}
+            title="Vaults sur cet ordinateur"
+            style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', fontSize: 11.5, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}
+          >
+            Vaults…
+          </button>
+        )}
 
         {/* Vault / fichier */}
         <span style={{ fontSize: 12.5, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
@@ -1120,6 +1207,20 @@ export function AppShell() {
         style={{ flex: 1, overflow: 'hidden' }}
       />
 
+      {/* ── Bureau : choix du vault. Par-dessus l'espace de travail, qui ne se
+          demonte jamais ; affiche tant qu'aucun vault n'est ouvert. ── */}
+      {activeProfile.desktop && (desktopPickerOpen || !selectedVault) && (
+        <DesktopVaultPicker
+          host={activeProfile.desktop.host}
+          currentPath={selectedVault ? activeProfile.desktop.pathOfVault(selectedVault.id) : null}
+          onOpened={(folder) => void handleDesktopFolderOpened(folder)}
+          onClose={selectedVault ? () => setDesktopPickerOpen(false) : undefined}
+          // Les vaults du serveur (menu ⚙ « Télécharger sur ce poste… »). Le
+          // profil bureau revient au prochain lancement.
+          onServer={() => { window.location.href = '/?profile=server' }}
+        />
+      )}
+
       {/* ── Settings modal ── */}
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1142,6 +1243,8 @@ export function AppShell() {
           </div>
         </div>
       )}
+
+      {transferRun && <VaultTransferDialog run={transferRun} onClose={() => setTransferRun(null)} />}
 
       {sharingOpen && token && selectedVault && vaultSharing && (
         <SharingPanel

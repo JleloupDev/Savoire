@@ -33,6 +33,24 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   onRefresh?: React.MutableRefObject<() => void>
   sharedWithMe?: React.MutableRefObject<SharedNoteLike[]>
   onOpenSharedNote?: React.MutableRefObject<(note: SharedNoteLike) => void>
+  /** Copie d'un vault vers le poste et retour. Absent ou null : actions masquees. */
+  vaultTransfer?: React.MutableRefObject<VaultTransferActions<TVault> | null>
+}
+
+/** Une action du menu d'un vault. */
+export interface VaultMenuAction<TVault extends VaultSummaryLike = VaultSummaryLike> {
+  label: string
+  run(vault: TVault): void
+}
+
+/**
+ * Copie d'un vault, fournie par l'app selon ce qu'elle sait faire : telecharger
+ * dans un dossier du poste (bureau) ou exporter un .zip (navigateur) ; envoyer
+ * un vault du poste sur le serveur (bureau). Absente : action masquee.
+ */
+export interface VaultTransferActions<TVault extends VaultSummaryLike = VaultSummaryLike> {
+  download?: VaultMenuAction<TVault>
+  upload?: VaultMenuAction<TVault>
 }
 
 export interface VaultBrowserWorkspaceLike {
@@ -57,11 +75,12 @@ const S = {
   },
 }
 
-function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDelete, onClose }: {
+function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDelete, onClose, transfer }: {
   vault: TVault
   onRename: (name: string) => Promise<void>
   onDelete: () => Promise<void>
   onClose: () => void
+  transfer?: VaultTransferActions<TVault> | null
 }) {
   const [name, setName] = useState(vault.name)
   const [confirmDel, setConfirmDel] = useState(false)
@@ -102,6 +121,17 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
           ↩
         </button>
       </div>
+
+      {transfer && !vault.locked && ([['vault-download', transfer.download], ['vault-upload', transfer.upload]] as const).map(([testId, action]) => action && (
+        <button
+          key={testId}
+          data-testid={testId}
+          onClick={() => { action.run(vault); onClose() }}
+          style={{ ...S.btn('var(--text-muted)'), textAlign: 'left' }}
+        >
+          {action.label}
+        </button>
+      ))}
 
       {confirmDel ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -217,6 +247,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                 onRename={(name) => refs.onRenameVault.current(v, name).then(sync)}
                 onDelete={() => refs.onDeleteVault.current(v).then(sync)}
                 onClose={() => setSettingsFor(null)}
+                transfer={refs.vaultTransfer?.current}
               />
             )}
           </div>

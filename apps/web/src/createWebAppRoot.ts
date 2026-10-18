@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import {
-  AppRoot, AuthService, AdminService, SharingService,
-  type IVaultsBackend, type IVaultSyncSessionFactory,
+  AppRoot, AuthService, AdminService, SharingService, VaultsService,
+  type IVaultsBackend, type IVaultSyncSessionFactory, type RemoteVaultAccess,
 } from '@savoire/application'
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
@@ -11,6 +11,7 @@ import {
   BroadcastChannelPeerBus, LocalPeerVaultSessionFactory,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
+import type { IIdentityProvider } from '@savoire/plugin-api'
 
 // ── Backends (singletons partagés entre services) ─────────────────────────────
 
@@ -57,13 +58,19 @@ export interface CreateWebAppRootParams {
    *  edgesyncProfile.ts) = profil EdgeSync : P2P, E2E, serveur aveugle.
    *  Demain, un connecteur automerge-repo se brancherait au meme endroit. */
   vaultSyncSessionFactory?: IVaultSyncSessionFactory
+  /** Absente = liste des vaults du serveur. Fournie par le profil bureau :
+   *  les dossiers ouverts recemment (voir createDesktopRoot.ts). */
+  vaultsBackend?: IVaultsBackend
+  /** Absente = cle d'identite servie par le serveur. Fournie par le profil
+   *  bureau, qui marche sans compte : cle gardee sur la machine. */
+  identityProvider?: IIdentityProvider
   onConnectionChange?: (state: 'connected' | 'disconnected') => void
 }
 
 /** Profil par defaut : serveur Savoire. Le hub relaie le repertoire et les
  *  documents, le serveur lit les donnees. Voir edgesyncProfile.ts pour le
  *  profil P2P, et IVaultSyncSession pour le contrat commun. */
-function makeServerVaultSessionFactory(
+export function makeServerVaultSessionFactory(
   getToken: () => string | null,
   onConnectionChange?: (state: 'connected' | 'disconnected') => void,
 ): IVaultSyncSessionFactory {
@@ -77,18 +84,41 @@ function makeServerVaultSessionFactory(
   }
 }
 
+/**
+ * Le serveur Savoire vu de la version bureau, pour copier un vault entre le
+ * serveur et le disque : ses sessions, ses vaults, le compte connecte.
+ * Rejette si personne n'est connecte au serveur.
+ */
+export function makeServerVaultAccess(
+  getServerAuth: () => { token: string; userId: string } | null,
+): () => Promise<RemoteVaultAccess> {
+  const getToken = () => getServerAuth()?.token ?? null
+  const vaults = new VaultsService(backend)
+  const identity = new ServerKeyProvider({ getToken })
+  return async () => {
+    const auth = getServerAuth()
+    if (!auth) throw new Error('Connectez-vous à un serveur Savoire pour copier un vault.')
+    await identity.init()
+    return {
+      sessions: makeServerVaultSessionFactory(getToken),
+      vaults,
+      auth: { userId: auth.userId, token: auth.token, identity },
+    }
+  }
+}
+
 /** Profil local (?profile=local) : les onglets du navigateur sont les pairs. */
 export function makeLocalPeerVaultSessionFactory(): IVaultSyncSessionFactory {
   return new LocalPeerVaultSessionFactory(new BroadcastChannelPeerBus())
 }
 
 export function createWebAppRoot(params: CreateWebAppRootParams): AppRoot {
-  const identityProvider = new ServerKeyProvider({ getToken: params.getToken })
+  const identityProvider = params.identityProvider ?? new ServerKeyProvider({ getToken: params.getToken })
   return new AppRoot({
     adminBackend,
     authBackend,
     sharingBackend,
-    backend,
+    backend: params.vaultsBackend ?? backend,
     vaultSyncSessionFactory:
       params.vaultSyncSessionFactory
       ?? makeServerVaultSessionFactory(params.getToken, params.onConnectionChange),

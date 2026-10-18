@@ -1,29 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
 [package]
-name = "vault-desktop"
+name = "savoire-desktop"
 version = "0.1.0"
-description = "Vault Desktop — POC collaborative notes"
-authors = []
-license = ""
-repository = ""
-default-run = "vault-desktop"
+description = "Savoire, version bureau : l'application web dans une fenetre Tauri, vaults sur le disque"
+authors = ["Jean Leloup"]
+license = "AGPL-3.0-or-later"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.77.2"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "=2.7.1", features = [] }
 
 [dependencies]
-serde_json = "1.0"
+tauri = { version = "=2.12.1", features = [] }
+# Choix du dossier du vault : la boite de dialogue s'ouvre cote Rust, jamais
+# depuis le front, pour que seul un dossier choisi par la personne soit autorise.
+tauri-plugin-dialog = "=2.8.1"
+# Surveillance du disque (modifications faites par d'autres outils).
+notify = { version = "=8.2.0", default-features = false, features = ["macos_fsevent"] }
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "1.6", features = [
-  "dialog-open",
-  "dialog-save",
-  "fs-all",
-  "path-all",
-  "protocol-asset"
-] }
+serde_json = "1.0"
 
 [features]
-# This feature is used for production builds or when `devPath` points to the filesystem
-# and the built-in dev server is disabled.
+# Construction de production : le front est servi depuis le dist embarque.
 custom-protocol = ["tauri/custom-protocol"]

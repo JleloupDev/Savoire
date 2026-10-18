@@ -138,7 +138,13 @@ export class EdgesyncVaultSyncSession implements IVaultSyncSession, IKeyManagedV
     upload: async () => { throw notPorted('pieces jointes') },
     url: async () => { throw notPorted('pieces jointes') },
     read: async () => { throw notPorted('pieces jointes') },
+    readBytes: async () => { throw notPorted('pieces jointes') },
   }
+
+  // Copie d'un vault (telechargement, envoi) : non portee non plus.
+  async readDocumentState(_docId: string): Promise<Uint8Array> { throw notPorted('etat complet des documents') }
+  async mergeDocumentState(_docId: string, _state: Uint8Array): Promise<void> { throw notPorted('etat complet des documents') }
+  async flush(): Promise<void> {}
 
   // ── Extras d'un protocole a cles (detectes par isKeyManagedSession) ────────
 

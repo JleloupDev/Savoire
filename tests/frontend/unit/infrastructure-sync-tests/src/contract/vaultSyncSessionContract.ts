@@ -525,6 +525,64 @@ export function describeVaultSyncSessionContract(name: string, harness: VaultSyn
       })
     })
 
+    describe('etat complet (copie d\'un vault)', () => {
+      const textOf = async (session: IVaultSyncSession, docId: string): Promise<string> => {
+        const crdt = session.openDocument(docId)
+        await harness.settle()
+        return (crdt as unknown as { rawDoc: { getText(n: string): { toString(): string } } }).rawDoc.getText('codemirror').toString()
+      }
+
+      it('l\'etat d\'un document se lit sans l\'ouvrir, et se fusionne ailleurs', async () => {
+        const a = await open('alice')
+        harness.insertText(a.openDocument('d1'), 0, 'bonjour')
+        await harness.settle()
+        const b = await open('bob')
+        const state = await b.readDocumentState('d1')
+        expect(state.length).toBeGreaterThan(2)
+        const c = await open('carol')
+        await c.mergeDocumentState('d2', state)
+        await harness.settle()
+        expect(await textOf(a, 'd2')).toBe('bonjour')
+      })
+
+      it('fusionner un etat atteint l\'editeur ouvert, et deux fois ne double rien', async () => {
+        const a = await open('alice')
+        const b = await open('bob')
+        const crdtB = b.openDocument('d1')
+        harness.insertText(a.openDocument('d1'), 0, 'texte')
+        await harness.settle()
+        const state = await a.readDocumentState('d1')
+        await b.mergeDocumentState('d1', state)
+        await b.mergeDocumentState('d1', state)
+        await harness.settle()
+        expect((crdtB as unknown as { rawDoc: { getText(n: string): { toString(): string } } }).rawDoc.getText('codemirror').toString()).toBe('texte')
+        expect(await textOf(a, 'd1')).toBe('texte')
+      })
+
+      it('un fichier se lit en octets, avec son type', async () => {
+        const a = await open('alice')
+        await a.files.upload('f1', new Blob([new Uint8Array([0, 255, 7])], { type: 'image/png' }))
+        await harness.settle()
+        const b = await open('bob')
+        const file = await b.files.readBytes('f1')
+        expect([...file.bytes]).toEqual([0, 255, 7])
+        expect(file.type).toBe('image/png')
+        await expect(b.files.readBytes('inconnu')).rejects.toThrow()
+      })
+
+      it('une carte partagee dit quand son etat connu est arrive ; flush rend la main', async () => {
+        const a = await open('alice')
+        a.openSharedMap('review').set('c1', { text: 'ok' })
+        await a.flush()
+        await harness.settle()
+        const b = await open('bob')
+        const map = b.openSharedMap('review')
+        if (map.loaded) await map.loaded
+        else await harness.settle()
+        expect(map.getAll()).toEqual([{ id: 'c1', value: { text: 'ok' } }])
+      })
+    })
+
     describe('fin de session', () => {
       it('un pair qui part ne gene pas les autres', async () => {
         const a = await open('alice')

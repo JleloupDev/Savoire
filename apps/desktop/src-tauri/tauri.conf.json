@@ -1,51 +1,50 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Savoire",
+  "version": "0.1.0",
+  "identifier": "org.savoire.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
-    "devPath": "http://localhost:3002",
-    "distDir": "../dist",
-    "withGlobalTauri": false
+    "devUrl": "http://127.0.0.1:3002",
+    "frontendDist": "../../web/dist",
+    "beforeBuildCommand": {
+      "script": "./node_modules/.bin/vite build",
+      "cwd": "../../web"
+    }
   },
-  "package": {
-    "productName": "vault-desktop",
-    "version": "0.1.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "fs": {
-        "all": true,
-        "scope": ["**"]
-      },
-      "dialog": {
-        "open": true,
-        "save": true
-      },
-      "path": {
-        "all": true
-      },
-      "protocol": {
-        "asset": true,
-        "assetScope": ["**"]
-      }
-    },
-    "bundle": {
-      "active": true,
-      "targets": "all",
-      "identifier": "com.poc.vault-desktop",
-      "icon": []
-    },
-    "security": {
-      "csp": null
-    },
+  "app": {
+    "withGlobalTauri": false,
     "windows": [
       {
-        "fullscreen": false,
-        "resizable": true,
-        "title": "Vault Desktop",
+        "label": "main",
+        "title": "Savoire",
         "width": 1280,
-        "height": 860
+        "height": 860,
+        "resizable": true
       }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self' data:",
+        "worker-src": "'self' blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost http: https: ws: wss:"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "category": "Productivity",
+    "shortDescription": "Notes en Markdown, sur le disque ou partagees",
+    "license": "AGPL-3.0-or-later",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
     ]
   }
 }

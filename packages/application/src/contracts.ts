@@ -128,6 +128,28 @@ export interface IVaultSyncSession extends IVaultContentSession {
    */
   openTree(docId: string): ISharedTree
   /**
+   * Etat COMPLET d'un document CRDT, ouvert ou non, une fois recu (pairs,
+   * serveur, disque) : tout l'historique fusionnable, pas seulement le texte.
+   * Octets opaques, dans le format du protocole de la session ; deux sessions
+   * qui parlent le meme protocole se les echangent (copie d'un vault). Un
+   * document jamais ecrit rend un etat vide (fusionnable aussi).
+   */
+  readDocumentState(docId: string): Promise<Uint8Array>
+  /**
+   * Fusionne un etat (rendu par readDocumentState, ici ou dans une autre
+   * session) dans un document CRDT, comme une modification locale : persiste
+   * et diffuse aux pairs, et l'editeur ouvert le recoit. Idempotent : fusionner
+   * deux fois le meme etat ne change rien. Rejette si l'etat n'a pas pu
+   * partir : jamais de perte silencieuse.
+   */
+  mergeDocumentState(docId: string, state: Uint8Array): Promise<void>
+  /**
+   * Attend que les modifications locales (repertoire, cartes partagees) soient
+   * parties. Rejette si une n'a pas pu partir et n'a pas pu etre renvoyee.
+   * Sans reseau ni ecriture differee, rend tout de suite.
+   */
+  flush(): Promise<void>
+  /**
    * Verrous d'edition, pour les types de documents qui ne sont pas des CRDT.
    * Absent d'un profil qui n'a pas d'arbitre : sans arbitrage central, deux
    * pairs ne peuvent pas trancher qui detient le verrou, et pretendre le

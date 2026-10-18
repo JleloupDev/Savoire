@@ -25,5 +25,11 @@ export interface IIndexChannel {
   getAll(): { id: string; value: unknown }[]
   /** Notifie des changements, locaux comme distants. */
   onChange(cb: (changedIds: string[]) => void): () => void
+  /**
+   * Resolue quand l'etat deja connu du canal est arrive (pairs, serveur).
+   * Optionnel : un profil qui ne sait pas le dire ne le fournit pas. Sert a
+   * lire une carte en entier (copie d'un vault), pas au fonctionnement normal.
+   */
+  readonly loaded?: Promise<void>
   dispose(): void
 }

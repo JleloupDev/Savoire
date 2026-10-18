@@ -30,6 +30,9 @@ export class YMapIndexChannel implements IIndexChannel {
   private readonly unsubTransport: () => void
   private applyingRemote = false
   private disposed = false
+  private resolveLoaded!: () => void
+  /** Voir IIndexChannel.loaded : le profil dit quand l'etat connu est arrive (markLoaded). */
+  readonly loaded: Promise<void> = new Promise(r => { this.resolveLoaded = r })
 
   constructor(
     private readonly namespace: string,
@@ -80,6 +83,11 @@ export class YMapIndexChannel implements IIndexChannel {
     }
   }
 
+  /** L'etat connu sera arrive quand `when` sera resolue (ou rejetee). */
+  markLoaded(when: Promise<unknown> = Promise.resolve()): void {
+    when.then(() => this.resolveLoaded(), () => this.resolveLoaded())
+  }
+
   /** Etat complet encode — pour amorcer un pair qui rejoint. */
   encodeState(): Uint8Array {
     return Y_.encodeStateAsUpdate(this.doc)
@@ -96,6 +104,7 @@ export class YMapIndexChannel implements IIndexChannel {
     this.disposed = true
     this.unsubTransport()
     this.callbacks.length = 0
+    this.resolveLoaded()
     this.doc.destroy()
   }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-write-bytes"
+description = "Enables the vault_write_bytes command without any pre-configured scope."
+commands.allow = ["vault_write_bytes"]
+
+[[permission]]
+identifier = "deny-vault-write-bytes"
+description = "Denies the vault_write_bytes command without any pre-configured scope."
+commands.deny = ["vault_write_bytes"]

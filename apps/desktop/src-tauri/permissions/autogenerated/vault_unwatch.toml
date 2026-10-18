@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-unwatch"
+description = "Enables the vault_unwatch command without any pre-configured scope."
+commands.allow = ["vault_unwatch"]
+
+[[permission]]
+identifier = "deny-vault-unwatch"
+description = "Denies the vault_unwatch command without any pre-configured scope."
+commands.deny = ["vault_unwatch"]

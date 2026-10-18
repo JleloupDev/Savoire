@@ -94,6 +94,10 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
       upload: (fileId, file) => this.uploadFile(fileId, file),
       url: async fileId => this.fileUrl(await this.requireFile(fileId)),
       read: async fileId => new TextDecoder().decode((await this.requireFile(fileId)).bytes),
+      readBytes: async fileId => {
+        const f = await this.requireFile(fileId)
+        return { bytes: f.bytes, type: f.type }
+      },
     }
     this.unsubBus = bus.subscribe(msg => this.receive(msg))
     this.send({ t: 'hello' })
@@ -155,6 +159,23 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
     return this.replica(docId).getText('codemirror').toString()
   }
 
+  async readDocumentState(docId: string): Promise<Uint8Array> {
+    if (!this.openDocs.has(docId)) {
+      this.send({ t: 'doc-open', docId })
+      await wait(this.settleMs)
+    }
+    return Y_.encodeStateAsUpdate(this.replica(docId)) as Uint8Array
+  }
+
+  async mergeDocumentState(docId: string, state: Uint8Array): Promise<void> {
+    Y_.applyUpdate(this.replica(docId), state, REMOTE)
+    this.openDocs.get(docId)?.crdt.applyRemoteOp(state)
+    this.send({ t: 'doc', docId, update: state })
+  }
+
+  /** Le bus livre tout de suite : rien n'attend de partir. */
+  async flush(): Promise<void> {}
+
   // ── Index ──────────────────────────────────────────────────────────────────
 
   openIndex(namespace: string): IIndexChannel {
@@ -167,6 +188,8 @@ export class LocalPeerVaultSession implements IVaultSyncSession {
         return () => { this.indexListeners.delete(ns) }
       },
     })
+    // Pas de fin d'etat annoncee par les pairs : on leur laisse le temps de repondre.
+    channel.markLoaded(wait(this.settleMs))
     this.indexes.set(namespace, channel)
     this.send({ t: 'index-open', namespace })
     return channel

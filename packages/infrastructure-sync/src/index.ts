@@ -33,3 +33,12 @@ export * from './YMapIndexChannel'
 export * from './SnapshotDocuments'
 export * from './LocalPeerBus'
 export * from './LocalPeerVaultSession'
+export * from './filesystem/FileSystemVaultSession'
+export { FileSystemVaultDirectory } from './filesystem/FileSystemVaultDirectory'
+export {
+  VAULT_FORMAT_VERSION, SAVOIRE_DIR, UnsupportedVaultFormatError,
+  initializeVaultFolder, readVaultFolderMeta, isVaultPath,
+} from './filesystem/vaultFolderFormat'
+export type { VaultFolderMeta, DocumentIdEntry, DocumentsFile } from './filesystem/vaultFolderFormat'
+export { diffText, applyTextEdits } from './filesystem/textDiff'
+export type { TextEdit } from './filesystem/textDiff'

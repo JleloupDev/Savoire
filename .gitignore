@@ -51,6 +51,8 @@ apps/*/dist/
 apps/*/obj/
 apps/desktop/dist/
 apps/desktop/src-tauri/target/
+# Schemas generes par tauri-build a chaque construction.
+apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/.cargo/
 apps/desktop/src-tauri/.rustup/
 apps/desktop/src-tauri/*.log

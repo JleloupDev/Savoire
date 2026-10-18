@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-write-text"
+description = "Enables the vault_write_text command without any pre-configured scope."
+commands.allow = ["vault_write_text"]
+
+[[permission]]
+identifier = "deny-vault-write-text"
+description = "Denies the vault_write_text command without any pre-configured scope."
+commands.deny = ["vault_write_text"]

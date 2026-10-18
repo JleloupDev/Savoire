@@ -149,6 +149,8 @@ export interface IVaultFiles {
   url(fileId: string): Promise<string>
   /** Contenu texte du fichier. Rejette s'il est introuvable. */
   read(fileId: string): Promise<string>
+  /** Octets du fichier, tels quels, et leur type MIME. Rejette s'il est introuvable. */
+  readBytes(fileId: string): Promise<{ bytes: Uint8Array; type: string }>
 }
 
 /**

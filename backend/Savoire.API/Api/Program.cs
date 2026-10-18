@@ -87,7 +87,13 @@ builder.Services.AddSwaggerGen(options =>
 // 6. SignalR
 // Erreurs des hubs : un code stable (vault-not-found...) plutot que
 // « unexpected error ». Voir HubErrorFilter.
-builder.Services.AddSignalR(o => o.AddFilter<HubErrorFilter>());
+// 32 Kio par defaut : trop peu pour l'etat CRDT complet d'un document (envoi
+// d'un vault, compaction, gros dessins). 4 Mio reste une borne contre l'abus.
+builder.Services.AddSignalR(o =>
+{
+    o.AddFilter<HubErrorFilter>();
+    o.MaximumReceiveMessageSize = 4 * 1024 * 1024;
+});
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.DocumentLockRegistry>();
 

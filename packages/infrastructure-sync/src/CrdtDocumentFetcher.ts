@@ -10,6 +10,11 @@ import {
 import type { IDocumentFetcher } from '@savoire/platform'
 import { base64ToBytes } from './base64'
 
+// Meme contournement que YjsCrdtAdapter : les API avancees de Yjs ne sont pas
+// vues par le typage (chaine de re-export .js -> .d.ts).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Y_ = Y as Record<string, any>
+
 function defaultConnectionFactory(
   serverUrl: string,
   getToken: () => string | null,
@@ -50,6 +55,7 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
   private readonly getUserId: () => string
   private readonly connectionFactory: (serverUrl: string, getToken: () => string | null, userId: string) => HubConnection
   private connection: HubConnection | null = null
+  private starting: Promise<HubConnection> | null = null
   private readonly docs = new Map<string, DocEntry>()
   private readonly docEventCallbacks = new Map<string, DocEventCallbacks>()
 
@@ -80,6 +86,44 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
     return ydoc.getText('codemirror').toString()
   }
 
+  /**
+   * Etat complet encode d'un document, tel que le serveur le garde. Sans
+   * cache : le document est quitte apres la lecture (copie d'un vault entier),
+   * sauf s'il etait deja suivi pour une lecture de texte.
+   */
+  async getDocumentState(vaultId: string, docId: string): Promise<Uint8Array> {
+    const existing = this.docs.get(docId)
+    if (existing) {
+      if (!existing.ready) await existing.initPromise
+      return Y_.encodeStateAsUpdate(existing.ydoc) as Uint8Array
+    }
+    try {
+      await this.getDocumentContent(vaultId, docId, '')
+    } catch (err) {
+      // Refus du serveur : ne pas laisser une entree qui attendrait toujours.
+      this.docs.delete(docId)
+      throw err
+    }
+    const entry = this.docs.get(docId)
+    const state: Uint8Array = entry ? Y_.encodeStateAsUpdate(entry.ydoc) : new Uint8Array()
+    this.docs.delete(docId)
+    if (entry) Y_.Doc.prototype.destroy.call(entry.ydoc)
+    const conn = this.connection
+    if (conn && conn.state === HubConnectionState.Connected) {
+      await conn.invoke('LeaveDocument', vaultId, docId).catch(() => { /* best effort */ })
+    }
+    return state
+  }
+
+  /**
+   * Pousse une op (deja signee) dans un document. Rejette si le serveur la
+   * refuse ou si la connexion manque : pas de perte silencieuse.
+   */
+  async pushOperation(vaultId: string, docId: string, clientId: string, opBase64: string): Promise<void> {
+    const conn = await this.ensureConnection()
+    await conn.invoke('PushOperation', vaultId, docId, clientId, opBase64)
+  }
+
   async writeDocumentContent(_vaultId: string, _docId: string, _content: string, _token: string): Promise<void> {
     // CRDT documents are written via Yjs ops, not REST. This method is intentionally a no-op.
   }
@@ -105,7 +149,18 @@ export class CrdtDocumentFetcher implements IDocumentFetcher {
     if (conn) await conn.stop().catch(() => {})
   }
 
-  private async ensureConnection(): Promise<HubConnection> {
+  /**
+   * La connexion, demarree une seule fois meme si plusieurs lectures la
+   * demandent en meme temps (copie d'un vault) : sans cela, les suivantes
+   * l'utiliseraient avant la fin de son demarrage.
+   */
+  private ensureConnection(): Promise<HubConnection> {
+    if (this.connection?.state === HubConnectionState.Connected) return Promise.resolve(this.connection)
+    this.starting ??= this.connect().finally(() => { this.starting = null })
+    return this.starting
+  }
+
+  private async connect(): Promise<HubConnection> {
     if (this.connection && this.connection.state !== HubConnectionState.Disconnected) {
       return this.connection
     }

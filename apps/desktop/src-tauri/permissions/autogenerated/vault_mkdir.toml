@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-mkdir"
+description = "Enables the vault_mkdir command without any pre-configured scope."
+commands.allow = ["vault_mkdir"]
+
+[[permission]]
+identifier = "deny-vault-mkdir"
+description = "Denies the vault_mkdir command without any pre-configured scope."
+commands.deny = ["vault_mkdir"]

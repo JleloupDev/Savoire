@@ -25,6 +25,17 @@ describe('ServerVaultFiles', () => {
     )
   })
 
+  it('lit les octets tels quels, avec leur type, en requete authentifiee', async () => {
+    const { fetchFn, files } = setup([{ ok: true, status: 200, blob: new Blob([new Uint8Array([1, 2, 255])], { type: 'image/png' }) }])
+    const file = await files.readBytes('doc-1')
+    expect([...file.bytes]).toEqual([1, 2, 255])
+    expect(file.type).toBe('image/png')
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/vaults/v1/attachments/doc-1',
+      expect.objectContaining({ method: 'GET', headers: { Authorization: 'Bearer tok' } }),
+    )
+  })
+
   it('lit l\'image en requete authentifiee et rend une URL blob:, gardee en cache', async () => {
     const { fetchFn, files } = setup([{ ok: true, status: 200, blob: new Blob(['img'], { type: 'image/png' }) }])
     const url = await files.url('doc-1')

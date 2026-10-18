@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-recent-forget"
+description = "Enables the vault_recent_forget command without any pre-configured scope."
+commands.allow = ["vault_recent_forget"]
+
+[[permission]]
+identifier = "deny-vault-recent-forget"
+description = "Denies the vault_recent_forget command without any pre-configured scope."
+commands.deny = ["vault_recent_forget"]
