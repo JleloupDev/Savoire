@@ -7,4 +7,4 @@ packages:
   - "../tests/frontend/unit/*"
   - "../tests/frontend/integration/*"
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
