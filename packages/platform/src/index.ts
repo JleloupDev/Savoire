@@ -20,3 +20,4 @@ export { UploadTracker, uploadTracker, subscribeUploads, uploadErrorReason } fro
 export type { UploadEvent, UploadReport } from './uploads'
 export { InMemoryIndexStorage, LocalStorageIndexStorage } from './LocalIndexStorage'
 export { TRASH_DIR, isTrashPath, trashPathFor, originalPathOf, restorePathFor } from './trash'
+export type { IVaultFileSystem, FileEntry, FileChange } from './fileSystem'
