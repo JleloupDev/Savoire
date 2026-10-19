@@ -36,7 +36,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage"],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "Notes en Markdown, sur le disque ou partagees",
     "license": "AGPL-3.0-or-later",

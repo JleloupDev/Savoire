@@ -45,9 +45,15 @@ défaut (réglage `DesktopAppOrigins`, voir `SELF_HOSTING.md`).
 - Rust stable (1.77.2 au moins) : `rustup`, `cargo`.
 - Linux : `libwebkit2gtk-4.1-dev`, `libssl-dev`, `librsvg2-dev`,
   `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`.
-  Autres systèmes : voir les prérequis Tauri 2.
-- Les dépendances front du dépôt (`frontend/node_modules`), dont
-  `@tauri-apps/cli` 2.
+- macOS : les outils en ligne de commande de Xcode (`xcode-select --install`).
+- Windows : « Build Tools for Visual Studio » avec la charge de travail
+  « Développement Desktop en C++ », et WebView2 (déjà présent sur
+  Windows 10 et 11).
+- Node 20 ou plus et pnpm (`corepack enable`), puis `cd frontend && pnpm install`
+  (EdgeSync n'est pas nécessaire).
+
+Une application macOS ou Windows se construit sur son propre système : pas
+de compilation croisée depuis Linux.
 
 ## Lancer en développement
 
@@ -73,8 +79,14 @@ cd apps/desktop && ./node_modules/.bin/tauri build
 ```
 
 `beforeBuildCommand` construit d'abord l'app web (`vite build`, dans
-`apps/web/dist`), embarquée dans le binaire. Paquets produits (cibles
-`deb` et `appimage`) : `src-tauri/target/release/bundle/`.
+`apps/web/dist`), embarquée dans le binaire. Paquets produits, selon le
+système (`"targets": "all"`) : `.deb`, `.rpm` et `.AppImage` sur Linux,
+`.app` et `.dmg` sur macOS, installeurs `.msi` et `.exe` (NSIS) sur Windows,
+dans `src-tauri/target/release/bundle/`.
+
+Les paquets ne sont pas signés. macOS : au premier lancement, clic droit >
+Ouvrir (ou `xattr -cr Savoire.app`). Windows : SmartScreen demande une
+confirmation (« Informations complémentaires » > « Exécuter quand même »).
 
 Tests Rust (chemins, liste des vaults, surveillance) : `cd src-tauri && cargo test`.
 Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
