@@ -40,6 +40,11 @@ jobs:
           - { name: Windows, os: windows-latest }
     runs-on: ${{ matrix.os }}
     steps:
+      # Windows : chemins longs (node_modules profonds).
+      - name: Chemins longs (Windows)
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
