@@ -85,7 +85,21 @@ jobs:
 
       - name: Construire
         working-directory: apps/desktop
-        run: pnpm run tauri:build
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run tauri:build 2>&1 | tee build.log
+
+      # Les journaux d'Actions demandent un compte GitHub : la fin du journal
+      # d'un echec part aussi en annotation, lisible par l'API publique.
+      - name: Fin du journal en cas d'echec
+        if: failure()
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          [ -f build.log ] || exit 0
+          msg=$(tail -n 60 build.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=tauri build (${{ matrix.name }})::${msg}"
 
       - name: Installeurs
         uses: actions/upload-artifact@v7
