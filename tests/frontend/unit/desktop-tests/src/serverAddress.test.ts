@@ -117,14 +117,15 @@ const account = (userId: string) => ({ userId, email: `${userId}@x`, displayName
 describe('serveur choisi dans la version bureau', () => {
   it('par defaut : le Vite en dev, aucun dans le paquet installe', () => {
     expect(defaultServerFor(dev)).toBe('http://127.0.0.1:3002')
-    expect(defaultServerFor(packaged)).toBeNull()
-    expect(defaultServerFor(windows)).toBeNull()
+    // Paquet installe : le backend local, joint par tunnel SSH.
+    expect(defaultServerFor(packaged)).toBe('http://127.0.0.1:5000')
+    expect(defaultServerFor(windows)).toBe('http://127.0.0.1:5000')
   })
 
-  it('premier lancement du paquet : aucun serveur, URL relatives', async () => {
+  it('premier lancement du paquet : le backend local (tunnel SSH) par defaut', async () => {
     const choice = await installDesktopServers(new MemorySettings(), packaged)
-    expect(choice).toEqual({ configurable: true, servers: [], current: null })
-    expect(getServerBaseUrl()).toBe('')
+    expect(choice).toEqual({ configurable: true, servers: ['http://127.0.0.1:5000'], current: 'http://127.0.0.1:5000' })
+    expect(getServerBaseUrl()).toBe('http://127.0.0.1:5000')
   })
 
   it('en dev, le proxy est propose et choisi', async () => {
@@ -164,13 +165,14 @@ describe('serveur choisi dans la version bureau', () => {
     getAccountStorage().save([account('ua')])
     await chooseServer('https://b.exemple')
     expect(getAccountStorage().load().map(a => a.userId)).toEqual(['ub'])
-    expect(getServerChoice().servers).toEqual(['https://b.exemple', 'https://a.exemple'])
+    // L'adresse par defaut reste proposee, en dernier.
+    expect(getServerChoice().servers).toEqual(['https://b.exemple', 'https://a.exemple', 'http://127.0.0.1:5000'])
     await chooseServer('https://a.exemple')
     expect(getAccountStorage().load().map(a => a.userId)).toEqual(['ua'])
 
     await forgetServer('https://a.exemple')
     expect(getServerChoice().current).toBeNull()
-    expect(getServerChoice().servers).toEqual(['https://b.exemple'])
+    expect(getServerChoice().servers).toEqual(['https://b.exemple', 'http://127.0.0.1:5000'])
     expect(getServerBaseUrl()).toBe('')
     expect(settings.sessions.has('https://a.exemple')).toBe(false)
   })
@@ -180,7 +182,7 @@ describe('serveur choisi dans la version bureau', () => {
     await installDesktopServers(settings, packaged)
     await expect(chooseServer('ftp://x')).rejects.toThrow(ServerAddressError)
     expect(settings.servers).toEqual([])
-    expect(getServerBaseUrl()).toBe('')
+    expect(getServerBaseUrl()).toBe('http://127.0.0.1:5000')
   })
 
   it('une session gardee illisible donne zero compte', () => {

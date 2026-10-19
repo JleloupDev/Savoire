@@ -55,13 +55,22 @@ function publish(next: ServerChoice): void {
 }
 
 /**
+ * Serveur du paquet installe, par defaut : le backend sur CE poste, port
+ * 5000. Le serveur n'est pas expose publiquement : on y accede par un
+ * tunnel SSH (ssh -L 5000:localhost:5000 <machine>), donc une adresse
+ * locale, inaccessible a qui n'a pas ce tunnel.
+ */
+export const PACKAGED_DEFAULT_SERVER = 'http://127.0.0.1:5000'
+
+/**
  * Serveur par defaut de la version bureau : en developpement, la page vient
  * du Vite (http://127.0.0.1:3002), dont le proxy mene au backend. Dans le
- * paquet installe (tauri://localhost, http://tauri.localhost), aucun.
+ * paquet installe (tauri://localhost, http://tauri.localhost) : le backend
+ * local, joint par tunnel SSH.
  */
 export function defaultServerFor(location: { protocol: string; hostname: string; origin: string }): string | null {
-  if (location.protocol !== 'http:' && location.protocol !== 'https:') return null
-  if (location.hostname === 'tauri.localhost') return null
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return PACKAGED_DEFAULT_SERVER
+  if (location.hostname === 'tauri.localhost') return PACKAGED_DEFAULT_SERVER
   return location.origin
 }
 

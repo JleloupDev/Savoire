@@ -32,6 +32,11 @@ serveur garde sa propre session : la personne reste connectée après un
 redémarrage. En développement, l'adresse par défaut est celle du Vite
 (`http://127.0.0.1:3002`), dont le proxy mène au backend.
 
+Dans le paquet installé, l'adresse par défaut est `http://127.0.0.1:5000` :
+le serveur n'est pas exposé publiquement, on le joint par un tunnel SSH
+(`ssh -L 5000:localhost:5000 <machine du serveur>`). Sans ce tunnel,
+l'adresse ne mène nulle part.
+
 Toutes les URL du client (REST et SignalR) passent par cette adresse
 (`serverUrl` / `setServerBaseUrl`, `packages/infrastructure-sync/src/serverAddress.ts`).
 Dans le navigateur, rien ne change : URL relatives.
@@ -89,6 +94,12 @@ Ouvrir (ou `xattr -cr Savoire.app`). Windows : SmartScreen demande une
 confirmation (« Informations complémentaires » > « Exécuter quand même »).
 
 Tests Rust (chemins, liste des vaults, surveillance) : `cd src-tauri && cargo test`.
+
+Compilation automatique : `.github/workflows/desktop.yml` construit l'appli
+sur Linux, macOS et Windows (machines GitHub) à chaque push sur `master` qui
+touche le front, et à la demande (onglet Actions > Desktop > Run workflow).
+Les installeurs sont dans les « Artifacts » du lancement ; un tag `v*` les
+publie aussi dans une Release.
 Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
 
 ## Où sont les données

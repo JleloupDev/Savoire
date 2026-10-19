@@ -7,7 +7,7 @@
     "devUrl": "http://127.0.0.1:3002",
     "frontendDist": "../../web/dist",
     "beforeBuildCommand": {
-      "script": "./node_modules/.bin/vite build",
+      "script": "node ./node_modules/vite/bin/vite.js build",
       "cwd": "../../web"
     }
   },
