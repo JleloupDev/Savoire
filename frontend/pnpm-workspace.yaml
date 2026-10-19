@@ -2,8 +2,14 @@ packages:
   - "../apps/*"
   - "../packages/*"
   - "../packages/plugins/*"
-  # EdgeSync vit dans son propre depot, clone a cote de Savoire.
-  - "../../EdgeSync"
+  # EdgeSync est FACULTATIF : son connecteur est gele et l'app ne le charge
+  # qu'a la demande (profil edgesync, qui retombe sur le serveur). Il est donc
+  # hors du workspace par defaut. Pour travailler dessus : cloner EdgeSync a
+  # cote de Savoire, decommenter la ligne EdgeSync et retirer les deux
+  # exclusions qui suivent.
+  # - "../../EdgeSync"
+  - "!../packages/infrastructure-edgesync"
+  - "!../tests/frontend/unit/infrastructure-edgesync-tests"
   - "../tests/frontend/unit/*"
   - "../tests/frontend/integration/*"
 allowBuilds:

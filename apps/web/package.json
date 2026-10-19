@@ -16,7 +16,6 @@
     "@savoire/editor-core": "workspace:*",
     "@savoire/editor-react": "workspace:*",
     "@savoire/i18n": "workspace:*",
-    "@savoire/infrastructure-edgesync": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/module-bridge": "workspace:*",
     "@savoire/notifications": "workspace:*",
