@@ -16,3 +16,11 @@ export function isTauriRuntime(scope: unknown = globalThis): boolean {
   const g = scope as { isTauri?: unknown; __TAURI_INTERNALS__?: { invoke?: unknown } }
   return g.isTauri === true && typeof g.__TAURI_INTERNALS__?.invoke === 'function'
 }
+
+/**
+ * Android : Tauri y tourne dans la WebView du systeme, qui se presente comme
+ * telle. L'app y est serveur seulement (pas de dossier de vault).
+ */
+export function isAndroidRuntime(userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): boolean {
+  return /\bAndroid\b/.test(userAgent)
+}

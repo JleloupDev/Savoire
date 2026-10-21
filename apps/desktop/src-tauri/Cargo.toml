@@ -9,18 +9,27 @@ license = "AGPL-3.0-or-later"
 edition = "2021"
 rust-version = "1.77.2"
 
+[lib]
+# Android charge le programme comme bibliotheque (cdylib) ; le bureau garde
+# son executable (src/main.rs), qui appelle la meme bibliotheque.
+name = "savoire_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "=2.7.1", features = [] }
 
 [dependencies]
 tauri = { version = "=2.12.1", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Bureau seulement : Android est serveur seulement, sans dossier de vault.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # Choix du dossier du vault : la boite de dialogue s'ouvre cote Rust, jamais
 # depuis le front, pour que seul un dossier choisi par la personne soit autorise.
 tauri-plugin-dialog = "=2.8.1"
 # Surveillance du disque (modifications faites par d'autres outils).
 notify = { version = "=8.2.0", default-features = false, features = ["macos_fsevent"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 
 [features]
 # Construction de production : le front est servi depuis le dist embarque.

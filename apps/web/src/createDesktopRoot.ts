@@ -339,6 +339,11 @@ export function loadDesktopProfile(options: DesktopProfileOptions = {}): Promise
   return loaded
 }
 
+/** Serveurs connus et leurs sessions seulement (Android : pas de disque). */
+export async function loadServerSettings(): Promise<DesktopServerSettings> {
+  return createServerSettings(await loadTauriBridge())
+}
+
 /**
  * Branche le disque sur le transfert serveur <-> disque (vaultTransfer.ts),
  * quel que soit le profil, des que l'app tourne dans Tauri.

@@ -133,6 +133,34 @@ Les installeurs sont dans les « Artifacts » du lancement ; un tag `v*` les
 publie aussi dans une Release.
 Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
 
+## Android
+
+La même coquille Tauri produit une app Android, **serveur seulement** :
+pas de vault local, pas de choix de dossier ni de surveillance du disque.
+L'app démarre en profil serveur (écran de connexion, vaults du compte),
+avec l'adresse du serveur à saisir et la session gardée, comme sur le
+bureau. Par défaut : `http://127.0.0.1:5000`, à joindre par un tunnel SSH
+lancé sur le téléphone (par exemple une redirection de port locale
+5000 → `localhost:5000` de la machine du serveur).
+
+Côté code : `src-tauri/src/lib.rs` (les commandes de dossier sont réservées
+au bureau, Android n'a que celles des serveurs), `isAndroidRuntime`
+(`apps/web/src/tauriRuntime.ts`) et `initProfile` (`apps/web/src/profile.ts`).
+
+Construction : le job « Android » de `.github/workflows/desktop.yml` génère
+le projet Android (`src-tauri/gen/android`, ignoré par git) puis un **APK
+de debug** pour `arm64`, dans les « Artifacts » du lancement. Il est signé
+par la clé de debug (installable tel quel, après avoir autorisé les sources
+inconnues) et accepte le `http` en clair, nécessaire pour le tunnel. En
+local, il faut le SDK et le NDK Android (`ANDROID_HOME`, `NDK_HOME`), Java
+17 et `rustup target add aarch64-linux-android`, puis :
+
+```sh
+cd apps/desktop
+./node_modules/.bin/tauri android init --ci
+./node_modules/.bin/tauri android build --debug --apk --target aarch64
+```
+
 ## Où sont les données
 
 - **Les notes** : dans le dossier du vault, en clair. Ce que le texte ne porte

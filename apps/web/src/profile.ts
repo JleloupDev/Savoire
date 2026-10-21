@@ -14,6 +14,8 @@
 //                       dossiers du disque (aucun compte requis) et, si la
 //                       personne se connecte a un serveur, les vaults de son
 //                       compte, dans la meme session. Voir createDesktopRoot.ts.
+//                       Android (Tauri aussi) : profil serveur, avec le
+//                       choix du serveur et sa session gardee, sans disque.
 //
 // Sert d'abord aux tests : les deux profils se lancent cote a cote sans
 // recompiler ni toucher au composition root. Le jour ou un connecteur
@@ -26,7 +28,7 @@
 // casser le demarrage.
 
 import { makeLocalPeerVaultSessionFactory } from './createWebAppRoot'
-import { isTauriRuntime } from './tauriRuntime'
+import { isAndroidRuntime, isTauriRuntime } from './tauriRuntime'
 import { OFFLINE_ACCOUNT, OFFLINE_TOKEN } from './desktopAccount'
 import { installDesktopServers } from './serverConnection'
 import { notify } from '@savoire/notifications'
@@ -38,20 +40,23 @@ const KNOWN: readonly SyncProfileName[] = ['server', 'edgesync', 'local', 'deskt
 
 /**
  * Dans Tauri, le profil bureau d'office (un ?profile= explicite l'emporte,
- * pour les tests). Hors de Tauri, le profil bureau n'a pas de disque : refuse.
+ * pour les tests). Hors de Tauri, ou sous Android (serveur seulement), le
+ * profil bureau n'a pas de disque : refuse.
  */
 export function readProfileFromUrl(
   search: string = window.location.search,
   inTauri: boolean = isTauriRuntime(),
+  android: boolean = isAndroidRuntime(),
 ): SyncProfileName {
   const raw = new URLSearchParams(search).get('profile')
-  if (raw === 'desktop' && !inTauri) {
+  const withDisk = inTauri && !android
+  if (raw === 'desktop' && !withDisk) {
     console.warn('[profile] le profil bureau ne marche que dans l\'application de bureau, retour au profil serveur')
     return 'server'
   }
   if (raw && (KNOWN as readonly string[]).includes(raw)) return raw as SyncProfileName
   if (raw) console.warn(`[profile] valeur inconnue "${raw}", retour au profil serveur`)
-  return inTauri ? 'desktop' : 'server'
+  return withDisk ? 'desktop' : 'server'
 }
 
 /** Ce que le profil bureau ajoute (voir createDesktopRoot.ts). */
@@ -216,7 +221,15 @@ export async function initProfile(): Promise<LoadedProfile> {
   })
   // Dans Tauri, quel que soit le profil : le disque sert aussi au transfert
   // serveur <-> disque (telecharger un vault du serveur dans un dossier...).
-  if (isTauriRuntime()) {
+  if (isTauriRuntime() && isAndroidRuntime()) {
+    // Android : pas de disque, seulement le serveur choisi et sa session.
+    try {
+      const mod = await import('./createDesktopRoot')
+      await installDesktopServers(await mod.loadServerSettings())
+    } catch (err) {
+      console.error('[profile] serveurs connus illisibles', err)
+    }
+  } else if (isTauriRuntime()) {
     try {
       const mod = await import('./createDesktopRoot')
       const parts = await mod.loadDesktopProfile(desktopOptions())

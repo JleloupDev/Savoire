@@ -9,7 +9,7 @@ import {
   createDesktopHost, displayPath, pathForVaultId, sortRecent, vaultIdForPath, TauriVaultFileSystem,
   type RecentVault,
 } from '@savoire/desktop'
-import { isTauriRuntime } from '../../../../../apps/web/src/tauriRuntime'
+import { isAndroidRuntime, isTauriRuntime } from '../../../../../apps/web/src/tauriRuntime'
 import { readProfileFromUrl } from '../../../../../apps/web/src/profile'
 import {
   DesktopVaultSessionFactory, DesktopVaultsBackend, FolderPickCancelled, OpenedFolders, toVaultSummary,
@@ -44,6 +44,19 @@ describe('choix du profil', () => {
     expect(readProfileFromUrl('?profile=desktop', false)).toBe('server')
     expect(readProfileFromUrl('?profile=local', false)).toBe('local')
     warn.mockRestore()
+  })
+
+  it('Android (Tauri) : profil serveur, jamais le profil bureau', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(readProfileFromUrl('', true, true)).toBe('server')
+    expect(readProfileFromUrl('?profile=desktop', true, true)).toBe('server')
+    warn.mockRestore()
+  })
+
+  it('reconnait la WebView Android a son agent', () => {
+    expect(isAndroidRuntime('Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A; wv) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36')).toBe(true)
+    expect(isAndroidRuntime('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)')).toBe(false)
+    expect(isAndroidRuntime('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/126.0')).toBe(false)
   })
 })
 
