@@ -96,6 +96,24 @@ public class AuthApiTests : IClassFixture<AppFactory>
     }
 
     [Fact]
+    public async Task POST_refresh_TwiceWithSameToken_SecondReturns401()
+    {
+        // Rotation : chaque renouvellement invalide le jeton utilise.
+        // Le client ne doit donc jamais renouveler deux fois en parallele.
+        var loginResp = await _anon.PostAsJsonAsync("/api/v1/auth/login",
+            new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword });
+        var loginBody = await loginResp.Content.ReadFromJsonAsync<AuthResponse>();
+
+        var first = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
+            new { RefreshToken = loginBody!.RefreshToken });
+        var second = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
+            new { RefreshToken = loginBody.RefreshToken });
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task POST_refresh_WithInvalidToken_Returns401()
     {
         var response = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",

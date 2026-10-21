@@ -7,7 +7,7 @@ import {
 import {
   CrdtDocumentFetcher, DocumentRoomClient,
   HttpAdminBackend, HttpAuthBackend, HttpSharingBackend, HttpVaultsBackend,
-  ServerKeyProvider, SavoireServerVaultSession,
+  ServerKeyProvider, SavoireServerVaultSession, setAccessTokenRenewer,
   BroadcastChannelPeerBus, LocalPeerVaultSessionFactory,
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
@@ -27,6 +27,8 @@ export function createWebServices() {
     authApi:    new AuthService(authBackend),
     adminApi:   new AdminService(adminBackend),
     sharingApi: new SharingService(sharingBackend),
+    // Rejeu des requetes REST refusees (401) apres renouvellement du jeton.
+    setTokenRenewer: setAccessTokenRenewer,
   }
 }
 

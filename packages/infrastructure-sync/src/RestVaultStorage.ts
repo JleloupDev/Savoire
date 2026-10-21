@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { serverUrl } from './serverAddress'
+import { fetchWithRenewal, renewRejectedToken } from './http'
 import type { IDocumentMeta, IVaultStorage } from '@savoire/platform'
 
 export interface RestVaultStorageOptions {
@@ -37,7 +38,9 @@ export class RestVaultStorage implements IVaultStorage {
 
   constructor(options: RestVaultStorageOptions = {}) {
     this.baseUrl = options.baseUrl ?? ''
-    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis)
+    // Un 401 renouvelle le jeton et rejoue la requete une fois (voir http.ts).
+    const raw = options.fetchFn ?? globalThis.fetch.bind(globalThis)
+    this.fetchFn = ((input: string, init?: RequestInit) => fetchWithRenewal(raw, input, init)) as typeof fetch
     const browserXhr = typeof XMLHttpRequest !== 'undefined' && !options.fetchFn ? () => new XMLHttpRequest() : null
     this.xhrFactory = options.xhrFactory === undefined ? browserXhr : options.xhrFactory
   }
@@ -114,7 +117,14 @@ export class RestVaultStorage implements IVaultStorage {
     form.append('file', file, file instanceof File ? file.name : fileId)
     const url = this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(fileId)}`)
     if (onProgress && this.xhrFactory) {
-      await sendWithProgress(this.xhrFactory(), url, token, form, onProgress)
+      try {
+        await sendWithProgress(this.xhrFactory(), url, token, form, onProgress)
+      } catch (err) {
+        // Jeton refuse : un seul nouvel envoi, avec le jeton renouvele.
+        const next = err instanceof Error && err.message === '401' ? await renewRejectedToken(token) : null
+        if (!next) throw err
+        await sendWithProgress(this.xhrFactory(), url, next, form, onProgress)
+      }
       return
     }
     const res = await this.fetchFn(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })

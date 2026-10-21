@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { serverUrl } from './serverAddress'
+import { fetchWithRenewal } from './http'
 import type { IAdminBackend, AppAdminUser } from '@savoire/application'
 
 export class HttpAdminBackend implements IAdminBackend {
   constructor(private readonly baseUrl: string = '') {}
 
   private async fetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, {
+    const res = await fetchWithRenewal(globalThis.fetch.bind(globalThis), url, {
       ...init,
       headers: {
         'Content-Type': 'application/json',

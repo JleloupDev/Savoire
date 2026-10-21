@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Multi-account auth — matches client-web AuthStateService + IAccountStore logic
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import type { IAuthAPI } from '@savoire/application'
+import { notify } from '@savoire/notifications'
 import type { AccountEntry } from './types'
 import { accountsAfterLogin, getAccountStorage } from './accountStorage'
 import { isNetworkError } from './serverErrors'
+import { createSessionRenewal, refreshOnce, SESSION_EXPIRED_MESSAGE, type SessionRenewal } from './session'
 
 // Navigateur : sessionStorage. Version bureau : la session du serveur
 // choisi, gardee sur la machine (voir accountStorage.ts, serverConnection.ts).
@@ -39,12 +41,57 @@ const AuthContext = createContext<AuthContextValue | null>(null)
  * avec un autre compte remplace le precedent). Navigateur : plusieurs comptes,
  * bascule par le menu du compte.
  */
-export function AuthProvider({ children, authApi, singleAccount = false }: { children: ReactNode; authApi: IAuthAPI; singleAccount?: boolean }) {
+/**
+ * `setTokenRenewer` : branche le rejeu des requetes refusees (401) sur le
+ * renouvellement de la session (voir createWebServices).
+ */
+export function AuthProvider({ children, authApi, singleAccount = false, setTokenRenewer }: {
+  children: ReactNode
+  authApi: IAuthAPI
+  singleAccount?: boolean
+  setTokenRenewer?: (renewer: ((rejected: string) => Promise<string | null>) | null) => void
+}) {
   const [accounts, setAccounts] = useState<AccountEntry[]>(loadAccounts)
   const [token, setToken] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   const activeAccount = accounts.find(a => a.isActive) ?? null
+
+  // Renouvellement du jeton d'acces du compte actif (voir session.ts).
+  const renewalRef = useRef<SessionRenewal | null>(null)
+  renewalRef.current ??= createSessionRenewal({
+    refresh: (refreshToken) => authApi.refresh(refreshToken),
+    onRenewed: (accessToken, stored) => {
+      setAccounts(stored)
+      setToken(accessToken)
+    },
+    onExpired: (remaining) => {
+      // Un seul message ; l'ecran de connexion suit (token null, voir AppShell).
+      setAccounts(remaining)
+      setToken(null)
+      notify('warn', SESSION_EXPIRED_MESSAGE)
+    },
+  })
+  const renewal = renewalRef.current
+
+  useEffect(() => { renewal.setToken(token) }, [renewal, token])
+
+  // Rejeu des requetes refusees (401), et reprise apres une mise en veille :
+  // le minuteur a pu dormir, on regarde l'echeance au retour.
+  useEffect(() => {
+    setTokenRenewer?.(rejected => renewal.renewRejected(rejected))
+    const check = () => { if (document.visibilityState !== 'hidden') renewal.check() }
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    window.addEventListener('online', check)
+    return () => {
+      setTokenRenewer?.(null)
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('focus', check)
+      window.removeEventListener('online', check)
+      renewal.stop()
+    }
+  }, [renewal, setTokenRenewer])
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login(email, password)
@@ -77,7 +124,8 @@ export function AuthProvider({ children, authApi, singleAccount = false }: { chi
     const target = stored.find(a => a.userId === userId)
     if (!target) return false
     try {
-      const res = await authApi.refresh(target.refreshToken)
+      // Meme jeton qu'un renouvellement en cours : on attend sa reponse.
+      const res = await refreshOnce(t => authApi.refresh(t), target.refreshToken)
       const updated = stored.map(a => ({
         ...a,
         isActive: a.userId === userId,

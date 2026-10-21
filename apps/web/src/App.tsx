@@ -12,12 +12,12 @@ import { ViewGrantPage } from './ViewGrantPage'
 import { ToastContainer } from './ToastContainer'
 import { getServerChoice } from './serverConnection'
 
-const { authApi, adminApi, sharingApi } = createWebServices()
+const { authApi, adminApi, sharingApi, setTokenRenewer } = createWebServices()
 
 export function App() {
   return (
     // Version bureau (serveur au choix) : un seul compte a la fois.
-    <AuthProvider authApi={authApi} singleAccount={getServerChoice().configurable}>
+    <AuthProvider authApi={authApi} singleAccount={getServerChoice().configurable} setTokenRenewer={setTokenRenewer}>
       <VaultKeyProvider>
         <BrowserRouter>
           <Routes>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { serverUrl } from './serverAddress'
+import { fetchWithRenewal } from './http'
 import type { AppVaultSummary, AppWorkspace, IVaultsBackend } from '@savoire/application'
 
 export interface HttpVaultsBackendOptions {
@@ -14,7 +15,9 @@ export class HttpVaultsBackend implements IVaultsBackend {
 
   constructor(options: HttpVaultsBackendOptions = {}) {
     this.baseUrl = options.baseUrl ?? ''
-    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis)
+    // Un 401 renouvelle le jeton et rejoue la requete une fois (voir http.ts).
+    const raw = options.fetchFn ?? globalThis.fetch.bind(globalThis)
+    this.fetchFn = ((input: string, init?: RequestInit) => fetchWithRenewal(raw, input, init)) as typeof fetch
   }
 
   listVaults(userId: string, token: string): Promise<AppWorkspace> {
