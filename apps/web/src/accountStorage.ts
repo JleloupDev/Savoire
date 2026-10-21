@@ -69,3 +69,16 @@ export function getAccountStorage(): AccountStorage {
 export function setAccountStorage(next: AccountStorage | null): void {
   storage = next ?? sessionAccounts
 }
+
+/**
+ * Les comptes gardes apres une connexion. Navigateur : le nouveau compte
+ * devient actif, les autres restent (bascule par le menu du compte). Version
+ * bureau (`single`) : un seul compte a la fois, le nouveau remplace les autres.
+ */
+export function accountsAfterLogin(existing: AccountEntry[], entry: AccountEntry, single: boolean): AccountEntry[] {
+  if (single) return [{ ...entry, isActive: true }]
+  return [
+    ...existing.map(a => ({ ...a, isActive: false })).filter(a => a.userId !== entry.userId),
+    { ...entry, isActive: true },
+  ]
+}

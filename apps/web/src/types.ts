@@ -36,6 +36,11 @@ export interface VaultSummary {
    *  can't be decrypted with the K_User currently in memory (or none is set)
    *  — see AppShell.tsx's lock-probe effect and VaultKeyEscrow.ts. */
   locked: boolean
+  /** Client seulement, version bureau : d'ou vient le vault (un dossier, ou
+   *  le compte du serveur). Absent dans le navigateur. */
+  source?: 'local' | 'server'
+  /** Client seulement : seconde ligne de la liste (dossier d'un vault local). */
+  detail?: string
 }
 
 export interface SharedNote {

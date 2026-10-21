@@ -152,3 +152,12 @@ export async function forgetServer(url: string): Promise<void> {
   }
   publish({ configurable: true, servers: withDefault(list.servers.filter(s => s !== url)), current })
 }
+
+/**
+ * Efface la session gardee d'un serveur (version bureau, un seul compte a la
+ * fois : se connecter ailleurs remplace le compte precedent).
+ */
+export async function clearServerSession(url: string): Promise<void> {
+  if (!settings) return
+  await settings.saveSession(url, null)
+}

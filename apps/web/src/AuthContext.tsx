@@ -4,7 +4,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type { IAuthAPI } from '@savoire/application'
 import type { AccountEntry } from './types'
-import { getAccountStorage } from './accountStorage'
+import { accountsAfterLogin, getAccountStorage } from './accountStorage'
 import { isNetworkError } from './serverErrors'
 
 // Navigateur : sessionStorage. Version bureau : la session du serveur
@@ -34,7 +34,12 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children, authApi }: { children: ReactNode; authApi: IAuthAPI }) {
+/**
+ * `singleAccount` : version bureau, un seul compte a la fois (se connecter
+ * avec un autre compte remplace le precedent). Navigateur : plusieurs comptes,
+ * bascule par le menu du compte.
+ */
+export function AuthProvider({ children, authApi, singleAccount = false }: { children: ReactNode; authApi: IAuthAPI; singleAccount?: boolean }) {
   const [accounts, setAccounts] = useState<AccountEntry[]>(loadAccounts)
   const [token, setToken] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
@@ -43,11 +48,6 @@ export function AuthProvider({ children, authApi }: { children: ReactNode; authA
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login(email, password)
-    const existing = loadAccounts()
-    const updated = existing
-      .map(a => ({ ...a, isActive: false }))
-      .filter(a => a.userId !== res.user.id)
-
     const newEntry: AccountEntry = {
       userId: res.user.id,
       email: res.user.email,
@@ -55,11 +55,11 @@ export function AuthProvider({ children, authApi }: { children: ReactNode; authA
       refreshToken: res.refreshToken,
       isActive: true,
     }
-    const final = [...updated, newEntry]
+    const final = accountsAfterLogin(loadAccounts(), newEntry, singleAccount)
     saveAccounts(final)
     setAccounts(final)
     setToken(res.accessToken)
-  }, [authApi])
+  }, [authApi, singleAccount])
 
   const logout = useCallback(async () => {
     const current = loadAccounts().find(a => a.isActive)

@@ -10,8 +10,10 @@
 //                       verrous), pas de persistance hors des onglets ouverts.
 //                       Comptes et liste des vaults restent servis par le serveur.
 //   desktop             version bureau (fenetre Tauri) : choisi tout seul
-//                       quand l'app tourne dans Tauri. Vaults = dossiers du
-//                       disque, aucun compte requis. Voir createDesktopRoot.ts.
+//                       quand l'app tourne dans Tauri. Profil UNIFIE : les
+//                       dossiers du disque (aucun compte requis) et, si la
+//                       personne se connecte a un serveur, les vaults de son
+//                       compte, dans la meme session. Voir createDesktopRoot.ts.
 //
 // Sert d'abord aux tests : les deux profils se lancent cote a cote sans
 // recompiler ni toucher au composition root. Le jour ou un connecteur
@@ -27,6 +29,8 @@ import { makeLocalPeerVaultSessionFactory } from './createWebAppRoot'
 import { isTauriRuntime } from './tauriRuntime'
 import { OFFLINE_ACCOUNT, OFFLINE_TOKEN } from './desktopAccount'
 import { installDesktopServers } from './serverConnection'
+import { notify } from '@savoire/notifications'
+import { t } from '@savoire/i18n'
 
 export type SyncProfileName = 'server' | 'edgesync' | 'local' | 'desktop'
 
@@ -63,6 +67,14 @@ export interface DesktopProfileExtras {
   pickVaultFolder(): Promise<import('@savoire/platform').IVaultFileSystem | null>
   /** Dossier d'un vault de la version bureau (null : pas un dossier). */
   pathOfVault(vaultId: string): string | null
+  /** D'ou vient un vault : un dossier ('local') ou le compte du serveur ('server'). */
+  sourceOf(vaultId: string): 'local' | 'server'
+  /** Nouveau vault : un dossier (la personne choisit ou) ou un vault du serveur. */
+  createVaultOn(source: 'local' | 'server', name: string): Promise<import('@savoire/application').AppVaultSummary>
+  /** Erreur de la derniere liste des vaults du serveur (null : aucune). */
+  serverListError(): unknown
+  /** La personne a ferme la boite de dialogue du dossier : pas une erreur. */
+  isCancelled(err: unknown): boolean
 }
 
 export interface LoadedProfile {
@@ -102,7 +114,7 @@ export async function loadProfile(
     try {
       // Import dynamique : le bureau (et @tauri-apps/api) hors du bundle web.
       const mod = await import('./createDesktopRoot')
-      const parts = await mod.loadDesktopProfile()
+      const parts = await mod.loadDesktopProfile(desktopOptions())
       return {
         name: 'desktop',
         vaultSyncSessionFactory: parts.vaultSyncSessionFactory,
@@ -113,6 +125,10 @@ export async function loadProfile(
           host: parts.host,
           rememberFolder: (folder) => parts.opened.remember(folder),
           pathOfVault: mod.pathOfVault,
+          sourceOf: mod.sourceOfVault,
+          createVaultOn: (source, vaultName) => parts.vaultsBackend.createVaultOn(source, vaultName),
+          serverListError: () => parts.vaultsBackend.serverError(),
+          isCancelled: (err) => err instanceof mod.FolderPickCancelled,
           pickVaultFolder: async () => {
             const folder = await parts.host.pickVaultFolder()
             if (!folder) return null
@@ -172,6 +188,17 @@ interface ProfileRuntimeDeps {
 let runtimeDeps: ProfileRuntimeDeps = { getToken: () => null, getVaultKey: () => null }
 let active: LoadedProfile = { name: 'server' }
 
+/** Le profil bureau lit le compte serveur connecte a chaque appel (AppShell le fournit). */
+function desktopOptions(): import('./createDesktopRoot').DesktopProfileOptions {
+  return {
+    getServerAuth: () => runtimeDeps.getServerAuth?.() ?? null,
+    onConnectionChange: (state) => {
+      if (state === 'disconnected') notify('warn', t('app', 'sync.disconnected'))
+      else notify('success', t('app', 'sync.reconnected'))
+    },
+  }
+}
+
 /** Appele par AppShell des son premier rendu. */
 export function setProfileRuntimeDeps(deps: ProfileRuntimeDeps): void {
   runtimeDeps = deps
@@ -192,7 +219,7 @@ export async function initProfile(): Promise<LoadedProfile> {
   if (isTauriRuntime()) {
     try {
       const mod = await import('./createDesktopRoot')
-      const parts = await mod.loadDesktopProfile()
+      const parts = await mod.loadDesktopProfile(desktopOptions())
       mod.installVaultFolderHost(parts, () => runtimeDeps.getServerAuth?.() ?? null)
       // Le serveur choisi par la personne : base des URL, comptes gardes.
       await installDesktopServers(parts.serverSettings)

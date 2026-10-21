@@ -73,9 +73,11 @@ export interface VaultTransferContext {
 
 /**
  * Les actions du menu d'un vault, selon l'endroit ou tourne l'app :
- *   - vaults du serveur + bureau      : « Télécharger sur ce poste… » (dossier) ;
- *   - vaults du serveur + navigateur  : « Exporter en .zip » ;
- *   - vaults du poste (profil bureau) : « Envoyer sur le serveur… ».
+ *   - profil bureau (unifie), selon la SOURCE du vault :
+ *       vault du serveur -> « Télécharger sur ce poste… » (dossier) ;
+ *       vault du poste   -> « Envoyer sur le serveur… » ;
+ *   - vaults du serveur + bureau en profil serveur : « Télécharger sur ce poste… » ;
+ *   - vaults du serveur + navigateur  : « Exporter en .zip ».
  */
 export function vaultTransferActions<TVault extends VaultSummaryLike>(ctx: VaultTransferContext): VaultTransferActions<TVault> | null {
   const host = folderHost
@@ -88,9 +90,24 @@ export function vaultTransferActions<TVault extends VaultSummaryLike>(ctx: Vault
   if (ctx.profile === 'desktop') {
     if (!host?.remote) return null
     const remote = host.remote.bind(host)
+    const isServerVault = (vault: TVault): boolean => vault.source === 'server'
     return {
+      download: {
+        label: 'Télécharger sur ce poste…',
+        appliesTo: isServerVault,
+        run: (vault) => void (async () => {
+          const fs = await host.createDownloadFolder(vault.name)
+          if (!fs) return
+          const service = new VaultTransferService({ remote, activeSession: ctx.activeSession, openDiskSession: host.openDiskSession, transferOptions })
+          const job = service.downloadVault(vault.id, fs)
+          // La copie est un nouveau dossier : elle apparait dans « Sur cet ordinateur ».
+          void job.result.then(() => ctx.refreshVaults(), () => {})
+          start({ title: `Téléchargement de « ${vault.name} »`, job, doneLabel: () => `Copie dans ${fs.rootLabel}.` })
+        })().catch(err => ctx.onError(errorText(err))),
+      },
       upload: {
         label: 'Envoyer sur le serveur…',
+        appliesTo: (vault) => !isServerVault(vault),
         run: (vault) => void (async () => {
           // Le vault actif : sa session sert de source (pas deux sessions sur un dossier).
           const source = ctx.activeSession(vault.id) ?? await host.fileSystemOf(vault.id)

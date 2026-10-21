@@ -11,26 +11,57 @@ fenêtre Tauri 2. Ce dossier ne contient que la coquille :
   Tauri du port `IVaultFileSystem`, et l'« hôte bureau » (choisir un dossier,
   vaults récents). L'app web ne le charge que dans Tauri (import dynamique).
 
-Dans Tauri, l'app démarre d'office en **profil bureau** : un vault = un
-dossier du disque (format Obsidian + `.savoire/`), aucun compte requis. Elle
-rouvre le dernier vault ; sinon elle affiche l'écran « Vaults sur cet
-ordinateur » (dossiers récents, « Ouvrir un dossier… », « Nouveau vault… »).
-Le bouton « Serveur Savoire… » recharge l'app en profil serveur
-(`?profile=server`) pour télécharger un vault du serveur dans un dossier
-(menu ⚙ du vault, « Télécharger sur ce poste… »). Le bouton « ← Ce poste »
-(barre du haut, ou écran de connexion) revient aux vaults locaux sans
-relancer l'app. Dans le profil bureau, une fois connecté, le menu ⚙ d'un
-vault local propose « Envoyer sur le serveur… ».
+Dans Tauri, l'app démarre d'office en **profil bureau**, un profil
+**unifié** : les vaults de l'ordinateur et ceux du compte serveur, dans la
+même session de l'app, sans rechargement.
+
+- **Vaults locaux** : un vault = un dossier du disque (format Obsidian +
+  `.savoire/`), aucun compte requis. Au lancement, l'app rouvre le dernier.
+- **Bouton serveur** (barre du haut, toujours visible) : il montre le serveur
+  et le compte connectés, ou « Hors ligne · non connecté ». Il ouvre une
+  fenêtre : serveurs déjà utilisés, saisie d'une adresse
+  (`http://127.0.0.1:5000` par défaut), e-mail, mot de passe, « Se
+  connecter », « Se déconnecter ». On s'y connecte **à tout moment**, sans
+  quitter le vault ouvert.
+- **Un seul compte à la fois** : se connecter avec un autre compte, ou à un
+  autre serveur, remplace le précédent (sa session est révoquée et effacée
+  du poste). En cas d'échec, rien ne change.
+- **Liste des vaults** (panneau de gauche) : un onglet par source,
+  « Sur cet ordinateur » (« Ouvrir un dossier… », « + Nouveau vault… ») et
+  le serveur (« + Nouveau vault sur le serveur », ou « Se connecter… »). Le
+  point « ● » marque l'onglet du vault ouvert ; la barre du haut affiche aussi
+  sa source à côté de son nom.
+- **Se connecter** ajoute les vaults du compte à la liste. **Se
+  déconnecter** les retire ; un vault du serveur ouvert se ferme, avec un
+  message, un vault local reste ouvert.
+- **Copier** (menu ⚙ d'un vault) : « Télécharger sur ce poste… » pour un
+  vault du serveur (dans un nouveau dossier, qui apparaît dans « Sur cet
+  ordinateur ») ; « Envoyer sur le serveur… » pour un vault local.
+- **Menu du compte** (avatar, en bas à gauche) : le compte local, le compte
+  serveur s'il y en a un, « Changer de serveur ou de compte… », « Se
+  déconnecter du serveur ». Pas de liste de comptes à basculer sur le
+  bureau (le navigateur la garde).
+
+Côté code : `createDesktopRoot.ts`. `UnifiedVaultsBackend` (liste =
+dossiers + vaults du compte, chaque vault marqué par sa source),
+`UnifiedVaultSessionFactory` (un identifiant `disk:<chemin>` ouvre une
+`FileSystemVaultSession`, tout autre identifiant une session serveur avec le
+jeton, le compte et la clé d'identité du compte connecté). Le compte de
+l'app reste le compte local (réglages, raccourcis, plugins personnels). La
+connexion : `desktopConnection.ts` ; la fenêtre : `DesktopServerDialog.tsx`.
 
 ## Adresse du serveur
 
-L'écran de connexion de l'app de bureau demande l'**adresse du serveur**
+La fenêtre du bouton serveur (et l'écran de connexion, s'il apparaît)
+demande l'**adresse du serveur**
 (`https://savoire.exemple.fr`, `http://192.168.1.10:5000`). Sans `http://`
 ni `https://`, `https://` est supposé. Les adresses déjà utilisées sont
-proposées (10 au plus) ; la dernière est choisie au lancement suivant. Chaque
-serveur garde sa propre session : la personne reste connectée après un
-redémarrage. En développement, l'adresse par défaut est celle du Vite
-(`http://127.0.0.1:3002`), dont le proxy mène au backend.
+proposées (10 au plus) ; la dernière est choisie au lancement suivant. La
+session du compte est gardée : la personne reste connectée après un
+redémarrage. Si le serveur ne répond pas au lancement, le bouton affiche
+« Hors ligne » et la fenêtre propose « Réessayer ». En développement,
+l'adresse par défaut est celle du Vite (`http://127.0.0.1:3002`), dont le
+proxy mène au backend.
 
 Dans le paquet installé, l'adresse par défaut est `http://127.0.0.1:5000` :
 le serveur n'est pas exposé publiquement, on le joint par un tunnel SSH
@@ -145,7 +176,9 @@ Tests front : `tests/frontend/unit/desktop-tests` (`vitest run`).
 
 ## Limites
 
-- Passer d'un profil à l'autre recharge la page (pas l'app).
+- Un seul compte serveur à la fois, et un seul serveur à la fois.
+- « Administration » (menu du compte) quitte l'espace de travail ; au
+  retour, l'app rouvre le dernier vault local, pas un vault du serveur.
 - Un certificat invalide, un serveur éteint, une mauvaise adresse ou une
   origine refusée par CORS donnent la même erreur réseau au navigateur :
   le message de connexion les cite toutes, sans pouvoir dire laquelle.

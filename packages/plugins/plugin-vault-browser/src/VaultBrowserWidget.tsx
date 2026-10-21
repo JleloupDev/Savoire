@@ -13,6 +13,28 @@ export interface VaultSummaryLike {
    *  currently holds — rendered as a lock badge, never blocks the row from
    *  showing (see VaultBrowserPanel below). */
   locked: boolean
+  /** Source du vault (onglet ou il s'affiche), quand l'app en a plusieurs. */
+  source?: string
+  /** Seconde ligne (ex. le dossier d'un vault local). Absente : role et documents. */
+  detail?: string
+}
+
+/**
+ * Une source de vaults : un onglet de la liste (ex. « Sur cet ordinateur »,
+ * « savoire.exemple.fr »). Sans sources, la liste est unique, comme avant.
+ */
+export interface VaultSourceTab {
+  id: string
+  label: string
+  title?: string
+  /** Texte quand la source n'a aucun vault (ex. « Non connecté. »). */
+  emptyText?: string
+  /** false : pas de « + Nouveau vault » pour cette source. */
+  canCreate?: boolean
+  /** Libelle du bouton de creation (defaut « + Nouveau vault »). */
+  createLabel?: string
+  /** Boutons propres a la source, en bas de la liste (ex. « Ouvrir un dossier… »). */
+  actions?: Array<{ id: string; label: string; run(): void }>
 }
 
 export interface SharedNoteLike {
@@ -27,7 +49,8 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   vaults: React.MutableRefObject<TVault[]>
   selectedVaultId: React.MutableRefObject<string | null>
   onSelectVault: React.MutableRefObject<(vault: TVault) => void>
-  onCreateVault: React.MutableRefObject<(name: string) => Promise<void>>
+  /** `source` : l'onglet actif, quand la liste a des sources. */
+  onCreateVault: React.MutableRefObject<(name: string, source?: string) => Promise<void>>
   onRenameVault: React.MutableRefObject<(vault: TVault, name: string) => Promise<void>>
   onDeleteVault: React.MutableRefObject<(vault: TVault) => Promise<void>>
   onRefresh?: React.MutableRefObject<() => void>
@@ -35,12 +58,16 @@ export interface VaultBrowserRefs<TVault extends VaultSummaryLike = VaultSummary
   onOpenSharedNote?: React.MutableRefObject<(note: SharedNoteLike) => void>
   /** Copie d'un vault vers le poste et retour. Absent ou null : actions masquees. */
   vaultTransfer?: React.MutableRefObject<VaultTransferActions<TVault> | null>
+  /** Sources de vaults (un onglet par source). Absent ou null : liste unique. */
+  sources?: React.MutableRefObject<VaultSourceTab[] | null>
 }
 
 /** Une action du menu d'un vault. */
 export interface VaultMenuAction<TVault extends VaultSummaryLike = VaultSummaryLike> {
   label: string
   run(vault: TVault): void
+  /** Absent : l'action vaut pour tout vault. */
+  appliesTo?(vault: TVault): boolean
 }
 
 /**
@@ -122,7 +149,7 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
         </button>
       </div>
 
-      {transfer && !vault.locked && ([['vault-download', transfer.download], ['vault-upload', transfer.upload]] as const).map(([testId, action]) => action && (
+      {transfer && !vault.locked && ([['vault-download', transfer.download], ['vault-upload', transfer.upload]] as const).map(([testId, action]) => action && (action.appliesTo?.(vault) ?? true) && (
         <button
           key={testId}
           data-testid={testId}
@@ -163,12 +190,26 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [sharedNotes, setSharedNotes] = useState<SharedNoteLike[]>([])
+  const [sources, setSources] = useState<VaultSourceTab[] | null>(null)
+  const [activeSource, setActiveSource] = useState<string | null>(null)
+  const lastSelectedRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function sync() {
-    setVaults([...refs.vaults.current])
-    setSelectedId(refs.selectedVaultId.current)
+    const list = [...refs.vaults.current]
+    const selected = refs.selectedVaultId.current
+    setVaults(list)
+    setSelectedId(selected)
     if (refs.sharedWithMe) setSharedNotes([...refs.sharedWithMe.current])
+    const tabs = refs.sources?.current ?? null
+    setSources(tabs ? [...tabs] : null)
+    if (tabs?.length) {
+      // Un autre vault vient d'etre ouvert : on montre l'onglet de sa source.
+      const selectedSource = list.find(v => v.id === selected)?.source
+      if (selected !== lastSelectedRef.current && selectedSource) setActiveSource(selectedSource)
+      else setActiveSource(cur => cur && tabs.some(t => t.id === cur) ? cur : tabs[0].id)
+    }
+    lastSelectedRef.current = selected
   }
 
   useEffect(() => {
@@ -190,18 +231,51 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
     const n = newName.trim()
     if (!n) return
     try {
-      await refs.onCreateVault.current(n)
+      await refs.onCreateVault.current(n, tab?.id)
       setCreating(false); setNewName('')
       sync()
     } catch {}
   }
 
+  const tab = sources?.find(t => t.id === activeSource) ?? sources?.[0] ?? null
+  const shown = tab ? vaults.filter(v => v.source === tab.id) : vaults
+  const selectedSource = vaults.find(v => v.id === selectedId)?.source
+  const canCreate = tab ? tab.canCreate !== false : true
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'inherit', color: 'inherit', fontSize: 13 }}>
       <div style={{ padding: '8px 12px 4px', ...S.label }}>Vaults</div>
 
+      {sources && sources.length > 0 && (
+        <div data-testid="vault-sources" style={{ display: 'flex', gap: 4, padding: '2px 8px 6px', flexWrap: 'wrap' }}>
+          {sources.map(src => {
+            const active = src.id === tab?.id
+            return (
+              <button
+                key={src.id}
+                data-testid="vault-source-tab"
+                data-source={src.id}
+                data-active={active ? 'true' : 'false'}
+                title={src.title ?? src.label}
+                onClick={() => { setActiveSource(src.id); setSettingsFor(null); setCreating(false) }}
+                style={{
+                  flex: '1 1 0', minWidth: 0, padding: '4px 8px', borderRadius: 5, fontSize: 11.5, cursor: 'pointer',
+                  border: `1px solid ${active ? 'var(--accent)' : 'rgba(255,255,255,0.1)'}`,
+                  background: active ? 'var(--accent-dim)' : 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--text-muted)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}
+              >
+                {src.id === selectedSource && <span title="Le vault ouvert vient d'ici" style={{ marginRight: 4 }}>●</span>}
+                {src.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-        {vaults.map(v => (
+        {shown.map(v => (
           <div key={v.id}>
             <div
               style={{
@@ -231,7 +305,9 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                   {v.locked && <span title="Clé requise pour ouvrir ce vault" style={{ fontSize: 10, flexShrink: 0 }}>🔒</span>}
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>{v.role} · {v.documentCount} doc{v.documentCount !== 1 ? 's' : ''}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {v.detail ?? `${v.role} · ${v.documentCount} doc${v.documentCount !== 1 ? 's' : ''}`}
+                </div>
               </button>
               <button
                 className="cfg-btn"
@@ -253,8 +329,8 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
           </div>
         ))}
 
-        {vaults.length === 0 && (
-          <div style={{ padding: '4px 12px', fontSize: 12, color: 'var(--text-faint)' }}>Aucun vault</div>
+        {shown.length === 0 && (
+          <div data-testid="vault-empty" style={{ padding: '4px 12px', fontSize: 12, color: 'var(--text-faint)' }}>{tab?.emptyText ?? 'Aucun vault'}</div>
         )}
 
         {sharedNotes.length > 0 && (
@@ -303,10 +379,18 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
             </div>
           </>
         ) : (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button data-testid="vault-create-open" onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
-              + Nouveau vault
+          <>
+          {tab?.actions?.map(a => (
+            <button key={a.id} data-testid={`vault-source-action-${a.id}`} onClick={() => a.run()} style={{ ...S.btn('var(--text)'), textAlign: 'left' }}>
+              {a.label}
             </button>
+          ))}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {canCreate && (
+            <button data-testid="vault-create-open" onClick={() => setCreating(true)} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
+              {tab?.createLabel ?? '+ Nouveau vault'}
+            </button>
+            )}
             {refs.onRefresh && (
               <button
                 onClick={() => refs.onRefresh!.current()}
@@ -317,6 +401,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
               </button>
             )}
           </div>
+          </>
         )}
       </div>
     </div>

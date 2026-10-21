@@ -4,9 +4,10 @@ import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { t } from '@savoire/i18n'
-import { ServerAddressError, normalizeServerAddress } from '@savoire/infrastructure-sync'
-import { chooseServer, forgetServer, getServerChoice } from './serverConnection'
-import { classifyLoginError, describeLoginError } from './serverErrors'
+import { ServerAddressError } from '@savoire/infrastructure-sync'
+import { getServerChoice } from './serverConnection'
+import { describeLoginError } from './serverErrors'
+import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: '📝', key: 'login.feature.markdown' },
@@ -68,7 +69,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState<string | null>(null)
   const [loading, setLoading]   = useState(false)
-  const { token, login, reloadAccounts } = useAuth()
+  const { token, login, activeAccount } = useAuth()
   const navigate                = useNavigate()
   // Version bureau : la personne saisit l'adresse du serveur.
   const serverChoice            = getServerChoice()
@@ -82,28 +83,21 @@ export function LoginPage() {
     if (!email || !password) return
     setLoading(true)
     setError(null)
-    let address: string | null = null
-    let isNew = false
     try {
       if (serverChoice.configurable) {
-        const before = getServerChoice().current
-        isNew = !getServerChoice().servers.includes(normalizeServerAddress(server))
-        address = await chooseServer(server)
-        setServer(address)
-        // Autre serveur : ses comptes a lui.
-        if (address !== before) reloadAccounts()
+        // Version bureau : un seul compte, il remplace le precedent (voir desktopConnection.ts).
+        setServer(await connectToServer(desktopConnectionDeps({
+          current: () => ({ server: getServerChoice().current, account: activeAccount, token }),
+          login,
+        }), server, email, password))
+      } else {
+        await login(email.trim(), password)
       }
-      await login(email.trim(), password)
       navigate('/')
     } catch (e) {
-      // Une adresse neuve qui ne mene a aucun serveur Savoire n'est pas gardee.
-      const kind = classifyLoginError(e)
-      if (address && isNew && (kind === 'unreachable' || kind === 'not-savoire')) {
-        void forgetServer(address).catch(() => {})
-      }
       setError(e instanceof ServerAddressError
         ? e.message
-        : describeLoginError(e, { server: address, credentials: t('app', 'login.error.credentials') }))
+        : describeLoginError(e, { server: serverChoice.configurable ? server.trim() : null, credentials: t('app', 'login.error.credentials') }))
     } finally {
       setLoading(false)
     }
@@ -216,7 +210,8 @@ export function LoginPage() {
         {serverChoice.configurable && (
           <button
             data-testid="login-back-to-desktop"
-            onClick={() => { window.location.href = '/' }}
+            // Bureau : retour a l'app (vaults locaux) sans recharger la page.
+            onClick={() => navigate('/')}
             style={{ padding: 9, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)', marginTop: -12, marginBottom: 28, width: '100%' }}
           >
             ← Vaults sur cet ordinateur
