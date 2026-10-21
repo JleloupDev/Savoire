@@ -84,7 +84,6 @@ export const STORE_CATALOG: StoreEntry[] = [
   // ── Coeur : types de fichiers ──────────────────────────────────────────────
   { id: 'plugin-excalidraw', preinstalled: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
   { id: 'plugin-mindmap', preinstalled: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
-  { id: 'plugin-office', preinstalled: true, load: async () => (await import('@savoire/plugin-office')).default },
 
   // ── Coeur : edition (blocs, actifs dans toutes les notes) ──────────────────
   { id: 'plugin-mermaid', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
@@ -95,10 +94,34 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-task-list', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-task-list')).default },
   { id: 'plugin-table', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-table')).default },
 
-  // ── Coeur : agents ─────────────────────────────────────────────────────────
-  { id: 'plugin-agent-reviewer', preinstalled: true, load: async () => (await import('@savoire/plugin-agent-reviewer')).default },
-
   // ── Disponibles ────────────────────────────────────────────────────────────
+  {
+    id: 'plugin-office', preinstalled: false,
+    manifest: {
+      id: 'plugin-office',
+      scope: 'vault',
+      name: 'Documents Office liés',
+      version: '0.0.1',
+      description: 'Word, Excel, PowerPoint et OpenDocument : un lien vers le document en ligne',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: true,
+    },
+    extensions: ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'],
+    load: async () => (await import('@savoire/plugin-office')).default,
+  },
+  {
+    id: 'plugin-agent-reviewer', preinstalled: false,
+    manifest: {
+      id: 'plugin-agent-reviewer',
+      name: 'Agent Relecteur',
+      version: '0.0.1',
+      description: 'Un agent qui relit la note : mots, TODO, liens cassés',
+      scope: 'personal',
+      permissions: ['agents'],
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-agent-reviewer')).default,
+  },
   {
     id: 'plugin-plaintext', preinstalled: false,
     manifest: {
