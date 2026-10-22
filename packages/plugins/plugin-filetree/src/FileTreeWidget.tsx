@@ -81,7 +81,9 @@ function FileNodeRow({
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
-  const indent = depth * 12
+  // Un niveau = 16 px, et chaque ligne garde la place du chevron : une
+  // sous-page apparait nettement decalee sous sa page, comme dans Notion.
+  const indent = depth * 16
   const folderPath = folderPathOf(node)
   const fileName = fileNameOf(node)
   const isPlainFolder = node.kind === 'folder'
@@ -254,7 +256,7 @@ function FileNodeRow({
         }}
       >
         <span onClick={handleClick} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          {node.kind === 'folderNote' && (
+          {node.kind === 'folderNote' ? (
             // Chevron a part : il deplie sans ouvrir la note.
             <span
               data-testid="tree-toggle"
@@ -262,8 +264,11 @@ function FileNodeRow({
               style={{ width: 10, flexShrink: 0 }}
               title={expanded ? 'Replier' : 'Deplier'}
             >{expanded ? '▾' : '▸'}</span>
+          ) : (
+            // La place du chevron, gardee partout : les noms restent alignes.
+            <span style={{ width: 10, flexShrink: 0 }}>{isPlainFolder ? (expanded ? '▾' : '▸') : ''}</span>
           )}
-          {isPlainFolder ? (expanded ? '▾' : '▸') : fileIcon}
+          {!isPlainFolder && fileIcon}
           {isEditing ? (
             <input
               ref={editInputRef}
