@@ -24,6 +24,7 @@ function defaultConnectionFactory(
   return new HubConnectionBuilder()
     .withUrl(resolveServerUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, serverUrl), {
       accessTokenFactory: () => getToken() ?? '',
+      withCredentials: false,
     })
     .withAutomaticReconnect()
     .build()

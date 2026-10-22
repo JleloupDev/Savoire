@@ -48,6 +48,7 @@ export class SignalRTransport implements ITransport {
     this.connection = new HubConnectionBuilder()
       .withUrl(resolveServerUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, serverUrl), {
         ...(getToken ? { accessTokenFactory: () => getToken() ?? '' } : {}),
+        withCredentials: false,
       })
       .configureLogging(LogLevel.None)
       .withAutomaticReconnect()

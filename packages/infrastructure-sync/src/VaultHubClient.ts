@@ -77,6 +77,10 @@ export class VaultHubClient {
       this.connection = new HubConnectionBuilder()
         .withUrl(serverUrl(`/hubs/vault`, this.serverUrl), {
           accessTokenFactory: () => this.getToken() ?? '',
+          // Jeton en en-tete, aucun cookie : pas d'envoi avec identifiants.
+          // Sinon un relais CORS sans Allow-Credentials (proxy Vite vu
+          // depuis l'appli de bureau) refuse la negociation.
+          withCredentials: false,
         })
         .configureLogging(LogLevel.None)
         .withAutomaticReconnect()

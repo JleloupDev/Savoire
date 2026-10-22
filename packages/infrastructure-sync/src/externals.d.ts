@@ -15,6 +15,8 @@ declare module '@microsoft/signalr' {
 
   export interface IHttpConnectionOptions {
     accessTokenFactory?: () => string
+    /** Envoi avec identifiants (cookies) ; vrai par defaut dans SignalR. */
+    withCredentials?: boolean
   }
 
   export class HubConnection {

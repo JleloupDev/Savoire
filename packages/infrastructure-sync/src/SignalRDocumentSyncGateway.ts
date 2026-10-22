@@ -78,6 +78,7 @@ export class SignalRDocumentSyncGateway implements IDocumentSyncGateway {
     this.connection = new HubConnectionBuilder()
       .withUrl(serverUrl(`/hubs/sync?userId=${encodeURIComponent(userId)}`, this.serverUrl), {
         accessTokenFactory: () => this.getToken() ?? '',
+        withCredentials: false,
       })
       .configureLogging(LogLevel.None)
       .withAutomaticReconnect()

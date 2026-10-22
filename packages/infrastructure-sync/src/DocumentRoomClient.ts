@@ -177,6 +177,7 @@ export class DocumentRoomClient implements SyncAPI {
     this.connection = new HubConnectionBuilder()
       .withUrl(serverUrl(`/hubs/room?userId=${encodeURIComponent(userId)}`, this.serverUrl), {
         accessTokenFactory: () => this.getToken() ?? '',
+        withCredentials: false,
       })
       .configureLogging(LogLevel.None)
       .withAutomaticReconnect()
