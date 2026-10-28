@@ -19,6 +19,8 @@ const server = vi.hoisted(() => ({
   /** Retient SnapshotIndex jusqu'a ce qu'on le libere (pour glisser une ecriture avant). */
   gate: null as Promise<void> | null,
   connections: new Set<{ fire(event: string, ...args: unknown[]): void; groups: Set<string> }>(),
+  /** Toutes les connexions creees, pour simuler une coupure. */
+  all: [] as { cut(): void; reconnect(): Promise<void> }[],
 }))
 
 vi.mock('@microsoft/signalr', () => {
@@ -32,8 +34,13 @@ vi.mock('@microsoft/signalr', () => {
     constructor(readonly url: string) {}
     on(event: string, cb: Handler) { this.handlers.set(event, [...(this.handlers.get(event) ?? []), cb]) }
     off() {}
-    onreconnected() {}
+    private reconnected: (() => Promise<void> | void) | null = null
+    onreconnected(cb: () => Promise<void> | void) { this.reconnected = cb }
     onclose() {}
+    /** Coupure : la connexion sort des groupes et ne recoit plus rien. */
+    cut() { this.groups.clear(); server.connections.delete(this) }
+    /** Reconnexion automatique de SignalR : nouvelle connexion, hors des groupes. */
+    async reconnect() { server.connections.add(this); await this.reconnected?.() }
     fire(event: string, ...args: unknown[]) { for (const h of this.handlers.get(event) ?? []) h(...args) }
     async start() { this.state = HubConnectionState.Connected; server.connections.add(this) }
     async stop() { this.state = HubConnectionState.Disconnected; server.connections.delete(this) }
@@ -82,7 +89,7 @@ vi.mock('@microsoft/signalr', () => {
     withUrl(url: string) { this.url = url; return this }
     configureLogging() { return this }
     withAutomaticReconnect() { return this }
-    build() { return new FakeConnection(this.url) }
+    build() { const c = new FakeConnection(this.url); server.all.push(c); return c }
   }
   return { HubConnectionBuilder, HubConnectionState, LogLevel: { None: 6 } }
 })
@@ -128,7 +135,7 @@ function entriesOf(session: Session): Record<string, unknown> {
 
 beforeEach(() => {
   server.indexOps.clear(); server.nextId = 1; server.snapshotCalls = 0; server.gate = null
-  server.connections.clear()
+  server.connections.clear(); server.all.length = 0
 })
 afterEach(async () => {
   for (const s of opened.splice(0)) await s.dispose()
@@ -211,5 +218,29 @@ describe('SavoireServerVaultSession — compaction d\'un canal d\'index', () => 
     expect(Object.keys(entries)).toHaveLength(INDEX_COMPACT_THRESHOLD + 22)
     expect(entries['de-a']).toEqual({ by: 'a' })
     expect(entries['de-b']).toEqual({ by: 'b' })
+  })
+})
+
+describe('SavoireServerVaultSession — canal d\'index apres une reconnexion', () => {
+  it('rejoint le canal, rattrape ce qui a ete manque, et recoit la suite', async () => {
+    const a = await open()
+    const b = await open()
+    const aIndex = a.openIndex(NS)
+    const bIndex = b.openIndex(NS)
+    await Promise.all([aIndex.loaded, bIndex.loaded])
+    const bConnection = server.all[1]
+
+    bConnection.cut()
+    aIndex.set('pendant', { title: 'Ecrite pendant la coupure' })
+    await settle()
+    expect(entriesOf(b)['pendant']).toBeUndefined()
+
+    await bConnection.reconnect()
+    await settle()
+    expect(entriesOf(b)['pendant']).toEqual({ title: 'Ecrite pendant la coupure' })
+
+    aIndex.set('apres', { title: 'Ecrite apres' })
+    await settle()
+    expect(entriesOf(b)['apres']).toEqual({ title: 'Ecrite apres' })
   })
 })

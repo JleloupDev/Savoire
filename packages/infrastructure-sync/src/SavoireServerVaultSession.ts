@@ -102,6 +102,9 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       opts.onConnectionChange,
     )
     const session = new SavoireServerVaultSession(opts, directory, hub)
+    // Envois perdus pendant une coupure : renvoyer l'etat complet des la
+    // reconnexion, sans attendre la fermeture du vault.
+    hub.onReconnected(() => { void session.flush().catch(() => {}) })
     await hub.connect()
     if (hub.gone.gone) return session.rejectOpen()
     // Documents deja dans le repertoire mais pas encore inscrits (crees avant

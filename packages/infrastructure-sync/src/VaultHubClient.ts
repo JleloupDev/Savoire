@@ -53,6 +53,7 @@ export class VaultHubClient {
   private readonly inFlight = new Set<Promise<void>>()
   /** Envois perdus (hub coupe, refus) depuis le dernier settle(). */
   private lostPushes = 0
+  private readonly reconnectedCallbacks = new Set<() => void>()
 
   constructor(
     private readonly serverUrl: string,
@@ -138,7 +139,9 @@ export class VaultHubClient {
         if (this.gone.gone || this.disposed || !this.connection) return
         try {
           await this.connection!.invoke('JoinVault', this.vaultId)
+          await this.rejoinIndexes()
           this.onConnectionChange?.('connected')
+          for (const cb of [...this.reconnectedCallbacks]) cb()
         } catch (err) {
           if (this.gone.check(err)) return
           this.onConnectionChange?.('connected')
@@ -258,6 +261,34 @@ export class VaultHubClient {
       if (!this.gone.check(err)) console.warn('[VaultHub] joinIndex failed', err)
       return []
     }
+  }
+
+  /**
+   * Apres une reconnexion, la nouvelle connexion n'est plus dans les groupes
+   * des canaux d'index : sans les rejoindre, plus aucune mise a jour n'arrive.
+   * On les rejoint et on rejoue leur journal pour rattraper ce qui a ete
+   * manque pendant la coupure (rejouer une mise a jour deja connue est sans
+   * effet en CRDT).
+   */
+  private async rejoinIndexes(): Promise<void> {
+    for (const [namespace, cbs] of this.indexCallbacks) {
+      if (cbs.length === 0 || this.disposed || this.gone.gone) continue
+      try {
+        const ops = await this.connection!.invoke<string[]>('JoinIndex', this.vaultId, namespace)
+        for (const op of ops) {
+          const update = fromBase64(op)
+          for (const cb of [...(this.indexCallbacks.get(namespace) ?? [])]) cb(update)
+        }
+      } catch (err) {
+        if (!this.gone.check(err)) console.warn('[VaultHub] rejoin index failed', namespace, err)
+      }
+    }
+  }
+
+  /** Appele apres chaque reconnexion reussie (canaux d'index rejoints). */
+  onReconnected(cb: () => void): () => void {
+    this.reconnectedCallbacks.add(cb)
+    return () => { this.reconnectedCallbacks.delete(cb) }
   }
 
   async pushIndexUpdate(namespace: string, update: Uint8Array): Promise<void> {
