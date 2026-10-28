@@ -8,6 +8,8 @@ export default defineConfig({
     alias: {
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
+      // plugin-api reexporte des valeurs de domain-index (AnchorIndex...).
+      '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
     },
   },
   test: {
