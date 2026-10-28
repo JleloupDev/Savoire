@@ -17,6 +17,12 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
         return e?.ToDomain();
     }
 
+    public async Task<IReadOnlyList<Vault>> GetAllAsync(CancellationToken ct = default)
+    {
+        List<VaultEntity> entities = await db.Vaults.AsNoTracking().OrderBy(v => v.Id).ToListAsync(ct);
+        return entities.Select(e => e.ToDomain()).ToList();
+    }
+
     public async Task<IReadOnlyList<(Vault Vault, VaultRole Role)>> GetForUserAsync(
         string userId, CancellationToken ct = default)
     {
@@ -77,7 +83,11 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
 
     public async Task DeleteAsync(string vaultId, CancellationToken ct = default)
     {
+        // Le pair indexeur l'apprend par son flux, dans la meme transaction.
+        await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
+        await IndexerChangeWriter.RecordVaultGoneAsync(db, vaultId, purgeRows: true, ct);
         await db.Vaults.Where(v => v.Id == vaultId).ExecuteDeleteAsync(ct);
+        if (tx is not null) await tx.CommitAsync(ct);
     }
 
     public async Task AddMemberAsync(VaultMember member, CancellationToken ct = default)

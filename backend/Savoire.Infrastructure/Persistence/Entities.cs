@@ -87,6 +87,39 @@ public class VaultDocumentEntity
     public string?  Name         { get; set; }
 }
 
+/// <summary>
+/// Flux de changements du pair indexeur : une ligne par ressource (arborescence
+/// d'un vault, document), deplacee en fin de flux a chaque ecriture, plus une
+/// ligne par vault supprime. Seq vient d'AUTOINCREMENT : jamais reutilisee.
+/// </summary>
+public class IndexerChangeEntity
+{
+    public long     Seq         { get; set; }
+    /// <summary>« vault:{id} », « document:{id} » ou « vault-deleted:{id} » : unique.</summary>
+    public string   ResourceKey { get; set; } = null!;
+    public string   VaultId     { get; set; } = null!;
+    public string   Kind        { get; set; } = null!;
+    public string?  DocId       { get; set; }
+    public DateTime ChangedAt   { get; set; }
+}
+
+/// <summary>Etat du flux (cle « epoch » : identifiant de la base, voir IIndexerChangeRepository).</summary>
+public class IndexerFeedStateEntity
+{
+    public string Key   { get; set; } = null!;
+    public string Value { get; set; } = null!;
+}
+
+/// <summary>Reglage « pair qui sert le vault ». Pas de ligne : pair gere.</summary>
+public class VaultIndexerSettingEntity
+{
+    public string   VaultId   { get; set; } = null!;
+    public string   Mode      { get; set; } = null!;
+    public string?  Url       { get; set; }
+    public string   UpdatedBy { get; set; } = null!;
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class VaultKeyWrapEntity
 {
     public string   UserId          { get; set; } = null!;

@@ -14,6 +14,13 @@ import { VaultGoneSignal } from './vaultGone'
 
 const VAULT_COMPACT_THRESHOLD = 100
 
+/**
+ * Au-dela de ce nombre de trames rejouees a l'arrivee dans un canal d'index,
+ * le client renvoie l'etat compacte (SnapshotIndex). Meme seuil que le
+ * repertoire du vault et les documents.
+ */
+export const INDEX_COMPACT_THRESHOLD = 100
+
 // Relais d'index : le hub transporte des mises a jour CRDT OPAQUES, une par
 // namespace. Remplace l'ancien PushIndexOp, qui expediait le markdown complet
 // au serveur pour qu'il le sequence et le rediffuse.
@@ -263,6 +270,22 @@ export class VaultHubClient {
         if (!this.gone.check(err)) console.warn('[VaultHub] pushIndexUpdate failed', err)
       }
     })())
+  }
+
+  /**
+   * Compacte le journal d'un canal d'index : le serveur remplace les trames
+   * que CETTE connexion a recues a JoinIndex par cet etat. Les trames arrivees
+   * depuis restent : rien ne se perd, meme si deux clients compactent en meme
+   * temps (deux etats Yjs complets se fusionnent sans perte). Sans effet si le
+   * hub est coupe : le journal reste simplement plus long.
+   */
+  async snapshotIndex(namespace: string, state: Uint8Array): Promise<void> {
+    if (!this.isConnected || this.disposed || this.gone.gone) return
+    try {
+      await this.connection!.invoke('SnapshotIndex', this.vaultId, namespace, toBase64(state))
+    } catch (err) {
+      if (!this.gone.check(err)) console.warn('[VaultHub] snapshotIndex failed', err)
+    }
   }
 
   onIndexUpdate(namespace: string, cb: (update: Uint8Array) => void): () => void {

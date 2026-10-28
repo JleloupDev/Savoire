@@ -18,6 +18,7 @@ using Savoire.Domain.Repositories;
 using Savoire.Domain.Services;
 using Savoire.Infrastructure.Auth;
 using Savoire.Infrastructure.Persistence.Repositories;
+using Savoire.Infrastructure.Services;
 using Savoire.Infrastructure.Storage;
 
 namespace Savoire.Infrastructure.Persistence;
@@ -151,6 +152,13 @@ public static class ServiceCollectionExtensions
 
         // Vault member identities (signPub bridge between ACL and edgesync protocol — see IVaultMemberIdentityRepository)
         services.AddScoped<IVaultMemberIdentityRepository, EfVaultMemberIdentityRepository>();
+
+        // Pair indexeur (ADR-027) : flux de changements, reglage du vault, client de son API.
+        // Le delai de chaque appel vient de Indexer:TimeoutMs (HttpIndexerPeerClient).
+        services.AddScoped<IIndexerChangeRepository, EfIndexerChangeRepository>();
+        services.AddScoped<IVaultIndexerSettingRepository, EfVaultIndexerSettingRepository>();
+        services.AddHttpClient(HttpIndexerPeerClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
+        services.AddSingleton<IIndexerPeerClient, HttpIndexerPeerClient>();
 
         // Domain Auth services
         services.AddScoped<ITokenService,      TokenService>();

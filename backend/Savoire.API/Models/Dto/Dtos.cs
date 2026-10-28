@@ -78,3 +78,8 @@ public record AttachmentDto(string FileName, string Path, long Size, string Cont
 
 /// <summary>Corps de PUT .../attachments/{fileId}/placement : note qui range la piece jointe (null : ailleurs) et son nom.</summary>
 public record AttachmentPlacementRequest(string? NoteId, string? Name);
+
+// ── Pair indexeur ────────────────────────────────────────────────────────────
+
+/// <summary>Corps de PUT .../indexer : mode (managed | organization | none), url pour organization.</summary>
+public record VaultIndexerRequest(string? Mode, string? Url);

@@ -30,7 +30,7 @@ import { VaultGoneSignal } from './vaultGone'
 import { YMapVaultDirectory } from './YMapVaultDirectory'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
-import { VaultHubClient } from './VaultHubClient'
+import { VaultHubClient, INDEX_COMPACT_THRESHOLD } from './VaultHubClient'
 import { DocumentRoomClient, type JoinedDocumentRoom } from './DocumentRoomClient'
 import { CrdtDocumentFetcher } from './CrdtDocumentFetcher'
 import { RestVaultStorage } from './RestVaultStorage'
@@ -274,6 +274,11 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     this.indexes.set(namespace, channel)
     channel.markLoaded(this.hub.joinIndex(namespace).then(ops => {
       for (const op of ops) channel.applyUpdate(op)
+      // Journal trop long : le remplacer par l'etat compacte, comme le
+      // repertoire du vault et les documents. Le serveur ne remplace que les
+      // trames rejouees ici ; celles arrivees entre-temps restent.
+      if (ops.length > INDEX_COMPACT_THRESHOLD && !this.disposed && this.indexes.get(namespace) === channel)
+        void this.hub.snapshotIndex(namespace, channel.encodeState())
     }))
     return channel
   }

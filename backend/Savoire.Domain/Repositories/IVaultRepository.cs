@@ -9,6 +9,8 @@ namespace Savoire.Domain.Repositories;
 public interface IVaultRepository
 {
     Task<Vault?> GetByIdAsync(string vaultId, CancellationToken ct = default);
+    /// <summary>Tous les vaults du serveur (pair indexeur : repartition entre instances).</summary>
+    Task<IReadOnlyList<Vault>> GetAllAsync(CancellationToken ct = default);
     Task<IReadOnlyList<(Vault Vault, VaultRole Role)>> GetForUserAsync(string userId, CancellationToken ct = default);
     Task<IReadOnlyList<VaultMember>> GetMembersAsync(string vaultId, CancellationToken ct = default);
     Task<VaultMember?> GetMemberAsync(string vaultId, string userId, CancellationToken ct = default);

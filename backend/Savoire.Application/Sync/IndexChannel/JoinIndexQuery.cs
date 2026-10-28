@@ -8,7 +8,11 @@ using Savoire.Application.Common;
 
 namespace Savoire.Application.Sync.IndexChannel;
 
-public record JoinIndexResult(string[] Ops);
+/// <summary>
+/// Ops du canal, et leurs identifiants : le hub les garde pour la connexion,
+/// SnapshotIndex ne remplacera que celles-la.
+/// </summary>
+public record JoinIndexResult(string[] Ops, string[]? OpIds = null);
 
 public sealed record JoinIndexQuery(string CallerId, string VaultId, string Namespace)
     : IRequest<JoinIndexResult>, IRequiresVaultAccess
@@ -23,6 +27,8 @@ public sealed class JoinIndexQueryHandler(ICrdtOpRepository ops)
     {
         var stored = await ops.GetAllAsync(
             CrdtResourceType.Index, IndexResource.Id(q.VaultId, q.Namespace), ct);
-        return new JoinIndexResult([.. stored.Select(o => Convert.ToBase64String(o.OpBytes))]);
+        return new JoinIndexResult(
+            [.. stored.Select(o => Convert.ToBase64String(o.OpBytes))],
+            [.. stored.Select(o => o.Id)]);
     }
 }

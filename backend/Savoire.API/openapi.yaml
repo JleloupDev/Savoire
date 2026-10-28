@@ -39,6 +39,12 @@ tags:
     description: Documents Markdown
   - name: Sync
     description: Synchronisation CRDT et état de sync
+  - name: Indexer
+    description: |
+      Pair indexeur (ADR-027, docs/Architecture/indexer-protocol.md) : appels de
+      pouvoirs relayes, recherche globale, reglage du vault. Erreurs du relais
+      au format { error: { code, message } }. Desactive sans Indexer:ServiceToken
+      (503 + Retry-After).
 
 # ─────────────────────────────────────────────
 # SECURITY
@@ -54,6 +60,11 @@ components:
       in: header
       name: X-User-Id
       description: Identifiant de l'utilisateur (V1 — pas de vérification de mot de passe)
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Jeton d'acces (POST /auth/login). Utilise par les routes du pair indexeur.
 
 # ─────────────────────────────────────────────
 # SCHEMAS
@@ -400,6 +411,129 @@ components:
             type: integer
           description: Opération Yjs sérialisée en tableau d'entiers.
       required: [clientId, producedAt, ops]
+
+    # ── Pair indexeur ─────────────────────────
+    IndexerError:
+      type: object
+      description: Erreur du relais ou du pair indexeur (protocole).
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [invalid_query, invalid_cursor, too_complex, unknown_capability, unknown_method,
+                     overloaded, unavailable, rate_limited, payload_too_large]
+            message:
+              type: string
+          required: [code, message]
+        mode:
+          type: string
+          enum: [none, organization]
+          description: Vault non servi par le pair gere (503).
+        url:
+          type: string
+          description: Adresse du pair de l'organisation (mode organization).
+      required: [error]
+
+    IndexState:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, building, lagging, unavailable]
+        progress:
+          type: number
+          description: Construction, de 0 a 1.
+        lagMs:
+          type: integer
+        seq:
+          type: integer
+          format: int64
+        docs:
+          type: integer
+      required: [status]
+
+    VaultIndexerDto:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [managed, organization, none]
+        url:
+          type: string
+          description: Seulement en mode organization.
+        state:
+          $ref: '#/components/schemas/IndexState'
+      required: [mode]
+
+    VaultIndexerRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [managed, organization, none]
+        url:
+          type: string
+          maxLength: 2048
+          description: Adresse http(s) absolue, obligatoire en mode organization, interdite sinon.
+      required: [mode]
+
+    GlobalSearchRequest:
+      type: object
+      description: SearchQuery (packages/plugin-api/src/search.ts) + vaultIds.
+      properties:
+        text:
+          type: string
+        folder:
+          type: string
+        ext:
+          type: array
+          items: { type: string }
+        where:
+          type: object
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 50
+        cursor:
+          type: string
+          description: Curseur compose rendu par la page precedente (opaque).
+        vaultIds:
+          type: array
+          maxItems: 1000
+          items: { type: string }
+          description: Sous-ensemble des vaults lisibles ; absent = tous.
+      required: [text]
+
+    GlobalSearchResult:
+      type: object
+      description: SearchResult (packages/plugin-api/src/search.ts), hits[].vaultId renseigne.
+      properties:
+        hits:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              vaultId: { type: string }
+              path: { type: string }
+              title: { type: string }
+              score: { type: number }
+              snippets:
+                type: array
+                items: { type: object }
+        next:
+          type: string
+        total:
+          type: integer
+        index:
+          $ref: '#/components/schemas/IndexState'
+        partial:
+          type: boolean
+          description: Une partie des instances n'a pas repondu.
+      required: [hits, total, index]
 
 # ─────────────────────────────────────────────
 # PATHS
@@ -1029,6 +1163,167 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════
+  # PAIR INDEXEUR
+  # ══════════════════════════════════════════
+
+  /vaults/{vaultId}/index/{capability}/{method}:
+    post:
+      tags: [Indexer]
+      summary: Appelle un pouvoir du pair indexeur (relaye a l'instance proprietaire)
+      operationId: callIndexer
+      description: |
+        Corps = params du pouvoir (JSON, 64 Kio au plus ; vide = {}). Droit de lecture
+        sur le vault ; jamais par un lien de partage. Le backend ajoute l'appelant et
+        relaie a l'instance qui possede le vault. Reponse = result du pair.
+        Pouvoirs et methodes : docs/Architecture/indexer-protocol.md.
+      security:
+        - Bearer: []
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - name: capability
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$', example: links }
+        - name: method
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$', example: backlinks }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: result du pouvoir
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: invalid_query, invalid_cursor, too_complex
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndexerError' }
+        '401':
+          description: Non authentifie
+        '403':
+          description: Lien de partage
+        '404':
+          description: Vault introuvable ou non-membre (masque), ou unknown_capability / unknown_method
+        '413':
+          description: payload_too_large
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndexerError' }
+        '429':
+          description: rate_limited (backend) ou overloaded (pair), avec Retry-After
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndexerError' }
+        '503':
+          description: |
+            unavailable : pair absent, indisponible ou trop lent, mode none (Retry-After),
+            ou mode organization ({ mode, url }, sans Retry-After).
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndexerError' }
+
+  /search:
+    post:
+      tags: [Indexer]
+      summary: Recherche globale sur les vaults lisibles par la personne
+      operationId: searchAllVaults
+      description: |
+        Vaults lisibles (et servis par le pair gere) groupes par instance, appels
+        paralleles, fusion par score. Une instance en echec donne partial: true.
+        Une page peut etre plus courte que limit ; next est un curseur compose.
+      security:
+        - Bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GlobalSearchRequest' }
+      responses:
+        '200':
+          description: Resultats fusionnes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GlobalSearchResult' }
+        '400':
+          description: invalid_query, invalid_cursor, too_complex
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IndexerError' }
+        '403':
+          description: Lien de partage
+        '413':
+          description: payload_too_large
+        '429':
+          description: rate_limited, avec Retry-After
+        '503':
+          description: Pair non configure, ou aucune instance n'a repondu (Retry-After)
+
+  /vaults/{vaultId}/indexer:
+    get:
+      tags: [Indexer]
+      summary: Pair qui sert le vault, et etat de son index
+      operationId: getVaultIndexer
+      description: Lisible par les membres du vault. state absent en mode organization.
+      security:
+        - Bearer: []
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '200':
+          description: Reglage du vault
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VaultIndexerDto' }
+        '403':
+          description: Lien de partage
+        '404':
+          description: Vault introuvable ou non-membre
+    put:
+      tags: [Indexer]
+      summary: Choisit le pair qui sert le vault (proprietaire seul)
+      operationId: setVaultIndexer
+      security:
+        - Bearer: []
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VaultIndexerRequest' }
+      responses:
+        '200':
+          description: Reglage enregistre
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VaultIndexerDto' }
+        '400':
+          description: mode inconnu, url manquante ou invalide
+        '403':
+          description: Pas le proprietaire, ou lien de partage
+        '404':
+          description: Vault introuvable ou non-membre
+
+  # ── API interne, appelee par le pair (pas sous /api/v1) ──
+  # Jeton de service (Indexer:ServiceToken) en Authorization: Bearer ; 404 sans
+  # jeton configure, 401 jeton absent ou faux, 400 unknown_instance.
+  # GET /internal/indexer/vaults?instance=
+  # GET /internal/indexer/changes?instance=&since=&limit=
+  # GET /internal/indexer/vaults/{vaultId}/tree
+  # GET /internal/indexer/vaults/{vaultId}/documents/{docId}
+  # Contrat : docs/Architecture/indexer-protocol.md, « API interne ».
 
 # ─────────────────────────────────────────────
 # REUSABLE PARAMETERS

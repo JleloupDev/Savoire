@@ -29,6 +29,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<VaultDocumentEntity>       VaultDocuments      => Set<VaultDocumentEntity>();
     public DbSet<VaultKeyWrapEntity>        VaultKeyWraps       => Set<VaultKeyWrapEntity>();
     public DbSet<VaultMemberIdentityEntity> VaultMemberIdentities => Set<VaultMemberIdentityEntity>();
+    public DbSet<IndexerChangeEntity>       IndexerChanges        => Set<IndexerChangeEntity>();
+    public DbSet<IndexerFeedStateEntity>    IndexerFeedState      => Set<IndexerFeedStateEntity>();
+    public DbSet<VaultIndexerSettingEntity> VaultIndexerSettings  => Set<VaultIndexerSettingEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -182,6 +185,46 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(k => k.SignPub).HasColumnName("sign_pub");
             e.Property(k => k.RegisteredAt).HasColumnName("registered_at").IsRequired();
             e.HasIndex(k => new { k.VaultId, k.UserId });
+        });
+
+        // ── Pair indexeur (ADR-027) ───────────────────────────────────────────
+        modelBuilder.Entity<IndexerChangeEntity>(e =>
+        {
+            e.ToTable("indexer_changes");
+            // INTEGER PRIMARY KEY AUTOINCREMENT : une sequence jamais reutilisee,
+            // meme apres suppression de la plus grande.
+            e.HasKey(c => c.Seq);
+            e.Property(c => c.Seq).HasColumnName("seq").ValueGeneratedOnAdd();
+            e.Property(c => c.ResourceKey).HasColumnName("resource_key").IsRequired();
+            e.Property(c => c.VaultId).HasColumnName("vault_id").IsRequired();
+            e.Property(c => c.Kind).HasColumnName("kind").IsRequired();
+            e.Property(c => c.DocId).HasColumnName("doc_id");
+            e.Property(c => c.ChangedAt).HasColumnName("changed_at").IsRequired();
+            e.HasIndex(c => c.ResourceKey).IsUnique();
+            e.HasIndex(c => c.VaultId);
+        });
+
+        modelBuilder.Entity<IndexerFeedStateEntity>(e =>
+        {
+            e.ToTable("indexer_feed_state");
+            e.HasKey(k => k.Key);
+            e.Property(k => k.Key).HasColumnName("key");
+            e.Property(k => k.Value).HasColumnName("value").IsRequired();
+        });
+
+        modelBuilder.Entity<VaultIndexerSettingEntity>(e =>
+        {
+            e.ToTable("vault_indexer_settings");
+            e.HasKey(s => s.VaultId);
+            e.Property(s => s.VaultId).HasColumnName("vault_id");
+            e.Property(s => s.Mode).HasColumnName("mode").IsRequired();
+            e.Property(s => s.Url).HasColumnName("url");
+            e.Property(s => s.UpdatedBy).HasColumnName("updated_by").IsRequired();
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            e.HasOne<VaultEntity>()
+             .WithMany()
+             .HasForeignKey(s => s.VaultId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>

@@ -15,6 +15,7 @@ using Savoire.Application.Common;
 using Savoire.Application.Vaults.CreateVault;
 using Savoire.Domain.Entities;
 using Savoire.Infrastructure.Persistence;
+using Savoire.Server.Extensions;
 using Savoire.Server.Hubs;
 using Savoire.Server.Middleware;
 
@@ -35,6 +36,10 @@ builder.Services.AddMediatR(cfg =>
 });
 builder.Services.AddScoped<IVaultAccessGuard, VaultAccessGuard>();
 builder.Services.AddValidatorsFromAssembly(appAssembly);
+
+// Pair indexeur (ADR-027) : configuration « Indexer » et limitation de debit
+// de ses routes publiques. Desactive sans Indexer:ServiceToken.
+builder.Services.AddIndexer(builder.Configuration);
 
 // 3. Controllers + Problem Details
 builder.Services.AddControllers();
@@ -146,6 +151,8 @@ app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+// Apres l'authentification : le debit se compte par personne (et par vault).
+app.UseRateLimiter();
 // DECISION V2: UserValidationMiddleware (X-User-Id) removed — auth via JWT only.
 
 app.UseSwagger();

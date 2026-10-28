@@ -319,6 +319,62 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("folders", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.IndexerChangeEntity", b =>
+                {
+                    b.Property<long>("Seq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("seq");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("DocId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("doc_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("ResourceKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("resource_key");
+
+                    b.Property<string>("VaultId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.HasKey("Seq");
+
+                    b.HasIndex("ResourceKey")
+                        .IsUnique();
+
+                    b.HasIndex("VaultId");
+
+                    b.ToTable("indexer_changes", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.IndexerFeedStateEntity", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("key");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("value");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("indexer_feed_state", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.OperationEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -719,6 +775,35 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("vaults", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultIndexerSettingEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vault_id");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("url");
+
+                    b.HasKey("VaultId");
+
+                    b.ToTable("vault_indexer_settings", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultKeyWrapEntity", b =>
                 {
                     b.Property<string>("UserId")
@@ -894,6 +979,15 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultDocumentEntity", b =>
+                {
+                    b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
+                        .WithMany()
+                        .HasForeignKey("VaultId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultIndexerSettingEntity", b =>
                 {
                     b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
                         .WithMany()

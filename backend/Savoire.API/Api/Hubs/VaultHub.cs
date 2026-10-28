@@ -106,6 +106,8 @@ public sealed class VaultHub(
     {
         JoinIndexResult result = await mediator.Send(new JoinIndexQuery(GetCallerId(), vaultId, ns));
         await Groups.AddToGroupAsync(Context.ConnectionId, IndexGroup(vaultId, ns));
+        // Ops rendues a CETTE connexion : SnapshotIndex ne remplacera qu'elles.
+        Context.Items[JoinedIndexKey(vaultId, ns)] = result.OpIds ?? [];
         logger.LogInformation(
             "Client {ConnectionId} joined index {VaultId}/{Namespace} - {Count} op(s)",
             Context.ConnectionId, vaultId, ns, result.Ops.Length);
@@ -128,7 +130,39 @@ public sealed class VaultHub(
             .SendAsync("IndexUpdateReceived", vaultId, ns, updateBase64);
     }
 
+    /// <summary>
+    /// Compacte le journal d'un canal d'index : l'etat Yjs complet du client
+    /// remplace les ops que CETTE connexion a recues a JoinIndex, et seulement
+    /// elles (voir SnapshotIndexCommand : sur meme a plusieurs). Memes droits
+    /// que PushIndexUpdate. Sans JoinIndex prealable sur la connexion : rien.
+    /// </summary>
+    public async Task SnapshotIndex(string vaultId, string ns, string snapshotBase64)
+    {
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(snapshotBase64); }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "SnapshotIndex: invalid base64 for {VaultId}/{Namespace}", vaultId, ns);
+            return;
+        }
+
+        string key = JoinedIndexKey(vaultId, ns);
+        if (!Context.Items.TryGetValue(key, out object? value) || value is not string[] covered || covered.Length == 0)
+        {
+            logger.LogInformation("SnapshotIndex {VaultId}/{Namespace} ignore : rien a remplacer pour {ConnectionId}",
+                vaultId, ns, Context.ConnectionId);
+            return;
+        }
+        Context.Items.Remove(key);
+
+        int replaced = await mediator.Send(new SnapshotIndexCommand(GetCallerId(), vaultId, ns, bytes, covered));
+        logger.LogInformation("Index {VaultId}/{Namespace} compacte par {ConnectionId} : {Replaced} op(s) remplacee(s)",
+            vaultId, ns, Context.ConnectionId, replaced);
+    }
+
     private static string IndexGroup(string vaultId, string ns) => $"idx:{vaultId}:{ns}";
+
+    private static string JoinedIndexKey(string vaultId, string ns) => $"idx-joined:{vaultId}:{ns}";
 
     // ── Verrous d'edition ─────────────────────────────────────────────────────
     //

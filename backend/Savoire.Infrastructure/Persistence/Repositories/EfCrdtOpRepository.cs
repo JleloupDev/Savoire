@@ -13,6 +13,8 @@ public class EfCrdtOpRepository(AppDbContext db) : ICrdtOpRepository
         bool exists = await db.Operations.AnyAsync(o => o.Id == op.Id, ct);
         if (exists) return;
 
+        // L'op et sa ligne du flux du pair indexeur sont validees ensemble.
+        await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
         db.Operations.Add(new OperationEntity
         {
             Id           = op.Id,
@@ -24,6 +26,8 @@ public class EfCrdtOpRepository(AppDbContext db) : ICrdtOpRepository
             OpBytes      = op.OpBytes,
         });
         await db.SaveChangesAsync(ct);
+        await IndexerChangeWriter.RecordOperationAsync(db, op.ResourceType, op.ResourceId, ct);
+        if (tx is not null) await tx.CommitAsync(ct);
     }
 
     public Task<IReadOnlyList<Operation>> GetAllAsync(string resourceType, string resourceId, CancellationToken ct = default)
@@ -74,10 +78,39 @@ public class EfCrdtOpRepository(AppDbContext db) : ICrdtOpRepository
             if (count <= 50) return;
         }
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
         await db.Operations
             .Where(o => o.ResourceType == resourceType && o.ResourceId == resourceId)
             .ExecuteDeleteAsync(ct);
+        AddSnapshot(resourceType, resourceId, snapshotBytes);
+        await db.SaveChangesAsync(ct);
+        await IndexerChangeWriter.RecordOperationAsync(db, resourceType, resourceId, ct);
+        if (tx is not null) await tx.CommitAsync(ct);
+    }
+
+    public async Task<int> ReplaceAsync(string resourceType, string resourceId, IReadOnlyCollection<string> replacedOpIds,
+        byte[] snapshotBytes, CancellationToken ct = default)
+    {
+        if (replacedOpIds.Count == 0) return 0;
+        string[] ids = replacedOpIds.Distinct().ToArray();
+
+        await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
+        int replaced = await db.Operations
+            .Where(o => o.ResourceType == resourceType && o.ResourceId == resourceId && ids.Contains(o.Id))
+            .ExecuteDeleteAsync(ct);
+        // Plus aucune de ces ops : une autre compaction les a deja remplacees
+        // par un etat qui les contient. Ajouter le notre n'apporterait rien.
+        if (replaced > 0)
+        {
+            AddSnapshot(resourceType, resourceId, snapshotBytes);
+            await db.SaveChangesAsync(ct);
+            await IndexerChangeWriter.RecordOperationAsync(db, resourceType, resourceId, ct);
+        }
+        if (tx is not null) await tx.CommitAsync(ct);
+        return replaced;
+    }
+
+    private void AddSnapshot(string resourceType, string resourceId, byte[] snapshotBytes) =>
         db.Operations.Add(new OperationEntity
         {
             Id           = Guid.NewGuid().ToString(),
@@ -88,7 +121,4 @@ public class EfCrdtOpRepository(AppDbContext db) : ICrdtOpRepository
             ReceivedAt   = DateTime.UtcNow,
             OpBytes      = snapshotBytes,
         });
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-    }
 }
