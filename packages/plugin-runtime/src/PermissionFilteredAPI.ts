@@ -75,6 +75,16 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.agents
   }
 
+  get query() {
+    this.require('vault:read')
+    return this.inner.query
+  }
+
+  get search() {
+    this.require('vault:read')
+    return this.inner.search
+  }
+
   private require(permission: PluginPermission): void {
     if (!this.permissions.has(permission)) {
       throw new Error(

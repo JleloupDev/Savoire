@@ -30,6 +30,22 @@ Aucune base « CRDT + requêtes + pair à pair + navigateur + libre et vivante �
 - Sécurité : droits vérifiés à chaque requête ; un lien de partage n'interroge que sa note ; isolation par fichier de vault ; le pair ne croit que les documents, jamais les entrées publiées par les clients ; non exposé, jeton de service ; purge à la corbeille et à la suppression.
 - Dégradé : l'édition n'en dépend jamais ; recherche et bases basculent sur l'index partagé avec un état visible ; reprise depuis la dernière séquence traitée.
 
+## Les pouvoirs du pair indexeur (décision du 28/10/2026)
+Le pair indexeur n'est pas qu'un moteur de bases : c'est le service de connaissance de toute l'appli. Il lit tout le vault, en continu, avec le code des clients. Tout ce qui demande « tout le vault » passe par lui.
+
+Il est donc construit comme un **hôte de pouvoirs** (« capacités ») : chaque pouvoir déclare ses tables dans le SQLite du vault, ce qu'il extrait d'une note, et ses méthodes. Le backend relaie un appel `capacité.méthode` sans le connaître (droits, débit, routage), donc un nouveau pouvoir ne demande aucun changement du backend. Les mêmes pouvoirs tournent chez les clients complets (bureau, navigateur).
+
+Pouvoirs de la première version :
+- `query` : les requêtes déclaratives (`IQueryEngine`), pour les bases, les listes et les propriétés ;
+- `search` : la recherche plein texte avec extraits et surlignage (`ISearchEngine`), dans un vault et **globale** sur tous les vaults de la personne ;
+- `links` : rétroliens, liens sortants, liens non résolus, graphe ;
+- `tags` : liste des tags et notes par tag ;
+- `index` : état de l'index (construction, retard, taille).
+
+Pouvoirs prévus, sur le même modèle : texte des pièces jointes (PDF, OCR), recherche sémantique (vecteurs), doublons et notes orphelines, rappels sur les dates des propriétés, contexte pour les agents IA, statistiques du vault, abonnements « préviens-moi quand cette requête change ».
+
+Contrat technique : `docs/Architecture/indexer-protocol.md`.
+
 ## Conséquences
 - Pas de remplacement de Yjs ni de la synchro existante.
 - Dépendances à faire valider le moment venu : `node:sqlite` (intégré à Node) ou une bibliothèque SQLite pour Node, `@sqlite.org/sqlite-wasm`, `rusqlite`.

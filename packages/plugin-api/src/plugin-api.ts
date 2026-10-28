@@ -21,6 +21,8 @@ import type { EditorPositionAPI, ToolbarCommandRegistry } from './editor'
 import type { SyncAPI } from './sync'
 import type { AgentRegistry } from './agents'
 import type { IPluginIndexAPI } from './indexing'
+import type { IQueryEngine } from './query'
+import type { ISearchEngine } from './search'
 
 export interface IPluginVaultAPI extends VaultAPI {}
 export interface IPluginWorkspaceAPI extends WorkspaceAPI {}
@@ -53,6 +55,12 @@ export interface IPluginAPI {
   agents?: AgentRegistry
   /** Moteur de raccourcis clavier : lire et changer les touches des commandes. */
   hotkeys?: HotkeyAPI
+  /** Requetes sur les notes du vault (bases, listes, proprietes). Voir query.ts.
+   *  Permission 'vault:read'. Absent si aucun index n'est disponible. */
+  query?: IQueryEngine
+  /** Recherche plein texte dans le vault. Voir search.ts.
+   *  Permission 'vault:read'. Absent si aucun index n'est disponible. */
+  search?: ISearchEngine
 }
 
 export interface PluginAPI extends IPluginAPI {}
