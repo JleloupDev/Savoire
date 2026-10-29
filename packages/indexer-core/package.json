@@ -1,0 +1,32 @@
+{
+  "name": "@savoire/indexer-core",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./node": {
+      "source": "./src/node/index.ts",
+      "import": "./dist/node/index.js",
+      "types": "./dist/node/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/domain-index": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

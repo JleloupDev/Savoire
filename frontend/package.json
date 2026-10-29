@@ -10,7 +10,7 @@
     "build": "pnpm -r build",
     "build:packages": "pnpm --filter '../packages/**' build",
     "test": "pnpm run test:unit",
-    "test:unit": "pnpm --filter @savoire/application-tests --filter @savoire/domain-sync-tests --filter @savoire/editor-core-tests --filter @savoire/infrastructure-sync-tests --filter @savoire/platform-tests --filter @savoire/plugin-core-tests --filter @savoire/plugin-runtime-tests --filter @savoire/workspace-tests --filter @savoire/desktop-tests test",
+    "test:unit": "pnpm --filter @savoire/application-tests --filter @savoire/domain-sync-tests --filter @savoire/editor-core-tests --filter @savoire/infrastructure-sync-tests --filter @savoire/platform-tests --filter @savoire/plugin-core-tests --filter @savoire/plugin-runtime-tests --filter @savoire/workspace-tests --filter @savoire/desktop-tests --filter @savoire/indexer-core-tests test",
     "test:e2e": "playwright test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --ext .ts,.tsx",

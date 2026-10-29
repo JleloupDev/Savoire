@@ -140,12 +140,15 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 |---|---|---|
 | `query` | `run` | `Query` → `QueryResult` (`packages/plugin-api/src/query.ts`) |
 | `search` | `run` | `SearchQuery` → `SearchResult` (`packages/plugin-api/src/search.ts`) |
-| `links` | `backlinks` | `{ id }` → `{ items: [{ id, path, title, count }] }` |
-| `links` | `outgoing` | `{ id }` → `{ resolved: [{ id, path, title }], unresolved: [{ target }] }` |
-| `links` | `unresolved` | `{ limit? }` → `{ items: [{ target, count, sources: [id…] }] }` |
-| `links` | `graph` | `{ folder?, limit? }` → `{ nodes: [{ id, path, title }], edges: [{ from, to }] }` |
-| `tags` | `list` | `{}` → `{ items: [{ tag, count }] }` |
-| `index` | `status` | `{}` → `IndexState` + `{ seq, docs }` |
+| `links` | `backlinks` | `{ id, limit? }` → `{ items: [{ id, path, title, count }] }` : notes qui pointent vers `id` (sans elle-même), par chemin ; `limit` 1 000 par défaut, 10 000 au plus. |
+| `links` | `outgoing` | `{ id }` → `{ resolved: [{ id, path, title }], unresolved: [{ target }] }` (ordre du texte) |
+| `links` | `unresolved` | `{ limit? }` → `{ items: [{ target, count, sources: [id…] }] }` : les plus nombreux d'abord ; `limit` 200 par défaut, 5 000 au plus ; 50 sources au plus par cible. |
+| `links` | `graph` | `{ folder?, limit? }` → `{ nodes: [{ id, path, title }], edges: [{ from, to }] }` : au-delà de `limit` (2 000 par défaut, 20 000 au plus), les notes les plus reliées d'abord ; 100 000 arêtes au plus. |
+| `tags` | `list` | `{ prefix?, limit? }` → `{ items: [{ tag, count }] }` : `count` = nombre de notes ; casse ignorée ; `prefix` : ce tag et ses sous-tags ; `limit` 1 000 par défaut, 10 000 au plus. |
+| `tags` | `notes` | `{ tag, limit? }` → `{ items: [{ id, path, title }] }` : notes du tag, sous-tags compris (`a` donne aussi `a/b`) ; `limit` 500 par défaut, 5 000 au plus. |
+| `index` | `status` | `{}` → `IndexState` + `{ seq, docs, bytes }` |
+
+Résolution des liens (pouvoir `links`, façon Obsidian) : chemin exact (avec ou sans extension ; relatif au dossier de la note d'abord pour un lien « ./ », « ../ » ou Markdown), sinon nom de fichier sans extension (casse ignorée ; « a/b » exige un chemin qui finit par « /a/b » ; en cas d'ambiguïté le `.md`, puis le plus court chemin, puis l'ordre alphabétique), sinon alias du frontmatter.
 
 Un nouveau pouvoir ajoute une ligne ici et un module dans `packages/indexer-core`. Le backend n'a rien à changer.
 

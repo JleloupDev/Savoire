@@ -1,0 +1,22 @@
+{
+  "name": "@savoire/indexer-core-tests",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/domain-index": "workspace:*",
+    "@savoire/indexer-core": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-runtime": "workspace:*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

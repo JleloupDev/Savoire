@@ -142,6 +142,9 @@ importers:
       '@savoire/plugin-backlinks':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-backlinks
+      '@savoire/plugin-base':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-base
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-callout
@@ -378,6 +381,22 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/indexer-core:
+    dependencies:
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../domain-index
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/infrastructure-sync:
     dependencies:
       '@codemirror/state':
@@ -501,6 +520,16 @@ importers:
       react:
         specifier: ^18.3.1
         version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-base:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -1014,6 +1043,31 @@ importers:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
 
+  ../tests/frontend/unit/indexer-core-tests:
+    dependencies:
+      '@savoire/domain-index':
+        specifier: workspace:*
+        version: link:../../../../packages/domain-index
+      '@savoire/indexer-core':
+        specifier: workspace:*
+        version: link:../../../../packages/indexer-core
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-api
+      '@savoire/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-runtime
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
+
   ../tests/frontend/unit/infrastructure-sync-tests:
     dependencies:
       '@microsoft/signalr':
@@ -1079,6 +1133,9 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../../../packages/plugin-api
+      '@savoire/plugin-base':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-base
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-callout
