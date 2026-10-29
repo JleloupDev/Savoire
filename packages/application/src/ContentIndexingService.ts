@@ -33,6 +33,7 @@ export class ContentIndexingService {
   private readonly channels = new Map<string, IIndexChannel>()
   private readonly channelUnsubs: (() => void)[] = []
   private onIndexed: ((docId: string, path: string) => void) | null = null
+  private readonly indexedListeners = new Set<(docId: string, path: string) => void>()
 
   constructor(
     private readonly hooks: HookRegistry,
@@ -43,6 +44,20 @@ export class ContentIndexingService {
   /** Callback invoque apres chaque passe d'indexation locale (pour les panneaux). */
   setOnIndexed(cb: (docId: string, path: string) => void): void {
     this.onIndexed = cb
+  }
+
+  /**
+   * Meme signal, pour plusieurs abonnes (le moteur de requetes...). docId
+   * vide : un canal a change a distance, sans note precise.
+   */
+  subscribeIndexed(cb: (docId: string, path: string) => void): () => void {
+    this.indexedListeners.add(cb)
+    return () => { this.indexedListeners.delete(cb) }
+  }
+
+  private notifyIndexed(docId: string, path: string): void {
+    this.onIndexed?.(docId, path)
+    for (const cb of [...this.indexedListeners]) cb(docId, path)
   }
 
   /**
@@ -89,7 +104,7 @@ export class ContentIndexingService {
         }
         contributor.onEntriesChanged(byDoc)
         // Un pair distant a modifie l'index : les panneaux doivent se rafraichir.
-        this.onIndexed?.('', '')
+        this.notifyIndexed('', '')
       }
       this.channelUnsubs.push(channel.onChange(feed))
       feed() // etat deja presente au moment de l'ouverture
@@ -107,7 +122,7 @@ export class ContentIndexingService {
   init(): void {
     this.hooks.onDocumentStabilized(async (docId, path, content, crdtVersion?: CrdtVersion) => {
       await this.indexDocument(docId, path, content, crdtVersion)
-      this.onIndexed?.(docId, path)
+      this.notifyIndexed(docId, path)
     })
   }
 
@@ -117,7 +132,7 @@ export class ContentIndexingService {
    */
   async indexNow(docId: string, path: string, shadowMarkdown: string): Promise<void> {
     await this.indexDocument(docId, path, shadowMarkdown)
-    this.onIndexed?.(docId, path)
+    this.notifyIndexed(docId, path)
   }
 
   /** Oublie un document supprime, dans tous les namespaces partages. */

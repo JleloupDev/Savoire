@@ -5,6 +5,7 @@ import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
 import { DocumentView, isOpenableWithoutPlugin } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
+import { sessionTrees } from '@savoire/application'
 import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
@@ -223,8 +224,16 @@ function DocumentPanelHost({
       createPluginLoader: refs.createPluginLoader,
       unsupportedMessage: refs.describeUnsupportedType.current(ext),
       userName: refs.activeAccount.current?.displayName,
-      // Cartes partagees propres a ce document, par la session (voir ISharedMap).
-      shared: session ? { openMap: (name: string) => session.openSharedMap(`doc/${doc.id}/${name}`) } : undefined,
+      // Cartes partagees propres a ce document, par la session (voir ISharedMap),
+      // et arbres annexes (lots de lignes d'une base : DocumentSharedData.openTree).
+      shared: session ? (() => {
+        const trees = sessionTrees(session)
+        return {
+          openMap: (name: string) => session.openSharedMap(`doc/${doc.id}/${name}`),
+          openTree: (name: string) => trees.openAnnex(doc.id, name, { create: !refs.isReadOnly.current }),
+          closeTree: (name: string) => trees.closeAnnex(doc.id, name),
+        }
+      })() : undefined,
       // Texte partage d'un type 'crdt' : celui du document ouvert juste au-dessus.
       openText: session && crdt ? () => session.openText(doc.id) : undefined,
       openTree: session && crdt ? () => session.openTree(doc.id) : undefined,

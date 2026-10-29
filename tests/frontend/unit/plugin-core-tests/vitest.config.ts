@@ -31,6 +31,10 @@ export default defineConfig({
       '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
       '@savoire/plugin-page': src('plugin-page'),
       '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
+      '@savoire/plugin-base': src('plugin-base'),
+      // Moteur de requetes de l'appli (QueryEngineProvider), pour les bases de bout en bout.
+      '@savoire/application': path.resolve(__dirname, '../../../../packages/application/src/index.ts'),
+      '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
     },
   },
   test: {

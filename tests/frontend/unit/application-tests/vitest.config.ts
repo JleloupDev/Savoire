@@ -10,6 +10,8 @@ export default defineConfig({
       '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
+      // Moteur de requetes en memoire et arbres partages en memoire (tests du fournisseur de requetes).
+      '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
     },
   },
   test: {

@@ -23,6 +23,7 @@ import type { AgentRegistry } from './agents'
 import type { IPluginIndexAPI } from './indexing'
 import type { IQueryEngine } from './query'
 import type { ISearchEngine } from './search'
+import type { IPropertyTypes } from './properties'
 
 export interface IPluginVaultAPI extends VaultAPI {}
 export interface IPluginWorkspaceAPI extends WorkspaceAPI {}
@@ -61,6 +62,9 @@ export interface IPluginAPI {
   /** Recherche plein texte dans le vault. Voir search.ts.
    *  Permission 'vault:read'. Absent si aucun index n'est disponible. */
   search?: ISearchEngine
+  /** Types des proprietes du vault, partages entre membres. Voir properties.ts.
+   *  Permission 'vault:read'. Absent sans vault ouvert. */
+  properties?: IPropertyTypes
 }
 
 export interface PluginAPI extends IPluginAPI {}

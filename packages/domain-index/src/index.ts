@@ -13,3 +13,7 @@ export { isSharedContributor } from './IndexContributor'
 export { IndexEngine } from './IndexEngine'
 export type { FrontmatterValue, FrontmatterBlock } from './frontmatter'
 export { findFrontmatter, stripFrontmatter, parseFrontmatter, parseFrontmatterYaml, parseScalar } from './frontmatter'
+export {
+  setFrontmatterValue, removeFrontmatterKey, renameFrontmatterKey, frontmatterKeys,
+  formatYamlScalar, formatYamlKey, minimalTextChange,
+} from './frontmatterEdit'

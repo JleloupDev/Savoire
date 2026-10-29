@@ -26,6 +26,7 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 import { marked } from 'marked'
 import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savoire/plugin-api'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
+import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
@@ -80,16 +81,8 @@ class FrontmatterBadge extends WidgetType {
   ignoreEvent(): boolean { return false }
 }
 
-function getFrontmatterEnd(state: EditorState): number {
-  const text = state.doc.toString()
-  if (!text.startsWith('---\n')) return 0
-  const closeIdx = text.indexOf('\n---', 4)
-  if (closeIdx < 0) return 0
-  return closeIdx + 4 + (text[closeIdx + 4] === '\n' ? 1 : 0)
-}
-
-function buildFrontmatterDecoration(state: EditorState): Range<Decoration> | null {
-  const endPos = getFrontmatterEnd(state)
+// Sans panneau de proprietes (editeur seul), le bloc se replie en « ··· ».
+function buildFrontmatterDecoration(state: EditorState, endPos: number): Range<Decoration> | null {
   if (endPos === 0) return null
   // Reveal when cursor is inside frontmatter block
   const { from: cursorFrom } = state.selection.main
@@ -303,9 +296,11 @@ function buildDecorations(
   const { from: cursorFrom } = state.selection.main
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
 
-  // Compute frontmatter range (null if cursor is inside or no frontmatter)
-  const fmEnd = getFrontmatterEnd(state)
-  const fmDeco = buildFrontmatterDecoration(state)
+  // Zone du frontmatter : le panneau des proprietes s'il est branche, sinon
+  // le badge replie (null si le curseur y est, ou sans frontmatter).
+  const fmEnd = frontmatterEnd(state)
+  const panelDecos = propertiesDecorations(state, fmEnd)
+  const fmDeco = panelDecos ? null : buildFrontmatterDecoration(state, fmEnd)
 
   const claimedByPlugin = (text: string): boolean => {
     if (!registry || !ctx) return false
@@ -392,7 +387,8 @@ function buildDecorations(
     enter(node) {
       if (!BLOCK_NODES.has(node.type.name)) return
       // Skip nodes inside collapsed frontmatter to avoid overlapping decorations
-      if (fmDeco && node.from < fmEnd) return false
+      // (et le YAML source du panneau reste du texte brut).
+      if ((fmDeco || panelDecos) && node.from < fmEnd) return false
 
       // Listes et citations : ligne par ligne, sauf si un plugin revendique
       // le bloc sans savoir le rendre ligne par ligne (callout, par exemple).
@@ -493,6 +489,7 @@ function buildDecorations(
   rawLineMarks(state, fmEnd, decorations)
 
   if (fmDeco) decorations.unshift(fmDeco)
+  if (panelDecos) decorations.unshift(...panelDecos)
 
   return Decoration.set(decorations, true)
 }
@@ -597,7 +594,7 @@ export function createLivePreviewExtension(
       return buildDecorations(state, registry, hooks, ctx, getActiveScopeIds)
     },
     update(decorations, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect))) {
+      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e))) {
         return buildDecorations(tr.state, registry, hooks, ctx, getActiveScopeIds)
       }
       return decorations.map(tr.changes)

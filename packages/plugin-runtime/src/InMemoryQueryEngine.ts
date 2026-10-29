@@ -15,11 +15,14 @@ import type {
   QueryFilter, QueryGroup, QueryResult, QueryRow,
 } from '@savoire/plugin-api'
 
-/** Une note telle que l'index la voit. */
+/** Une note (ou une ligne legere de base) telle que l'index la voit. */
 export interface IndexedDoc {
   id: string
+  /** Chemin de la note ; vide pour une ligne legere. */
   path: string
   title: string
+  /** Ligne legere : id du document de sa base. Absent pour une note. */
+  base?: string
   /** Proprietes du frontmatter, deja typees. */
   props: Record<string, PropertyValue>
   /** Texte brut, pour le plein texte. */
@@ -39,6 +42,19 @@ export class QueryError extends Error implements QueryErrorInfo {
 /** Minuscules, sans accents : les comparaisons de texte n'en tiennent pas compte. */
 export function foldText(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+// Les memes valeurs reviennent sans cesse (statuts, choix) : on garde leur
+// forme repliee. Borne pour ne pas grossir sans fin.
+const foldCache = new Map<string, string>()
+function fold(s: string): string {
+  let f = foldCache.get(s)
+  if (f === undefined) {
+    if (foldCache.size > 200_000) foldCache.clear()
+    f = foldText(s)
+    foldCache.set(s, f)
+  }
+  return f
 }
 
 function isEmpty(v: PropertyValue | undefined): boolean {
@@ -72,8 +88,8 @@ function fieldValue(doc: IndexedDoc, field: QueryField): PropertyValue | undefin
 function compareScalar(a: PropertyValue, b: PropertyValue): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b
   if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b)
-  const fa = foldText(String(a))
-  const fb = foldText(String(b))
+  const fa = fold(String(a))
+  const fb = fold(String(b))
   return fa < fb ? -1 : fa > fb ? 1 : 0
 }
 
@@ -110,8 +126,8 @@ function matches(doc: IndexedDoc, filter: QueryFilter): boolean {
     case 'lte': return compareScalar(actual, want) <= 0
     case 'gt': return compareScalar(actual, want) > 0
     case 'gte': return compareScalar(actual, want) >= 0
-    case 'contains': return foldText(String(actual)).includes(foldText(String(want)))
-    case 'startsWith': return foldText(String(actual)).startsWith(foldText(String(want)))
+    case 'contains': return fold(String(actual)).includes(fold(String(want)))
+    case 'startsWith': return fold(String(actual)).startsWith(fold(String(want)))
     case 'in': return Array.isArray(want) && want.some(w => scalarEquals(actual, w))
   }
   return false
@@ -126,6 +142,44 @@ function countNodes(filter: QueryFilter): number {
 
 function words(s: string): string[] {
   return foldText(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+}
+
+/** Cle de tri precalculee d'une valeur : evite de replier le texte a chaque comparaison. */
+interface SortKey {
+  empty: boolean
+  raw: PropertyValue
+  folded: string
+}
+
+function sortKey(v: PropertyValue | undefined): SortKey {
+  if (isEmpty(v)) return { empty: true, raw: null, folded: '' }
+  const raw = Array.isArray(v) ? v[0] : v as PropertyValue
+  return { empty: false, raw, folded: typeof raw === 'number' || typeof raw === 'boolean' ? '' : fold(String(raw)) }
+}
+
+function compareKeys(a: SortKey, b: SortKey): number {
+  if (typeof a.raw === 'number' && typeof b.raw === 'number') return a.raw - b.raw
+  if (typeof a.raw === 'boolean' && typeof b.raw === 'boolean') return Number(a.raw) - Number(b.raw)
+  const fa = a.folded || fold(String(a.raw))
+  const fb = b.folded || fold(String(b.raw))
+  return fa < fb ? -1 : fa > fb ? 1 : 0
+}
+
+/** Une note du dossier et des extensions demandes (corbeille et lignes legeres exclues). */
+function isNoteOf(doc: IndexedDoc, prefix: string, exts: string[] | undefined): boolean {
+  if (doc.base !== undefined) return false
+  if (doc.path.startsWith('.trash/')) return false
+  if (prefix && !doc.path.startsWith(prefix)) return false
+  if (exts && !exts.includes(extOf(doc.path))) return false
+  return true
+}
+
+function folderPrefix(folder: string | undefined): string {
+  return folder ? folder.replace(/\/+$/, '') + '/' : ''
+}
+
+function normExts(ext: string[] | undefined): string[] | undefined {
+  return ext?.map(e => e.toLowerCase().replace(/^\./, ''))
 }
 
 /** Empreinte de la requete sans son curseur : un curseur ne vaut que pour SA requete. */
@@ -152,6 +206,8 @@ export class InMemoryQueryEngine implements IQueryEngine {
   private current: IndexState = { status: 'ready' }
   private readonly stateListeners = new Set<(s: IndexState) => void>()
   private readonly watchers = new Set<() => void>()
+  private batching = 0
+  private dirty = false
 
   // ── Alimentation (par l'indexeur) ─────────────────────────────────────────
 
@@ -162,9 +218,38 @@ export class InMemoryQueryEngine implements IQueryEngine {
   }
 
   remove(id: string): void {
+    if (!this.docs.has(id)) return
     this.docs.delete(id)
     this.words.delete(id)
     this.changed()
+  }
+
+  /**
+   * Groupe des modifications : les abonnes (watch) ne sont prevenus qu'une
+   * fois, a la fin. Pour charger des milliers de lignes d'un coup.
+   */
+  batch(fn: () => void): void {
+    this.batching++
+    try { fn() } finally {
+      this.batching--
+      if (this.batching === 0 && this.dirty) {
+        this.dirty = false
+        this.changed()
+      }
+    }
+  }
+
+  upsertMany(docs: Iterable<IndexedDoc>): void {
+    this.batch(() => { for (const d of docs) this.upsert(d) })
+  }
+
+  /** Les ids connus (notes et lignes legeres). */
+  ids(): string[] {
+    return [...this.docs.keys()]
+  }
+
+  get(id: string): IndexedDoc | undefined {
+    return this.docs.get(id)
   }
 
   setState(state: IndexState): void {
@@ -199,6 +284,7 @@ export class InMemoryQueryEngine implements IQueryEngine {
   // ── Execution ────────────────────────────────────────────────────────────
 
   private changed(): void {
+    if (this.batching > 0) { this.dirty = true; return }
     for (const w of [...this.watchers]) w()
   }
 
@@ -207,20 +293,32 @@ export class InMemoryQueryEngine implements IQueryEngine {
     if (!Number.isInteger(limit) || limit < 1 || limit > QUERY_MAX_LIMIT) {
       throw new QueryError('invalid_query', `limit doit etre entre 1 et ${QUERY_MAX_LIMIT}.`)
     }
-    if (query.where && countNodes(query.where) > MAX_FILTER_NODES) {
+    const from = query.from
+    const pagesWhere = from && 'base' in from ? from.pages?.where : undefined
+    const nodes = (query.where ? countNodes(query.where) : 0) + (pagesWhere ? countNodes(pagesWhere) : 0)
+    if (nodes > MAX_FILTER_NODES) {
       throw new QueryError('too_complex', `Filtre trop complexe (plus de ${MAX_FILTER_NODES} conditions).`)
     }
-    if (!query.from || !('notes' in query.from)) throw new QueryError('invalid_query', 'Source inconnue.')
 
-    const { folder, ext } = query.from
-    const prefix = folder ? folder.replace(/\/+$/, '') + '/' : ''
-    const exts = ext?.map(e => e.toLowerCase().replace(/^\./, ''))
+    let inSource: (doc: IndexedDoc) => boolean
+    if (from && 'notes' in from && from.notes) {
+      const prefix = folderPrefix(from.folder)
+      const exts = normExts(from.ext)
+      inSource = doc => isNoteOf(doc, prefix, exts)
+    } else if (from && 'base' in from && typeof from.base === 'string' && from.base) {
+      const base = from.base
+      const pages = from.pages
+      const prefix = folderPrefix(pages?.folder)
+      const exts = normExts(pages?.ext)
+      inSource = doc => doc.base === base
+        || (!!pages && isNoteOf(doc, prefix, exts) && (!pages.where || matches(doc, pages.where)))
+    } else {
+      throw new QueryError('invalid_query', 'Source inconnue.')
+    }
     const terms = query.text ? words(query.text) : []
 
-    let hits = [...this.docs.values()].filter(doc => {
-      if (doc.path.startsWith('.trash/')) return false
-      if (prefix && !doc.path.startsWith(prefix)) return false
-      if (exts && !exts.includes(extOf(doc.path))) return false
+    const hits = [...this.docs.values()].filter(doc => {
+      if (!inSource(doc)) return false
       if (terms.length) {
         const own = this.words.get(doc.id)!
         if (!terms.every(t => [...own].some(w => w.startsWith(t)))) return false
@@ -229,21 +327,24 @@ export class InMemoryQueryEngine implements IQueryEngine {
     })
 
     const sort = query.sort ?? []
-    hits.sort((a, b) => {
-      for (const s of sort) {
-        const va = fieldValue(a, s.field)
-        const vb = fieldValue(b, s.field)
-        const ea = isEmpty(va), eb = isEmpty(vb)
-        // Vide en dernier, quel que soit le sens.
-        if (ea !== eb) return ea ? 1 : -1
-        if (ea && eb) continue
-        const ka = Array.isArray(va) ? va[0] : va as PropertyValue
-        const kb = Array.isArray(vb) ? vb[0] : vb as PropertyValue
-        const c = compareScalar(ka, kb)
-        if (c !== 0) return s.dir === 'desc' ? -c : c
-      }
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-    })
+    if (sort.length > 0) {
+      // Cles calculees une fois par document, pas a chaque comparaison.
+      const keyed = hits.map(doc => ({ doc, keys: sort.map(s => sortKey(fieldValue(doc, s.field))) }))
+      keyed.sort((a, b) => {
+        for (let i = 0; i < sort.length; i++) {
+          const ka = a.keys[i], kb = b.keys[i]
+          // Vide en dernier, quel que soit le sens.
+          if (ka.empty !== kb.empty) return ka.empty ? 1 : -1
+          if (ka.empty) continue
+          const c = compareKeys(ka, kb)
+          if (c !== 0) return sort[i].dir === 'desc' ? -c : c
+        }
+        return a.doc.id < b.doc.id ? -1 : a.doc.id > b.doc.id ? 1 : 0
+      })
+      for (let i = 0; i < keyed.length; i++) hits[i] = keyed[i].doc
+    } else {
+      hits.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    }
 
     let groups: QueryGroup[] | undefined
     if (query.groupBy) {

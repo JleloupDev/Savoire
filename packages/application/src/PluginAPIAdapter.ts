@@ -19,6 +19,8 @@ import type {
   IPluginVaultAPI,
   IPluginViewsAPI,
   IPluginWorkspaceAPI,
+  IPropertyTypes,
+  IQueryEngine,
   SlashRegistry,
   ToolbarCommandRegistry,
   TrashEntry,
@@ -38,6 +40,9 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   read(documentId: string): Promise<string> { return this.inner.read(documentId) }
   readDocumentByPath(path: string): Promise<string> { return this.inner.readDocumentByPath(path) }
   write(documentId: string, content: string): Promise<void> { return this.inner.write(documentId, content) }
+  editText(documentId: string, edit: (current: string) => string): Promise<boolean> {
+    return this.inner.editText?.(documentId, edit) ?? Promise.reject(new Error('Edition de texte indisponible.'))
+  }
   list(dir?: string): Promise<string[]> { return this.inner.list(dir) }
   exists(documentId: string): Promise<boolean> { return this.inner.exists(documentId) }
   resolveDocumentId(path: string): string | undefined { return this.inner.resolveDocumentId(path) }
@@ -168,6 +173,10 @@ export interface PluginAPIAdapterDeps {
   editor?: EditorPositionAPI
   toolbar?: ToolbarCommandRegistry
   metadata?: MetadataIndexContributor
+  /** Moteur de requetes (QueryEngineProvider). Voir ADR-027. */
+  query?: IQueryEngine
+  /** Types des proprietes du vault (VaultPropertyTypes). */
+  properties?: IPropertyTypes
 }
 
 export class PluginAPIAdapter implements IPluginAPI {
@@ -182,8 +191,12 @@ export class PluginAPIAdapter implements IPluginAPI {
   readonly triggers: IPluginTriggersAPI
   readonly editor: IPluginEditorAPI
   readonly toolbar: IPluginToolbarAPI
+  readonly query?: IQueryEngine
+  readonly properties?: IPropertyTypes
 
   constructor(deps: PluginAPIAdapterDeps) {
+    this.query     = deps.query
+    this.properties = deps.properties
     this.vault     = new PluginVaultAPIAdapter(deps.vault, deps.metadata)
     this.workspace = new PluginWorkspaceAPIAdapter(deps.workspace)
     this.commands  = new PluginCommandsAPIAdapter(deps.commands)

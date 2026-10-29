@@ -5,8 +5,9 @@ import type { MutableRefObject } from 'react'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import { STORE_CATALOG, type PluginLoadContext } from './pluginStore'
-import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI, PluginCommand } from '@savoire/plugin-api'
+import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI, PluginCommand, PropertyMember } from '@savoire/plugin-api'
 import {
+  InMemoryQueryEngine,
   BlockRegistryImpl,
   CommandRegistryImpl,
   FileTypeRegistryImpl,
@@ -19,8 +20,11 @@ import {
   PluginLoader,
   PluginActivation,
 } from '@savoire/plugin-runtime'
-import { ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService } from '@savoire/application'
-import type { ITextChangeSource } from '@savoire/application'
+import {
+  ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService,
+  NoteTextEditor, QueryEngineProvider, VaultPropertyTypes, sessionTrees,
+} from '@savoire/application'
+import type { ITextChangeSource, IVaultSyncSession } from '@savoire/application'
 import { IndexEngine } from '@savoire/domain-index'
 import type { ICollaborativeText, AnchorContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
@@ -74,6 +78,12 @@ export interface PluginBootstrapResult {
   whenPluginAPIReady: () => Promise<IEditorHostAPI>
   /** Charge un plugin du store a chaud (installation). False s'il l'etait deja. */
   loadStoreEntry: (id: string) => Promise<boolean>
+  /**
+   * Branche les services du vault ouvert (api.query, api.properties,
+   * VaultAPI.editText) sur sa session. Undefined : aucun vault. A appeler
+   * apres ContentIndexingService.switchVault.
+   */
+  attachVaultServices: (session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>) => void
 }
 
 /**
@@ -147,6 +157,14 @@ export function usePluginBootstrap({
   const getGraphContributorRef = useRef<(() => GraphIndexContributor | null)>(() => null)
   const triggersRef = useRef<InstanceType<typeof TriggerRegistryImpl> | null>(null)
   const fileTypeRegistryRef = useRef<InstanceType<typeof FileTypeRegistryImpl> | null>(null)
+  // Requetes (api.query), types des proprietes (api.properties) et ecriture
+  // d'une note hors de son editeur (VaultAPI.editText). Voir ADR-027.
+  const vaultSessionRef = useRef<IVaultSyncSession | undefined>(undefined)
+  const queryProviderRef = useRef<QueryEngineProvider | null>(null)
+  if (!queryProviderRef.current) queryProviderRef.current = new QueryEngineProvider(() => new InMemoryQueryEngine())
+  const propertyTypesRef = useRef<VaultPropertyTypes | null>(null)
+  if (!propertyTypesRef.current) propertyTypesRef.current = new VaultPropertyTypes()
+  const noteEditorRef = useRef<NoteTextEditor | null>(null)
 
   // Always-current: notifies the inspector panel whenever an editor becomes active.
   // Reassigned each render so it always closes over fresh refs.
@@ -257,6 +275,17 @@ export function usePluginBootstrap({
         roomClient,
         indexRegistry,
       )
+      pluginApi.query = queryProviderRef.current!
+      pluginApi.properties = propertyTypesRef.current!
+      // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
+      noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
+        onEdited: (docId, text) => {
+          const path = vaultSessionRef.current?.directory.getById(docId)?.path ?? ''
+          pluginApi.hooks.runDocumentStabilized(docId, path, text)
+        },
+      })
+      vaultProxy.editText = (documentId, edit) => noteEditorRef.current!.edit(documentId, edit)
+
       // Branche AVANT tout enregistrement : ce que l'application enregistre
       // elle-meme (le type Markdown) n'appartient a aucun plugin, donc reste
       // toujours actif ; ce que chaque plugin enregistre porte son id.
@@ -348,6 +377,27 @@ export function usePluginBootstrap({
     }
   }, [vaultBrowserRefs, vaultProxy, editorAreaRefsHolder, roomClient, managerRef])
 
+  const attachVaultServices = useCallback((session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>) => {
+    vaultSessionRef.current = session
+    noteEditorRef.current?.dispose()
+    const types = propertyTypesRef.current!
+    types.attachVault(session)
+    types.setMembersSource(members ?? null)
+    const cis = contentIndexingServiceRef.current
+    const registry = indexRegistryRef.current
+    queryProviderRef.current!.attachVault(session && cis && registry ? {
+      session,
+      // Lu a chaque fois : le contributeur est recree a chaque changement de vault.
+      metadata: {
+        getAll: () => (registry.get('metadata') as MetadataIndexContributor | undefined)?.getAllMetadata() ?? [],
+        onChange: cb => cis.subscribeIndexed(() => cb()),
+      },
+      types,
+      indexNow: (docId, path, markdown) => cis.indexNow(docId, path, markdown),
+      trees: sessionTrees(session),
+    } : undefined)
+  }, [])
+
   return {
     onBeforeReady,
     pluginAPIRef,
@@ -363,5 +413,6 @@ export function usePluginBootstrap({
     whenPluginsReady,
     whenPluginAPIReady,
     loadStoreEntry,
+    attachVaultServices,
   }
 }

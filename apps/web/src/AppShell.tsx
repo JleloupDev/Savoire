@@ -11,7 +11,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
-import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
+import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
@@ -481,6 +481,7 @@ export function AppShell() {
     whenPluginsReady,
     whenPluginAPIReady,
     loadStoreEntry,
+    attachVaultServices,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
     vaultProxy,
@@ -664,7 +665,9 @@ export function AppShell() {
         },
       })
       vaultAPIRef.current = active.client
-      vaultSessionRef.current = active.session
+      // Ouvertures de documents comptees : un editeur, une base qui ecrit une
+      // note, l'index qui lit un lot partagent le meme document sans se le fermer.
+      vaultSessionRef.current = active.session ? withDocumentRefCount(active.session) : undefined
       pluginSettingsRef.current?.attachVault(active.session)
       onChanged()
 
@@ -675,6 +678,14 @@ export function AppShell() {
         new LocalStorageIndexStorage(vault.id),
         () => application.documents.getActiveSession(),
       )
+      // Requetes (api.query), types des proprietes, ecriture hors editeur.
+      attachVaultServices(vaultSessionRef.current, async () => {
+        const me = activeAccountRef.current
+        const own = me ? [{ id: me.userId, name: me.displayName || me.userId }] : []
+        const sharing = await active.session?.sharing?.getSharing('vault', vault.id, tok).catch(() => null)
+        const others = (sharing?.permissions ?? []).map(p => ({ id: p.subjectId, name: p.subjectDisplayName || p.subjectId }))
+        return [...own, ...others.filter(o => !own.some(x => x.id === o.id))]
+      })
 
       // Les snapshots d'index viennent d'etre restaures (switchVault ci-dessus),
       // mais les panneaux qui les affichent ont deja construit leur vue : sans
@@ -767,6 +778,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachVaultServices(undefined)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
     }
@@ -802,6 +814,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachVaultServices(undefined)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
@@ -998,6 +1011,7 @@ export function AppShell() {
         // construction, voir ADR-027) : purger la ref du vault precedent.
         vaultSessionRef.current = undefined
         pluginSettingsRef.current?.attachVault(undefined)
+        attachVaultServices(undefined)
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
         setDocuments([docStub])
@@ -1024,6 +1038,7 @@ export function AppShell() {
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
             pluginSettingsRef.current?.attachVault(undefined)
+            attachVaultServices(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -1036,6 +1051,7 @@ export function AppShell() {
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
             pluginSettingsRef.current?.attachVault(undefined)
+            attachVaultServices(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
           },
@@ -1087,6 +1103,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachVaultServices(undefined)
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
     }
@@ -1205,6 +1222,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachVaultServices(undefined)
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
       managerRef.current?.notifyVaultChange()

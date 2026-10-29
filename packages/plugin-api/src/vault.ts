@@ -62,6 +62,14 @@ export interface VaultAPI {
   resolveAttachmentUrl?(path: string): Promise<string>
   /** Texte d'un lien `![[...]]` vers ce chemin : le nom seul s'il est unique dans le vault, sinon le chemin. */
   linkTarget?(path: string): string
+  /**
+   * Modifie le texte d'un document CRDT (une note) comme une frappe de la
+   * personne : `edit` recoit le texte courant et rend le nouveau ; seule la
+   * difference est ecrite, et elle fusionne avec les editions en cours
+   * ailleurs (editeur ouvert, autres membres). Attend que le contenu du
+   * document soit arrive avant d'editer. Rend false si rien n'a change.
+   */
+  editText?(documentId: string, edit: (current: string) => string): Promise<boolean>
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */

@@ -13,6 +13,8 @@
 // La carte est ouverte par la session du vault (le port de synchro) : elle
 // marche avec ou sans serveur, et n'expose aucune bibliotheque CRDT.
 
+import type { ISharedTree } from './sharedTree'
+
 export interface ISharedMap {
   set(key: string, value: unknown): void
   delete(key: string): void
@@ -25,4 +27,16 @@ export interface ISharedMap {
 export interface DocumentSharedData {
   /** Ouvre (ou reprend) une carte partagee de ce document, par nom. Idempotent. */
   openMap(name: string): ISharedMap
+  /**
+   * Ouvre un arbre ANNEXE de ce document : un document CRDT rattache,
+   * synchronise a part, qu'on ne charge qu'a la demande. Sert a decouper un
+   * gros contenu (les lots de lignes d'une base) : un membre ne charge que les
+   * morceaux qu'il lit, une modification ne touche qu'un morceau.
+   * Memes regles qu'un arbre de document : vide a l'ouverture, etat connu
+   * en lot 'remote' ensuite. Idempotent par nom ; closeTree le libere.
+   * Absent si le profil ne sait pas ouvrir de document annexe.
+   */
+  openTree?(name: string): Promise<ISharedTree>
+  /** Libere un arbre annexe ouvert par openTree. */
+  closeTree?(name: string): void
 }

@@ -188,6 +188,19 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-page')).default,
   },
   {
+    id: 'plugin-base', preinstalled: true,
+    manifest: {
+      id: 'plugin-base',
+      name: 'Bases',
+      version: '0.0.1',
+      description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+    },
+    extensions: ['base'],
+    load: async () => (await import('@savoire/plugin-base')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

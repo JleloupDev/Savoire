@@ -43,7 +43,7 @@ export interface VaultTransferOptions {
   syncKindOf?: (path: string) => DocumentSyncKind
   /** Le document est-il un fichier binaire (piece jointe) ? Defaut : les images. */
   isFile?: (path: string) => boolean
-  /** Sections de reglages du vault a copier. Defaut : ['plugins']. */
+  /** Sections de reglages du vault a copier. Defaut : ['plugins', 'properties'] (types des proprietes). */
   settingsSections?: readonly string[]
   /** Cartes partagees du vault a copier. Defaut : ['review']. */
   sharedMaps?: readonly string[]
@@ -139,7 +139,7 @@ export async function transferVault(
   // ── Preparation : identifiants et chemins dans la cible ───────────────────
   const docs = source.directory.getAll()
   const folders = source.directory.getFolders()
-  const settingsSections = options.settingsSections ?? ['plugins']
+  const settingsSections = options.settingsSections ?? ['plugins', 'properties']
   const sharedMaps = options.sharedMaps ?? ['review']
   const documentMaps = options.documentMaps ?? DEFAULT_DOCUMENT_MAPS
   const plans = await planDocuments(docs, target, kindOf, report)

@@ -97,4 +97,12 @@ export type { TrashEntry, AttachmentUploadOptions } from './vault'
 export type * from './properties'
 export type * from './query'
 export type * from './search'
-export { QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT } from './query'
+export {
+  QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT,
+  BASE_ROW_PREFIX, BASE_ROW_TITLE, BASE_LOT_COUNT, baseLotName, baseLotOf,
+} from './query'
+export {
+  PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, coercePropertyValue, propertyTypeOf,
+  parseFrontmatter, findFrontmatter, setFrontmatterValue, removeFrontmatterKey,
+  renameFrontmatterKey, frontmatterKeys, minimalTextChange,
+} from './properties'

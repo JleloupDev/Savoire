@@ -18,6 +18,8 @@ import type {
   IIndexRegistry,
   AnyIndexContributor,
   InputTrigger,
+  IPropertyTypes,
+  IQueryEngine,
   PluginAPI,
   PluginCommand,
   SlashCommandItem,
@@ -425,6 +427,10 @@ export class EditorPositionAPIStub implements EditorPositionAPI {
 
 export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public editor: EditorPositionAPI
+  /** Moteur de requetes du vault, pose par l'application (voir ADR-027). */
+  public query?: IQueryEngine
+  /** Types des proprietes du vault, poses par l'application. */
+  public properties?: IPropertyTypes
 
   constructor(
     public readonly blocks: BlockRegistryImpl,

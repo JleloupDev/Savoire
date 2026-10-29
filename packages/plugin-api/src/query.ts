@@ -50,6 +50,14 @@ export interface QuerySort {
 export type QuerySource =
   /** Les notes du vault (corbeille exclue), eventuellement d'un dossier et de certaines extensions. */
   | { notes: true; folder?: string; ext?: string[] }
+  /**
+   * Les lignes d'une base (fichier .base), designee par l'id de son document
+   * (stable quand on la renomme ou la deplace) : ses lignes legeres, plus,
+   * avec `pages`, les notes qui lui servent de lignes-pages (un dossier, des
+   * extensions, un filtre propre a la source). Une ligne legere n'a pas de
+   * note : son `path` est vide, ses champs folder et ext aussi.
+   */
+  | { base: string; pages?: { folder?: string; ext?: string[]; where?: QueryFilter } }
 
 export interface Query {
   from: QuerySource
@@ -72,8 +80,9 @@ export const QUERY_DEFAULT_LIMIT = 50
 export const QUERY_MAX_LIMIT = 500
 
 export interface QueryRow {
-  /** Id du document. */
+  /** Id du document ; pour une ligne legere, id de la ligne. */
   id: string
+  /** Chemin de la note ; vide pour une ligne legere. */
   path: string
   title: string
   values: Record<string, PropertyValue>
@@ -116,4 +125,41 @@ export interface IQueryEngine {
   watch(query: Query, cb: (result: QueryResult) => void): () => void
   state(): IndexState
   onStateChange(cb: (state: IndexState) => void): () => void
+}
+
+// ── Lignes legeres d'une base ────────────────────────────────────────────
+//
+// Format de stockage, lu par tout index (memoire, SQLite, pair indexeur) et
+// ecrit par le plugin Bases. Voir ADR-027, etape 7.
+//
+//  - Le document de la base (fichier .base, un ISharedTree) range son
+//    manifeste sous root['base'] ; root['base'].lots est une carte
+//    « numero de lot -> true » des lots qui existent, root['base'].lotCount
+//    leur nombre (BASE_LOT_COUNT par defaut).
+//  - Chaque lot est un arbre annexe du document de la base
+//    (DocumentSharedData.openTree), nomme baseLotName(n). Sa racine porte une
+//    carte par ligne, sous la cle BASE_ROW_PREFIX + id : propriete -> valeur
+//    (primitive, ou liste de chaines). La propriete BASE_ROW_TITLE est le nom
+//    de la ligne.
+//  - Le lot d'une ligne : baseLotOf(id, lotCount). Une base de 100 000 lignes
+//    ne charge et ne synchronise que les lots dont elle a besoin, et une
+//    modification ne touche qu'un lot.
+
+export const BASE_ROW_PREFIX = 'row:'
+export const BASE_ROW_TITLE = 'title'
+/** ~2 000 lignes par lot pour 128 000 lignes. */
+export const BASE_LOT_COUNT = 64
+
+export function baseLotName(n: number): string {
+  return `lot-${String(n).padStart(3, '0')}`
+}
+
+/** Lot d'une ligne : FNV-1a 32 bits de son id, modulo le nombre de lots. */
+export function baseLotOf(rowId: string, lotCount: number = BASE_LOT_COUNT): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < rowId.length; i++) {
+    h ^= rowId.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h % Math.max(1, lotCount)
 }

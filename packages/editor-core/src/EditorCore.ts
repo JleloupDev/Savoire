@@ -17,6 +17,8 @@ import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
 import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
+import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
+import type { PropertiesHost } from './PropertiesPanel'
 
 // Detects a list item line: optional leading whitespace + bullet or ordered marker
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
@@ -111,6 +113,9 @@ export function plumeCommands(): PluginCommand[] {
     { id: 'editor:insert-embed',          label: 'Intégrer une note',                                  run: on(v => wrapSelection(v, '![[', ']]')) },
     { id: 'editor:insert-callout',        label: 'Insérer un callout',                                 run: on(v => insertCallout(v)) },
     { id: 'editor:insert-tag',            label: 'Insérer un tag',                                     run: on(v => wrapSelection(v, '#', '')) },
+    // Panneau des proprietes (frontmatter).
+    { id: 'editor:add-property',          label: 'Ajouter une propriété',    hotkeys: mod(';'), run: on(addProperty) },
+    { id: 'editor:toggle-properties-source', label: 'Propriétés : basculer panneau / YAML source', run: on(toggleYamlSource) },
   ]
   return commands.map(cmd => ({ ...cmd, editor: true }))
 }
@@ -164,6 +169,23 @@ function createNoopPluginLoader(): IPluginLoader {
     loadInternal: async () => {},
     getLoadedIds: () => [],
   }
+}
+
+// ── Liens des proprietes ──────────────────────────────────────────────────
+
+/**
+ * Chemin de la note visee par `[[cible]]`, comme Obsidian : chemin exact
+ * (extension .md facultative), sinon la note qui porte ce nom (la plus
+ * proche de la racine).
+ */
+function resolveNotePath(target: string, paths: readonly string[]): string | undefined {
+  const t = target.trim().replace(/^\/+/, '')
+  if (!t) return undefined
+  if (paths.includes(t)) return t
+  if (paths.includes(`${t}.md`)) return `${t}.md`
+  const stem = (p: string) => p.slice(p.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
+  const same = paths.filter(p => stem(p) === t || p.endsWith(`/${t}`) || p.endsWith(`/${t}.md`))
+  return same.sort((a, b) => a.length - b.length || a.localeCompare(b))[0]
 }
 
 // ── Note-scope helpers ────────────────────────────────────────────────────
@@ -232,6 +254,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   private scopeDebounceTimer: ReturnType<typeof setTimeout> | null = null
   // see ADR-006
   private stabilizeDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  private unsubPropertyTypes: (() => void) | null = null
 
   readonly commands = new CommandRegistry()
   readonly pipeline = new DocumentPipeline()
@@ -275,6 +298,31 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
     let lastCursorLine = -1
 
+    // Panneau des proprietes : types et valeurs du vault par l'API des
+    // plugins (api.properties, api.query), liens ouverts par le workspace.
+    const api = () => this.pluginAPI
+    const propertiesHost: PropertiesHost = {
+      readOnly: !!options.readOnly,
+      types: () => api().properties,
+      knownValues: async (key: string) => {
+        const r = await api().query?.query({ from: { notes: true }, groupBy: { prop: key }, limit: 1 })
+        return (r?.groups ?? []).map(g => g.key).filter((k): k is string => typeof k === 'string')
+      },
+      members: async () => (await api().properties?.members?.()) ?? [],
+      openLink: (target: string) => {
+        // Les notes du vault qui portent ce nom (moteur de requetes), sinon l'index connu.
+        const name = target.slice(target.lastIndexOf('/') + 1)
+        void (api().query?.query({
+          from: { notes: true },
+          where: { or: [{ field: { doc: 'title' }, op: 'eq', value: name }, { field: { doc: 'path' }, op: 'eq', value: target }] },
+          limit: 50,
+        }).then(r => r.rows.map(row => row.path), () => [] as string[]) ?? Promise.resolve([] as string[])).then(found => {
+          const paths = [...found, ...(api().vault.getFileTree?.() ?? []).map(e => e.path)]
+          void api().workspace.openFile(resolveNotePath(target, paths) ?? target)
+        })
+      },
+    }
+
     const crdtMode = options.crdt !== undefined
     const offlineDoc = crdtMode ? '' : (options.initialContent ?? '')
     const startState = EditorState.create({
@@ -308,7 +356,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         // meme CRDT — seul le rendu change.
         ...(options.editorMode === 'source'
           ? []
-          : createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys()))),
+          : [
+              ...propertiesPanelExtension(propertiesHost),
+              ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys())),
+            ]),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
           '.cm-scroller': { overflow: 'visible' },
@@ -376,6 +427,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
     // Wire EditorCore as the real EditorPositionAPI so plugins can call editor.getCursorCoords() etc.
     this.pluginAPI.setEditorPositionAPI(this)
+
+    // Un membre change le type d'une propriete : le panneau se redessine.
+    this.unsubPropertyTypes = this.pluginAPI.properties?.onChange(() => {
+      this.view.dispatch({ effects: propertiesRefresh.of(null) })
+    }) ?? null
 
     this.loadPlugins()
 
@@ -786,6 +842,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   destroy(): void {
     if (this.scopeDebounceTimer !== null) clearTimeout(this.scopeDebounceTimer)
     if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)
+    this.unsubPropertyTypes?.()
     this.options.crdt?.dispose()
     this.view.destroy()
     this.events.destroy()

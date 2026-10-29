@@ -23,6 +23,7 @@
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-agent-reviewer": "workspace:*",
     "@savoire/plugin-backlinks": "workspace:*",
+    "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-callout": "workspace:*",
     "@savoire/plugin-chat": "workspace:*",
     "@savoire/plugin-code-block": "workspace:*",

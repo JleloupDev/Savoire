@@ -31,6 +31,18 @@ export const SAMPLE: IndexedDoc[] = [
   doc('t', '.trash/Ancien.md', { status: 'En cours' }, 'Supprimé'),
 ]
 
+/** Lignes legeres de deux bases (pas de note : path vide). */
+const row = (id: string, base: string, title: string, props: IndexedDoc['props'] = {}): IndexedDoc => ({
+  id, base, path: '', title, props,
+})
+
+export const ROWS: IndexedDoc[] = [
+  row('r1', 'B1', 'Ligne un', { status: 'En cours', priority: 5 }),
+  row('r2', 'B1', 'Ligne deux', { status: 'À faire', priority: 1, tags: ['client'] }),
+  row('r3', 'B1', 'Ligne trois'),
+  row('x1', 'B2', 'Autre base', { status: 'En cours' }),
+]
+
 const all: Query = { from: { notes: true } }
 const ids = (r: QueryResult) => r.rows.map(x => x.id)
 
@@ -166,6 +178,68 @@ export function describeQueryEngineContract(name: string, harness: QueryEngineHa
         const r = await engine.query({ ...all, where: { field: { doc: 'title' }, op: 'eq', value: 'Alpha' }, select: ['status', 'absente'] })
         expect(r.rows[0]).toMatchObject({ id: 'a', path: 'Projets/Alpha.md', title: 'Alpha', values: { status: 'En cours' } })
         expect(Object.keys(r.rows[0].values)).toEqual(['status'])
+      })
+    })
+
+    describe('lignes legeres d une base', () => {
+      const openRows = () => harness.open([...SAMPLE, ...ROWS])
+
+      it('{ base } : les lignes de cette base seulement ; les notes ne les voient pas', async () => {
+        const { engine } = await openRows()
+        const r = await engine.query({ from: { base: 'B1' }, sort: [{ field: { doc: 'title' } }] })
+        expect(ids(r)).toEqual(['r2', 'r3', 'r1'])
+        expect(r.rows[0]).toMatchObject({ id: 'r2', path: '', title: 'Ligne deux', values: { status: 'À faire', priority: 1 } })
+        expect((await engine.query(all)).total).toBe(5)
+        expect((await engine.query({ from: { base: 'inconnue' } })).total).toBe(0)
+      })
+
+      it('pages : les notes de la source s ajoutent aux lignes, filtre de source compris', async () => {
+        const { engine } = await openRows()
+        const r = await engine.query({ from: { base: 'B1', pages: { folder: 'Projets' } }, sort: [{ field: { prop: 'priority' } }] })
+        // A priorite egale (b et r2), l'ordre est celui de l'id.
+        expect(ids(r)).toEqual(['b', 'r2', 'a', 'c', 'r1', 'r3'])
+        const done = await engine.query({ from: { base: 'B1', pages: { folder: 'Projets', where: { field: { prop: 'done' }, op: 'eq', value: true } } } })
+        expect(ids(done).sort()).toEqual(['b', 'r1', 'r2', 'r3'])
+        const page = await engine.query({ from: { base: 'B1', pages: { ext: ['page'] } } })
+        expect(ids(page).sort()).toEqual(['e', 'r1', 'r2', 'r3'])
+      })
+
+      it('filtres, groupes et champs du document valent pour les deux sortes de lignes', async () => {
+        const { engine } = await openRows()
+        const q: Query = { from: { base: 'B1', pages: { folder: 'Projets' } } }
+        const enCours = await engine.query({ ...q, where: { field: { prop: 'status' }, op: 'eq', value: 'en cours' } })
+        expect(ids(enCours).sort()).toEqual(['a', 'c', 'r1'])
+        const legeres = await engine.query({ ...q, where: { field: { doc: 'path' }, op: 'empty' } })
+        expect(ids(legeres).sort()).toEqual(['r1', 'r2', 'r3'])
+        const g = await engine.query({ ...q, groupBy: { prop: 'status' }, limit: 1 })
+        // Un groupe par valeur exacte (comme pour les notes) : 'en cours' a part.
+        expect(g.groups).toEqual([
+          { key: 'En cours', count: 2 },
+          { key: 'À faire', count: 1 },
+          { key: 'en cours', count: 1 },
+          { key: 'Terminé', count: 1 },
+          { key: null, count: 1 },
+        ])
+        expect(g.total).toBe(6)
+      })
+
+      it('une source de base sans id est refusee', async () => {
+        const { engine } = await openRows()
+        await expect(engine.query({ from: { base: '' } })).rejects.toMatchObject({ code: 'invalid_query' })
+      })
+
+      it('watch suit l ajout et la modification d une ligne legere', async () => {
+        const { engine, upsert, remove } = await openRows()
+        const seen: number[] = []
+        const stop = engine.watch({ from: { base: 'B1' }, where: { field: { prop: 'status' }, op: 'eq', value: 'en cours' } }, r => seen.push(r.total))
+        await upsert(row('r4', 'B1', 'Ligne quatre', { status: 'En cours' }))
+        await upsert(row('r1', 'B1', 'Ligne un', { status: 'Terminé' }))
+        await remove('r4')
+        await new Promise(r => setTimeout(r, 0))
+        stop()
+        expect(seen[0]).toBe(1)
+        expect(seen).toContain(2)
+        expect(seen.at(-1)).toBe(0)
       })
     })
 
