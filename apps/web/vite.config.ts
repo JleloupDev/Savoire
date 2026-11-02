@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve, join } from 'path'
 import { createRequire } from 'module'
-import { cpSync, existsSync, createReadStream, statSync } from 'fs'
+import { cpSync, existsSync, createReadStream, statSync, realpathSync } from 'fs'
 
 // Les morceaux d'Excalidraw (polices, langues, code differe), servis par
 // l'app au lieu du CDN : l'appli de bureau doit marcher hors ligne et sa CSP
@@ -33,6 +33,11 @@ function excalidrawAssets(): Plugin {
   }
 }
 
+// Dossier du paquet SQLite WebAssembly (index local) : son .wasm est servi en
+// dev depuis node_modules (hors des dossiers que Vite sert par defaut).
+const sqliteWasmDir = realpathSync(resolve(
+  createRequire(resolve(__dirname, '../../packages/indexer-core/package.json')).resolve('@sqlite.org/sqlite-wasm/package.json'), '..'))
+
 export default defineConfig({
   plugins: [react(), excalidrawAssets()],
   build: {
@@ -42,11 +47,22 @@ export default defineConfig({
       },
     },
   },
+  // Index local du navigateur (ADR-027) : SQLite WebAssembly dans un Worker
+  // module (src/localIndexWorker.ts). Le paquet charge son .wasm par
+  // new URL(..., import.meta.url) : ni pre-bundle en dev (le chemin casserait),
+  // et le .wasm est copie tel quel au build.
+  optimizeDeps: {
+    exclude: ['@sqlite.org/sqlite-wasm'],
+  },
+  worker: {
+    format: 'es',
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'development'),
   },
   server: {
     port: 3000,
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), sqliteWasmDir] },
     proxy: {
       '/api': 'http://localhost:5000',
       '/hubs': {

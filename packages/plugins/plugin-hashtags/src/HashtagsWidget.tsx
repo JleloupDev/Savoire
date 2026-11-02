@@ -1,15 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { useState, useEffect, useCallback } from 'react'
-import type { ViewContext, Widget } from '@savoire/plugin-api'
+// Hashtags de la note active, et notes d'un tag. Avec un index de tout le
+// vault (api.indexer, pouvoir tags : pair indexeur ou index local complet),
+// les notes d'un tag comprennent celles jamais ouvertes ici, et les tags du
+// vault sont listes ; sinon, l'index partage des hashtags. Voir ADR-027.
+import { useState, useEffect, useCallback, useRef } from 'react'
+import type { IIndexerAPI, TagCount, ViewContext, Widget } from '@savoire/plugin-api'
 import type { HashtagIndexContributor } from './HashtagIndexContributor'
+
+/** Tags du vault affiches au plus (les plus utilises). */
+const VAULT_TAGS_LIMIT = 60
 
 function HashtagsPanel({
   ctx,
   getContributor,
+  indexer,
 }: {
   ctx: ViewContext
   getContributor: () => HashtagIndexContributor
+  indexer?: IIndexerAPI
 }) {
   const { workspace } = ctx
 
@@ -19,13 +28,29 @@ function HashtagsPanel({
   const [tags, setTags] = useState<string[]>([])
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [docsForTag, setDocsForTag] = useState<Array<{ docId: string; path: string }>>([])
+  const [vaultTags, setVaultTags] = useState<TagCount[] | null>(null)
+  const request = useRef(0)
 
   const refresh = useCallback((path: string | null) => {
     if (!path) { setTags([]); return }
-    setTags(getContributor().getHashtagsForDoc(path))
+    // Le contributeur range les tags par id de document.
+    setTags(getContributor().getHashtagsForDoc(ctx.vault.resolveDocumentId(path) ?? path))
     setSelectedTag(null)
     setDocsForTag([])
-  }, [getContributor])
+  }, [getContributor, ctx])
+
+  // Tags de tout le vault, quand un index complet repond.
+  const loadVaultTags = useCallback(() => {
+    if (!indexer?.available()) { setVaultTags(null); return }
+    indexer.tags.list({ limit: VAULT_TAGS_LIMIT }).then(r => setVaultTags(r.items), () => setVaultTags(null))
+  }, [indexer])
+
+  useEffect(() => {
+    loadVaultTags()
+    const unsubState = indexer?.onStateChange(() => loadVaultTags())
+    const unsubVault = ctx.workspace.subscribeVaultChange?.(() => loadVaultTags())
+    return () => { unsubState?.(); unsubVault?.() }
+  }, [indexer, ctx, loadVaultTags])
 
   useEffect(() => { refresh(currentPath) }, [currentPath, refresh])
 
@@ -37,8 +62,14 @@ function HashtagsPanel({
   }, [workspace])
 
   const selectTag = (tag: string) => {
+    const n = ++request.current
     setSelectedTag(tag)
-    setDocsForTag(getContributor().getDocsForHashtag(tag))
+    const local = () => { if (n === request.current) setDocsForTag(getContributor().getDocsForHashtag(tag)) }
+    if (!indexer?.available()) { local(); return }
+    // Index complet : toutes les notes du tag (sous-tags compris), ouvertes ou non.
+    indexer.tags.notes({ tag }).then(r => {
+      if (n === request.current) setDocsForTag(r.items.map(i => ({ docId: i.id, path: i.path })))
+    }, local)
   }
 
   const T = {
@@ -98,6 +129,18 @@ function HashtagsPanel({
             ))}
           </>
         )}
+        {vaultTags && vaultTags.length > 0 && (
+          <>
+            <div style={T.section} title="Tous les tags du vault, notes jamais ouvertes comprises">Tags du vault</div>
+            <div style={T.tagRow} data-testid="vault-tags">
+              {vaultTags.map(t => (
+                <span key={t.tag} style={T.tag(selectedTag === t.tag)} onClick={() => selectTag(t.tag)} title={`${t.count} note${t.count > 1 ? 's' : ''}`}>
+                  #{t.tag} <span style={{ opacity: 0.6 }}>{t.count}</span>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -107,10 +150,11 @@ export class HashtagsWidget implements Widget {
   constructor(
     private readonly ctx: ViewContext,
     private readonly getContributor: () => HashtagIndexContributor,
+    private readonly indexer?: IIndexerAPI,
   ) {}
 
   render() {
-    return <HashtagsPanel ctx={this.ctx} getContributor={this.getContributor} />
+    return <HashtagsPanel ctx={this.ctx} getContributor={this.getContributor} indexer={this.indexer} />
   }
 
   dispose(): void {}

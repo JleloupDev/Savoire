@@ -3,6 +3,7 @@
 
 import type { DocumentStore, DocumentSyncKind, IDocumentMeta, IVaultContentSession, IVaultDirectory, VaultClient } from '@savoire/platform'
 import type { ICRDT, ITransport, SyncAPI, VaultAPI, IIdentityProvider, IIndexChannel, ISharedText, ISharedTree } from '@savoire/plugin-api'
+import type { IVaultIndexer } from './VaultIndexer'
 
 export interface AppVaultSummary {
   id: string
@@ -164,6 +165,12 @@ export interface IVaultSyncSession extends IVaultContentSession {
    * un serveur qui les sert).
    */
   readonly sharing?: IVaultSharing
+  /**
+   * Pair indexeur du vault : requetes, recherche et pouvoirs sur tout le
+   * vault, servis a distance. Capacite du profil serveur ; absente ailleurs,
+   * ou l'appli garde ses index locaux. Voir VaultIndexer.ts et ADR-027.
+   */
+  readonly indexer?: IVaultIndexer
   dispose(): Promise<void>
 }
 

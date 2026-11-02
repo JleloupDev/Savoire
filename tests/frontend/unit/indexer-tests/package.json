@@ -1,0 +1,21 @@
+{
+  "name": "@savoire/indexer-tests",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/indexer": "workspace:*",
+    "@savoire/indexer-core": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

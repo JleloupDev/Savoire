@@ -170,7 +170,7 @@ fn walk(root: &Path, dir: &Path, recursive: bool, out: &mut Vec<FileEntry>) -> R
             _ => continue,
         };
         if let Some(rel) = paths::to_relative(root, &full) {
-            if paths::is_internal_tmp(&rel) {
+            if paths::is_internal(&rel) {
                 continue;
             }
         }

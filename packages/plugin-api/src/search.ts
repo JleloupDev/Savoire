@@ -62,6 +62,8 @@ export interface SearchHit {
   snippets: SearchSnippet[]
   /** Recherche globale (plusieurs vaults) : le vault de la note. */
   vaultId?: string
+  /** Recherche globale : le nom de ce vault, quand l'appli le connait. */
+  vaultName?: string
 }
 
 export interface SearchResult {
@@ -76,9 +78,27 @@ export interface SearchResult {
   partial?: boolean
 }
 
+/** Recherche globale : sur tous les vaults que la personne peut lire, ou sur certains. */
+export interface GlobalSearchQuery extends SearchQuery {
+  vaultIds?: string[]
+}
+
+/**
+ * Recherche sur plusieurs vaults (pair indexeur, route POST /api/v1/search).
+ * Les resultats portent `vaultId` (et `vaultName`) ; `partial` : une partie
+ * des vaults n'a pas repondu.
+ */
+export interface IGlobalSearch {
+  search(query: GlobalSearchQuery, options?: { signal?: AbortSignal }): Promise<SearchResult>
+  /** Ouvre la note d'un resultat ; d'un autre vault : ouvre d'abord ce vault. */
+  open(hit: SearchHit): Promise<void>
+}
+
 export interface ISearchEngine {
   /** Rejette avec un QueryErrorInfo (champ `code`) si la recherche est refusee. */
   search(query: SearchQuery, options?: { signal?: AbortSignal }): Promise<SearchResult>
   state(): IndexState
   onStateChange(cb: (state: IndexState) => void): () => void
+  /** Recherche sur tous les vaults ; absente si le profil ou le vault ouvert ne l'offre pas. */
+  readonly global?: IGlobalSearch
 }

@@ -78,7 +78,7 @@ défaut (réglage `DesktopAppOrigins`, voir `SELF_HOSTING.md`).
 
 ## Prérequis
 
-- Rust stable (1.77.2 au moins) : `rustup`, `cargo`.
+- Rust stable (1.89 au moins, pour `rusqlite`) : `rustup`, `cargo`.
 - Linux : `libwebkit2gtk-4.1-dev`, `libssl-dev`, `librsvg2-dev`,
   `libayatana-appindicator3-dev`, `libxdo-dev`, `build-essential`.
 - macOS : les outils en ligne de commande de Xcode (`xcode-select --install`).
@@ -124,7 +124,10 @@ Les paquets ne sont pas signés. macOS : au premier lancement, clic droit >
 Ouvrir (ou `xattr -cr Savoire.app`). Windows : SmartScreen demande une
 confirmation (« Informations complémentaires » > « Exécuter quand même »).
 
-Tests Rust (chemins, liste des vaults, surveillance) : `cd src-tauri && cargo test`.
+Tests Rust (chemins, liste des vaults, surveillance, index SQLite) : `cd src-tauri && cargo test`.
+`cargo test` construit aussi le pont de test `examples/index_stdio` : le
+pilote TypeScript de l'index natif passe alors les contrats des moteurs
+(`tests/frontend/unit/desktop-tests/src/nativeIndex.test.ts`, sauté sans lui).
 
 Compilation automatique : `.github/workflows/desktop.yml` construit l'appli
 sur Linux, macOS et Windows (machines GitHub) à chaque push sur `master` qui
@@ -175,6 +178,18 @@ cd apps/desktop
   Tauri n'a pas de greffon officiel léger pour ça, il faudrait une
   dépendance de plus. Le fichier est lisible par les programmes de la
   personne, comme le stockage d'un navigateur. « Se déconnecter » l'efface.
+- **L'index du vault** (requêtes, recherche, liens, tags ; ADR-027) :
+  `<vault>/.savoire/index.sqlite` (+ `-wal`, `-shm`), SQLite natif
+  (`src-tauri/src/index_db.rs`, `rusqlite` avec SQLite intégré, FTS5). Il est
+  **dérivé** des notes : on peut l'effacer, il se refait. L'appli
+  (`apps/desktop/src/DesktopVaultIndexer.ts`) indexe **tout le dossier** en
+  tâche de fond : première construction par lots avec progression (« Index en
+  construction, 63 % »), puis seulement ce qui change (signature de chaque
+  source : taille et date du fichier, fichiers d'état CRDT pour une page, un
+  dessin, une carte mentale), au redémarrage comme au fil de l'eau
+  (surveillance du disque, arborescence, texte des notes ouvertes). Les
+  lignes légères des bases y entrent quand la base est ouverte. Ces fichiers
+  ne sont ni listés ni signalés à la page (`paths::is_internal`).
 - **Le reste de l'app** (réglages, clé d'identité locale, index plein texte) :
   stockage de la fenêtre (Linux : `~/.local/share/org.savoire.desktop/`).
 
@@ -192,7 +207,16 @@ cd apps/desktop
   celles des serveurs (`src-tauri/src/servers.rs` : deux fichiers fixes, aucun
   chemin venu de la page) et l'écoute d'événements, rien d'autre (ni dialogue,
   ni shell, ni http).
-- CSP (`tauri.conf.json`) : tout est limité à `'self'`, sauf `connect-src`,
+- Index SQLite (`src-tauri/src/index_db.rs`, permission `index`) : seulement
+  pour une racine autorisée, fichier fixe (`.savoire/index.sqlite`, même
+  garde de chemin que les fichiers). Le SQL vient de la page (le noyau
+  d'indexation y tourne) : `ATTACH` est refusé (autorisateur et limite
+  `SQLITE_LIMIT_ATTACHED = 0`, ce qui bloque aussi `VACUUM INTO`), les
+  extensions ne se chargent pas ; il ne peut ni lire ni écrire un autre
+  fichier. Les commandes tournent hors du fil principal.
+- CSP (`tauri.conf.json`) : tout est limité à `'self'` (`'wasm-unsafe-eval'`
+  et `worker-src 'self' blob:` déjà présents suffisent au Worker SQLite
+  WebAssembly du navigateur), sauf `connect-src`,
   ouvert à `http: https: ws: wss:`. Une CSP est fixe, alors que l'adresse du
   serveur est choisie à l'exécution. Le compromis : la page peut ouvrir une
   connexion vers n'importe quel hôte, mais elle ne peut charger aucun script,

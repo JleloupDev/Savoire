@@ -42,7 +42,7 @@ pub struct Watches {
 
 /// Traduit un evenement de `notify` en changements du port (logique pure).
 pub fn translate(root: &Path, event: &Event) -> Vec<Change> {
-    let rel = |p: &PathBuf| paths::to_relative(root, p).filter(|r| !paths::is_internal_tmp(r));
+    let rel = |p: &PathBuf| paths::to_relative(root, p).filter(|r| !paths::is_internal(r));
     let mut out = Vec::new();
     let mut push = |p: &PathBuf, kind: &'static str| {
         if let Some(path) = rel(p) {
@@ -152,6 +152,8 @@ mod tests {
             ),
             vec![Change { path: "a.md".into(), kind: "created" }]
         );
+        // L'index SQLite s'ecrit sans cesse : jamais signale.
+        assert!(translate(root, &ev(EventKind::Modify(ModifyKind::Data(DataChange::Content)), &["/v/.savoire/index.sqlite-wal"])).is_empty());
         // Hors de la racine (ou la racine elle-meme) : rien.
         assert!(translate(root, &ev(EventKind::Create(CreateKind::File), &["/w/a.md"])).is_empty());
     }

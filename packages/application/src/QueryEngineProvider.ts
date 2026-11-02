@@ -11,9 +11,17 @@
 //    (chemins, corbeille, notes pas encore indexees) ;
 //  - les types des proprietes du vault : une valeur est typee avant d'entrer ;
 //  - les lots de lignes legeres des bases interrogees, ouverts a la demande.
-// C'est aussi le futur mode degrade. Les moteurs suivants (pair indexeur
+// C'est aussi le mode degrade. Les moteurs suivants (pair indexeur
 // distant, SQLite local) se branchent par setPreferred() : ils repondent
-// d'abord, et le moteur local reprend quand ils sont indisponibles.
+// d'abord, et le moteur local reprend quand ils sont indisponibles (etat
+// `unavailable` : requetes et requetes suivies basculent, l'etat le dit).
+//
+// Lecture de ses propres ecritures (option readYourWrites, pair distant) :
+// le pair indexe une modification une a deux secondes apres. En attendant,
+// les lignes qu'il rend pour une note ou une ligne de base tout juste
+// modifiee ICI prennent les valeurs locales, et les requetes suivies sont
+// redonnees aussitot ainsi corrigees. Une note qui entre dans le resultat ou
+// en sort n'y apparait qu'une fois le pair a jour (sa requete se relance).
 //
 // Une requete sur un dossier fait indexer les notes de ce dossier qui ne
 // l'ont jamais ete (lues hors editeur, en petit nombre) : l'etat de l'index
@@ -48,8 +56,12 @@ export interface ILocalQueryEngine extends IQueryEngine {
 
 export interface QueryVaultSources {
   session: IVaultSyncSession
-  /** Metadonnees partagees des notes (canal 'metadata'), et leurs changements. */
-  metadata: { getAll(): DocMetadata[]; onChange(cb: () => void): () => void }
+  /**
+   * Metadonnees partagees des notes (canal 'metadata'), et leurs changements.
+   * `docId` : une note indexee ICI (modifiee par la personne) ; absent : un
+   * changement venu d'ailleurs.
+   */
+  metadata: { getAll(): DocMetadata[]; onChange(cb: (docId?: string) => void): () => void }
   /** Types des proprietes du vault. */
   types?: IPropertyTypes
   /** Indexe une note lue hors editeur (ContentIndexingService.indexNow). Sans lui, pas de rattrapage. */
@@ -68,6 +80,8 @@ export interface QueryEngineProviderOptions {
 }
 
 interface LotState {
+  /** Numero du lot. */
+  n: number
   tree: ISharedTree
   unsub: () => void
   rows: Set<string>
@@ -90,6 +104,46 @@ interface WatchEntry {
   query: Query
   cb: (r: QueryResult) => void
   stop: () => void
+  /** Dernier resultat du moteur prefere, pour le redonner corrige. */
+  last?: QueryResult
+}
+
+/** Options du moteur prefere. */
+export interface PreferredEngineOptions {
+  /**
+   * Le moteur voit les modifications locales en retard (pair distant) : ses
+   * lignes sont corrigees par les valeurs locales des notes et lignes de base
+   * modifiees ici depuis moins de `recentMs` (15 s par defaut).
+   */
+  readYourWrites?: boolean
+  recentMs?: number
+  /** Prevenu de chaque modification locale : note (son id), ligne de base (id de la base), arborescence (rien). */
+  onLocalChange?: (id?: string) => void
+  /**
+   * Le moteur ne connait pas tout le vault (index local du navigateur : les
+   * metadonnees partagees seulement) : le rattrapage des notes jamais
+   * indexees continue, comme sans moteur prefere.
+   */
+  partial?: boolean
+}
+
+/**
+ * Miroir des notes et des lignes legeres que lit le fournisseur (index
+ * SQLite local) : il recoit ce que recoit le moteur en memoire.
+ */
+export interface IQueryIndexMirror {
+  /** Toutes les notes du vault (arborescence + metadonnees typees), a chaque changement. */
+  notes(docs: LocalIndexedDoc[]): void
+  /** Un lot de base lu en entier : toutes ses lignes. */
+  lot(baseId: string, lot: number, lotCount: number, rows: LocalIndexedDoc[]): void
+  /** Lignes d'un lot deja lu, changees ou supprimees. */
+  rows(upserts: LocalIndexedDoc[], removed: string[]): void
+}
+
+interface RecentEntry {
+  path: string
+  props: Record<string, PropertyValue>
+  at: number
 }
 
 function stemOf(path: string): string {
@@ -123,6 +177,18 @@ function isMap(v: TreeValue | undefined): v is ITreeMap {
 export class QueryEngineProvider implements IQueryEngine {
   private local: ILocalQueryEngine
   private preferred: IQueryEngine | null = null
+  private preferredOptions: PreferredEngineOptions = {}
+  private mirror: IQueryIndexMirror | null = null
+  /** Dernieres notes passees au miroir (pour un miroir branche ensuite). */
+  private allNotes: LocalIndexedDoc[] = []
+  private unsubPreferred: (() => void) | null = null
+  /** Les requetes suivies sont branchees sur le moteur prefere. */
+  private usingPreferred = false
+  // Lecture de ses propres ecritures : notes et lignes modifiees ici.
+  private readonly recent = new Map<string, RecentEntry>()
+  private readonly touched = new Set<string>()
+  private notesSynced = false
+  private redeliverTimer: ReturnType<typeof setTimeout> | null = null
   private sources: QueryVaultSources | null = null
   private unsubs: (() => void)[] = []
   private readonly sigs = new Map<string, string>()
@@ -157,8 +223,18 @@ export class QueryEngineProvider implements IQueryEngine {
     this.resubscribeWatches()
     if (!sources) return
     const schedule = () => this.scheduleSync()
-    this.unsubs.push(sources.metadata.onChange(schedule))
-    this.unsubs.push(sources.session.directory.onChange(schedule))
+    this.unsubs.push(sources.metadata.onChange(docId => {
+      // Une note indexee ici : ses valeurs locales sont les plus fraiches.
+      if (docId) {
+        this.touched.add(docId)
+        this.preferredOptions.onLocalChange?.(docId)
+      }
+      schedule()
+    }))
+    this.unsubs.push(sources.session.directory.onChange(() => {
+      this.preferredOptions.onLocalChange?.()
+      schedule()
+    }))
     if (sources.types) {
       this.unsubs.push(sources.types.onChange(() => {
         // Un type change : toutes les valeurs sont a retyper.
@@ -173,10 +249,29 @@ export class QueryEngineProvider implements IQueryEngine {
 
   /**
    * Moteur prefere (pair indexeur, SQLite local) : interroge d'abord. S'il
-   * rejette avec `unavailable`, le moteur local repond. Null : le local seul.
+   * rejette avec `unavailable`, le moteur local repond ; tant que son etat
+   * est `unavailable`, le local repond seul, requetes suivies comprises.
+   * Null : le local seul.
    */
-  setPreferred(engine: IQueryEngine | null): void {
+  /**
+   * Miroir (index SQLite local) : recoit toutes les notes et les lignes des
+   * lots lus. Branche apres coup, il recoit aussitot l'etat courant.
+   */
+  setMirror(mirror: IQueryIndexMirror | null): void {
+    this.mirror = mirror
+    if (!mirror) return
+    if (this.sources) mirror.notes(this.allNotes)
+    for (const base of this.bases.values()) for (const lot of base.lots.values()) this.readLot(base.baseId, lot)
+  }
+
+  setPreferred(engine: IQueryEngine | null, options: PreferredEngineOptions = {}): void {
+    this.unsubPreferred?.()
+    this.unsubPreferred = null
     this.preferred = engine
+    this.preferredOptions = engine ? options : {}
+    this.recent.clear()
+    this.usingPreferred = this.preferredLive()
+    if (engine) this.unsubPreferred = engine.onStateChange(() => this.onPreferredState())
     this.resubscribeWatches()
     this.emitState()
   }
@@ -189,6 +284,8 @@ export class QueryEngineProvider implements IQueryEngine {
 
   dispose(): void {
     this.detach()
+    this.unsubPreferred?.()
+    this.unsubPreferred = null
     this.watches.clear()
     this.stateListeners.clear()
   }
@@ -197,11 +294,12 @@ export class QueryEngineProvider implements IQueryEngine {
 
   async query(query: Query, options?: { signal?: AbortSignal }): Promise<QueryResult> {
     this.prepare(query)
-    if (this.preferred) {
+    const p = this.preferred
+    if (p && this.preferredLive() && !this.servedLocally(query)) {
       try {
-        return await this.preferred.query(query, options)
+        return this.correct(query, await p.query(query, options))
       } catch (err) {
-        if ((err as { code?: string })?.code !== 'unavailable') throw err
+        if ((err as { code?: string })?.code !== 'unavailable' || options?.signal?.aborted) throw err
       }
     }
     return this.local.query(query, options)
@@ -214,7 +312,7 @@ export class QueryEngineProvider implements IQueryEngine {
     // Une base regardee garde ses lots ouverts.
     const st = query.from && 'base' in query.from ? this.bases.get(query.from.base) : undefined
     if (st) st.watchers++
-    entry.stop = this.engine().watch(query, cb)
+    entry.stop = this.subscribe(entry)
     return () => {
       entry.stop()
       this.watches.delete(entry)
@@ -222,7 +320,12 @@ export class QueryEngineProvider implements IQueryEngine {
     }
   }
 
+  /**
+   * Etat du moteur qui repond. Moteur prefere `unavailable` : le moteur
+   * local repond, en mode degrade, et l'etat le dit.
+   */
   state(): IndexState {
+    if (this.preferred && !this.preferredLive()) return { status: 'unavailable' }
     return this.engine().state()
   }
 
@@ -233,16 +336,89 @@ export class QueryEngineProvider implements IQueryEngine {
 
   // ── Interne : moteurs ─────────────────────────────────────────────────────
 
+  private preferredLive(): boolean {
+    return !!this.preferred && this.preferred.state().status !== 'unavailable'
+  }
+
+  /**
+   * Une base est toujours servie ici : ses lots sont deja ouverts pour
+   * l'editer, et passer par le pair ferait attendre chaque action du tableau
+   * (ajout, suppression, cellule) que le pair ait relu le lot (1 a 5 s).
+   */
+  private servedLocally(query: Query): boolean {
+    return !!query.from && 'base' in query.from && !!query.from.base
+  }
+
   private engine(): IQueryEngine {
+    return this.preferred && this.preferredLive() ? this.preferred : this.local
+  }
+
+  /** Branche une requete suivie sur le moteur qui repond. */
+  private subscribe(entry: WatchEntry): () => void {
+    entry.last = undefined
     const p = this.preferred
-    return p && p.state().status !== 'unavailable' ? p : this.local
+    if (p && this.preferredLive() && !this.servedLocally(entry.query)) {
+      return p.watch(entry.query, r => {
+        entry.last = r
+        entry.cb(this.correct(entry.query, r))
+      })
+    }
+    return this.local.watch(entry.query, entry.cb)
   }
 
   private resubscribeWatches(): void {
     for (const w of this.watches) {
       w.stop()
-      w.stop = this.engine().watch(w.query, w.cb)
+      w.stop = this.subscribe(w)
     }
+  }
+
+  /** Le moteur prefere change d'etat : bascule des requetes suivies si besoin. */
+  private onPreferredState(): void {
+    const live = this.preferredLive()
+    if (live !== this.usingPreferred) {
+      this.usingPreferred = live
+      this.resubscribeWatches()
+    }
+    this.emitState()
+  }
+
+  // ── Lecture de ses propres ecritures ────────────────────────────────────
+
+  private noteRecent(id: string, path: string, props: Record<string, PropertyValue>): void {
+    if (!this.preferredOptions.readYourWrites) return
+    this.recent.set(id, { path, props, at: Date.now() })
+    this.scheduleRedeliver()
+  }
+
+  /** Lignes du moteur prefere -> valeurs locales des notes et lignes modifiees ici. */
+  private correct(query: Query, r: QueryResult): QueryResult {
+    if (!this.preferredOptions.readYourWrites || this.recent.size === 0) return r
+    const ttl = this.preferredOptions.recentMs ?? 15_000
+    const now = Date.now()
+    for (const [id, e] of this.recent) if (now - e.at > ttl) this.recent.delete(id)
+    let changed = false
+    const rows = r.rows.map(row => {
+      const fresh = this.recent.get(row.id)
+      if (!fresh) return row
+      changed = true
+      let values: Record<string, PropertyValue> = fresh.props
+      if (query.select) {
+        values = {}
+        for (const key of query.select) if (key in fresh.props) values[key] = fresh.props[key]
+      }
+      return { ...row, path: fresh.path || row.path, values }
+    })
+    return changed ? { ...r, rows } : r
+  }
+
+  /** Redonne aux requetes suivies leur dernier resultat, corrige. */
+  private scheduleRedeliver(): void {
+    if (this.redeliverTimer) return
+    this.redeliverTimer = setTimeout(() => {
+      this.redeliverTimer = null
+      for (const w of this.watches) if (w.last) w.cb(this.correct(w.query, w.last))
+    }, 30)
   }
 
   private detach(): void {
@@ -250,6 +426,11 @@ export class QueryEngineProvider implements IQueryEngine {
     this.unsubs = []
     if (this.syncTimer) { clearTimeout(this.syncTimer); this.syncTimer = null }
     if (this.idleTimer) { clearInterval(this.idleTimer); this.idleTimer = null }
+    if (this.redeliverTimer) { clearTimeout(this.redeliverTimer); this.redeliverTimer = null }
+    this.recent.clear()
+    this.touched.clear()
+    this.notesSynced = false
+    this.allNotes = []
     for (const base of this.bases.values()) this.closeBase(base)
     this.bases.clear()
     this.sigs.clear()
@@ -288,6 +469,7 @@ export class QueryEngineProvider implements IQueryEngine {
     const metas = new Map<string, DocMetadata>()
     for (const m of sources.metadata.getAll()) metas.set(m.docId, m)
     const seen = new Set<string>()
+    const all: LocalIndexedDoc[] = []
     const engine = this.local
     engine.batch(() => {
       for (const d of sources.session.directory.getAll()) {
@@ -300,10 +482,14 @@ export class QueryEngineProvider implements IQueryEngine {
           title: stemOf(d.path),
           props: meta ? this.typeProps(meta.frontmatter ?? {}) : {},
         }
+        all.push(doc)
         const sig = JSON.stringify([doc.path, doc.props])
         if (this.sigs.get(d.id) === sig) continue
+        const known = this.sigs.has(d.id)
         this.sigs.set(d.id, sig)
         engine.upsert(doc)
+        // Modifiee ici (indexee localement) : ses valeurs locales sont les plus fraiches.
+        if (this.notesSynced && known && this.touched.has(d.id)) this.noteRecent(d.id, doc.path, doc.props)
       }
       for (const id of [...this.sigs.keys()]) {
         if (seen.has(id)) continue
@@ -311,15 +497,24 @@ export class QueryEngineProvider implements IQueryEngine {
         engine.remove(id)
       }
     })
+    this.notesSynced = true
+    this.touched.clear()
+    this.allNotes = all
+    this.mirror?.notes(all)
   }
 
-  /** Prepare ce dont la requete a besoin : notes du dossier a rattraper, lots d'une base. */
+  /**
+   * Prepare ce dont la requete a besoin : notes du dossier a rattraper, lots
+   * d'une base. Le moteur prefere connait deja tout le vault : pas de
+   * rattrapage tant qu'il repond.
+   */
   private prepare(query: Query): void {
     const from = query.from
     if (!from) return
-    if ('notes' in from) this.backfill(from.folder, from.ext)
+    const backfill = !this.preferredLive() || !!this.preferredOptions.partial || this.servedLocally(query)
+    if ('notes' in from) { if (backfill) this.backfill(from.folder, from.ext) }
     else if ('base' in from && from.base) {
-      if (from.pages) this.backfill(from.pages.folder, from.pages.ext)
+      if (from.pages && backfill) this.backfill(from.pages.folder, from.pages.ext)
       this.ensureBase(from.base)
     }
   }
@@ -426,8 +621,8 @@ export class QueryEngineProvider implements IQueryEngine {
       void trees.openAnnex(base.baseId, baseLotName(n)).then(tree => {
         base.opening.delete(n)
         if (this.sources !== sources || !base.live) { trees.closeAnnex(base.baseId, baseLotName(n)); return }
-        const lot: LotState = { tree, unsub: () => {}, rows: new Set(), keyOf: new WeakMap() }
-        lot.unsub = tree.onChange(changes => this.applyLotChanges(base.baseId, lot, changes))
+        const lot: LotState = { n, tree, unsub: () => {}, rows: new Set(), keyOf: new WeakMap() }
+        lot.unsub = tree.onChange((changes, info) => this.applyLotChanges(base.baseId, lot, changes, info?.origin === 'local'))
         base.lots.set(n, lot)
         this.readLot(base.baseId, lot)
       }).catch(err => {
@@ -455,6 +650,7 @@ export class QueryEngineProvider implements IQueryEngine {
   private readLot(baseId: string, lot: LotState): void {
     const root = lot.tree.root
     const engine = this.local
+    const docs: LocalIndexedDoc[] = []
     engine.batch(() => {
       const present = new Set<string>()
       for (const key of root.keys()) {
@@ -464,15 +660,18 @@ export class QueryEngineProvider implements IQueryEngine {
         const id = key.slice(BASE_ROW_PREFIX.length)
         lot.keyOf.set(row, key)
         present.add(id)
-        engine.upsert(this.rowDoc(baseId, id, row))
+        const doc = this.rowDoc(baseId, id, row)
+        docs.push(doc)
+        engine.upsert(doc)
       }
       for (const id of lot.rows) if (!present.has(id)) engine.remove(id)
       lot.rows = present
     })
+    this.mirror?.lot(baseId, lot.n, this.bases.get(baseId)?.lotCount ?? BASE_LOT_COUNT, docs)
   }
 
-  /** Un lot a change : seules les lignes touchees sont relues. */
-  private applyLotChanges(baseId: string, lot: LotState, changes: TreeChange[]): void {
+  /** Un lot a change : seules les lignes touchees sont relues. `local` : modifie ici. */
+  private applyLotChanges(baseId: string, lot: LotState, changes: TreeChange[], local = false): void {
     const root = lot.tree.root
     const touched = new Set<string>()
     for (const c of changes) {
@@ -487,6 +686,8 @@ export class QueryEngineProvider implements IQueryEngine {
     }
     if (touched.size === 0) return
     const engine = this.local
+    const upserts: LocalIndexedDoc[] = []
+    const removed: string[] = []
     engine.batch(() => {
       for (const key of touched) {
         const id = key.slice(BASE_ROW_PREFIX.length)
@@ -494,13 +695,19 @@ export class QueryEngineProvider implements IQueryEngine {
         if (isMap(row)) {
           lot.keyOf.set(row, key)
           lot.rows.add(id)
-          engine.upsert(this.rowDoc(baseId, id, row))
+          const doc = this.rowDoc(baseId, id, row)
+          upserts.push(doc)
+          engine.upsert(doc)
+          if (local) this.noteRecent(id, '', doc.props)
         } else {
           lot.rows.delete(id)
+          removed.push(id)
           engine.remove(id)
         }
       }
     })
+    this.mirror?.rows(upserts, removed)
+    if (local) this.preferredOptions.onLocalChange?.(baseId)
   }
 
   private closeBase(base: BaseState): void {

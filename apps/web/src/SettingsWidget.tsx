@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // SettingsWidget — écran de paramètres style Obsidian.
-// Tabs: Plugins, Raccourcis, Triggers, Thèmes.
+// Tabs: Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
 import { useState, useEffect } from 'react'
@@ -10,6 +10,8 @@ import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } 
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
+import type { IVaultIndexer } from '@savoire/application'
+import { VaultIndexerSettings } from './VaultIndexerSettings'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +44,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes'
+type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault'
 
 export function SettingsPanel({
   loader,
@@ -50,6 +52,7 @@ export function SettingsPanel({
   pluginSettings,
   hotkeys,
   commands,
+  vaultIndexer,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -58,6 +61,8 @@ export function SettingsPanel({
   commands?: { getAll(): PluginCommand[] }
   /** Catalogue et activation. Absent : simple liste des plugins charges. */
   pluginSettings?: PluginSettingsService
+  /** Pair indexeur du vault ouvert (profil serveur) : onglet Vault. */
+  vaultIndexer?: { indexer: IVaultIndexer; isOwner: boolean; vaultName: string }
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -99,6 +104,9 @@ export function SettingsPanel({
           )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
           <button style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
+          {vaultIndexer && (
+            <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
+          )}
         </div>
       </div>
 
@@ -110,6 +118,9 @@ export function SettingsPanel({
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
+        {tab === 'vault' && vaultIndexer && (
+          <VaultIndexerSettings indexer={vaultIndexer.indexer} isOwner={vaultIndexer.isOwner} vaultName={vaultIndexer.vaultName} />
+        )}
       </div>
     </div>
   )

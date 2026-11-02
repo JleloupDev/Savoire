@@ -40,7 +40,8 @@ export function createGraphPlugin(options: { groupId?: string; tabOf?: string } 
         ribbon: true,
         closable: true,
         createView(ctx) {
-          return new GraphWidget(ctx, () => current)
+          // Avec un index de tout le vault (api.indexer) : le graphe complet.
+          return new GraphWidget(ctx, () => current, api.indexer)
         },
       })
     },
@@ -52,3 +53,4 @@ export function createGraphPlugin(options: { groupId?: string; tabOf?: string } 
 }
 
 export { GraphIndexContributor } from './GraphIndexContributor'
+export { GraphWidget, GRAPH_REMOTE_LIMIT } from './GraphWidget'

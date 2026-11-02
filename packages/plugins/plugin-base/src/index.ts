@@ -12,12 +12,18 @@
 // ceux du vault (api.properties). Tout s'edite a plusieurs en temps reel.
 import type { FileContext, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { activeBaseView, createBaseView } from './view'
+import { BASE_QUERY_FENCE_RE, renderBaseQueryBlock } from './queryBlock'
+import { ensureStyle } from './style'
+import { parseBaseEmbed, renderBaseEmbed } from './embed'
 
 export { createBaseView } from './view'
 export { ManifestStore, readManifest, defaultManifest, TITLE_COLUMN } from './manifest'
 export type { BaseManifest, BaseViewDef, BaseFilter, BaseSort, BaseColumn } from './manifest'
 export { LightRows, readRow } from './rows'
 export type { LightRow } from './rows'
+export { parseBaseQuery, evaluateBaseQuery, BASE_QUERY_FENCE_RE, renderBaseQueryBlock } from './queryBlock'
+export type { BaseQuery, BaseQueryResult } from './queryBlock'
+export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './embed'
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
 
@@ -31,6 +37,8 @@ export function createBasePlugin(): VaultPlugin {
       description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
       scope: 'vault',
       permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      // Actif dans toutes les notes : blocs ```base et ![[x.base]].
+      defaultActive: true,
     },
 
     async onload(pluginApi: PluginAPI) {
@@ -46,6 +54,36 @@ export function createBasePlugin(): VaultPlugin {
         // premiere modification (voir docs/Architecture/plugin-crdt-api.md).
         create: async () => '',
         open: (path: string, ctx: FileContext) => createBaseView(path, ctx, api),
+      })
+      // Bloc de requete dans une note : ```base ... ``` (queryBlock.ts).
+      pluginApi.blocks?.register({
+        type: 'base-query',
+        trigger: {
+          id: 'base-query',
+          label: 'Requête sur une base',
+          description: 'Bloc from / where / select (sum, count…)',
+          icon: '🗃️',
+          category: 'Bases',
+          insert: '```base\nfrom Projets.base\nwhere prop("Statut") == "Fait"\nselect sum(prop("Prix")) as "Total", count()\n```',
+        },
+        detect: (text: string) => BASE_QUERY_FENCE_RE.test(text.trim()),
+        deserialize: (raw: string) => BASE_QUERY_FENCE_RE.exec(String(raw).trim())?.[1] ?? '',
+        serialize: (data: unknown) => `\`\`\`base\n${String(data)}\n\`\`\``,
+        createEditorWidget: () => ({ mount: () => {}, destroy: () => {} }),
+        renderClient: (data: unknown) => { ensureStyle(); return renderBaseQueryBlock(String(data), api) },
+      })
+      // Base integree dans une note : ![[db.base]] ou ![[db.base#Vue]] (embed.ts).
+      pluginApi.blocks?.register({
+        type: 'base-embed',
+        detect: (text: string) => parseBaseEmbed(text) !== null,
+        deserialize: (raw: string) => String(raw).trim(),
+        serialize: (data: unknown) => String(data),
+        createEditorWidget: () => ({ mount: () => {}, destroy: () => {} }),
+        renderClient: (data: unknown) => {
+          ensureStyle()
+          const target = parseBaseEmbed(String(data))
+          return target ? renderBaseEmbed(target, api) : document.createElement('div')
+        },
       })
       // Raccourcis possibles : par le moteur de commandes, jamais par un
       // gestionnaire de touches propre au plugin.

@@ -8,7 +8,8 @@
 //   base: {
 //     version: 1,
 //     source:  { folder, filters }            dossier des lignes-pages, filtre
-//     columns: { <cle>: { width, order } }    proprietes affichees
+//     columns: { <cle>: { width, order, formula? } }  proprietes affichees ;
+//                                             une cle '=Nom' : colonne formule
 //     views:   { <id>: { name, type, order, filters, sorts, groupBy, hidden } }
 //     lotCount, lots: { <n>: true }           lots de lignes legeres (query.ts)
 //   }
@@ -26,6 +27,13 @@ import type { FilterOp, ISharedTree, ITreeMap, PropertyValue, TreeValue } from '
 /** Colonne du titre : toujours la premiere, jamais retiree. */
 export const TITLE_COLUMN = '@title'
 
+/** Une colonne formule a une cle qui commence par ce signe (jamais une propriete). */
+export const FORMULA_PREFIX = '='
+
+export function isFormulaKey(key: string): boolean {
+  return key.startsWith(FORMULA_PREFIX)
+}
+
 export interface BaseFilter {
   /** Propriete, ou TITLE_COLUMN pour le nom de la ligne. */
   key: string
@@ -42,6 +50,8 @@ export interface BaseColumn {
   key: string
   width: number
   order: number
+  /** Colonne formule (cle '=Nom') : son expression, syntaxe Notion. */
+  formula?: string
 }
 
 export type BaseViewType = 'table' | 'kanban'
@@ -119,7 +129,11 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
     for (const key of columnsMap.keys()) {
       const c = columnsMap.get(key)
       if (!isMap(c)) continue
-      columns.push({ key, width: num(c.get('width'), DEFAULT_WIDTH), order: num(c.get('order'), 0) })
+      const formula = c.get('formula')
+      columns.push({
+        key, width: num(c.get('width'), DEFAULT_WIDTH), order: num(c.get('order'), 0),
+        ...(typeof formula === 'string' ? { formula } : {}),
+      })
     }
   }
   columns.sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
@@ -193,7 +207,9 @@ export class ManifestStore {
         source: { kind: 'map', entries: { folder: d.source.folder, filters: JSON.stringify(d.source.filters) } },
         columns: {
           kind: 'map',
-          entries: Object.fromEntries(d.columns.map(c => [c.key, { kind: 'map', entries: { width: c.width, order: c.order } }])),
+          entries: Object.fromEntries(d.columns.map(c => [c.key, {
+            kind: 'map', entries: { width: c.width, order: c.order, ...(c.formula !== undefined ? { formula: c.formula } : {}) },
+          }])),
         },
         views: {
           kind: 'map',
@@ -229,6 +245,7 @@ export class ManifestStore {
       const m = c as ITreeMap
       if (patch.width !== undefined) m.set('width', Math.round(patch.width))
       if (patch.order !== undefined) m.set('order', patch.order)
+      if (patch.formula !== undefined) m.set('formula', patch.formula)
     })
   }
 

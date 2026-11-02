@@ -10,9 +10,11 @@
   "dependencies": {
     "@savoire/application": "workspace:*",
     "@savoire/desktop": "workspace:*",
+    "@savoire/indexer-core": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
-    "@savoire/plugin-api": "workspace:*"
+    "@savoire/plugin-api": "workspace:*",
+    "yjs": "^13.6.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

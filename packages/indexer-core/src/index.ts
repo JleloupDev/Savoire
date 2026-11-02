@@ -28,6 +28,10 @@ export {
   TEXT_NAME, TREE_ROOT, PAGE_KEY,
 } from './crdt/content'
 export type { DocContent } from './crdt/content'
+export {
+  BASE_KEY, lotDocId, parseLotDocId, readBaseManifest, baseManifestFromUpdates, readLotRows, lotRowsFromUpdates, lightRowRecord,
+} from './crdt/base'
+export type { BaseManifest, LightRow } from './crdt/base'
 
 export { method } from './power'
 export type { IndexPower, PowerContext, PowerMethod, MethodOptions, DocRef, Statements } from './power'

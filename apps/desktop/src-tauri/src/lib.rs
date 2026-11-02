@@ -11,6 +11,9 @@
 
 #[cfg(desktop)]
 mod folders;
+// Public : le pont de test examples/index_stdio.rs s'en sert.
+#[cfg(desktop)]
+pub mod index_db;
 #[cfg(desktop)]
 mod paths;
 mod servers;
@@ -32,6 +35,8 @@ pub fn run() {
             let file = app.path().app_config_dir()?.join("recent-vaults.json");
             app.manage(vaults::VaultRegistry::load(file));
             app.manage(watch::Watches::default());
+            // Index SQLite des vaults ouverts (.savoire/index.sqlite).
+            app.manage(index_db::IndexDbs::default());
             // Serveurs Savoire connus et leurs sessions (servers.json, server-sessions.json).
             app.manage(servers::ServerSettings::load(&app.path().app_config_dir()?));
             Ok(())
@@ -55,6 +60,10 @@ pub fn run() {
             vault_fs::vault_remove,
             watch::vault_watch,
             watch::vault_unwatch,
+            index_db::index_exec,
+            index_db::index_all,
+            index_db::index_batch,
+            index_db::index_close,
             servers::server_list,
             servers::server_select,
             servers::server_forget,

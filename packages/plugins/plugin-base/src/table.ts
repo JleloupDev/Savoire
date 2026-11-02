@@ -5,7 +5,7 @@
 // visibles existent dans la page, les donnees arrivent par pages
 // (api.query, pagination par curseur). La premiere page est suivie en direct
 // (watch) : une cellule changee par un autre membre se voit tout de suite.
-import type { IQueryEngine, PropertyType, PropertyValue, Query, QueryResult, QueryRow } from '@savoire/plugin-api'
+import type { CompiledFormula, IQueryEngine, PropertyType, PropertyValue, Query, QueryResult, QueryRow } from '@savoire/plugin-api'
 import { h, openEditor, renderValue, type CellContext } from './cells'
 import { TITLE_COLUMN } from './manifest'
 
@@ -18,6 +18,18 @@ export interface TableColumn {
   label: string
   width: number
   type: PropertyType
+  /** Colonne formule : calculee pour chaque ligne, jamais editee. */
+  formula?: CompiledFormula
+  /** Formule mal ecrite : le message, montre dans chaque cellule. */
+  formulaError?: string
+}
+
+/** Type d'affichage d'un resultat de formule. */
+function resultType(v: PropertyValue): PropertyType {
+  if (typeof v === 'number') return 'number'
+  if (typeof v === 'boolean') return 'checkbox'
+  if (Array.isArray(v)) return 'multiselect'
+  return 'text'
 }
 
 export interface TableHost {
@@ -257,6 +269,15 @@ export class BaseTable {
           td.append(promote, remove)
         }
         if (!ro) td.addEventListener('dblclick', () => this.editCell(td, col, row.title, v => this.host.rename(row, String(v ?? '').trim() || 'Sans titre')))
+      } else if (col.formula || col.formulaError) {
+        td.classList.add('base-td-formula')
+        const r = col.formula ? col.formula.evaluate(row) : { ok: false as const, error: col.formulaError! }
+        if (r.ok) td.append(renderValue(resultType(r.value), r.value, ctx))
+        else {
+          td.classList.add('base-td-error')
+          td.title = r.error
+          td.append(h('span', { class: 'base-formula-error' }, '⚠'))
+        }
       } else {
         const value = row.values[col.key]
         td.append(renderValue(col.type, value, ctx))

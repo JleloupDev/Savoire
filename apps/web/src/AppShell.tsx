@@ -25,6 +25,7 @@ import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
 import { SharingPanel } from './SharingPanel'
+import { IndexStatusIndicator } from './IndexStatusIndicator'
 import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
@@ -482,6 +483,7 @@ export function AppShell() {
     whenPluginAPIReady,
     loadStoreEntry,
     attachVaultServices,
+    indexerServices,
   } = usePluginBootstrap({
     roomClient: pluginSyncRef.current,
     vaultProxy,
@@ -685,7 +687,7 @@ export function AppShell() {
         const sharing = await active.session?.sharing?.getSharing('vault', vault.id, tok).catch(() => null)
         const others = (sharing?.permissions ?? []).map(p => ({ id: p.subjectId, name: p.subjectDisplayName || p.subjectId }))
         return [...own, ...others.filter(o => !own.some(x => x.id === o.id))]
-      })
+      }, vault.id)
 
       // Les snapshots d'index viennent d'etre restaures (switchVault ci-dessus),
       // mais les panneaux qui les affichent ont deja construit leur vue : sans
@@ -960,6 +962,29 @@ export function AppShell() {
   }
 
   onRefreshRef.current = () => { void loadVaults() }
+
+  // Recherche globale (« Tous mes vaults ») : noms des vaults, et ouverture
+  // d'une note d'un autre vault (comme une note partagee : vault, puis note).
+  useEffect(() => {
+    indexerServices.setGlobalHost({
+      vaultName: id => vaultsRef.current.find(v => v.id === id)?.name,
+      open: async (vaultId, path) => {
+        if (vaultId && vaultId !== selectedVaultRef.current?.id) {
+          const vault = vaultsRef.current.find(v => v.id === vaultId)
+          const tok = tokenRef.current
+          if (!vault || !tok) throw new Error('Ce vault n\'est plus accessible.')
+          await switchToVault(vault, tok)
+          // La liste des notes du vault arrive juste apres son ouverture : on
+          // l'attend (5 s au plus) avant d'ouvrir la note.
+          for (let i = 0; i < 50 && !documentsRef.current.some(d => d.path === path); i++) {
+            await new Promise(r => setTimeout(r, 100))
+          }
+        }
+        await managerRef.current?.openFile(path)
+      },
+    })
+    return () => indexerServices.setGlobalHost(null)
+  }, [indexerServices, switchToVault])
 
   onOpenSharedNoteRef.current = (note: SharedNote) => {
     if (!token) return
@@ -1363,6 +1388,9 @@ export function AppShell() {
         {/* Right actions */}
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
 
+          {/* Etat de l'index du vault (pair indexeur ou index local), explication au survol. */}
+          {selectedVault && <IndexStatusIndicator services={indexerServices} />}
+
           {activeDoc && (
             <span data-testid="save-status" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
           )}
@@ -1442,7 +1470,8 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
+            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined}
+              vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
           </div>
         </div>

@@ -66,7 +66,7 @@ function injectTheme(): void {
 
 const FENCE_RE = /^```(\w*)\n?([\s\S]*?)\n?```\s*$/
 
-const DEDICATED_LANGS = new Set(['mermaid', 'table'])
+const DEDICATED_LANGS = new Set(['mermaid', 'table', 'base'])
 
 interface CodeData { lang: string; code: string }
 

@@ -37,6 +37,7 @@ import { RestVaultStorage } from './RestVaultStorage'
 import { ServerVaultFiles } from './ServerVaultFiles'
 import { HttpSharingBackend } from './HttpSharingBackend'
 import { SnapshotDocuments, type SnapshotChannel } from './SnapshotDocuments'
+import { RemoteVaultIndexer } from './RemoteVaultIndexer'
 
 interface OpenDoc {
   crdt: YjsCrdtAdapter
@@ -62,6 +63,8 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   readonly files: ServerVaultFiles
   /** Partage arbitre par le serveur (permissions et liens). */
   readonly sharing: IVaultSharing
+  /** Pair indexeur, cree au premier usage (voir le getter `indexer`). */
+  private remoteIndexer: RemoteVaultIndexer | undefined
   /** Allume au premier « vault-not-found » d'un hub : tout le reseau du vault s'arrete. */
   private readonly gone: VaultGoneSignal
   /** Vrai une fois open() termine : avant, la perte du vault fait rejeter open(). */
@@ -124,6 +127,20 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
   private async rejectOpen(): Promise<never> {
     await this.dispose()
     throw new VaultGoneError(this.opts.vaultId)
+  }
+
+  /**
+   * Pair indexeur du vault, par les routes publiques du backend (ADR-027) :
+   * requetes, recherche et pouvoirs sur tout le vault. Cree au premier usage,
+   * pour ne rien interroger tant que l'appli ne s'en sert pas.
+   */
+  get indexer(): RemoteVaultIndexer {
+    this.remoteIndexer ??= RemoteVaultIndexer.create(this.opts.vaultId, {
+      baseUrl: this.opts.serverUrl,
+      getToken: () => this.opts.getToken() ?? this.opts.token,
+    })
+    if (this.disposed) this.remoteIndexer.dispose()
+    return this.remoteIndexer
   }
 
   /** Vault perdu : arreter les documents ouverts, puis prevenir l'app une fois. */
@@ -321,6 +338,7 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    this.remoteIndexer?.dispose()
     this.unsubDirectory()
     for (const docId of [...this.docs.keys()]) this.closeDocument(docId)
     this.snapshots.dispose()

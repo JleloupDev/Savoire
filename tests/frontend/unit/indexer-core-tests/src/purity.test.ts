@@ -34,9 +34,12 @@ describe('purete du coeur', () => {
   it('dependances : plugin-api, domain-index, yjs', () => {
     const allowed = new Set(['@savoire/plugin-api', '@savoire/domain-index', 'yjs'])
     for (const f of core) {
+      // L'entree separee /wasm (Worker du navigateur) charge en plus SQLite WebAssembly.
+      const wasm = relative(SRC, f).startsWith('wasm')
       for (const m of readFileSync(f, 'utf8').matchAll(/from ['"]([^'"]+)['"]/g)) {
         if (m[1].startsWith('.')) continue
-        expect([relative(SRC, f), m[1], allowed.has(m[1])]).toEqual([relative(SRC, f), m[1], true])
+        const ok = allowed.has(m[1]) || (wasm && m[1] === '@sqlite.org/sqlite-wasm')
+        expect([relative(SRC, f), m[1], ok]).toEqual([relative(SRC, f), m[1], true])
       }
     }
   })

@@ -7,6 +7,7 @@ const pkg = (p: string) => path.resolve(__dirname, '../../../../packages', p)
 
 export const alias = [
   { find: /^@savoire\/indexer-core\/node$/, replacement: pkg('indexer-core/src/node/index.ts') },
+  { find: /^@savoire\/indexer-core\/(local|wasm|tauri)$/, replacement: pkg('indexer-core/src/$1/index.ts') },
   { find: /^@savoire\/indexer-core$/, replacement: pkg('indexer-core/src/index.ts') },
   { find: /^@savoire\/plugin-api$/, replacement: pkg('plugin-api/src/index.ts') },
   { find: /^@savoire\/plugin-runtime$/, replacement: pkg('plugin-runtime/src/index.ts') },

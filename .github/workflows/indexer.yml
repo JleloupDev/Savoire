@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Savoire Indexer (pair indexeur, ADR-027) : verification des types, paquet
+# construit (esbuild), tests du noyau d'indexation et du service (faux backend,
+# paquet lance avec deux fils), image Docker. Ne touche a aucun autre job.
+name: Indexer
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/indexer/**'
+      - 'packages/indexer-core/**'
+      - 'packages/plugin-api/**'
+      - 'packages/domain-index/**'
+      - 'tests/frontend/unit/indexer-tests/**'
+      - 'tests/frontend/unit/indexer-core-tests/**'
+      - 'frontend/pnpm-lock.yaml'
+      - '.github/workflows/indexer.yml'
+  pull_request:
+    paths:
+      - 'apps/indexer/**'
+      - 'packages/indexer-core/**'
+      - 'packages/plugin-api/**'
+      - 'packages/domain-index/**'
+      - 'tests/frontend/unit/indexer-tests/**'
+      - 'tests/frontend/unit/indexer-core-tests/**'
+      - '.github/workflows/indexer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Types, paquet, tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: pnpm
+        run: npm install -g pnpm@11
+
+      - name: Dependances
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Types
+        working-directory: frontend
+        run: pnpm --filter @savoire/indexer --filter @savoire/indexer-core --filter @savoire/indexer-tests typecheck
+
+      - name: Paquet (dist/indexer.mjs)
+        working-directory: frontend
+        run: pnpm --filter @savoire/indexer build
+
+      - name: Configuration documentee
+        working-directory: apps/indexer
+        run: node dist/indexer.mjs --help > /dev/null
+
+      - name: Tests
+        working-directory: frontend
+        run: pnpm --filter @savoire/indexer-core-tests --filter @savoire/indexer-tests test
+
+  image:
+    name: Image Docker
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Construire l'image
+        run: docker build -f apps/indexer/Dockerfile -t savoire-indexer:ci .
+
+      - name: L'image demarre et refuse une configuration incomplete
+        run: |
+          set +e
+          docker run --rm savoire-indexer:ci node dist/indexer.mjs --help > /dev/null || exit 1
+          docker run --rm -e SAVOIRE_INDEXER_NAME=ci savoire-indexer:ci
+          code=$?
+          test "$code" = "78" || { echo "code de sortie attendu 78, lu $code"; exit 1; }
+          test "$(docker run --rm savoire-indexer:ci id -un)" = "node"

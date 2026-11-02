@@ -18,8 +18,10 @@ import type {
   IIndexRegistry,
   AnyIndexContributor,
   InputTrigger,
+  IIndexerAPI,
   IPropertyTypes,
   IQueryEngine,
+  ISearchEngine,
   PluginAPI,
   PluginCommand,
   SlashCommandItem,
@@ -431,6 +433,10 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public query?: IQueryEngine
   /** Types des proprietes du vault, poses par l'application. */
   public properties?: IPropertyTypes
+  /** Recherche plein texte du vault, posee par l'application (voir ADR-027). */
+  public search?: ISearchEngine
+  /** Pouvoirs de l'index de tout le vault (liens, tags), poses par l'application. */
+  public indexer?: IIndexerAPI
 
   constructor(
     public readonly blocks: BlockRegistryImpl,

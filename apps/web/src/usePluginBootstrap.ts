@@ -24,7 +24,7 @@ import {
   ContentIndexingService, FilenameIndexContributor, MetadataIndexContributor, RealtimeIndexingService,
   NoteTextEditor, QueryEngineProvider, VaultPropertyTypes, sessionTrees,
 } from '@savoire/application'
-import type { ITextChangeSource, IVaultSyncSession } from '@savoire/application'
+import type { FullTextIndexLike, ITextChangeSource, IVaultSyncSession } from '@savoire/application'
 import { IndexEngine } from '@savoire/domain-index'
 import type { ICollaborativeText, AnchorContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
@@ -35,6 +35,8 @@ import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import { ReviewWidget } from './ReviewWidget'
 import type { VaultSummary } from './types'
+import { IndexerServices } from './indexerServices'
+import { LocalIndexServices } from './localIndex'
 interface PluginBootstrapOptions {
   /** The shared SyncAPI instance (stable, created once). */
   roomClient: SyncAPI
@@ -83,7 +85,9 @@ export interface PluginBootstrapResult {
    * VaultAPI.editText) sur sa session. Undefined : aucun vault. A appeler
    * apres ContentIndexingService.switchVault.
    */
-  attachVaultServices: (session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>) => void
+  attachVaultServices: (session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>, vaultId?: string) => void
+  /** Pair indexeur : api.search, api.indexer, etat de l'index, recherche globale. Voir indexerServices.ts. */
+  indexerServices: IndexerServices
 }
 
 /**
@@ -162,6 +166,24 @@ export function usePluginBootstrap({
   const vaultSessionRef = useRef<IVaultSyncSession | undefined>(undefined)
   const queryProviderRef = useRef<QueryEngineProvider | null>(null)
   if (!queryProviderRef.current) queryProviderRef.current = new QueryEngineProvider(() => new InMemoryQueryEngine())
+  // Recherche (api.search), pouvoirs de l'index (api.indexer), pair indexeur.
+  const indexerServicesRef = useRef<IndexerServices | null>(null)
+  if (!indexerServicesRef.current) {
+    indexerServicesRef.current = new IndexerServices({
+      query: queryProviderRef.current,
+      fulltext: () => indexRegistryRef.current?.get('fulltext') as unknown as FullTextIndexLike | undefined,
+      isTrashed: id => vaultProxy.isTrashed?.(id) ?? false,
+    })
+  }
+  // Index SQLite local (bureau : natif ; navigateur pair a pair : WebAssembly). Voir localIndex.ts.
+  const localIndexRef = useRef<LocalIndexServices | null>(null)
+  if (!localIndexRef.current) {
+    localIndexRef.current = new LocalIndexServices({
+      query: queryProviderRef.current,
+      search: indexerServicesRef.current.search,
+      powers: indexerServicesRef.current.powers,
+    })
+  }
   const propertyTypesRef = useRef<VaultPropertyTypes | null>(null)
   if (!propertyTypesRef.current) propertyTypesRef.current = new VaultPropertyTypes()
   const noteEditorRef = useRef<NoteTextEditor | null>(null)
@@ -276,6 +298,8 @@ export function usePluginBootstrap({
         indexRegistry,
       )
       pluginApi.query = queryProviderRef.current!
+      pluginApi.search = indexerServicesRef.current!.search
+      pluginApi.indexer = indexerServicesRef.current!.powers
       pluginApi.properties = propertyTypesRef.current!
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
@@ -285,6 +309,14 @@ export function usePluginBootstrap({
         },
       })
       vaultProxy.editText = (documentId, edit) => noteEditorRef.current!.edit(documentId, edit)
+      // Arbre d'un autre document : base integree dans une note (lecture seule).
+      vaultProxy.openTree = async documentId => {
+        const session = vaultSessionRef.current
+        if (!session) throw new Error('Aucun vault ouvert')
+        session.openDocument(documentId)
+        return session.openTree(documentId)
+      }
+      vaultProxy.closeTree = documentId => { vaultSessionRef.current?.closeDocument(documentId) }
 
       // Branche AVANT tout enregistrement : ce que l'application enregistre
       // elle-meme (le type Markdown) n'appartient a aucun plugin, donc reste
@@ -301,6 +333,8 @@ export function usePluginBootstrap({
         indexRegistry,
         new InMemoryIndexStorage(),
       )
+      // Le texte complet d'une note stabilisee nourrit l'index SQLite local.
+      pluginApi.hooks.onDocumentStabilized((docId, path, content) => localIndexRef.current?.noteText(docId, path, content))
 
       // TEMPORARY: register Markdown as a native file type so the file tree and
       // creation picker are aware of it before any plugin loads. A better solution
@@ -377,7 +411,10 @@ export function usePluginBootstrap({
     }
   }, [vaultBrowserRefs, vaultProxy, editorAreaRefsHolder, roomClient, managerRef])
 
-  const attachVaultServices = useCallback((session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>) => {
+  const attachVaultServices = useCallback((session: IVaultSyncSession | undefined, members?: () => Promise<PropertyMember[]>, vaultId?: string) => {
+    // L'index local du vault precedent se debranche avant que le fournisseur
+    // de requetes ne lise le nouveau vault.
+    localIndexRef.current!.detach()
     vaultSessionRef.current = session
     noteEditorRef.current?.dispose()
     const types = propertyTypesRef.current!
@@ -390,12 +427,20 @@ export function usePluginBootstrap({
       // Lu a chaque fois : le contributeur est recree a chaque changement de vault.
       metadata: {
         getAll: () => (registry.get('metadata') as MetadataIndexContributor | undefined)?.getAllMetadata() ?? [],
-        onChange: cb => cis.subscribeIndexed(() => cb()),
+        // docId : une note indexee ici (lecture de ses propres ecritures).
+        onChange: cb => cis.subscribeIndexed(docId => cb(docId || undefined)),
       },
       types,
-      indexNow: (docId, path, markdown) => cis.indexNow(docId, path, markdown),
+      indexNow: (docId, path, markdown) => {
+        localIndexRef.current?.noteText(docId, path, markdown)
+        return cis.indexNow(docId, path, markdown)
+      },
       trees: sessionTrees(session),
     } : undefined)
+    // Pair indexeur du vault (profil serveur) : requetes, recherche, pouvoirs.
+    indexerServicesRef.current!.attach(session)
+    // Sans pair : index SQLite local, s'il y en a un pour ce profil.
+    localIndexRef.current!.attach(session, vaultId)
   }, [])
 
   return {
@@ -414,5 +459,6 @@ export function usePluginBootstrap({
     whenPluginAPIReady,
     loadStoreEntry,
     attachVaultServices,
+    indexerServices: indexerServicesRef.current!,
   }
 }

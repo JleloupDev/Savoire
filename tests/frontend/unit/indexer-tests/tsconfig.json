@@ -1,0 +1,16 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/indexer-core": ["../../../../packages/indexer-core/src/index.ts"],
+      "@savoire/indexer-core/node": ["../../../../packages/indexer-core/src/node/index.ts"],
+      "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
+      "@savoire/domain-index": ["../../../../packages/domain-index/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

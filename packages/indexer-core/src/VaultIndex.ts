@@ -256,6 +256,22 @@ export class VaultIndex {
     })
   }
 
+  /** Bases dont l'index a des lignes legeres. */
+  bases(): Promise<string[]> {
+    return this.enqueue(async () => {
+      const rows = await this.driver.all<{ base: string }>('SELECT DISTINCT base FROM docs WHERE base IS NOT NULL ORDER BY base')
+      return rows.map(r => r.base)
+    })
+  }
+
+  /** Ids des lignes legeres indexees d'une base. */
+  rowIds(base: string): Promise<string[]> {
+    return this.enqueue(async () => {
+      const rows = await this.driver.all<{ id: string }>('SELECT id FROM docs WHERE base = ?', [base])
+      return rows.map(r => r.id)
+    })
+  }
+
   /**
    * Valeurs propres a l'hote, rangees avec l'index (le pair y note l'epoque
    * du flux, par exemple). Effacees avec tout le reste quand le noyau change.

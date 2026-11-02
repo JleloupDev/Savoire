@@ -12,6 +12,21 @@
       "source": "./src/node/index.ts",
       "import": "./dist/node/index.js",
       "types": "./dist/node/index.d.ts"
+    },
+    "./local": {
+      "source": "./src/local/index.ts",
+      "import": "./dist/local/index.js",
+      "types": "./dist/local/index.d.ts"
+    },
+    "./wasm": {
+      "source": "./src/wasm/index.ts",
+      "import": "./dist/wasm/index.js",
+      "types": "./dist/wasm/index.d.ts"
+    },
+    "./tauri": {
+      "source": "./src/tauri/index.ts",
+      "import": "./dist/tauri/index.js",
+      "types": "./dist/tauri/index.d.ts"
     }
   },
   "main": "./dist/index.js",
@@ -24,6 +39,7 @@
   "dependencies": {
     "@savoire/domain-index": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "yjs": "^13.6.0"
   },
   "devDependencies": {

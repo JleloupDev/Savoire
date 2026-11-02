@@ -5,8 +5,8 @@
 Le noyau d'indexation partagé (ADR-027, étape 2). Il transforme les documents d'un vault en un index SQLite **dérivé** : jamais synchronisé, toujours reconstructible depuis les CRDT. Le même code tourne :
 
 - dans le **pair indexeur** (Node, `apps/indexer`, étape suivante) ;
-- dans le **navigateur** (SQLite WebAssembly dans un Worker, à venir) ;
-- sur le **bureau** (SQLite natif via Tauri, à venir).
+- dans le **navigateur** (SQLite WebAssembly dans un Worker, entrée `/wasm`) ;
+- sur le **bureau** (SQLite natif via Tauri, entrée `/tauri`).
 
 Le cœur n'utilise ni le DOM ni d'API Node (vérifié par un test). Dépendances : `@savoire/plugin-api`, `@savoire/domain-index`, `yjs`. Aucune dépendance npm nouvelle.
 
@@ -40,23 +40,37 @@ index.searchEngine().search({ text: 'reseau "mot exact"' })
 ```
 
 - `applyDoc` / `applyDocs` : `{ id, path, content }` (Markdown) ; une note de la corbeille (`.trash/`) est retirée, jamais indexée.
-- `applyRecords` : notes déjà lues (`extractNote`, `makeRecord`), et **lignes légères** d'une base (`makeRecord({ id, base, path: '', title, props })`) : la source `{ base }` des requêtes les lit. La lecture des lots de lignes dans les CRDT n'est pas faite ici.
+- `applyRecords` : notes déjà lues (`extractNote`, `makeRecord`), et **lignes légères** d'une base (`lightRowRecord`, ou `makeRecord({ id, base, path: '', title, props })`) : la source `{ base }` des requêtes les lit.
 - `moveDoc` : déplacement sans relire le contenu (le titre tiré du nom suit, les liens sont résolus à nouveau). Rend `'missing'` si l'hôte doit relire le document (sortie de corbeille, changement d'extension).
 - `paths()` + `diffTree(indexé, arbre)` : ce qui a changé dans l'arbre du vault.
 - `setState({ status: 'building', progress })` : état rendu avec chaque résultat.
+- `VaultIndex.inspect(driver)` : ce qu'`open()` ferait d'une base existante, sans rien y écrire (pouvoirs intacts ou changés, noyau, `built`, `seq`) : l'hôte décide de reconstruire à côté (l'ancienne version répond avec ses pouvoirs intacts) ou en place.
+- `paths(ids?)` : chemins de quelques notes ; `bases()` / `rowIds(base)` : lignes légères indexées ; `hostMeta()` / `setHostMeta()` : valeurs propres à l'hôte (le pair y range l'époque du flux).
+- Bases (`crdt/base.ts`) : `parseLotDocId('<base>~lot-NNN')`, `baseManifestFromUpdates` (`lotCount`, lots existants), `lotRowsFromUpdates` (cartes `row:<id>`), `lightRowRecord(base, ligne, schéma?)` pour `applyRecords` (valeurs typées comme chez les clients).
 - Les opérations s'exécutent une à une, dans l'ordre des appels (un seul écrivain par vault).
 
 ## Pilotes
 
 `SqlDriver` (`src/driver.ts`) est **asynchrone** : `exec(sql)`, `all(sql, params)`, `batch(statements)` (une transaction, tout ou rien), `close()`. Pas de booléen (0 / 1).
 
-| Pilote | Où | État |
+| Pilote | Entrée | Où |
 |---|---|---|
-| `NodeSqliteDriver` | `@savoire/indexer-core/node` (`node:sqlite`, Node 22.5+, SQLite 3.51 dans Node 24) | livré : WAL hors mémoire, `synchronous=NORMAL`, `busy_timeout`, cache d'instructions préparées |
-| WebAssembly (Worker, OPFS) | navigateur | à faire (`@sqlite.org/sqlite-wasm`, à valider) |
-| natif (Tauri) | bureau | à faire (`rusqlite`, à valider) |
+| `NodeSqliteDriver` | `@savoire/indexer-core/node` | pair indexeur, tests (`node:sqlite`, SQLite 3.51) : WAL hors mémoire, `synchronous=NORMAL`, `busy_timeout`, cache d'instructions |
+| `WasmSqliteDriver` | `@savoire/indexer-core/wasm` | navigateur, **dans un Worker** (`@sqlite.org/sqlite-wasm` 3.54.1, FTS5) ; persistance OPFS par le VFS `opfs-sahpool` (sans en-têtes COOP/COEP), un fichier par vault (`/<vaultId>.sqlite`, dossier OPFS `.savoire-index`), journal `TRUNCATE`. Repli en mémoire si l'OPFS manque (navigation privée, autre onglet qui tient le pool, Node) : `info.persistence = 'memory'` et `info.note` le disent. Un fichier illisible est effacé puis refait. |
+| `TauriSqlDriver` | `@savoire/indexer-core/tauri` | bureau : SQLite natif côté Rust (`rusqlite` 0.41 `bundled`, SQLite 3.54.1) par les commandes `index_exec`, `index_all`, `index_batch`, `index_close` (`apps/desktop/src-tauri/src/index_db.rs`) ; `invoke` injecté. Base `<vault>/.savoire/index.sqlite`, WAL. BLOB en `{ "$hex": … }`. |
+
+Les trois passent `describeQueryEngineContract` et `describeSearchEngineContract` : `wasmContract.test.ts`, `workerRpc.test.ts` (par messages), `desktop-tests/src/nativeIndex.test.ts` (Rust, par le pont `examples/index_stdio.rs`).
 
 Prérequis d'un pilote : FTS5 avec `contentless_delete` (SQLite 3.43+), JSON1 (`json_each`), `UPDATE` avec sous-requêtes corrélées.
+
+## Index local des clients (`@savoire/indexer-core/local`)
+
+Sans SQLite (les pilotes sont injectés) :
+
+- `ILocalIndex` / `DirectLocalIndex` : un `VaultIndex` plus la table de l'hôte `host_sources` (id → signature de la source). Au redémarrage, seules les notes dont la signature a changé sont relues. Table vidée quand l'index est à reconstruire.
+- `serveLocalIndex(port, open)` (côté Worker) et `WorkerLocalIndex` (fil principal) : RPC par messages (`{ id, op }` → `{ id, ok, value | error: { code, message } }`, événements `changed` et `state`), annulation par `AbortSignal` (code `unavailable`), erreurs avec les codes de `QueryErrorInfo`. `serveWasmIndex(self)` (entrée `/wasm`) est tout le module du Worker.
+- `SharedIndexFeeder` : navigateur pair à pair. Toutes les notes par leurs métadonnées partagées (signature `m:`), le texte complet des notes lues ou ouvertes (signature `t:`) ; une note dont on a le texte et qui change ailleurs est relue.
+- `BaseRowFeeder` : lignes légères des lots ouverts par le fournisseur de requêtes ; un lot lu en entier retire ses lignes disparues.
 
 ## Schéma
 

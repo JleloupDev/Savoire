@@ -24,6 +24,7 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 })
 
 import { marked } from 'marked'
+import { BLOCK_DESTROY_EVENT } from '@savoire/plugin-api'
 import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savoire/plugin-api'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
@@ -93,10 +94,17 @@ function buildFrontmatterDecoration(state: EditorState, endPos: number): Range<D
   }).range(0, endPos)
 }
 
+/**
+ * Rendu d'un plugin, construit seulement quand l'editeur l'affiche : les
+ * decorations sont recalculees a chaque frappe, et un rendu qui suit des
+ * donnees en direct ne doit pas etre lance pour rien. Retire de l'editeur,
+ * l'element recoit BLOCK_DESTROY_EVENT.
+ */
 class PluginWidget extends WidgetType {
   constructor(
-    private readonly el: HTMLElement,
+    private readonly render: () => HTMLElement,
     private readonly contentText: string,
+    private readonly fallback: () => HTMLElement,
   ) {
     super()
   }
@@ -106,7 +114,16 @@ class PluginWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    return this.el
+    try {
+      return this.render()
+    } catch (err) {
+      console.debug('[LivePreview] plugin render error:', err)
+      return this.fallback()
+    }
+  }
+
+  destroy(dom: HTMLElement): void {
+    dom.dispatchEvent(new CustomEvent(BLOCK_DESTROY_EVENT))
   }
 
   ignoreEvent(e: Event): boolean {
@@ -132,6 +149,18 @@ class MarkdownWidget extends WidgetType {
 
   ignoreEvent(e: Event): boolean {
     return e.type !== 'click' && e.type !== 'mousedown'
+  }
+}
+
+/** Repli quand le rendu d'un plugin echoue : le Markdown du bloc. */
+function markdownElement(text: string, hooks: HookRegistry | undefined, extraClass = ''): HTMLElement {
+  try {
+    const html = marked.parse(hooks ? hooks.runBeforeParseSync(text) : text, { breaks: true }) as string
+    return new MarkdownWidget(html, extraClass).toDOM()
+  } catch {
+    const pre = document.createElement('pre')
+    pre.textContent = text
+    return pre
   }
 }
 
@@ -319,13 +348,9 @@ function buildDecorations(
       // deux lignes de texte) garde le rendu de son plugin.
       const own = EMBED_LINE_RE.test(lineText) ? detect(lineText) : null
       if (own) {
-        try {
-          const el = own.spec.renderClient(own.spec.deserialize(lineText), ctx!)
-          decorations.push(Decoration.replace({ widget: new PluginWidget(el, lineText), block: true }).range(line.from, line.to))
-          continue
-        } catch (err) {
-          console.debug(`[LivePreview] plugin render error (${own.type}):`, err)
-        }
+        const render = () => own.spec.renderClient(own.spec.deserialize(lineText), ctx!)
+        decorations.push(Decoration.replace({ widget: new PluginWidget(render, lineText, () => markdownElement(lineText, hooks, 'vault-paragraph-line')), block: true }).range(line.from, line.to))
+        continue
       }
       try {
         const preprocessed = hooks ? hooks.runBeforeParseSync(lineText) : lineText
@@ -448,19 +473,14 @@ function buildDecorations(
           ? registry.detectActive(text, ids)
           : registry.detectBlock(text)
         if (detected) {
-          try {
-            const data = detected.spec.deserialize(text)
-            const el = detected.spec.renderClient(data, ctx)
-            decorations.push(
-              Decoration.replace({
-                widget: new PluginWidget(el, text),
-                block: true,
-              }).range(node.from, node.to),
-            )
-            return false
-          } catch (err) {
-            console.debug(`[LivePreview] plugin render error (${detected.type}):`, err)
-          }
+          const render = () => detected.spec.renderClient(detected.spec.deserialize(text), ctx)
+          decorations.push(
+            Decoration.replace({
+              widget: new PluginWidget(render, text, () => markdownElement(text, hooks)),
+              block: true,
+            }).range(node.from, node.to),
+          )
+          return false
         }
       }
 

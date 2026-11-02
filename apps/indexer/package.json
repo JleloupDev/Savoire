@@ -1,0 +1,24 @@
+{
+  "name": "@savoire/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Savoire Indexer : le pair indexeur (ADR-027). Service Node 24, un SQLite par vault.",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/indexer.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/indexer-core": "workspace:*",
+    "@savoire/plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.28.1",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

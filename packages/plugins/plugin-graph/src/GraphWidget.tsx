@@ -5,8 +5,13 @@
 // Aucune dépendance externe.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { ViewContext, WorkspaceAPI, VaultAPI } from '@savoire/plugin-api'
+import type { IIndexerAPI, ViewContext, WorkspaceAPI, VaultAPI } from '@savoire/plugin-api'
 import type { GraphIndexContributor, GraphNode, GraphEdge } from './GraphIndexContributor'
+
+/** Notes au plus quand le graphe vient de l'index complet (les plus reliees d'abord). */
+export const GRAPH_REMOTE_LIMIT = 2_000
+/** Le pair indexe une modification une a deux secondes apres : on relit alors. */
+const PEER_DELAY_MS = 1_500
 
 // ── Force simulation ──────────────────────────────────────────────────────────
 
@@ -113,10 +118,12 @@ function tickSimulation(nodes: SimNode[], edges: SimEdge[], cx: number, cy: numb
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-function GraphPanel({ getContributor, workspace, vault }: {
+function GraphPanel({ getContributor, workspace, vault, indexer }: {
   getContributor: () => GraphIndexContributor
   workspace: WorkspaceAPI
   vault: VaultAPI
+  /** Index de tout le vault (pouvoir links.graph) : toutes les notes, ouvertes ou non. */
+  indexer?: IIndexerAPI
 }) {
   const [, setTick]            = useState(0)
   const [activePath, setActivePath] = useState<string | null>(
@@ -149,8 +156,18 @@ function GraphPanel({ getContributor, workspace, vault }: {
   // aretes qui pointaient vers elles. Les noeuds viennent donc du repertoire
   // du vault, l'index n'apportant que les liens.
   const vaultNodesRef = useRef<GraphNode[]>([])
+  // Graphe rendu par l'index complet (links.graph), quand il repond.
+  const remoteRef = useRef<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null)
+  const [whole, setWhole] = useState(false)
 
   const rebuild = useCallback(() => {
+    const remote = remoteRef.current
+    if (remote) {
+      const { simNodes, simEdges } = buildSimulation(remote.nodes, remote.edges, sizeRef.current)
+      simRef.current = { nodes: simNodes, edges: simEdges }
+      setTick(t => t + 1)
+      return
+    }
     // Un document mis a la corbeille garde ses entrees d'index (une
     // restauration le fait revenir tel quel) : on le masque ici.
     const trashed = (id: string) => vault.isTrashed?.(id) ?? false
@@ -184,14 +201,47 @@ function GraphPanel({ getContributor, workspace, vault }: {
     rebuild()
   }, [vault, rebuild])
 
+  // Index complet : le graphe de tout le vault, d'un seul appel. Refus ou
+  // index absent : le graphe local (notes indexees + arborescence).
+  const request = useRef(0)
+  const loadRemote = useCallback(() => {
+    const n = ++request.current
+    if (!indexer?.available()) {
+      if (remoteRef.current) { remoteRef.current = null; setWhole(false); void reloadVaultNodes() }
+      return
+    }
+    indexer.links.graph({ limit: GRAPH_REMOTE_LIMIT }).then(g => {
+      if (n !== request.current) return
+      remoteRef.current = {
+        nodes: g.nodes.map(x => ({ docId: x.id, path: x.path })),
+        // Les aretes de l'index designent des ids : buildSimulation les trouve par id.
+        edges: g.edges.map(e => ({ sourceId: e.from, targetPath: e.to, linkType: 'wikilink' as const })),
+      }
+      setWhole(true)
+      rebuild()
+    }, () => {
+      if (n !== request.current) return
+      remoteRef.current = null
+      setWhole(false)
+      void reloadVaultNodes()
+    })
+  }, [indexer, rebuild, reloadVaultNodes])
+
   useEffect(() => {
     void reloadVaultNodes()
-    const unsubIndexed = workspace.subscribeDocumentIndexed?.(() => rebuild())
+    loadRemote()
+    let later: ReturnType<typeof setTimeout> | null = null
+    const unsubIndexed = workspace.subscribeDocumentIndexed?.(() => {
+      if (!remoteRef.current) { rebuild(); return }
+      if (later) clearTimeout(later)
+      later = setTimeout(loadRemote, PEER_DELAY_MS)
+    })
     // Creation, renommage, suppression d'une note : la liste change sans
     // qu'aucune indexation ne se produise.
-    const unsubVault = workspace.subscribeVaultChange?.(() => void reloadVaultNodes())
-    return () => { unsubIndexed?.(); unsubVault?.() }
-  }, [workspace, rebuild, reloadVaultNodes])
+    const unsubVault = workspace.subscribeVaultChange?.(() => { void reloadVaultNodes(); loadRemote() })
+    const unsubState = indexer?.onStateChange(() => loadRemote())
+    return () => { unsubIndexed?.(); unsubVault?.(); unsubState?.(); if (later) clearTimeout(later) }
+  }, [workspace, rebuild, reloadVaultNodes, loadRemote, indexer])
 
   // Track active document
   useEffect(() => {
@@ -228,6 +278,14 @@ function GraphPanel({ getContributor, workspace, vault }: {
       <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
           Graphe — {sim?.nodes.length ?? 0} notes · {sim?.edges.length ?? 0} liens
+        </span>
+        <span
+          data-testid="graph-source"
+          data-whole={whole ? 'true' : 'false'}
+          title={whole ? `Toutes les notes du vault, ouvertes ou non (${GRAPH_REMOTE_LIMIT} au plus, les plus reliées d'abord).` : 'Liens des notes déjà indexées (ouvertes quelque part).'}
+          style={{ marginLeft: 8, fontSize: '0.62rem', color: 'var(--text-faint)' }}
+        >
+          {whole ? 'tout le vault' : 'notes indexées'}
         </span>
       </div>
 
@@ -300,10 +358,11 @@ export class GraphWidget implements Widget {
   constructor(
     private readonly ctx: ViewContext,
     private readonly getContributor: () => GraphIndexContributor,
+    private readonly indexer?: IIndexerAPI,
   ) {}
 
   render() {
-    return <GraphPanel getContributor={this.getContributor} workspace={this.ctx.workspace} vault={this.ctx.vault} />
+    return <GraphPanel getContributor={this.getContributor} workspace={this.ctx.workspace} vault={this.ctx.vault} indexer={this.indexer} />
   }
 
   dispose(): void {}

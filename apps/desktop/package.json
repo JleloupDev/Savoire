@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@savoire/indexer-core": "workspace:*",
     "@savoire/platform": "workspace:*",
     "@tauri-apps/api": "2.12.1"
   },

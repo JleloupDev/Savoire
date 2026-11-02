@@ -90,6 +90,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.properties
   }
 
+  get indexer() {
+    this.require('vault:read')
+    return this.inner.indexer
+  }
+
   private require(permission: PluginPermission): void {
     if (!this.permissions.has(permission)) {
       throw new Error(

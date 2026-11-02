@@ -39,7 +39,8 @@ export function createHashtagsPlugin(options: {
         initialSize: options.initialSize ?? 280,
         closable: true,
         createView(ctx) {
-          return new HashtagsWidget(ctx, () => current)
+          // Avec un index de tout le vault (api.indexer) : notes de chaque tag, tags du vault.
+          return new HashtagsWidget(ctx, () => current, api.indexer)
         },
       })
     },

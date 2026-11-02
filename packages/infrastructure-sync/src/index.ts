@@ -29,6 +29,8 @@ export * from './ServerKeyProvider'
 export * from './LocalKeyProvider'
 export * from './GracePool'
 export * from './vaultGone'
+export * from './IndexerHttpClient'
+export * from './RemoteVaultIndexer'
 export * from './SavoireServerVaultSession'
 export * from './YMapIndexChannel'
 export * from './SnapshotDocuments'
@@ -38,7 +40,7 @@ export * from './filesystem/FileSystemVaultSession'
 export { FileSystemVaultDirectory } from './filesystem/FileSystemVaultDirectory'
 export {
   VAULT_FORMAT_VERSION, SAVOIRE_DIR, UnsupportedVaultFormatError,
-  initializeVaultFolder, readVaultFolderMeta, isVaultPath,
+  initializeVaultFolder, readVaultFolderMeta, isVaultPath, crdtDirOf,
 } from './filesystem/vaultFolderFormat'
 export type { VaultFolderMeta, DocumentIdEntry, DocumentsFile } from './filesystem/vaultFolderFormat'
 export { diffText, applyTextEdits } from './filesystem/textDiff'

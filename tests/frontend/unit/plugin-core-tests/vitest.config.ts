@@ -26,6 +26,10 @@ export default defineConfig({
       '@savoire/plugin-chat': src('plugin-chat'),
       '@savoire/plugin-plaintext': src('plugin-plaintext'),
       '@savoire/plugin-backlinks': src('plugin-backlinks'),
+      // Panneaux branches sur api.search et api.indexer (pair indexeur).
+      '@savoire/plugin-search': src('plugin-search'),
+      '@savoire/plugin-graph': src('plugin-graph'),
+      '@savoire/plugin-hashtags': src('plugin-hashtags'),
       '@savoire/plugin-outline': src('plugin-outline'),
       // Avant '@savoire/plugin-page' : un alias vise aussi ses sous-chemins.
       '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),

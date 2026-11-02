@@ -13,6 +13,11 @@ export default defineConfig({
       '@savoire/plugin-agent-reviewer': path.resolve(__dirname, '../../../../packages/plugins/plugin-agent-reviewer/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
       '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
+      // Faux pair indexeur (contrat des moteurs distants) : le noyau d'indexation
+      // sur node:sqlite. L'entree /node avant l'entree principale (prefixe).
+      '@savoire/indexer-core/node': path.resolve(__dirname, '../../../../packages/indexer-core/src/node/index.ts'),
+      '@savoire/indexer-core': path.resolve(__dirname, '../../../../packages/indexer-core/src/index.ts'),
+      '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
       '@microsoft/signalr': path.resolve(__dirname, './src/__mocks__/signalr.ts'),
     },
   },

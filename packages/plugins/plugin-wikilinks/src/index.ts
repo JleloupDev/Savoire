@@ -131,7 +131,8 @@ export function createWikilinksPlugin(options: {
         initialSize: options.initialSize ?? 280,
         closable: true,
         createView(ctx) {
-          return new BacklinksWidget(ctx, wikilinkContributor)
+          // Avec un index de tout le vault (api.indexer), les notes jamais ouvertes comptent aussi.
+          return new BacklinksWidget(ctx, wikilinkContributor, api.indexer)
         },
       })
     },

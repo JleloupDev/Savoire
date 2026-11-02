@@ -6,7 +6,7 @@
 // virtualise, etat de l'index. Les requetes passent par le vrai fournisseur
 // de l'appli (QueryEngineProvider + InMemoryQueryEngine).
 import { describe, it, expect, vi } from 'vitest'
-import plugin, { TITLE_COLUMN } from '@savoire/plugin-base'
+import plugin, { TITLE_COLUMN, parseBaseEmbed, renderBaseEmbed, renderBaseQueryBlock } from '@savoire/plugin-base'
 import { InMemoryQueryEngine, InMemorySharedTree } from '@savoire/plugin-runtime'
 import { QueryEngineProvider, VaultPropertyTypes, annexDocId } from '@savoire/application'
 import type { IVaultSyncSession, QueryVaultSources } from '@savoire/application'
@@ -317,5 +317,88 @@ describe('plugin-base', () => {
     expect(el.querySelector('[data-testid="base-index-state"]')!.textContent).toBe('Index en construction, 63 %')
     engine.setState({ status: 'ready' })
     expect(el.querySelector('[data-testid="base-index-state"]')!.textContent).toBe('')
+  })
+
+  it('colonne formule : ajoutee a deux, calculee par ligne, erreur signalee', async () => {
+    const w = world(NOTES)
+    const a = w.member(0)
+    const b = w.member(1)
+    const A = await mount(w, 0, a.api)
+    const B = await mount(w, 1, b.api)
+    await tick()
+    click(A.el.querySelector('[data-testid="base-add-column"]'))
+    ;(A.el.querySelector('[data-testid="base-new-column-name"]') as HTMLInputElement).value = 'Score'
+    const type = A.el.querySelector('[data-testid="base-new-column-type"]') as HTMLSelectElement
+    type.value = 'formula'
+    type.dispatchEvent(new Event('change'))
+    const input = A.el.querySelector('[data-testid="base-formula-input"]') as HTMLTextAreaElement
+    input.value = 'prop("priority") * 10 + " pts"'
+    input.dispatchEvent(new Event('input'))
+    expect(A.el.querySelector('[data-testid="base-formula-status"]')!.textContent).toContain('20 pts')
+    click(A.el.querySelector('[data-testid="base-formula-ok"]'))
+    await tick()
+    expect(cell(B.el, 'Alpha', '=Score').textContent).toBe('20 pts')
+    expect(cell(B.el, 'Beta', '=Score').textContent).toBe('10 pts')
+    // Une formule mal ecrite ne s'enregistre pas.
+    click(B.el.querySelector('[data-testid="base-th"][data-key="=Score"] .base-th-label'))
+    click(B.el.querySelector('[data-testid="base-col-formula"]'))
+    const edit = B.el.querySelector('[data-testid="base-formula-input"]') as HTMLTextAreaElement
+    edit.value = 'prop("priority") *'
+    edit.dispatchEvent(new Event('input'))
+    expect(B.el.querySelector('[data-testid="base-formula-status"]')!.textContent).toMatch(/incompl|inattendu/)
+    click(B.el.querySelector('[data-testid="base-formula-ok"]'))
+    await tick()
+    expect(cell(A.el, 'Alpha', '=Score').textContent).toBe('20 pts')
+    // Les formules ne sont proposees ni en filtre ni en tri.
+    click(A.el.querySelector('[data-testid="base-th"][data-key="=Score"] .base-th-label'))
+    expect(A.el.querySelector('[data-testid="base-col-sort-asc"]')).toBeNull()
+  })
+
+  it('base integree dans une note (lecture seule) et bloc de requete, suivis en direct', async () => {
+    const w = world(NOTES)
+    const a = w.member(0)
+    const b = w.member(1)
+    const A = await mount(w, 0, a.api)
+    await tick()
+    // A ajoute une colonne formule : le manifeste est ecrit.
+    click(A.el.querySelector('[data-testid="base-add-column"]'))
+    ;(A.el.querySelector('[data-testid="base-new-column-name"]') as HTMLInputElement).value = 'Double'
+    const type = A.el.querySelector('[data-testid="base-new-column-type"]') as HTMLSelectElement
+    type.value = 'formula'
+    type.dispatchEvent(new Event('change'))
+    ;(A.el.querySelector('[data-testid="base-formula-input"]') as HTMLTextAreaElement).value = 'prop("priority") * 2'
+    click(A.el.querySelector('[data-testid="base-formula-ok"]'))
+    await tick()
+    // B lit la note qui integre la base.
+    const vault = {
+      ...w.vault,
+      resolveDocumentId: (p: string) => p === 'Projets.base' ? 'base1' : w.vault.resolveDocumentId(p),
+      list: async () => ['Projets.base', ...w.notes.map(n => n.path)],
+      openTree: async (id: string) => w.tree(id, 1),
+      closeTree: () => {},
+    }
+    const api = { ...b.api, vault } as unknown as PluginAPI
+    const embed = renderBaseEmbed(parseBaseEmbed('![[Projets.base]]')!, api)
+    document.body.appendChild(embed)
+    await tick()
+    const rows = () => Array.from(embed.querySelectorAll('[data-testid="base-embed-row"]')).map(r => Array.from(r.querySelectorAll('td')).map(td => td.textContent))
+    expect(Array.from(embed.querySelectorAll('th')).map(t => t.textContent)).toEqual(['Nom', 'status', 'priority', 'Double'])
+    expect(rows()).toEqual([['Alpha', 'En cours', '2', '4'], ['Beta', 'Fait', '1', '2']])
+    expect(embed.querySelector('input, textarea')).toBeNull()
+    expect(parseBaseEmbed('![[Projets.base#Kanban]]')).toEqual({ path: 'Projets.base', view: 'Kanban' })
+    expect(renderBaseEmbed(parseBaseEmbed('![[Projets.base#Rien]]')!, api)).toBeTruthy()
+
+    // Bloc de requete sur la meme base.
+    const block = renderBaseQueryBlock('from Projets.base\nwhere prop("status") == "En cours"\nselect sum(prop("priority")) as "Total"', api)
+    document.body.appendChild(block)
+    await new Promise(r => setTimeout(r, 200))
+    expect(block.querySelector('[data-testid="base-query-value"]')!.textContent).toBe('2')
+
+    // Une note change : l'integration et le bloc suivent.
+    w.notes[1].text = '---\nstatus: En cours\npriority: 7\n---\n'
+    w.notify()
+    await new Promise(r => setTimeout(r, 300))
+    expect(rows()[1]).toEqual(['Beta', 'En cours', '7', '14'])
+    expect(block.querySelector('[data-testid="base-query-value"]')!.textContent).toBe('9')
   })
 })

@@ -97,6 +97,7 @@ export type { TrashEntry, AttachmentUploadOptions } from './vault'
 export type * from './properties'
 export type * from './query'
 export type * from './search'
+export type * from './indexer'
 export {
   QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT,
   BASE_ROW_PREFIX, BASE_ROW_TITLE, BASE_LOT_COUNT, baseLotName, baseLotOf,
@@ -106,3 +107,8 @@ export {
   parseFrontmatter, findFrontmatter, setFrontmatterValue, removeFrontmatterKey,
   renameFrontmatterKey, frontmatterKeys, minimalTextChange,
 } from './properties'
+export type { CompiledFormula, FormulaResult, FormulaRow } from './formula'
+export {
+  compileFormula, tryCompileFormula, FormulaError, FORMULA_FUNCTIONS, FORMULA_MAX_LENGTH,
+} from './formula'
+export { BLOCK_DESTROY_EVENT } from './blocks'

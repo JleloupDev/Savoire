@@ -13,6 +13,9 @@ use std::path::{Component, Path, PathBuf};
 pub const SAVOIRE_DIR: &str = ".savoire";
 /// Fichiers temporaires des ecritures atomiques : jamais signales au front.
 pub const TMP_DIR: &str = ".savoire/tmp";
+/// Index SQLite du vault (index_db.rs), derive et reconstructible ; SQLite
+/// ecrit a cote ses fichiers `-wal`, `-shm` et `-journal`.
+pub const INDEX_PATH: &str = ".savoire/index.sqlite";
 
 /// Decoupe un chemin relatif et verifie chaque morceau.
 /// `allow_root` : la chaine vide designe la racine (lister la racine).
@@ -87,6 +90,15 @@ pub fn is_internal_tmp(rel: &str) -> bool {
     rel == TMP_DIR || rel.starts_with(&format!("{TMP_DIR}/"))
 }
 
+/// Un fichier que le front ne voit jamais (ni liste, ni surveillance) :
+/// les temporaires et les fichiers de l'index, ecrits sans cesse.
+pub fn is_internal(rel: &str) -> bool {
+    is_internal_tmp(rel)
+        || rel
+            .strip_prefix(INDEX_PATH)
+            .is_some_and(|rest| matches!(rest, "" | "-wal" | "-shm" | "-journal"))
+}
+
 /// Nom d'un nouveau vault : un seul morceau de chemin.
 pub fn validate_folder_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
@@ -154,6 +166,11 @@ mod tests {
         assert_eq!(to_relative(&root, Path::new("/w/x")), None);
         assert!(is_internal_tmp(".savoire/tmp/123"));
         assert!(!is_internal_tmp(".savoire/state.bin"));
+        assert!(is_internal(".savoire/tmp/123"));
+        assert!(is_internal(".savoire/index.sqlite"));
+        assert!(is_internal(".savoire/index.sqlite-wal"));
+        assert!(!is_internal(".savoire/index.sqlite.md"));
+        assert!(!is_internal("index.sqlite"));
     }
 
     #[test]

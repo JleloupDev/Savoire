@@ -70,6 +70,13 @@ export interface VaultAPI {
    * document soit arrive avant d'editer. Rend false si rien n'a change.
    */
   editText?(documentId: string, edit: (current: string) => string): Promise<boolean>
+  /**
+   * Arbre partage d'un AUTRE document (manifeste d'une base integree dans
+   * une note). Pour lire : les ecritures passent par la vue du document.
+   * A rendre par closeTree. Absent si le profil ne sait pas ouvrir d'arbre.
+   */
+  openTree?(documentId: string): Promise<import('./sharedTree').ISharedTree>
+  closeTree?(documentId: string): void
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */

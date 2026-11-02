@@ -89,6 +89,14 @@ Erreurs (corps `{ error: { code, message } }`) :
 
 Un vault en construction répond quand même, avec `index.status = 'building'` et `progress` : résultats partiels, jamais d'erreur.
 
+Précisions (pair, `apps/indexer`) :
+- Autres réponses : 401 `unauthorized` (jeton absent ou faux, comparé en temps constant) ; 413 `payload_too_large` (corps au-delà de `SAVOIRE_INDEXER_MAX_BODY_BYTES`, 256 Kio) ; 405 `method_not_allowed` ; 404 `not_found` (route inconnue) ; 500 `internal` (erreur inattendue, journalisée ; le backend la rend en 503). Id de vault hors de `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, nom de pouvoir ou de méthode hors de `^[a-z][a-z0-9_-]{0,63}$`, corps qui n'est pas un objet JSON : 400 `invalid_query`.
+- 409 `not_owner` : vault absent de la liste de l'instance, ou parti (`vault-deleted`, orphelin). Avant de répondre 409, un vault inconnu fait relire la liste (au plus une fois toutes les 5 s, 2 s d'attente au plus).
+- 503 `unavailable` + `Retry-After` (`SAVOIRE_INDEXER_UNAVAILABLE_RETRY_AFTER_S`, 5 s) : pair qui démarre (liste des vaults pas encore lue) ou qui s'arrête, appel qui dépasse `SAVOIRE_INDEXER_CALL_TIMEOUT_MS` (4 s, attente comprise). 429 `overloaded` + `Retry-After` (`SAVOIRE_INDEXER_RETRY_AFTER_S`, 1 s) : plus de `SAVOIRE_INDEXER_MAX_QUEUE` appels en cours ou en attente.
+- `POST /v1/search` : `query.limit` de 1 à 500 (50 par défaut) ; `vaultIds` : 1 000 au plus (400 `too_complex`). Fusion et curseur composé comme le backend entre instances (score décroissant, puis `vaultId`, puis `id` ; par vault : `{ c: curseur, s: déjà rendus }`, base64url d'un JSON). Un vault qui n'est pas à l'instance ou qui ne répond pas est ignoré avec `partial: true` ; un 400 d'un vault est rendu tel quel ; aucun vault n'a répondu : 503 (429 si tous étaient freinés).
+- `/metrics` demande le jeton de service, sauf `SAVOIRE_INDEXER_METRICS_AUTH=none`. `/health/ready` rend aussi le détail (`following`, `shards`, `queue`, `listed`, `catchingUp`, `stopping`).
+- L'état rendu avec chaque résultat : `building` (+ `progress`) pendant une construction ; `lagging` (+ `lagMs`) quand le plus vieux changement non traité, ou la dernière lecture réussie du flux, date de plus de `SAVOIRE_INDEXER_LAG_WARN_MS` (5 s) ; sinon `ready`.
+
 ## Routes publiques (servies par le backend, appelées par les clients)
 
 Authentification habituelle (jeton de l'utilisateur). Droit de **lecture** sur le vault vérifié à chaque appel (`VaultAccessBehavior`).
@@ -152,6 +160,35 @@ Résolution des liens (pouvoir `links`, façon Obsidian) : chemin exact (avec ou
 
 Un nouveau pouvoir ajoute une ligne ici et un module dans `packages/indexer-core`. Le backend n'a rien à changer.
 
+## Côté client (appli)
+
+Le pair est une **capacité de la session** du vault : `IVaultSyncSession.indexer` (`IVaultIndexer`, `packages/application/src/VaultIndexer.ts`), fournie par le profil serveur (`RemoteVaultIndexer`, `packages/infrastructure-sync/src/RemoteVaultIndexer.ts`, client HTTP `IndexerHttpClient.ts`). Un profil sans pair ne la fournit pas ; l'appli garde alors ses index locaux.
+
+Ce que reçoivent les plugins (tous en permission `vault:read`) :
+
+| API | Fournisseur (`packages/application`) | Moteur préféré | Secours |
+|---|---|---|---|
+| `api.query` | `QueryEngineProvider` | pair (`setPreferred(remote.query, { readYourWrites: true })`) ou SQLite local | moteur en mémoire (canal `metadata`) |
+| `api.search` | `SearchEngineProvider` | pair ou SQLite local | `FullTextFallbackSearch` : plein texte local des notes ouvertes (MiniSearch), état `unavailable` |
+| `api.search.global` | `SearchEngineProvider` | `POST /api/v1/search` | absent |
+| `api.indexer` | `IndexerPowersProvider` | pair (`indexerSourceOf`) ou index local (`call`) | `available()` faux : le plugin garde son comportement local |
+
+`api.indexer` (`packages/plugin-api/src/indexer.ts`) : `available()`, `state()`, `onStateChange()`, `links.{backlinks, outgoing, unresolved, graph}`, `tags.{list, notes}`, `status()` ; mêmes paramètres et résultats que le tableau des pouvoirs. Un appel rejette avec un `QueryErrorInfo` : `unavailable` (pair coupé, freiné, appel annulé, pouvoir inconnu) → comportement local. Branchés : rétroliens (`plugin-wikilinks`, `links.backlinks`), graphe (`plugin-graph`, `links.graph`, 2 000 notes au plus), hashtags (`plugin-hashtags`, `tags.list` et `tags.notes`).
+
+`api.search.global` (`IGlobalSearch`, `search.ts`) : `search(query & { vaultIds? })`, `open(hit)` (ouvre le vault de la note, puis la note). Les résultats portent `vaultId` et `vaultName` ; `partial` est affiché.
+
+Règles du client :
+- **Délai** : 10 s par appel (le backend coupe déjà à 5 s) ; au-delà, l'appel est abandonné (`unavailable`).
+- **Jeton** : un 401 renouvelle le jeton et rejoue une fois (`fetchWithRenewal`).
+- **Refus** : 503, réseau ou délai → état `unavailable` (raison `down`) ; 429 → état `lagging` (raison `busy`) ; 503 `mode: none` → raison `none` ; 503 `mode: organization` → raison `organization` + `url` (le client garde ses index locaux et le dit ; le circuit du pair d'organisation viendra avec le profil chiffré) ; 401/403/404 → raison `denied`. Les 400 (`invalid_query`, `invalid_cursor`, `too_complex`) et 413 rejettent l'appel sans changer l'état.
+- **Pas de rafale** : après un refus, aucun appel avant l'échéance (`max(Retry-After, attente)`, l'attente valant 5 s puis doublant jusqu'à 60 s ; 60 s pour `none`, `organization`, `denied`). Pendant ce temps les appels rejettent tout de suite avec `unavailable`. À l'échéance, un seul `index.status` ; s'il répond, les requêtes suivies repartent du pair.
+- **Un seul minuteur** lit `index.status` : à l'ouverture du vault (avec le réglage), 1,5 s après une modification locale (puis 2, 4, 8 s tant qu'elle n'est pas vue), toutes les 30 s tant que quelqu'un suit (5 s en construction ou en retard).
+- **Requêtes suivies** (`watch`) : relancées seulement si `seq` a avancé, si le pair revient, ou pendant une construction ; une requête en cours et une en attente au plus, par requête suivie.
+- **Lecture de ses propres écritures** : une modification locale est « en attente » (`VaultIndexerStatus.pending`) jusqu'à ce que `seq` ait avancé depuis et qu'elle ait plus de 1,5 s (20 s au plus). Pendant 15 s, `QueryEngineProvider` remplace dans les lignes du pair les valeurs (`values`, `path`) des notes et lignes de base modifiées ici par les valeurs locales, et redonne aussitôt les requêtes suivies corrigées. Une note qui entre dans un résultat ou en sort n'y apparaît qu'une fois le pair à jour. La recherche n'est pas corrigée : l'indicateur affiche « mise à jour… » tant qu'une modification est en attente.
+- **Moteur préféré indisponible** : `QueryEngineProvider` et `SearchEngineProvider` passent sur le secours sans appeler le pair, état `unavailable` ; les requêtes suivies basculent, puis reviennent quand le pair répond. Pas de rattrapage des notes jamais indexées (`indexNow`) tant que le pair répond.
+- **État visible** : indicateur de la barre du haut (`apps/web/src/IndexStatusIndicator.tsx`) : prêt, en construction (%), en retard, freiné, indisponible (mode dégradé : recherche limitée aux notes ouvertes), raison au survol ; un clic relance le pair quand il ne répond pas.
+- **Réglage du vault** : onglet « Vault » des réglages (`VaultIndexerSettings.tsx`), `GET`/`PUT …/indexer` ; modifiable par le propriétaire seul, visible des membres, avec l'état du pair.
+
 ## Fonctionnement du pair
 
 - Un fichier SQLite par vault (`{dataDir}/{vaultId}.sqlite`, mode WAL), ouvert à la demande, fermé quand il sort du cache (`SAVOIRE_INDEXER_MAX_OPEN`).
@@ -160,3 +197,11 @@ Un nouveau pouvoir ajoute une ligne ici et un module dans `packages/indexer-core
 - Les changements d'une même note sont regroupés (fenêtre `SAVOIRE_INDEXER_DEBOUNCE_MS`, 1 000 ms par défaut).
 - La dernière séquence traitée est écrite dans chaque SQLite et globalement : un redémarrage reprend où il s'était arrêté.
 - Schéma versionné : une nouvelle version d'index se reconstruit à côté pendant que l'ancienne répond, puis bascule.
+
+Précisions (réalisation, `apps/indexer/README.md`) :
+- Fils d'exécution : les vaults sont répartis entre `SAVOIRE_INDEXER_WORKERS` fils (`worker_threads`, FNV-1a 32 bits de l'id modulo le nombre de fils). Un vault vit dans un seul fil : un seul écrivain. Dans un fil, une seule tâche SQLite à la fois (`node:sqlite` est synchrone), choisie par priorité (appels, puis mises à jour, puis constructions ; une tâche basse qui attend trop passe devant, une fois sur quatre au plus). Les lectures du backend se font hors de ce créneau.
+- Reprise : la position sûre du flux (la plus petite séquence pas encore traitée, tous vaults confondus) est écrite chaque seconde dans `{dataDir}/indexer-state.json` (avec l'époque et le nom de l'instance). Chaque index garde sa séquence et l'époque qui l'a construit (`meta`, clé `host:epoch`) : un changement déjà appliqué (`seq` ≤ celle de l'index) est ignoré au rejeu. Un fil qui tombe est relancé et le flux rejoué depuis la position sûre.
+- Construction : en place (fichier absent, noyau d'une autre version, construction interrompue, fichier illisible) ou à côté (`{vaultId}.sqlite.building` : version d'un pouvoir changée, époque changée, index périmé d'un vault revenu). À côté, l'ancien index répond pour ses pouvoirs intacts et suit le flux ; ce que le flux a changé pendant la construction est rejoué sur le nouveau, puis renommage. Un changement vu avant qu'une construction lise la note (ou l'arbre) est déjà dedans : il n'est pas rejoué.
+- Orphelin : un vault qui n'est plus dans la liste de l'instance est fermé et marqué `{vaultId}.sqlite.stale` (date), supprimé après `SAVOIRE_INDEXER_ORPHAN_TTL` ; s'il revient avant, il est reconstruit à côté (il a manqué des changements).
+- Lignes légères : un changement `document` dont l'id est `<id de base>~lot-NNN` relit ce lot (seules les lignes changées sont réécrites quand le lot est déjà connu ; les lignes parties sont retirées). Le document de la base (`.base`, dans l'arbre) donne `lotCount` et la liste des lots ; une base qui part à la corbeille ou disparaît de l'arbre perd ses lignes, une base restaurée est relue en entière. Les types de propriétés du vault ne sont pas encore lus par le pair (les valeurs sont typées d'après elles-mêmes, comme le secours des clients).
+- Un dossier de données par instance (fichier `.lock`) ; SSD local, jamais un partage réseau.

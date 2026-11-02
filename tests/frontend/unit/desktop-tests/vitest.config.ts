@@ -11,6 +11,12 @@ const pkg = (p: string) => path.resolve(__dirname, `../../../../packages/${p}/sr
 export default defineConfig({
   resolve: {
     alias: {
+      // Noyau d'indexation (indexeur de fond du bureau) et ses entrees.
+      '@savoire/indexer-core/local': path.resolve(__dirname, '../../../../packages/indexer-core/src/local/index.ts'),
+      '@savoire/indexer-core/tauri': path.resolve(__dirname, '../../../../packages/indexer-core/src/tauri/index.ts'),
+      '@savoire/indexer-core/node': path.resolve(__dirname, '../../../../packages/indexer-core/src/node/index.ts'),
+      '@savoire/indexer-core': pkg('indexer-core'),
+      '@savoire/plugin-runtime': pkg('plugin-runtime'),
       '@savoire/desktop': path.resolve(__dirname, '../../../../apps/desktop/src/index.ts'),
       '@savoire/infrastructure-sync': pkg('infrastructure-sync'),
       '@savoire/application': pkg('application'),

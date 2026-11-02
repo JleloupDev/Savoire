@@ -7,6 +7,13 @@ export interface BlockWidget {
   destroy(): void
 }
 
+/**
+ * Evenement envoye sur l'element rendu par renderClient quand l'editeur le
+ * retire pour de bon (bloc modifie, note fermee). Un rendu qui suit des
+ * donnees en direct s'y desabonne.
+ */
+export const BLOCK_DESTROY_EVENT = 'savoire:block-destroy'
+
 export interface BlockContext {
   editorView: unknown
   /** Remplace un passage du document (cocher une case, par exemple), sans

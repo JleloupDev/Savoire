@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# L'index SQLite d'un vault ouvert (.savoire/index.sqlite) : seulement pour
+# une racine autorisee, sans pouvoir attacher d'autre fichier (voir
+# src/index_db.rs).
+
+[[set]]
+identifier = "index"
+description = "Lire et ecrire l'index SQLite des vaults ouverts (.savoire/index.sqlite)."
+permissions = [
+  "allow-index-exec",
+  "allow-index-all",
+  "allow-index-batch",
+  "allow-index-close",
+]

@@ -22,11 +22,40 @@ services:
       - Users__0__Id=jean
       - Users__0__DisplayName=Jean
       - Users__0__DefaultVaultPath=/data/jean
+      # Pair indexeur (ADR-027) : sans INDEXER_TOKEN, desactive (les clients gardent leur index local).
+      - Indexer__ServiceToken=${INDEXER_TOKEN:-}
+      - Indexer__Instances__0__Name=idx-a
+      - Indexer__Instances__0__Url=http://indexer:7070
+    networks:
+      - default
+      - indexer
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Savoire Indexer : le pair indexeur (apps/indexer/README.md). Jamais expose :
+  # pas de « ports », seulement le reseau interne partage avec l'API.
+  # Une instance de plus : un service idx-b (meme image, SAVOIRE_INDEXER_NAME=idx-b,
+  # son propre volume) et Indexer__Instances__1__* cote API.
+  indexer:
+    build:
+      context: .
+      dockerfile: apps/indexer/Dockerfile
+    environment:
+      - SAVOIRE_INDEXER_NAME=idx-a
+      - SAVOIRE_INDEXER_TOKEN=${INDEXER_TOKEN:-}
+      - SAVOIRE_INDEXER_BACKEND_URL=http://api:8080
+      - SAVOIRE_INDEXER_LOG_LEVEL=${INDEXER_LOG_LEVEL:-info}
+    volumes:
+      - indexer-data:/data
+    networks:
+      - indexer
+    depends_on:
+      - api
+    restart: unless-stopped
+    stop_grace_period: 30s
 
   web:
     build:
@@ -39,3 +68,11 @@ services:
     depends_on:
       - api
 
+networks:
+  # Reseau prive API <-> pair indexeur, sans sortie.
+  indexer:
+    internal: true
+
+volumes:
+  # Index derives (reconstructibles) : un volume par instance du pair.
+  indexer-data:

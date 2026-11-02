@@ -6,15 +6,16 @@
 // kanban. Les lignes viennent d'api.query (lignes-pages du dossier de la
 // base + lignes legeres de ses lots), le manifeste du document (ctx.tree).
 import {
-  BASE_ROW_TITLE, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType,
+  BASE_ROW_TITLE, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
 } from '@savoire/plugin-api'
 import type {
+  CompiledFormula,
   FileContext, FileView, FilterOp, IndexState, PluginAPI, PropertyMember, PropertyType, PropertyValue,
   Query, QueryFilter, QueryResult, QueryRow, QuerySort, QuerySource,
 } from '@savoire/plugin-api'
 import { h, valueText, type CellContext } from './cells'
 import {
-  DEFAULT_WIDTH, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, defaultView, readManifest,
+  DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, defaultView, isFormulaKey, readManifest,
   type BaseFilter, type BaseManifest, type BaseSort, type BaseViewDef,
 } from './manifest'
 import { LightRows } from './rows'
@@ -48,13 +49,13 @@ function fieldOf(key: string): { prop: string } | { doc: 'title' } {
   return key === TITLE_COLUMN ? { doc: 'title' } : { prop: key }
 }
 
-function toWhere(filters: BaseFilter[]): QueryFilter | undefined {
+export function toWhere(filters: BaseFilter[]): QueryFilter | undefined {
   const parts: QueryFilter[] = filters.filter(f => f.key).map(f => ({ field: fieldOf(f.key), op: f.op, value: f.value ?? undefined }))
   if (parts.length === 0) return undefined
   return parts.length === 1 ? parts[0] : { and: parts }
 }
 
-function toSort(sorts: BaseSort[]): QuerySort[] {
+export function toSort(sorts: BaseSort[]): QuerySort[] {
   const s = sorts.filter(x => x.key).map(x => ({ field: fieldOf(x.key), dir: x.dir }))
   return s.length ? s : [{ field: { doc: 'title' } }]
 }
@@ -102,11 +103,28 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const view = (): BaseViewDef => manifest.views.find(v => v.id === activeId) ?? manifest.views[0] ?? defaultView()
   const typeOf = (key: string): PropertyType => types?.get(key)?.type ?? guessPropertyType(seen.get(key)?.sample ?? null)
-  const label = (key: string) => key === TITLE_COLUMN ? 'Nom' : (types?.get(key)?.label ?? key)
+  const label = (key: string) => key === TITLE_COLUMN ? 'Nom' : isFormulaKey(key) ? key.slice(FORMULA_PREFIX.length) : (types?.get(key)?.label ?? key)
+
+  // Formules compilees, par texte : recompilees seulement quand elles changent.
+  let compiled = new Map<string, { formula: CompiledFormula } | { error: string }>()
+  const compile = (source: string) => {
+    let c = compiled.get(source)
+    if (!c) {
+      c = tryCompileFormula(source)
+      if (compiled.size > 200) compiled = new Map()
+      compiled.set(source, c)
+    }
+    return c
+  }
+  const formulaOf = (key: string): string | undefined => manifest.columns.find(c => c.key === key)?.formula
 
   const allColumns = (): TableColumn[] => {
     const title: TableColumn = { key: TITLE_COLUMN, label: 'Nom', width: manifest.columns.find(c => c.key === TITLE_COLUMN)?.width ?? TITLE_WIDTH, type: 'text' }
-    return [title, ...columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).map(c => ({ key: c.key, label: label(c.key), width: c.width, type: typeOf(c.key) }))]
+    return [title, ...columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).map((c): TableColumn => {
+      if (!isFormulaKey(c.key)) return { key: c.key, label: label(c.key), width: c.width, type: typeOf(c.key) }
+      const f = compile(formulaOf(c.key) ?? '')
+      return { key: c.key, label: label(c.key), width: c.width, type: 'text', ...('formula' in f ? { formula: f.formula } : { formulaError: f.error }) }
+    })]
   }
   const visibleColumns = (): TableColumn[] => allColumns().filter(c => c.key === TITLE_COLUMN || !view().hidden.includes(c.key))
 
@@ -307,6 +325,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const propertyChoices = (withTitle: boolean): string[] => {
     const keys = new Set<string>([...allColumns().map(c => c.key), ...seen.keys(), ...(types?.schema().properties.map(p => p.key) ?? [])])
+    // Une formule se calcule a l'affichage : ni filtre, ni tri, ni groupe dessus.
+    for (const k of [...keys]) if (isFormulaKey(k)) keys.delete(k)
     if (!withTitle) keys.delete(TITLE_COLUMN)
     else keys.add(TITLE_COLUMN)
     return [...keys]
@@ -400,7 +420,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
           const remove = h('button', { class: 'base-btn', type: 'button', title: 'Retirer de la base' }, '×')
           remove.addEventListener('click', () => store.removeColumn(c.key))
           for (const b of [up, down, remove]) (b as HTMLButtonElement).disabled = !editable
-          content.append(h('div', { class: 'base-pop-row' }, visible, h('span', { class: 'base-pop-icon' }, PROPERTY_TYPE_INFO[c.type].icon), h('span', { class: 'base-pop-label' }, c.label), up, down, remove))
+          content.append(h('div', { class: 'base-pop-row' }, visible, h('span', { class: 'base-pop-icon' }, isFormulaKey(c.key) ? 'ƒ' : PROPERTY_TYPE_INFO[c.type].icon), h('span', { class: 'base-pop-label' }, c.label), up, down, remove))
         })
         break
       }
@@ -427,12 +447,19 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     popoverKind = 'add-column'
     const name = h('input', { class: 'base-input', placeholder: 'Propriété', 'data-testid': 'base-new-column-name', list: 'base-props-list' })
     const list = h('datalist', { id: 'base-props-list' }, ...propertyChoices(false).map(k => h('option', { value: k })))
-    const type = h('select', { class: 'base-input', 'data-testid': 'base-new-column-type' }, ...PROPERTY_TYPES.map(t => h('option', { value: t }, `${PROPERTY_TYPE_INFO[t].icon} ${PROPERTY_TYPE_INFO[t].label}`)))
-    name.addEventListener('input', () => { type.value = typeOf(name.value.trim()) })
+    const type = h('select', { class: 'base-input', 'data-testid': 'base-new-column-type' },
+      ...PROPERTY_TYPES.map(t => h('option', { value: t }, `${PROPERTY_TYPE_INFO[t].icon} ${PROPERTY_TYPE_INFO[t].label}`)),
+      h('option', { value: 'formula' }, 'ƒ Formule'))
+    name.addEventListener('input', () => { if (type.value !== 'formula') type.value = typeOf(name.value.trim()) })
+    type.addEventListener('change', () => {
+      if (type.value !== 'formula') return
+      const n = name.value.replace(/:/g, '').trim()
+      openFormulaEditor(anchor, n ? FORMULA_PREFIX + n : undefined)
+    })
     const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-new-column-ok' }, 'Ajouter')
     const confirm = () => {
       const key = name.value.replace(/:/g, '').trim()
-      if (!key || key === TITLE_COLUMN) return
+      if (!key || key === TITLE_COLUMN || isFormulaKey(key)) return
       if (types && !types.get(key) && type.value !== typeOf(key)) {
         try { types.set({ key, type: type.value as PropertyType }) } catch { /* sans vault */ }
       }
@@ -447,7 +474,85 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     name.focus()
   }
 
+  /**
+   * Edition d'une colonne formule : son nom et son expression, avec un
+   * apercu calcule sur la premiere ligne. `key` absente : nouvelle colonne.
+   */
+  const openFormulaEditor = (anchor: HTMLElement, key?: string) => {
+    if (readOnly || !store.writable) return
+    closePopover()
+    popoverKind = 'formula'
+    const existing = key ? formulaOf(key) : undefined
+    const name = h('input', { class: 'base-input', placeholder: 'Nom de la colonne', 'data-testid': 'base-formula-name' })
+    name.value = key ? key.slice(FORMULA_PREFIX.length) : ''
+    const input = h('textarea', {
+      class: 'base-input base-formula-input', rows: '3', spellcheck: 'false', 'data-testid': 'base-formula-input',
+      placeholder: 'prop("Prix") * prop("Quantité")',
+    })
+    input.value = existing ?? ''
+    const status = h('div', { class: 'base-formula-status', 'data-testid': 'base-formula-status' })
+    const sample = table?.loadedRows()[0]
+    const check = (): boolean => {
+      const src = input.value
+      if (!src.trim()) { status.textContent = 'Exemple : if(prop("Fait"), "✓", "") · dateAdd(prop("Début"), 7, "days")'; status.classList.remove('base-formula-bad'); return false }
+      const c = compile(src)
+      if ('error' in c) { status.textContent = c.error; status.classList.add('base-formula-bad'); return false }
+      status.classList.remove('base-formula-bad')
+      if (!sample) { status.textContent = 'Formule valide'; return true }
+      const r = c.formula.evaluate(sample)
+      status.textContent = r.ok ? `${sample.title || 'Première ligne'} → ${valueText(r.value) || '(vide)'}` : `${sample.title || 'Première ligne'} → ${r.error}`
+      return true
+    }
+    input.addEventListener('input', check)
+    const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-formula-ok' }, key && existing !== undefined ? 'Enregistrer' : 'Ajouter')
+    const confirm = () => {
+      const n = name.value.replace(/:/g, '').trim()
+      if (!n) { name.focus(); return }
+      if (!check()) { input.focus(); return }
+      const newKey = FORMULA_PREFIX + n
+      if (key && key !== newKey && existing !== undefined) {
+        // Renommer : nouvelle cle a la meme place, l'ancienne retiree.
+        const old = manifest.columns.find(c => c.key === key)
+        store.setColumn(newKey, { formula: input.value, ...(old ? { width: old.width, order: old.order } : {}) })
+        store.removeColumn(key)
+      } else {
+        store.setColumn(newKey, { formula: input.value })
+      }
+      closePopover()
+    }
+    ok.addEventListener('click', confirm)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirm() } })
+    name.addEventListener('keydown', e => { if (e.key === 'Enter') input.focus() })
+    popover.replaceChildren(h('div', { class: 'base-pop-list base-formula', 'data-testid': 'base-formula-editor' },
+      h('div', { class: 'base-pop-row' }, h('span', { class: 'base-pop-icon' }, 'ƒ'), name),
+      input, status, h('div', { class: 'base-pop-row' }, ok)))
+    popover.hidden = false
+    popover.style.left = `${Math.max(0, anchor.offsetLeft - 200)}px`
+    check()
+    ;(name.value ? input : name).focus()
+  }
+
   const openColumnMenu = (key: string, anchor: HTMLElement) => {
+    if (isFormulaKey(key)) {
+      const v = view()
+      closePopover()
+      popoverKind = 'column'
+      const editable = !readOnly && store.writable
+      const item = (text: string, testid: string, run: () => void) => {
+        const b = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': testid }, text)
+        b.disabled = !editable
+        b.addEventListener('click', () => { closePopover(); run() })
+        return b
+      }
+      popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-column-menu' },
+        item('ƒ Modifier la formule', 'base-col-formula', () => openFormulaEditor(anchor, key)),
+        item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] })),
+        item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key)),
+      ))
+      popover.hidden = false
+      popover.style.left = `${anchor.offsetLeft}px`
+      return
+    }
     const v = view()
     closePopover()
     popoverKind = 'column'
@@ -480,7 +585,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))

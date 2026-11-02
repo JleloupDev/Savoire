@@ -188,7 +188,8 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-page')).default,
   },
   {
-    id: 'plugin-base', preinstalled: true,
+    // editorDefault : ses blocs (requete ```base, ![[x.base]]) vivent dans les notes.
+    id: 'plugin-base', preinstalled: true, editorDefault: true,
     manifest: {
       id: 'plugin-base',
       name: 'Bases',
@@ -196,6 +197,7 @@ export const STORE_CATALOG: StoreEntry[] = [
       description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
       scope: 'vault',
       permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: true,
     },
     extensions: ['base'],
     load: async () => (await import('@savoire/plugin-base')).default,
