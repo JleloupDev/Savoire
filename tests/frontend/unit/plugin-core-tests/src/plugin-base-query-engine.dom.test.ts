@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { InMemoryQueryEngine } from '@savoire/plugin-runtime'
 import { compileFormula, aggregateKey } from '@savoire/plugin-api'
 import type { IQueryEngine, PluginAPI } from '@savoire/plugin-api'
-import { enginePlan, parseBaseQuery, renderBaseQueryBlock } from '@savoire/plugin-base'
+import { enginePlan, evaluateBaseQuery, parseBaseQuery, renderBaseQueryBlock } from '@savoire/plugin-base'
 
 const plan = (text: string) => {
   const p = parseBaseQuery(text)
@@ -74,5 +74,41 @@ describe('bloc de requete sur une grande base', () => {
     await new Promise(r => setTimeout(r, 50))
     expect(cells()[0]).toBe('50 100')
     el.dispatchEvent(new CustomEvent('savoire:block-destroy'))
+  })
+})
+
+describe('bloc de requete : group by', () => {
+  const ROWS = [
+    { id: '1', path: 'db/A.md', title: 'A', values: { statut: 'Fait', prix: 10, tags: ['x', 'y'] } },
+    { id: '2', path: 'db/B.md', title: 'B', values: { statut: 'En cours', prix: 4, tags: ['x'] } },
+    { id: '3', path: 'db/C.md', title: 'C', values: { statut: 'Fait', prix: 7, tags: [] } },
+    { id: '4', path: 'db/D.md', title: 'D', values: { statut: null, prix: 1 } },
+  ]
+  const run = (text: string) => {
+    const p = parseBaseQuery(text)
+    if ('error' in p) throw new Error(p.error)
+    return evaluateBaseQuery(p.query, ROWS as never)
+  }
+  it('une ligne par groupe ; agregats sur le groupe ; cle reprise telle quelle', () => {
+    const r = run('from db\nselect prop("statut"), sum(prop("prix")) as "Total", count() as "N"\ngroup by prop("statut")')
+    expect(r.columns).toEqual(['statut', 'Total', 'N'])
+    expect(r.rows.map(x => x.cells)).toEqual([['En cours', 4, 1], ['Fait', 17, 2], [null, 1, 1]])
+    expect(r.groups).toBe(3)
+    expect(r.matched).toBe(4)
+  })
+
+  it('tri sur un agregat, limit, where ; sans select : cles et nombre de lignes', () => {
+    const r = run('from db\nwhere prop("prix") > 2\nselect prop("statut"), sum(prop("prix"))\ngroup by prop("statut")\nsort sum(prop("prix")) desc\nlimit 1')
+    expect(r.rows.map(x => x.cells)).toEqual([['Fait', 17]])
+    expect(r.groups).toBe(2)
+    const bare = run('from db\ngroup by prop("statut")')
+    expect(bare.columns).toEqual(['statut', 'Lignes'])
+  })
+
+  it('une liste compte dans chacun de ses groupes ; erreurs claires', () => {
+    const r = run('from db\nselect prop("tags"), count()\ngroup by prop("tags")')
+    expect(r.rows.map(x => x.cells)).toEqual([['x', 2], ['y', 1], [null, 2]])
+    expect(parseBaseQuery('from db\ngroup prop("a")')).toMatchObject({ error: expect.stringContaining('group by') })
+    expect(parseBaseQuery('from db\ngroup by sum(prop("a"))')).toMatchObject({ error: expect.stringContaining('agrégat') })
   })
 })

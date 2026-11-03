@@ -17,8 +17,13 @@
 //    titre. Avec une fonction d'agregat (sum, mean, min, max, median,
 //    count), prop("x") vaut la liste des valeurs de toutes les lignes
 //    retenues et le bloc rend une seule ligne ; sinon une ligne par ligne ;
+//  - group by : expressions separees par des virgules ; une ligne par
+//    groupe. Dans select et sort, une fonction d'agregat porte sur les lignes
+//    du groupe ; une expression sans agregat vaut celle de la cle (ou de la
+//    premiere ligne du groupe). Une liste (multi-choix) compte dans chacun
+//    de ses groupes, comme dans un kanban ;
 //  - sort   : expressions, « asc » (defaut) ou « desc » ;
-//  - limit  : nombre de lignes montrees (50 par defaut).
+//  - limit  : nombre de lignes (ou de groupes) montrees (50 par defaut).
 // Le bloc suit la base en direct.
 import { BLOCK_DESTROY_EVENT, QUERY_MAX_LIMIT, aggregateKey, tryCompileFormula } from '@savoire/plugin-api'
 import type {
@@ -44,8 +49,10 @@ export interface BaseQuery {
   select: BaseQueryColumn[]
   sort: BaseQuerySort[]
   limit: number
-  /** Une expression du select agrege : une seule ligne de resultat. */
+  /** Une expression du select agrege : une seule ligne de resultat (une par groupe avec group by). */
   aggregate: boolean
+  /** Cles de regroupement (group by) ; vide : pas de groupes. */
+  groupBy: BaseQueryColumn[]
 }
 
 export type ParsedBaseQuery = { query: BaseQuery } | { error: string }
@@ -75,7 +82,7 @@ function splitTop(text: string, sep: string): string[] {
 
 const AS_RE = /\s+as\s+(?:"([^"]*)"|'([^']*)'|([\p{L}_][\p{L}\p{N}_]*))\s*$/u
 const DIR_RE = /\s+(asc|desc)\s*$/i
-const CLAUSES = ['from', 'where', 'select', 'sort', 'limit'] as const
+const CLAUSES = ['from', 'where', 'select', 'group', 'sort', 'limit'] as const
 
 export function parseBaseQuery(text: string): ParsedBaseQuery {
   const clauses = new Map<string, string>()
@@ -85,10 +92,17 @@ export function parseBaseQuery(text: string): ParsedBaseQuery {
     if (/^\s/.test(line) && current) { clauses.set(current, `${clauses.get(current)} ${line.trim()}`); continue }
     const m = /^(\w+)\s*(.*)$/.exec(line.trim())
     const kw = m?.[1].toLowerCase()
-    if (!m || !CLAUSES.includes(kw as typeof CLAUSES[number])) return { error: `Ligne inconnue : « ${line.trim()} » (from, where, select, sort, limit)` }
-    if (clauses.has(kw!)) return { error: `« ${kw} » écrit deux fois` }
+    if (!m || !CLAUSES.includes(kw as typeof CLAUSES[number])) return { error: `Ligne inconnue : « ${line.trim()} » (from, where, select, group by, sort, limit)` }
+    let rest = m[2].trim()
+    if (kw === 'group') {
+      const by = /^by\b\s*(.*)$/i.exec(rest)
+      if (!by) return { error: `Ligne inconnue : « ${line.trim()} » (écrire « group by », puis les expressions)` }
+      rest = by[1].trim()
+    }
+    const name = kw === 'group' ? 'group by' : kw!
+    if (clauses.has(kw!)) return { error: `« ${name} » écrit deux fois` }
     current = kw!
-    clauses.set(current, m[2].trim())
+    clauses.set(current, rest)
   }
   const from = clauses.get('from')?.replace(/^\[\[|\]\]$/g, '').replace(/^["']|["']$/g, '').trim()
   if (!from) return { error: 'Il manque « from » : la base à interroger (from Projets.base)' }
@@ -113,6 +127,17 @@ export function parseBaseQuery(text: string): ParsedBaseQuery {
     const bare = /^prop\(\s*"([^"]*)"\s*\)$/.exec(expr.trim())
     select.push({ label: as ? (as[1] ?? as[2] ?? as[3]) : bare ? bare[1] : expr.trim(), formula: c })
   }
+  const groupBy: BaseQueryColumn[] = []
+  if (clauses.has('group') && !clauses.get('group')) return { error: 'group by : une expression attendue (group by prop("Statut"))' }
+  for (const part of splitTop(clauses.get('group') ?? '', ',')) {
+    const as = AS_RE.exec(part)
+    const expr = as ? part.slice(0, as.index) : part
+    const c = compile(expr, 'group by')
+    if (typeof c === 'string') return { error: c }
+    if (c.aggregates) return { error: 'group by : pas de fonction d\'agrégat dans une clé de groupe' }
+    const bare = /^prop\(\s*"([^"]*)"\s*\)$/.exec(expr.trim())
+    groupBy.push({ label: as ? (as[1] ?? as[2] ?? as[3]) : bare ? bare[1] : expr.trim(), formula: c })
+  }
   const sort: BaseQuerySort[] = []
   for (const part of splitTop(clauses.get('sort') ?? '', ',')) {
     const d = DIR_RE.exec(part)
@@ -127,7 +152,7 @@ export function parseBaseQuery(text: string): ParsedBaseQuery {
     if (!Number.isInteger(limit) || limit < 1) return { error: 'limit : un nombre entier positif' }
   }
   const aggregate = select.some(s => s.formula.aggregates)
-  return { query: { from, where: whereF, select, sort, limit, aggregate } }
+  return { query: { from, where: whereF, select, sort, limit, aggregate, groupBy } }
 }
 
 // ── Execution ──────────────────────────────────────────────────────────────
@@ -139,6 +164,8 @@ export interface BaseQueryResult {
   matched: number
   /** La base depasse BASE_QUERY_MAX_ROWS : le calcul porte sur le debut. */
   truncated: boolean
+  /** Avec group by : nombre de groupes (avant limit). */
+  groups?: number
 }
 
 const asFormulaRow = (r: QueryRow): FormulaRow => ({ title: r.title, values: r.values })
@@ -170,7 +197,7 @@ const TITLE_PROPS = new Set(['Nom', 'Name', '@title'])
  * que le moteur fait a l'identique (voir CompiledFormula.toFilter).
  */
 export function enginePlan(q: BaseQuery): { where?: QueryFilter; calls: FormulaAggregateCall[]; aggregate: QueryAggregate[] } | null {
-  if (!q.aggregate || q.select.length === 0) return null
+  if (!q.aggregate || q.select.length === 0 || q.groupBy.length || q.sort.length) return null
   const calls = new Map<string, FormulaAggregateCall>()
   for (const s of q.select) {
     if (!s.formula.aggregateCalls) return null
@@ -190,6 +217,71 @@ export function enginePlan(q: BaseQuery): { where?: QueryFilter; calls: FormulaA
   return { where, calls: list, aggregate }
 }
 
+/** Ligne d'agregat : prop("x") = les valeurs de ces lignes. */
+function aggregateRow(q: BaseQuery, rows: QueryRow[], extra: CompiledFormula[] = []): FormulaRow {
+  const values: Record<string, PropertyValue[]> = {}
+  const props = new Set([...q.select, ...q.sort].flatMap(s => s.formula.props).concat(extra.flatMap(f => f.props)))
+  for (const p of props) values[p] = rows.map(r => (p === 'Nom' || p === 'Name') && !(p in r.values) ? r.title : r.values[p] ?? null)
+  return { title: '', values: values as unknown as FormulaRow['values'], rowCount: rows.length }
+}
+
+/** group by : une ligne par groupe, agregats sur les lignes du groupe. */
+function evaluateGroups(q: BaseQuery, kept: QueryRow[], truncated: boolean, now: Date): BaseQueryResult {
+  const groups = new Map<string, { keys: PropertyValue[]; rows: QueryRow[] }>()
+  for (const r of kept) {
+    const keys = q.groupBy.map(g => { const v = g.formula.evaluate(asFormulaRow(r), now); return v.ok ? v.value : null })
+    // Une seule cle en liste : la ligne compte dans chacun de ses groupes.
+    const sets: PropertyValue[][] = keys.length === 1 && Array.isArray(keys[0])
+      ? (keys[0].length ? keys[0].map(k => [k]) : [[null]])
+      : [keys]
+    for (const set of sets) {
+      const id = JSON.stringify(set.map(k => valueText(k)))
+      const g = groups.get(id)
+      if (g) g.rows.push(r)
+      else groups.set(id, { keys: set, rows: [r] })
+    }
+  }
+  const keyOf = (src: string): number => q.groupBy.findIndex(g => g.formula.source.trim() === src.trim())
+  const value = (f: CompiledFormula, g: { keys: PropertyValue[]; rows: QueryRow[] }): PropertyValue | { error: string } => {
+    const k = keyOf(f.source)
+    if (k >= 0) return g.keys[k]
+    const r = f.aggregates ? f.evaluate(aggregateRow(q, g.rows), now) : f.evaluate(asFormulaRow(g.rows[0]), now)
+    return r.ok ? r.value : { error: r.error }
+  }
+  let list = [...groups.values()]
+  const plain = (v: PropertyValue | { error: string }): PropertyValue => v !== null && typeof v === 'object' && !Array.isArray(v) ? null : v as PropertyValue
+  if (q.sort.length) {
+    const keys = new Map(list.map(g => [g, q.sort.map(s => plain(value(s.formula, g)))]))
+    list.sort((a, b) => {
+      const ka = keys.get(a)!, kb = keys.get(b)!
+      for (let i = 0; i < q.sort.length; i++) {
+        const c = cmp(ka[i], kb[i])
+        if (c) return q.sort[i].dir === 'desc' ? -c : c
+      }
+      return 0
+    })
+  } else {
+    list.sort((a, b) => {
+      for (let i = 0; i < a.keys.length; i++) { const c = cmp(a.keys[i], b.keys[i]); if (c) return c }
+      return 0
+    })
+  }
+  const shown = list.slice(0, q.limit)
+  // Sans select : les cles et le nombre de lignes.
+  if (!q.select.length) {
+    return {
+      columns: [...q.groupBy.map(g => g.label), 'Lignes'],
+      rows: shown.map(g => ({ cells: [...g.keys, g.rows.length] })),
+      matched: kept.length, truncated, groups: list.length,
+    }
+  }
+  return {
+    columns: q.select.map(s => s.label),
+    rows: shown.map(g => ({ cells: q.select.map(s => value(s.formula, g)) })),
+    matched: kept.length, truncated, groups: list.length,
+  }
+}
+
 /** Applique where, sort, select et limit a des lignes deja lues. */
 export function evaluateBaseQuery(q: BaseQuery, all: QueryRow[], truncated = false, now = new Date()): BaseQueryResult {
   const kept = q.where
@@ -198,6 +290,7 @@ export function evaluateBaseQuery(q: BaseQuery, all: QueryRow[], truncated = fal
       return res.ok && (res.value === true || res.value === 'true' || (typeof res.value === 'number' && res.value !== 0))
     })
     : all
+  if (q.groupBy.length) return evaluateGroups(q, kept, truncated, now)
   if (q.aggregate) {
     // Une seule ligne : prop("x") = les valeurs de toutes les lignes retenues.
     const values: Record<string, PropertyValue[]> = {}
@@ -359,9 +452,11 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
     const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${basePath}` }, `🗃️ ${basePath.split('/').pop()}`)
     open.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(basePath) })
     const foot = h('div', { class: 'base-q-foot' }, open,
-      h('span', {}, q.aggregate ? `${r.matched} ligne${r.matched > 1 ? 's' : ''}` : `${Math.min(r.matched, q.limit)} / ${r.matched}`),
+      h('span', {}, r.groups !== undefined
+        ? `${Math.min(r.groups, q.limit)} / ${r.groups} groupe${r.groups > 1 ? 's' : ''} · ${r.matched} ligne${r.matched > 1 ? 's' : ''}`
+        : q.aggregate ? `${r.matched} ligne${r.matched > 1 ? 's' : ''}` : `${Math.min(r.matched, q.limit)} / ${r.matched}`),
       r.truncated ? h('span', { class: 'base-q-bad' }, `calcul limité aux ${BASE_QUERY_MAX_ROWS.toLocaleString('fr-FR')} premières lignes`) : null)
-    if (q.aggregate && r.columns.length === 1) {
+    if (q.aggregate && !q.groupBy.length && r.columns.length === 1) {
       el.replaceChildren(h('div', { class: 'base-q-value', 'data-testid': 'base-query-value', title: r.columns[0] }, display(r.rows[0].cells[0])), foot)
       return
     }
