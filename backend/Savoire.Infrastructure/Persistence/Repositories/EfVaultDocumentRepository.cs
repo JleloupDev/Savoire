@@ -8,11 +8,17 @@ namespace Savoire.Infrastructure.Persistence.Repositories;
 
 public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentRepository
 {
-    public async Task<string?> GetVaultIdAsync(string docId, CancellationToken ct = default) =>
-        await db.VaultDocuments
+    public async Task<string?> GetVaultIdAsync(string docId, CancellationToken ct = default)
+    {
+        string? vaultId = await db.VaultDocuments
             .Where(d => d.DocId == docId)
             .Select(d => d.VaultId)
             .FirstOrDefaultAsync(ct);
+        // Annexe jamais inscrit (cree avant le registre) : le vault de son document.
+        if (vaultId is null && AnnexDocuments.ParentOf(docId) is { } parent)
+            vaultId = await db.VaultDocuments.Where(d => d.DocId == parent).Select(d => d.VaultId).FirstOrDefaultAsync(ct);
+        return vaultId;
+    }
 
     public async Task<IReadOnlyList<string>> RegisterAsync(
         string vaultId, IReadOnlyCollection<string> docIds, string registeredBy, CancellationToken ct = default)
@@ -20,8 +26,10 @@ public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentReposito
         string[] ids = docIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToArray();
         if (ids.Length == 0) return [];
 
+        // Les documents des annexes aussi : un annexe suit le vault de son document.
+        string[] lookup = ids.Concat(ids.Select(AnnexDocuments.ParentOf).OfType<string>()).Distinct().ToArray();
         Dictionary<string, string> existing = await db.VaultDocuments
-            .Where(d => ids.Contains(d.DocId))
+            .Where(d => lookup.Contains(d.DocId))
             .ToDictionaryAsync(d => d.DocId, d => d.VaultId, ct);
 
         var rejected = new List<string>();
@@ -31,6 +39,11 @@ public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentReposito
             if (existing.TryGetValue(id, out string? owner))
             {
                 if (owner != vaultId) rejected.Add(id);
+                continue;
+            }
+            if (AnnexDocuments.ParentOf(id) is { } parent && existing.TryGetValue(parent, out string? parentOwner) && parentOwner != vaultId)
+            {
+                rejected.Add(id);
                 continue;
             }
             db.VaultDocuments.Add(new VaultDocumentEntity

@@ -43,11 +43,17 @@ internal static class IndexerChangeWriter
             case CrdtResourceType.Room:
                 // Le vault vient du registre « document -> vault » ; un document
                 // non inscrit n'a pas de vault connu : pas de ligne.
+                // Un annexe jamais inscrit (lot d'une base cree avant le
+                // registre) : le vault de son document (AnnexDocuments).
                 string key = $"{IndexerChangeKind.Document}:{resourceId}";
+                string parent = AnnexDocuments.ParentOf(resourceId) ?? resourceId;
                 await db.Database.ExecuteSqlAsync($"""
                     INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
-                    SELECT {key}, vault_id, {IndexerChangeKind.Document}, doc_id, {now}
-                    FROM vault_documents WHERE doc_id = {resourceId}
+                    SELECT {key}, vault_id, {IndexerChangeKind.Document}, {resourceId}, {now}
+                    FROM vault_documents
+                    WHERE doc_id = {resourceId}
+                       OR (doc_id = {parent} AND NOT EXISTS (SELECT 1 FROM vault_documents WHERE doc_id = {resourceId}))
+                    LIMIT 1
                     """, ct);
                 return;
 

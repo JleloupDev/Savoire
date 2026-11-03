@@ -31,6 +31,9 @@ import { YMapVaultDirectory } from './YMapVaultDirectory'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
 import { VaultHubClient, INDEX_COMPACT_THRESHOLD } from './VaultHubClient'
+
+/** Ids inscrits par appel au hub (environ 80 Kio). */
+const REGISTER_BATCH = 2000
 import { DocumentRoomClient, type JoinedDocumentRoom } from './DocumentRoomClient'
 import { CrdtDocumentFetcher } from './CrdtDocumentFetcher'
 import { RestVaultStorage } from './RestVaultStorage'
@@ -181,7 +184,12 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
 
   async registerDocuments(docIds: string[]): Promise<void> {
     if (docIds.length === 0) return
-    const rejected = await this.hub.registerDocuments(docIds)
+    // Par paquets : un gros vault (10 000 notes) en un seul message depasserait
+    // la taille admise par le hub.
+    const rejected: string[] = []
+    for (let i = 0; i < docIds.length; i += REGISTER_BATCH) {
+      rejected.push(...await this.hub.registerDocuments(docIds.slice(i, i + REGISTER_BATCH)))
+    }
     if (rejected.length > 0) throw new Error(`documents deja inscrits dans un autre vault : ${rejected.join(', ')}`)
   }
 

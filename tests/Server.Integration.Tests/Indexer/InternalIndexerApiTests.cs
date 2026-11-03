@@ -221,6 +221,25 @@ public class InternalIndexerApiTests : IClassFixture<IndexerAppFactory>, IAsyncL
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact(DisplayName = "Annexe jamais inscrit (lot d'une base) : il suit le vault de son document ; ailleurs, refuse")]
+    public async Task Annex_FollowsItsDocument()
+    {
+        string lot = $"{_docId}~lot-001";
+        // Ecrit sans inscription prealable (lot cree avant le registre).
+        await PushDocOpAsync(lot, 0xD1);
+        var rows = Rows(await ChangesAsync(_owner), _vaultId).ToList();
+        rows.Should().Contain(r => r["kind"]!.GetValue<string>() == "document" && r["docId"]!.GetValue<string>() == lot);
+        var log = (await _factory.ServiceClient().GetFromJsonAsync<JsonObject>($"/internal/indexer/vaults/{_vaultId}/documents/{Uri.EscapeDataString(lot)}"))!;
+        log["updates"]!.AsArray().Select(u => u!.GetValue<string>()).Should().Equal(B64(0xD1));
+
+        // Un autre vault ne peut pas s'approprier le lot.
+        string other = await _factory.NewVaultAsync(_token, _userId, "Autre");
+        await using HubConnection hub = await _factory.HubAsync("/hubs/vault", _token);
+        await hub.InvokeAsync("JoinVault", other);
+        string[] rejected = await hub.InvokeAsync<string[]>("RegisterDocuments", other, new[] { $"{_docId}~lot-002" });
+        rejected.Should().Equal($"{_docId}~lot-002");
+    }
+
     // ── Perimetre du pair gere ───────────────────────────────────────────────
 
     [Fact(DisplayName = "Reglage none — vault-deleted dans le flux, plus liste ni lisible ; retour au pair gere : changement vault")]
