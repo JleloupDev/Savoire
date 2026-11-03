@@ -46,7 +46,10 @@ describe('formules traduites pour le moteur', () => {
   it('plan du bloc', () => {
     expect(plan('from db\nselect sum(prop("c1")), count()')).toMatchObject({ aggregate: [{ op: 'sum', field: { prop: 'c1' } }, { op: 'count' }] })
     expect(plan('from db\nwhere prop("id") > 2\nselect max(prop("Nom"))')).toMatchObject({ where: { field: { prop: 'id' }, op: 'gt', value: 2 }, aggregate: [{ op: 'max', field: { doc: 'title' } }] })
-    expect(plan('from db\nwhere prop("s") == "Fait"\nselect sum(prop("c1"))')).toBeNull()
+    // Texte : la formule part au moteur, qui l'evalue a l'identique.
+    expect(plan('from db\nwhere prop("s") == "Fait"\nselect sum(prop("c1"))')).toMatchObject({
+      where: { field: { formula: 'if(prop("s") == "Fait", true, false)' }, op: 'eq', value: true },
+    })
     expect(plan('from db\nselect prop("c1")')).toBeNull()
   })
 })

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Filtres et tris sur des colonnes formules.
+// Filtres, tris, groupes et agregats sur des colonnes formules.
 //
-// Une formule se calcule dans le client : aucun index ne la connait. Quand
-// une requete filtre ou trie sur une formule (champ { prop: '=Nom' }), on lit
-// toutes les lignes de la base (par pages, BASE_QUERY_MAX_ROWS au plus), puis
-// on filtre, trie et pagine ici. Sinon la requete part telle quelle au moteur.
-// Meme contrat IQueryEngine : le tableau et le kanban ne voient pas la
-// difference.
+// Une colonne formule ({ prop: '=Nom' } dans la vue) part au moteur en champ
+// { formula } : il la calcule sur toutes les lignes (query.ts, queryEval.ts).
+// Repli pour un moteur qui ne connait pas les formules : on lit les lignes
+// de la base (BASE_QUERY_MAX_ROWS au plus) et on calcule ici. Meme contrat
+// IQueryEngine : le tableau et le kanban ne voient pas la difference.
 import type {
   CompiledFormula, IQueryEngine, IndexState, PropertyValue, Query, QueryField, QueryFilter,
   QueryGroup, QueryResult, QueryRow, QuerySort,
@@ -20,6 +19,7 @@ import { fetchBaseRows } from './queryBlock'
 export type FormulaLookup = (key: string) => CompiledFormula | undefined
 
 const isFormulaField = (f: QueryField): boolean => 'prop' in f && isFormulaKey(f.prop)
+const needsAggregate = (q: Query): boolean => !!q.aggregate?.some(a => a.field && isFormulaField(a.field))
 
 function usesFormula(filter: QueryFilter | undefined): boolean {
   if (!filter) return false
@@ -31,7 +31,7 @@ function usesFormula(filter: QueryFilter | undefined): boolean {
 
 /** La requete a-t-elle besoin d'un calcul cote client ? */
 export function needsFormulas(q: Query): boolean {
-  return usesFormula(q.where) || !!q.sort?.some(s => isFormulaField(s.field)) || (!!q.groupBy && isFormulaField(q.groupBy))
+  return usesFormula(q.where) || !!q.sort?.some(s => isFormulaField(s.field)) || (!!q.groupBy && isFormulaField(q.groupBy)) || needsAggregate(q)
 }
 
 /**
@@ -71,6 +71,7 @@ function fieldOf(row: QueryRow, field: QueryField, formula: FormulaLookup): Prop
     const r = f.evaluate(row)
     return r.ok ? r.value : undefined
   }
+  if ('formula' in field) return undefined
   switch (field.doc) {
     case 'title': return row.title
     case 'path': return row.path
@@ -147,10 +148,80 @@ function groupsOf(rows: QueryRow[], field: QueryField, formula: FormulaLookup): 
 // ── Le moteur ────────────────────────────────────────────────────────────
 
 /**
- * Le moteur, plus les formules : les requetes qui n'en parlent pas lui
- * passent telles quelles.
+ * La requete pour le moteur : chaque colonne formule ({ prop: '=Nom' })
+ * devient { formula } et le moteur la calcule lui-meme, sur toutes les
+ * lignes (query.ts). Une formule fausse vaut vide.
+ */
+export function toEngineQuery(q: Query, formula: FormulaLookup): Query {
+  const field = (f: QueryField): QueryField => isFormulaField(f) ? { formula: formula((f as { prop: string }).prop)?.source ?? '""' } : f
+  const filter = (w: QueryFilter): QueryFilter => {
+    if ('and' in w) return { and: w.and.map(filter) }
+    if ('or' in w) return { or: w.or.map(filter) }
+    if ('not' in w) return { not: filter(w.not) }
+    if (!isFormulaField(w.field)) return w
+    // Valeur saisie en texte dans le filtre (« 10 ») face a une formule : un
+    // nombre, comme le calcul de la formule.
+    const v = w.value
+    const value = typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(',', '.'))) ? Number(v.replace(',', '.')) : v
+    return { ...w, field: field(w.field), ...(value !== undefined ? { value } : {}) }
+  }
+  return {
+    ...q,
+    ...(q.where ? { where: filter(q.where) } : {}),
+    ...(q.sort ? { sort: q.sort.map(s => ({ ...s, field: field(s.field) })) } : {}),
+    ...(q.groupBy ? { groupBy: field(q.groupBy) } : {}),
+    ...(q.aggregate ? { aggregate: q.aggregate.map(a => a.field ? { ...a, field: field(a.field) } : a) } : {}),
+  }
+}
+
+const refused = (err: unknown) => (err as { code?: string })?.code === 'invalid_query'
+
+/**
+ * Le moteur, plus les colonnes formules : il les calcule lui-meme (champ
+ * { formula }). Un moteur qui ne les connait pas (pair plus ancien) : repli
+ * sur le calcul dans le client (clientFormulas). Les requetes sans formule
+ * lui passent telles quelles.
  */
 export function withFormulas(inner: IQueryEngine, formula: FormulaLookup): IQueryEngine {
+  const client = clientFormulas(inner, formula)
+  /** undefined : pas encore su ; false : le moteur refuse les formules. */
+  let engineOk: boolean | undefined
+  return {
+    async query(q, options) {
+      if (!needsFormulas(q)) return inner.query(q, options)
+      if (engineOk === false) return client.query(q, options)
+      try {
+        const r = await inner.query(toEngineQuery(q, formula), options)
+        engineOk = true
+        return r
+      } catch (err) {
+        if (engineOk === true || !refused(err)) throw err
+        engineOk = false
+        return client.query(q, options)
+      }
+    },
+    watch(q, cb) {
+      if (!needsFormulas(q)) return inner.watch(q, cb)
+      if (engineOk === false) return client.watch(q, cb)
+      if (engineOk === true) return inner.watch(toEngineQuery(q, formula), cb)
+      let stopped = false
+      let stop = () => {}
+      void inner.query({ ...toEngineQuery(q, formula), limit: 1 }).then(
+        () => { engineOk = true; if (!stopped) stop = inner.watch(toEngineQuery(q, formula), cb) },
+        err => { if (refused(err)) engineOk = false; if (!stopped) stop = (engineOk === false ? client : inner).watch(engineOk === false ? q : toEngineQuery(q, formula), cb) },
+      )
+      return () => { stopped = true; stop() }
+    },
+    state: () => inner.state(),
+    onStateChange: cb => inner.onStateChange(cb),
+  }
+}
+
+/**
+ * Repli : filtres, tris et groupes sur formules calcules ICI, sur les lignes
+ * lues (BASE_QUERY_MAX_ROWS au plus).
+ */
+export function clientFormulas(inner: IQueryEngine, formula: FormulaLookup): IQueryEngine {
   /** Lignes lues pour une requete de base, gardees jusqu'au prochain changement de l'index. */
   const cache = new Map<string, Promise<{ rows: QueryRow[]; truncated: boolean; index: IndexState }>>()
   const baseOf = (q: Query): Query => {

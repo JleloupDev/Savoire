@@ -8,11 +8,11 @@
 // Adaptee a quelques milliers de notes ; au-dela, un moteur SQLite.
 // Voir ADR-027.
 import {
-  QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT,
+  FieldReader, QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT, QueryEvalError, aggregateDocs, checkAggregates,
+  foldText, groupDocs, matchesDoc, sortDocs,
 } from '@savoire/plugin-api'
 import type {
-  IQueryEngine, IndexState, PropertyValue, Query, QueryAggregate, QueryErrorInfo, QueryField,
-  QueryFilter, QueryGroup, QueryResult, QueryRow,
+  IQueryEngine, IndexState, PropertyValue, Query, QueryErrorInfo, QueryFilter, QueryGroup, QueryResult, QueryRow,
 } from '@savoire/plugin-api'
 
 /** Une note (ou une ligne legere de base) telle que l'index la voit. */
@@ -39,98 +39,13 @@ export class QueryError extends Error implements QueryErrorInfo {
   }
 }
 
-/** Minuscules, sans accents : les comparaisons de texte n'en tiennent pas compte. */
-export function foldText(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-}
-
-// Les memes valeurs reviennent sans cesse (statuts, choix) : on garde leur
-// forme repliee. Borne pour ne pas grossir sans fin.
-const foldCache = new Map<string, string>()
-function fold(s: string): string {
-  let f = foldCache.get(s)
-  if (f === undefined) {
-    if (foldCache.size > 200_000) foldCache.clear()
-    f = foldText(s)
-    foldCache.set(s, f)
-  }
-  return f
-}
-
-function isEmpty(v: PropertyValue | undefined): boolean {
-  return v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
-}
-
-function folderOf(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i < 0 ? '' : path.slice(0, i)
-}
+/** Minuscules, sans accents (voir queryEval.ts, la semantique commune). */
+export { foldText }
 
 function extOf(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const i = name.lastIndexOf('.')
   return i <= 0 ? '' : name.slice(i + 1).toLowerCase()
-}
-
-function fieldValue(doc: IndexedDoc, field: QueryField): PropertyValue | undefined {
-  if ('prop' in field) return doc.props[field.prop]
-  switch (field.doc) {
-    case 'path': return doc.path
-    case 'title': return doc.title
-    case 'folder': return folderOf(doc.path)
-    case 'ext': return extOf(doc.path)
-    case 'created': return doc.created
-    case 'modified': return doc.modified
-  }
-}
-
-/** Comparaison de deux valeurs non vides du meme genre ; texte replie. */
-function compareScalar(a: PropertyValue, b: PropertyValue): number {
-  if (typeof a === 'number' && typeof b === 'number') return a - b
-  if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b)
-  const fa = fold(String(a))
-  const fb = fold(String(b))
-  return fa < fb ? -1 : fa > fb ? 1 : 0
-}
-
-function scalarEquals(a: PropertyValue, b: PropertyValue): boolean {
-  return compareScalar(a, b) === 0
-}
-
-function matches(doc: IndexedDoc, filter: QueryFilter): boolean {
-  if ('and' in filter) return filter.and.every(f => matches(doc, f))
-  if ('or' in filter) return filter.or.some(f => matches(doc, f))
-  if ('not' in filter) return !matches(doc, filter.not)
-  const v = fieldValue(doc, filter.field)
-  const want = filter.value
-  switch (filter.op) {
-    case 'empty': return isEmpty(v)
-    case 'notEmpty': return !isEmpty(v)
-  }
-  if (isEmpty(v) || want === undefined || want === null) return false
-  const actual = v as PropertyValue
-  if (Array.isArray(actual)) {
-    // Liste : eq / contains = contient la valeur ; in = intersection.
-    switch (filter.op) {
-      case 'eq':
-      case 'contains': return actual.some(x => scalarEquals(x, want as PropertyValue))
-      case 'neq': return !actual.some(x => scalarEquals(x, want as PropertyValue))
-      case 'in': return Array.isArray(want) && actual.some(x => want.some(w => scalarEquals(x, w)))
-      default: return false
-    }
-  }
-  switch (filter.op) {
-    case 'eq': return scalarEquals(actual, want)
-    case 'neq': return !scalarEquals(actual, want)
-    case 'lt': return compareScalar(actual, want) < 0
-    case 'lte': return compareScalar(actual, want) <= 0
-    case 'gt': return compareScalar(actual, want) > 0
-    case 'gte': return compareScalar(actual, want) >= 0
-    case 'contains': return fold(String(actual)).includes(fold(String(want)))
-    case 'startsWith': return fold(String(actual)).startsWith(fold(String(want)))
-    case 'in': return Array.isArray(want) && want.some(w => scalarEquals(actual, w))
-  }
-  return false
 }
 
 function countNodes(filter: QueryFilter): number {
@@ -142,27 +57,6 @@ function countNodes(filter: QueryFilter): number {
 
 function words(s: string): string[] {
   return foldText(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-}
-
-/** Cle de tri precalculee d'une valeur : evite de replier le texte a chaque comparaison. */
-interface SortKey {
-  empty: boolean
-  raw: PropertyValue
-  folded: string
-}
-
-function sortKey(v: PropertyValue | undefined): SortKey {
-  if (isEmpty(v)) return { empty: true, raw: null, folded: '' }
-  const raw = Array.isArray(v) ? v[0] : v as PropertyValue
-  return { empty: false, raw, folded: typeof raw === 'number' || typeof raw === 'boolean' ? '' : fold(String(raw)) }
-}
-
-function compareKeys(a: SortKey, b: SortKey): number {
-  if (typeof a.raw === 'number' && typeof b.raw === 'number') return a.raw - b.raw
-  if (typeof a.raw === 'boolean' && typeof b.raw === 'boolean') return Number(a.raw) - Number(b.raw)
-  const fa = a.folded || fold(String(a.raw))
-  const fb = b.folded || fold(String(b.raw))
-  return fa < fb ? -1 : fa > fb ? 1 : 0
 }
 
 /** Une note du dossier et des extensions demandes (corbeille et lignes legeres exclues). */
@@ -300,6 +194,17 @@ export class InMemoryQueryEngine implements IQueryEngine {
       throw new QueryError('too_complex', `Filtre trop complexe (plus de ${MAX_FILTER_NODES} conditions).`)
     }
 
+    // Formules (champs { formula }) et agregats verifies d'abord ; meme ordre de refus partout.
+    let reader: FieldReader
+    try {
+      reader = new FieldReader(query)
+      checkAggregates(query.aggregate, QUERY_MAX_AGGREGATES)
+    } catch (err) {
+      if (err instanceof QueryEvalError) throw new QueryError(err.code, err.message)
+      throw err
+    }
+    const matches = (doc: IndexedDoc, f: QueryFilter) => matchesDoc(reader, doc, f)
+
     let inSource: (doc: IndexedDoc) => boolean
     if (from && 'notes' in from && from.notes) {
       const prefix = folderPrefix(from.folder)
@@ -326,53 +231,9 @@ export class InMemoryQueryEngine implements IQueryEngine {
       return !query.where || matches(doc, query.where)
     })
 
-    const sort = query.sort ?? []
-    if (sort.length > 0) {
-      // Cles calculees une fois par document, pas a chaque comparaison.
-      const keyed = hits.map(doc => ({ doc, keys: sort.map(s => sortKey(fieldValue(doc, s.field))) }))
-      keyed.sort((a, b) => {
-        for (let i = 0; i < sort.length; i++) {
-          const ka = a.keys[i], kb = b.keys[i]
-          // Vide en dernier, quel que soit le sens.
-          if (ka.empty !== kb.empty) return ka.empty ? 1 : -1
-          if (ka.empty) continue
-          const c = compareKeys(ka, kb)
-          if (c !== 0) return sort[i].dir === 'desc' ? -c : c
-        }
-        return a.doc.id < b.doc.id ? -1 : a.doc.id > b.doc.id ? 1 : 0
-      })
-      for (let i = 0; i < keyed.length; i++) hits[i] = keyed[i].doc
-    } else {
-      hits.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-    }
-
-    let groups: QueryGroup[] | undefined
-    if (query.groupBy) {
-      const counts = new Map<string, QueryGroup>()
-      for (const doc of hits) {
-        const v = fieldValue(doc, query.groupBy)
-        const keys: PropertyValue[] = isEmpty(v) ? [null] : Array.isArray(v) ? v : [v as PropertyValue]
-        for (const key of keys) {
-          const id = JSON.stringify(key)
-          const g = counts.get(id) ?? { key, count: 0 }
-          g.count++
-          counts.set(id, g)
-        }
-      }
-      // Les plus nombreux d'abord, puis par valeur (vide en dernier).
-      groups = [...counts.values()].sort((a, b) =>
-        b.count - a.count
-        || Number(a.key === null) - Number(b.key === null)
-        || (a.key === null || b.key === null ? 0 : compareScalar(a.key as PropertyValue, b.key as PropertyValue)))
-    }
-
-    let aggregates: PropertyValue[] | undefined
-    if (query.aggregate) {
-      if (!Array.isArray(query.aggregate) || query.aggregate.length > QUERY_MAX_AGGREGATES) {
-        throw new QueryError('too_complex', `Trop d'agregats (${QUERY_MAX_AGGREGATES} au plus).`)
-      }
-      aggregates = query.aggregate.map(a => aggregateOf(hits, a))
-    }
+    sortDocs(reader, hits, query.sort ?? [])
+    const groups: QueryGroup[] | undefined = query.groupBy ? groupDocs(reader, hits, query.groupBy) : undefined
+    const aggregates: PropertyValue[] | undefined = query.aggregate ? query.aggregate.map(a => aggregateDocs(reader, hits, a)) : undefined
 
     const key = queryKey(query)
     const start = query.cursor ? decodeCursor(query.cursor, key) : 0
@@ -398,30 +259,3 @@ export class InMemoryQueryEngine implements IQueryEngine {
     }
   }
 }
-
-/** Un agregat sur les documents retenus (semantique : QueryAggregate). */
-function aggregateOf(hits: IndexedDoc[], a: QueryAggregate): PropertyValue {
-  if (!AGGREGATE_OPS.has(a?.op)) throw new QueryError('invalid_query', `Agregat inconnu : ${String(a?.op)}.`)
-  if (a.op === 'count') return a.field ? hits.filter(d => !isEmpty(fieldValue(d, a.field!))).length : hits.length
-  if (!a.field) throw new QueryError('invalid_query', `${a.op} : champ attendu.`)
-  const nums: number[] = []
-  const texts: string[] = []
-  for (const d of hits) {
-    const v = fieldValue(d, a.field)
-    if (typeof v === 'number' && Number.isFinite(v)) nums.push(v)
-    else if (typeof v === 'string' && v !== '') texts.push(v)
-  }
-  switch (a.op) {
-    case 'sum': return nums.reduce((x, y) => x + y, 0)
-    case 'mean': return nums.length ? nums.reduce((x, y) => x + y, 0) / nums.length : null
-    case 'min':
-    case 'max': {
-      if (nums.length) return nums.reduce((x, y) => (a.op === 'min' ? y < x : y > x) ? y : x)
-      if (!texts.length) return null
-      return texts.reduce((x, y) => (a.op === 'min' ? y < x : y > x) ? y : x)
-    }
-  }
-  return null
-}
-
-const AGGREGATE_OPS = new Set(['count', 'sum', 'mean', 'min', 'max'])

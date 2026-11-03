@@ -28,7 +28,7 @@
 import { BLOCK_DESTROY_EVENT, QUERY_MAX_LIMIT, aggregateKey, tryCompileFormula } from '@savoire/plugin-api'
 import type {
   CompiledFormula, FormulaAggregateCall, FormulaRow, IQueryEngine, ISharedTree, PluginAPI, PropertyValue, Query, QueryAggregate,
-  QueryFilter, QueryRow,
+  QueryField, QueryFilter, QueryRow,
 } from '@savoire/plugin-api'
 import { h, valueText } from './cells'
 import { folderOfBase } from './notes'
@@ -196,6 +196,34 @@ const TITLE_PROPS = new Set(['Nom', 'Name', '@title'])
  * Oui pour des agregats simples (sum(prop("x")), count()...) et un where
  * que le moteur fait a l'identique (voir CompiledFormula.toFilter).
  */
+/**
+ * Le where du bloc pour le moteur : un filtre declaratif quand il se traduit
+ * a l'identique, sinon la formule elle-meme, evaluee par le moteur.
+ */
+export function engineWhere(q: BaseQuery): QueryFilter | undefined {
+  if (!q.where) return undefined
+  return q.where.toFilter() ?? { field: { formula: `if(${q.where.source}, true, false)` }, op: 'eq', value: true }
+}
+
+/** Champ de tri pour le moteur : une propriete nue telle quelle, sinon la formule. */
+function sortField(f: CompiledFormula): QueryField {
+  const bare = /^\s*prop\(\s*"([^"]*)"\s*\)\s*$/.exec(f.source)
+  if (bare) return TITLE_PROPS.has(bare[1]) ? { doc: 'title' } : { prop: bare[1] }
+  return { formula: f.source }
+}
+
+/** Requete du moteur pour un bloc qui montre des lignes (ni agregat, ni groupe). */
+export function engineRowsQuery(q: BaseQuery, base: Query): Query | null {
+  if (q.aggregate || q.groupBy.length) return null
+  const where = engineWhere(q)
+  return {
+    ...base,
+    ...(where ? { where } : {}),
+    sort: q.sort.length ? q.sort.map(s => ({ field: sortField(s.formula), dir: s.dir })) : base.sort,
+    limit: Math.min(q.limit, QUERY_MAX_LIMIT),
+  }
+}
+
 export function enginePlan(q: BaseQuery): { where?: QueryFilter; calls: FormulaAggregateCall[]; aggregate: QueryAggregate[] } | null {
   if (!q.aggregate || q.select.length === 0 || q.groupBy.length || q.sort.length) return null
   const calls = new Map<string, FormulaAggregateCall>()
@@ -203,12 +231,7 @@ export function enginePlan(q: BaseQuery): { where?: QueryFilter; calls: FormulaA
     if (!s.formula.aggregateCalls) return null
     for (const c of s.formula.aggregateCalls) calls.set(aggregateKey(c), c)
   }
-  let where: QueryFilter | undefined
-  if (q.where) {
-    const f = q.where.toFilter()
-    if (!f) return null
-    where = f
-  }
+  const where = engineWhere(q)
   const list = [...calls.values()]
   const aggregate: QueryAggregate[] = list.map(c => ({
     op: c.fn,
@@ -408,12 +431,25 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
     }
     // Par nom, comme la base : sans sort, l'ordre des lignes est celui-la.
     const query: Query = { from: { base: base.id, pages: { folder: folder.replace(/\/+$/, '') || undefined, ext: ['md'] } }, sort: [{ field: { doc: 'title' } }] }
+    // Le where part au moteur (formule comprise) : seules les lignes retenues
+    // sont lues. Un moteur qui ne connait pas les formules : lecture de tout.
+    let pushWhere = true
+    const read = async () => {
+      const where = pushWhere ? engineWhere(q) : undefined
+      try {
+        return await fetchBaseRows(engine, where ? { ...query, where } : query)
+      } catch (err) {
+        if (!where || (err as { code?: string })?.code !== 'invalid_query') throw err
+        pushWhere = false
+        return fetchBaseRows(engine, query)
+      }
+    }
     const run = async () => {
       if (!alive()) return
       if (running) { again = true; return }
       running = true
       try {
-        const { rows, truncated } = await fetchBaseRows(engine, query)
+        const { rows, truncated } = await read()
         draw(evaluateBaseQuery(q, rows, truncated), base.path)
       } catch (err) {
         fail((err as { message?: string })?.message ?? String(err))
@@ -428,6 +464,19 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
     }
     // Suivi en direct : la plus petite requete suivie sert de signal.
     const followRows = () => { if (!dead) stop = engine.watch({ ...query, limit: 1 }, schedule) }
+    // Des lignes : le moteur filtre, trie et limite, formules comprises.
+    const rowsQuery = engineRowsQuery(q, query)
+    if (rowsQuery) {
+      const ok = await engine.query({ ...rowsQuery, limit: 1 }).then(() => true, err => (err as { code?: string })?.code !== 'invalid_query')
+      if (dead) return
+      if (!ok) { followRows(); return }
+      stop = engine.watch(rowsQuery, r => {
+        if (!alive()) return
+        const shown = evaluateBaseQuery({ ...q, where: undefined, sort: [] }, r.rows, false)
+        draw({ ...shown, matched: r.total }, base.path)
+      })
+      return
+    }
     const plan = enginePlan(q)
     if (!plan) { followRows(); return }
     // Agregats calcules par le moteur, sur toutes les lignes, sans les lire.

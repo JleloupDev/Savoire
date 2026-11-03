@@ -27,6 +27,13 @@ import type { PropertyValue } from './properties'
 export type QueryField =
   | { prop: string }
   | { doc: 'path' | 'title' | 'folder' | 'ext' | 'created' | 'modified' }
+  /**
+   * Valeur calculee par une formule (formula.ts) sur chaque ligne : filtre,
+   * tri, groupe ou agregat sur une colonne formule, sans lire les lignes dans
+   * le client. Une formule en erreur sur une ligne y vaut vide.
+   * QUERY_MAX_FORMULAS au plus par requete (queryEval.ts).
+   */
+  | { formula: string }
 
 export type FilterOp =
   | 'eq' | 'neq'

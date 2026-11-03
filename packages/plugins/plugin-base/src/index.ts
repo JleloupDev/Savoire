@@ -27,7 +27,7 @@ export type { BaseQuery, BaseQueryResult } from './queryBlock'
 export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './embed'
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
-export { withFormulas, needsFormulas, splitWhere } from './formulaEngine'
+export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere } from './formulaEngine'
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
 export type { TotalKind } from './totals'
 

@@ -147,7 +147,7 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 
 | Capacité | Méthode | Paramètres → résultat |
 |---|---|---|
-| `query` | `run` | `Query` → `QueryResult` (`packages/plugin-api/src/query.ts`) ; `aggregate` (count, sum, mean, min, max, 32 au plus) rend `aggregates`, calculés sur tout le résultat. Un pair plus ancien les ignore : le client le voit à l'absence de `aggregates` et lit les lignes. |
+| `query` | `run` | `Query` → `QueryResult` (`packages/plugin-api/src/query.ts`) ; `aggregate` (count, sum, mean, min, max, 32 au plus) rend `aggregates`, calculés sur tout le résultat. Un pair plus ancien les ignore : le client le voit à l'absence de `aggregates` et lit les lignes. Un champ peut être `{ formula }` (filtre, tri, groupe, agrégat) : SQL retient d'abord ce qu'il sait, puis la formule est évaluée en JS sur place (250 000 lignes au plus, sinon `too_complex`), 8 formules par requête. Un pair plus ancien répond `invalid_query` : le client calcule lui-même. |
 | `search` | `run` | `SearchQuery` → `SearchResult` (`packages/plugin-api/src/search.ts`) |
 | `links` | `backlinks` | `{ id, limit? }` → `{ items: [{ id, path, title, count }] }` : notes qui pointent vers `id` (sans elle-même), par chemin ; `limit` 1 000 par défaut, 10 000 au plus. |
 | `links` | `outgoing` | `{ id }` → `{ resolved: [{ id, path, title }], unresolved: [{ target }] }` (ordre du texte) |

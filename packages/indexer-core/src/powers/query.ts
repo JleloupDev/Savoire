@@ -16,9 +16,12 @@
 // Ecart connu avec le moteur de reference : sur une propriete ou se melangent
 // nombres et textes, SQLite range tous les nombres avant les textes (le
 // moteur en memoire compare alors en texte, sans ordre total).
-import { QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT } from '@savoire/plugin-api'
+import {
+  FieldReader, QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT, QueryEvalError, aggregateDocs, groupDocs,
+  matchesDoc, queryUsesFormula, sortDocs, splitFormulaFilter,
+} from '@savoire/plugin-api'
 import type {
-  PropertyValue, Query, QueryAggregate, QueryField, QueryFilter, QueryGroup, QueryResult, QueryRow, QuerySort,
+  EvalDoc, PropertyValue, Query, QueryAggregate, QueryField, QueryFilter, QueryGroup, QueryResult, QueryRow, QuerySort,
 } from '@savoire/plugin-api'
 import { sql } from '../driver'
 import type { SqlStatement, SqlValue } from '../driver'
@@ -34,6 +37,11 @@ import {
 import type { Frag } from './filter'
 
 const MAX_SORTS = 8
+/**
+ * Lignes evaluees en JS au plus, pour une requete avec formule (apres les
+ * conditions que SQL sait faire). Au-dela : too_complex.
+ */
+export const MAX_FORMULA_ROWS = 250_000
 const MAX_SELECT = 200
 /** Au-dela, les groupes les moins nombreux sont omis. */
 export const MAX_GROUPS = 1000
@@ -142,6 +150,16 @@ export function parseQuery(v: unknown): ParsedQuery {
   const groupBy = q.groupBy === undefined || q.groupBy === null ? undefined : parseField(q.groupBy, 'groupBy')
   const aggregate = parseAggregates(q.aggregate)
   const cursor = optString(q, 'cursor', 8192)
+  // Formules : compilees ici pour refuser tot une expression fausse.
+  try {
+    new FieldReader({ from, where, sort, groupBy, aggregate } as Query)
+  } catch (err) {
+    if (err instanceof QueryEvalError) throw new IndexError(err.code, err.message)
+    throw err
+  }
+  if (pagesWhere && queryUsesFormula({ from: { notes: true }, where: pagesWhere })) {
+    throw invalid('Source : pas de formule dans le filtre des pages.')
+  }
   const { cursor: _c, limit: _l, ...rest } = q
   const query: Query = {
     from,
@@ -242,6 +260,7 @@ function sortGroups(groups: QueryGroup[]): QueryGroup[] {
 
 async function groupsOf(ctx: PowerContext, field: QueryField, cond: Frag): Promise<QueryGroup[]> {
   const out: QueryGroup[] = []
+  if ('formula' in field) throw new Error('groupsOf : une formule s\'evalue en JS')
   if ('prop' in field) {
     // Une seule passe : une ligne par valeur (par element d'une liste), NULL
     // pour un document sans valeur.
@@ -267,6 +286,7 @@ async function groupsOf(ctx: PowerContext, field: QueryField, cond: Frag): Promi
 async function aggregateOf(ctx: PowerContext, a: QueryAggregate, cond: Frag, total: number): Promise<PropertyValue> {
   if (a.op === 'count' && !a.field) return total
   const field = a.field!
+  if ('formula' in field) throw new Error('aggregateOf : une formule s\'evalue en JS')
   if ('doc' in field) {
     const col = DOC_FIELDS[field.doc]
     const present = `(${col.raw} IS NOT NULL AND ${col.raw} <> '')`
@@ -301,8 +321,63 @@ async function aggregateOf(ctx: PowerContext, a: QueryAggregate, cond: Frag, tot
   }
 }
 
+/**
+ * Requete avec formule : SQL retient ce qu'il sait (source, plein texte,
+ * conditions sans formule), puis filtre, tri, groupes et agregats en JS sur
+ * place (queryEval.ts, la semantique du moteur de reference). Pagination par
+ * position : les formules ne se trient pas en SQL.
+ */
+async function runWithFormulas(ctx: PowerContext, parsed: ParsedQuery): Promise<QueryResult> {
+  const { query, limit, key } = parsed
+  const reader = new FieldReader(query)
+  const { plain, formula } = splitFormulaFilter(query.where)
+  const cond = queryConditions(ctx, { ...query, where: plain })
+  const [count] = await ctx.driver.all<{ c: number }>(`SELECT count(*) AS c FROM docs d WHERE ${cond.sql}`, cond.params)
+  if (Number(count?.c ?? 0) > MAX_FORMULA_ROWS) {
+    throw new IndexError('too_complex', `Formule sur plus de ${MAX_FORMULA_ROWS} lignes : ajoutez un filtre sans formule.`)
+  }
+  const raw = await ctx.driver.all<{ id: string; path: string; title: string; props: string; created: string | null; modified: string | null }>(
+    `SELECT d.id AS id, d.path AS path, d.title AS title, d.props AS props, d.created AS created, d.modified AS modified FROM docs d WHERE ${cond.sql}`,
+    cond.params)
+  let docs: EvalDoc[] = raw.map(r => ({
+    id: r.id, path: r.path, title: r.title, props: JSON.parse(r.props) as Record<string, PropertyValue>,
+    ...(r.created ? { created: r.created } : {}), ...(r.modified ? { modified: r.modified } : {}),
+  }))
+  if (formula) docs = docs.filter(d => matchesDoc(reader, d, formula))
+  sortDocs(reader, docs, query.sort ?? [])
+  let start = 0
+  if (query.cursor) {
+    try {
+      const c = decodeOpaque(query.cursor) as { q?: unknown; o?: unknown }
+      if (c?.q !== key || !Number.isInteger(c.o) || (c.o as number) < 0) throw new Error()
+      start = c.o as number
+    } catch {
+      throw new IndexError('invalid_cursor', 'Ce curseur ne correspond pas a cette requete.')
+    }
+  }
+  const page = docs.slice(start, start + limit)
+  const end = start + page.length
+  const rows: QueryRow[] = page.map(d => ({
+    id: d.id, path: d.path, title: d.title,
+    values: query.select
+      ? Object.fromEntries(query.select.filter(k => Object.prototype.hasOwnProperty.call(d.props, k)).map(k => [k, d.props[k]]))
+      : d.props,
+  }))
+  const groups = query.groupBy ? groupDocs(reader, docs, query.groupBy).slice(0, MAX_GROUPS) : undefined
+  const aggregates = query.aggregate ? query.aggregate.map(a => aggregateDocs(reader, docs, a)) : undefined
+  return {
+    rows,
+    ...(end < docs.length ? { next: encodeOpaque({ q: key, o: end }) } : {}),
+    total: docs.length,
+    ...(groups ? { groups } : {}),
+    ...(aggregates ? { aggregates } : {}),
+    index: ctx.state(),
+  }
+}
+
 /** Execute une requete deja verifiee. */
 export async function runQuery(ctx: PowerContext, parsed: ParsedQuery): Promise<QueryResult> {
+  if (queryUsesFormula(parsed.query)) return runWithFormulas(ctx, parsed)
   const { query, limit, key } = parsed
   const sorts = query.sort ?? []
   const cond = queryConditions(ctx, query)

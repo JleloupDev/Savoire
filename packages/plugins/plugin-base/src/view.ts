@@ -179,7 +179,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   /** Une cellule : frontmatter de la note, ou carte de la ligne dans son lot. */
   const edit = (row: QueryRow, key: string, value: PropertyValue) => {
-    if (readOnly) return
+    // Une formule ne s'ecrit pas (carte deplacee dans un kanban groupe par formule).
+    if (readOnly || isFormulaKey(key)) return
     const job = row.path === ''
       ? lightRows.setCell(row.id, key, value)
       : vault ? writeNoteProperty(vault, row.id, key, value) : Promise.reject(new Error('Aucun vault.'))
@@ -197,7 +198,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const addPage = async (values: Record<string, PropertyValue> = {}) => {
     if (readOnly || !vault) return
     try {
-      await createPageRow(vault, manifest.source.folder, 'Sans titre', values)
+      const own = Object.fromEntries(Object.entries(values).filter(([k]) => !isFormulaKey(k)))
+      await createPageRow(vault, manifest.source.folder, 'Sans titre', own)
     } catch (err) { report(err) }
   }
 
@@ -324,6 +326,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     edit,
     open: row => void api?.workspace.openFile(row.path),
     addPage: values => void addPage(values),
+    valueOf: (row, key) => cellValue(row, key),
   }) : null
 
   const onResult = (r: QueryResult) => {
@@ -415,8 +418,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const propertyChoices = (withTitle: boolean): string[] => {
     const keys = new Set<string>([...allColumns().map(c => c.key), ...seen.keys(), ...(types?.schema().properties.map(p => p.key) ?? [])])
-    // Filtre et tri sur une formule : oui (calcules ici). Groupe : non.
-    if (!withTitle) for (const k of [...keys]) if (isFormulaKey(k)) keys.delete(k)
+    // Filtre, tri et groupe sur une formule : le moteur la calcule.
     if (!withTitle) keys.delete(TITLE_COLUMN)
     else keys.add(TITLE_COLUMN)
     return [...keys]

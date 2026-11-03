@@ -280,6 +280,43 @@ export function describeQueryEngineContract(name: string, harness: QueryEngineHa
       })
     })
 
+    describe('formules', () => {
+      const projets: Query = { from: { notes: true, folder: 'Projets' } }
+
+      it('filtre et tri sur une formule, avec un filtre ordinaire ; pagination', async () => {
+        const { engine } = await open()
+        const double = { formula: 'prop("priority") * 2' }
+        const r = await engine.query({ ...projets, where: { field: double, op: 'gte', value: 4 }, sort: [{ field: double, dir: 'desc' }] })
+        expect(ids(r)).toEqual(['c', 'a'])
+        // Texte exact (sensible a la casse), impossible sans formule.
+        const exact = await engine.query({ ...all, where: { and: [{ field: { formula: 'prop("status") == "En cours"' }, op: 'eq', value: true }, { field: { prop: 'priority' }, op: 'gte', value: 1 }] } })
+        expect(ids(exact)).toEqual(['a'])
+        const p1 = await engine.query({ ...projets, sort: [{ field: { formula: '0 - prop("priority")' } }], limit: 2 })
+        expect(ids(p1)).toEqual(['c', 'a'])
+        const p2 = await engine.query({ ...projets, sort: [{ field: { formula: '0 - prop("priority")' } }], limit: 2, cursor: p1.next })
+        expect(ids(p2)).toEqual(['b'])
+        expect(p2.next).toBeUndefined()
+      })
+
+      it('groupes et agregats sur une formule ; une erreur de ligne vaut vide', async () => {
+        const { engine } = await open()
+        const g = await engine.query({ ...projets, groupBy: { formula: 'if(prop("priority") > 1, "haute", "basse")' }, limit: 1 })
+        expect(g.groups).toEqual([{ key: 'haute', count: 2 }, { key: 'basse', count: 1 }])
+        const a = await engine.query({ ...projets, aggregate: [{ op: 'sum', field: { formula: 'prop("priority") * 10' } }, { op: 'count', field: { formula: 'prop("due")' } }] })
+        expect(a.aggregates).toEqual([60, 2])
+        // Le texte ne se multiplie pas : erreur sur ces lignes, valeur vide.
+        const e = await engine.query({ ...projets, where: { field: { formula: 'prop("status") * 2' }, op: 'notEmpty' } })
+        expect(e.total).toBe(0)
+      })
+
+      it('une formule mal ecrite est refusee', async () => {
+        const { engine } = await open()
+        await expect(engine.query({ ...all, where: { field: { formula: 'prop("x") *' }, op: 'eq', value: 1 } })).rejects.toMatchObject({ code: 'invalid_query' })
+        const nine = Array.from({ length: 9 }, (_, i) => ({ field: { formula: `prop("priority") + ${i}` } }))
+        await expect(engine.query({ ...all, sort: nine.slice(0, 8), aggregate: [{ op: 'sum', field: nine[8].field }] })).rejects.toMatchObject({ code: 'too_complex' })
+      })
+    })
+
     describe('suivi', () => {
       it('watch rend le resultat a jour apres un ajout et une suppression', async () => {
         const { engine, upsert, remove } = await open()

@@ -6,6 +6,7 @@
 // et « Sans valeur ». Deplacer une carte change la valeur de la ligne.
 // Chaque colonne est une requete suivie en direct (api.query.watch).
 import type { IQueryEngine, PropertyValue, Query, QueryFilter, QueryRow } from '@savoire/plugin-api'
+import { isFormulaKey } from './manifest'
 import { h, renderValue, valueText, type CellContext } from './cells'
 import type { TableColumn } from './table'
 
@@ -22,6 +23,8 @@ export interface KanbanHost {
   edit(row: QueryRow, key: string, value: PropertyValue): void
   open(row: QueryRow): void
   addPage(values: Record<string, PropertyValue>): void
+  /** Valeur d'une colonne pour une ligne (une formule se calcule) ; defaut : row.values. */
+  valueOf?(row: QueryRow, key: string): PropertyValue | undefined
 }
 
 interface Lane {
@@ -79,7 +82,7 @@ export class BaseKanban {
   }
 
   private valueOf(row: QueryRow): PropertyValue {
-    const v = row.values[this.group]
+    const v = this.host.valueOf ? this.host.valueOf(row, this.group) : row.values[this.group]
     if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) return null
     return Array.isArray(v) ? v[0] : v
   }
@@ -111,7 +114,8 @@ export class BaseKanban {
     const el = h('div', { class: 'base-lane', 'data-testid': 'base-lane', 'data-value': title },
       h('div', { class: 'base-lane-head' }, h('span', { class: 'base-pill' }, title), count),
       cards)
-    if (!this.host.readOnly()) {
+    // Groupe par formule : les cartes ne se deplacent pas, la valeur se calcule.
+    if (!this.host.readOnly() && !isFormulaKey(this.group)) {
       const add = h('button', { class: 'base-lane-add', type: 'button', 'data-testid': 'base-lane-add' }, '+ Nouvelle page')
       add.addEventListener('click', () => this.host.addPage(key === null ? {} : { [this.group]: key }))
       el.append(add)
@@ -139,7 +143,7 @@ export class BaseKanban {
     const ctx = this.host.cells()
     const fields = this.host.columns().filter(c => c.key !== this.group && !c.key.startsWith('@')).slice(0, 3)
     lane.cards.replaceChildren(...rows.map(row => {
-      const card = h('div', { class: 'base-card', 'data-testid': 'base-card', 'data-id': row.id, draggable: this.host.readOnly() ? 'false' : 'true' })
+      const card = h('div', { class: 'base-card', 'data-testid': 'base-card', 'data-id': row.id, draggable: this.host.readOnly() || isFormulaKey(this.group) ? 'false' : 'true' })
       const title = h(row.path ? 'a' : 'span', { class: 'base-card-title', href: row.path ? '#' : undefined }, row.title || 'Sans titre')
       if (row.path) title.addEventListener('click', e => { e.preventDefault(); this.host.open(row) })
       card.append(title)

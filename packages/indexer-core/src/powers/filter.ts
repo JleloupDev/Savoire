@@ -18,6 +18,7 @@
 //
 // Proprietes : table `props` (pouvoir query), une ligne par valeur (une par
 // element d'une liste), alias `p`. Document : table `docs`, alias `d`.
+import { FORMULA_MAX_LENGTH } from '@savoire/plugin-api'
 import type { FilterOp, PropertyValue, QueryField, QueryFilter } from '@savoire/plugin-api'
 import type { SqlValue } from '../driver'
 import { IndexError, invalid } from '../errors'
@@ -67,8 +68,13 @@ const MAX_TEXT = 1000
 // ── Verification ─────────────────────────────────────────────────────────
 
 export function parseField(v: unknown, what = 'champ'): QueryField {
-  const f = v as { prop?: unknown; doc?: unknown } | null
+  const f = v as { prop?: unknown; doc?: unknown; formula?: unknown } | null
   if (f && typeof f === 'object' && !Array.isArray(f)) {
+    // Formule : compilee et bornee par FieldReader (queryEval.ts), evaluee en JS (query.ts).
+    if (typeof f.formula === 'string' && f.prop === undefined && f.doc === undefined) {
+      if (f.formula.length > FORMULA_MAX_LENGTH) throw new IndexError('too_complex', `${what} : formule de ${FORMULA_MAX_LENGTH} caracteres au plus.`)
+      return { formula: f.formula }
+    }
     if (typeof f.prop === 'string' && f.doc === undefined) {
       if (f.prop.length > MAX_KEY) throw invalid(`${what} : nom de propriete trop long.`)
       return { prop: f.prop }
@@ -77,7 +83,7 @@ export function parseField(v: unknown, what = 'champ'): QueryField {
       return { doc: f.doc as Extract<QueryField, { doc: string }>['doc'] }
     }
   }
-  throw invalid(`${what} : { prop } ou { doc: path | title | folder | ext | created | modified } attendu.`)
+  throw invalid(`${what} : { prop }, { formula } ou { doc: path | title | folder | ext | created | modified } attendu.`)
 }
 
 function isScalar(v: unknown): v is string | number | boolean | null {
@@ -220,9 +226,11 @@ export function compileFilter(filter: QueryFilter): Frag {
     const inner = compileFilter(filter.not)
     return { sql: `(NOT ${inner.sql})`, params: inner.params }
   }
-  return 'prop' in filter.field
-    ? compilePropLeaf(filter.field.prop, filter.op, filter.value)
-    : compileDocLeaf(filter.field.doc, filter.op, filter.value)
+  const field = filter.field
+  if ('formula' in field) throw new Error('compileFilter : une formule s\'evalue en JS (query.ts)')
+  return 'prop' in field
+    ? compilePropLeaf(field.prop, filter.op, filter.value)
+    : compileDocLeaf(field.doc, filter.op, filter.value)
 }
 
 /**
@@ -231,6 +239,7 @@ export function compileFilter(filter: QueryFilter): Frag {
  * avant le texte. Une propriete est lue par une jointure sur sa cle primaire.
  */
 export function sortColumn(field: QueryField, i: number): { join?: Frag; expr: string } {
+  if ('formula' in field) throw new Error('sortColumn : une formule s\'evalue en JS (query.ts)')
   if ('prop' in field) {
     return {
       join: { sql: `LEFT JOIN props j${i} ON j${i}.doc = d.n AND j${i}.key = ? AND j${i}.idx = 0`, params: [field.prop] },
