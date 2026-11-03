@@ -63,6 +63,7 @@ watch(q,cb,onError){const id=++n;watches.set(id,[cb,onError]);post({t:'watch',id
 open:p=>call('open',[p]),
 setProperty:(target,key,value)=>call('setProperty',[target,key,value]),
 createPage:(base,title,values)=>call('createPage',[base,title,values||{}]),
+createRow:(base,title,values)=>call('createRow',[base,title,values||{}]),
 readOnly:${readOnly ? 'true' : 'false'}});
 document.addEventListener('click',e=>{const a=e.target&&e.target.closest&&e.target.closest('[data-open]');if(a){e.preventDefault();savoire.open(a.getAttribute('data-open'))}});
 const size=()=>post({t:'size',h:Math.ceil(document.documentElement.getBoundingClientRect().height)});

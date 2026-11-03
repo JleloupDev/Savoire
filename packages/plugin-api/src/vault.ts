@@ -77,6 +77,13 @@ export interface VaultAPI {
    */
   openTree?(documentId: string): Promise<import('./sharedTree').ISharedTree>
   closeTree?(documentId: string): void
+  /**
+   * Donnees partagees d'un AUTRE document (cartes, arbres annexes), comme
+   * FileContext.shared de sa vue : ecrire une ligne legere d'une base depuis
+   * un board. Arbres annexes crees a la demande, sauf en lecture seule.
+   * Absent si le profil ne sait pas les ouvrir.
+   */
+  sharedData?(documentId: string): import('./sharedMap').DocumentSharedData
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */

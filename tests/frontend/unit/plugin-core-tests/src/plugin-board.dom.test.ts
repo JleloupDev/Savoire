@@ -4,7 +4,7 @@
 //
 // plugin-board : l'iframe isolee et ce que Savoire accepte d'elle.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { InMemoryQueryEngine } from '@savoire/plugin-runtime'
+import { InMemoryQueryEngine, InMemorySharedTree } from '@savoire/plugin-runtime'
 import type { PluginAPI } from '@savoire/plugin-api'
 import { BOARD_CSP, BoardHost, buildSrcdoc, parseBoardEmbed, resetBoardGrants } from '@savoire/plugin-board'
 
@@ -120,6 +120,33 @@ describe('board : document isole', () => {
     expect((await ok.call('setProperty', 'inconnue.md', 'c1', 1)).e).toMatch(/introuvable/)
     expect((await ok.call('setProperty', { id: 'row1', path: '' }, 'c1', 1)).e).toMatch(/ligne légère/)
     ok.host.dispose()
+  })
+
+  it('lignes legeres : creer, puis ecrire une ligne vue dans un resultat', async () => {
+    const w = world()
+    const trees = new Map<string, InMemorySharedTree>()
+    const tree = (k: string) => { let t = trees.get(k); if (!t) { t = new InMemorySharedTree(); trees.set(k, t) } return t }
+    const vault = w.api.vault as unknown as Record<string, unknown>
+    vault.openTree = async (id: string) => tree(id)
+    vault.closeTree = () => {}
+    vault.sharedData = (id: string) => ({ openMap: () => { throw new Error('inutile') }, openTree: async (name: string) => tree(`${id}~${name}`), closeTree: () => {} })
+    const { host, call } = mount(w.api, { confirmWrite: async () => true })
+    const made = await call('createRow', 'db', 'Nouvelle', { c1: 2, tags: ['a'] })
+    expect(made.ok).toBe(true)
+    const id = (made.v as { id: string }).id
+    const lot = [...trees.entries()].find(([k]) => k.startsWith('B~lot-'))![1]
+    const row = () => lot.root.get(`row:${id}`) as unknown as { get(k: string): unknown }
+    expect(row().get('title')).toBe('Nouvelle')
+    expect(row().get('c1')).toBe(2)
+    // La ligne arrive dans l'index : une ligne du resultat s'ecrit telle quelle.
+    w.engine.upsert({ id, base: 'B', path: '', title: 'Nouvelle', props: { c1: 2 } })
+    const r = await call('query', { from: 'db', where: { field: { doc: 'path' }, op: 'empty' } })
+    const line = (r.v as { rows: { id: string; path: string }[] }).rows[0]
+    expect((await call('setProperty', line, 'c1', 7)).ok).toBe(true)
+    expect(row().get('c1')).toBe(7)
+    expect((await call('setProperty', { base: 'db', id }, 'statut', 'Fait')).ok).toBe(true)
+    expect(row().get('statut')).toBe('Fait')
+    host.dispose()
   })
 
   it('integration : ![[x.board]]', () => {

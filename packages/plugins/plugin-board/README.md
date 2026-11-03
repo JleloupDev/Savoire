@@ -16,8 +16,9 @@ code, l'aperçu se recharge quand on s'arrête de taper.
 | `savoire.query(q)` | Une requête, une fois : `Promise<QueryResult>` |
 | `savoire.watch(q, cb, onError?)` | La même, suivie en direct ; rend la fonction d'arrêt |
 | `savoire.open(chemin)` | Ouvre une note (aussi : `<a data-open="dossier/note.md">`) |
-| `savoire.setProperty(cible, clé, valeur)` | Écrit une propriété du frontmatter. `cible` : une ligne d'un résultat, ou un chemin de note |
+| `savoire.setProperty(cible, clé, valeur)` | Écrit une propriété. `cible` : une ligne d'un résultat (page ou ligne légère), un chemin de note, ou `{ base, id }` |
 | `savoire.createPage(base, titre, valeurs)` | Nouvelle ligne-page dans le dossier de la base |
+| `savoire.createRow(base, titre, valeurs)` | Nouvelle ligne légère de la base ; rend `{ id }` |
 | `savoire.readOnly` | Vrai quand le board ne peut rien écrire |
 
 Une requête a la forme de `Query` (`packages/plugin-api/src/query.ts`) :
@@ -56,5 +57,3 @@ Limites connues :
 - un board peut se recharger vers une adresse externe (aucune CSP ne
   l'interdit) : il ne voit que ce que la personne voit déjà, mais pourrait
   l'envoyer ainsi. À n'ouvrir que dans un vault de confiance ;
-- les lignes légères d'une base ne s'écrivent pas encore depuis un board
-  (seulement les lignes-pages) ;

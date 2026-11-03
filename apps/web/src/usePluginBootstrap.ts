@@ -321,6 +321,16 @@ export function usePluginBootstrap({
         return session.openTree(documentId)
       }
       vaultProxy.closeTree = documentId => { vaultSessionRef.current?.closeDocument(documentId) }
+      vaultProxy.sharedData = documentId => {
+        const session = vaultSessionRef.current
+        if (!session) throw new Error('Aucun vault ouvert')
+        const trees = sessionTrees(session)
+        return {
+          openMap: (name: string) => session.openSharedMap(`doc/${documentId}/${name}`),
+          openTree: (name: string) => trees.openAnnex(documentId, name, { create: true }),
+          closeTree: (name: string) => trees.closeAnnex(documentId, name),
+        }
+      }
 
       // Branche AVANT tout enregistrement : ce que l'application enregistre
       // elle-meme (le type Markdown) n'appartient a aucun plugin, donc reste
