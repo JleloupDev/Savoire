@@ -23,6 +23,8 @@ import { createPageRow, folderOfBase, renamePageRow, writeNoteProperty, type Not
 import { BaseTable, type TableColumn } from './table'
 import { BaseKanban } from './kanban'
 import { needsFormulas, withFormulas } from './formulaEngine'
+import { fetchBaseRows } from './queryBlock'
+import { TOTAL_KINDS, computeTotal, totalText, type TotalKind } from './totals'
 import { ensureStyle } from './style'
 
 const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
@@ -233,7 +235,61 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     resize: (key, width) => store.setColumn(key, { width }),
     addColumn: anchor => openAddColumn(anchor),
     onResult: r => onResult(r),
+    totals: () => totalTexts,
+    totalMenu: (key, anchor) => openTotalMenu(key, anchor),
   }) : null
+
+  // ── Totaux des colonnes ──────────────────────────────────────────────────
+  // Calcules sur toutes les lignes de la vue (BASE_QUERY_MAX_ROWS au plus),
+  // relus a chaque changement de l'index.
+
+  let totalTexts = new Map<string, string>()
+  let totalsKey = ''
+  let totalsStop: (() => void) | null = null
+  let totalsTimer: ReturnType<typeof setTimeout> | null = null
+  const stopTotals = () => {
+    totalsStop?.(); totalsStop = null
+    if (totalsTimer) { clearTimeout(totalsTimer); totalsTimer = null }
+  }
+  const cellValue = (row: QueryRow, key: string): PropertyValue | undefined => {
+    if (key === TITLE_COLUMN) return row.title
+    if (!isFormulaKey(key)) return row.values[key]
+    const f = compile(formulaOf(key) ?? '')
+    if (!('formula' in f)) return undefined
+    const r = f.formula.evaluate(row)
+    return r.ok ? r.value : undefined
+  }
+  const syncTotals = (q: Query, v: BaseViewDef) => {
+    const wanted = Object.entries(v.totals).filter(([k]) => allColumns().some(c => c.key === k))
+    if (!rowsEngine || v.type !== 'table' || wanted.length === 0) {
+      stopTotals()
+      totalsKey = ''
+      if (totalTexts.size) { totalTexts = new Map(); table?.renderFoot() }
+      return
+    }
+    const key = JSON.stringify([q, wanted, formulaSig()])
+    if (key === totalsKey) return
+    totalsKey = key
+    stopTotals()
+    // Les anciens totaux restent affiches pendant le calcul.
+    const run = async () => {
+      try {
+        const { rows, truncated } = await fetchBaseRows(rowsEngine, q)
+        if (totalsKey !== key) return
+        const next = new Map<string, string>()
+        for (const [k, kind] of wanted) {
+          const text = totalText(kind, computeTotal(kind, rows.map(r => cellValue(r, k))))
+          next.set(k, truncated ? `≈ ${text}` : text)
+        }
+        totalTexts = next
+        table?.renderFoot()
+      } catch (err) { console.warn('[plugin-base] totaux', err) }
+    }
+    totalsStop = rowsEngine.watch({ ...q, limit: 1 }, () => {
+      if (totalsTimer) clearTimeout(totalsTimer)
+      totalsTimer = setTimeout(() => { totalsTimer = null; void run() }, 150)
+    })
+  }
   const kanban = rowsEngine ? new BaseKanban({
     engine: rowsEngine,
     readOnly: () => readOnly,
@@ -323,7 +379,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   // ── Fenetres de reglage ──────────────────────────────────────────────────
 
   let popoverKind: string | null = null
-  const closePopover = () => { popoverKind = null; popover.hidden = true; popover.replaceChildren() }
+  const closePopover = () => { popoverKind = null; popover.hidden = true; popover.replaceChildren(); popover.style.top = ''; popover.style.bottom = '' }
   const togglePopover = (kind: string, anchor: HTMLElement) => {
     if (popoverKind === kind) { closePopover(); return }
     popoverKind = kind
@@ -541,6 +597,38 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     ;(name.value ? input : name).focus()
   }
 
+  const openTotalMenu = (key: string, anchor: HTMLElement) => {
+    if (readOnly || !store.writable) return
+    const v = view()
+    closePopover()
+    popoverKind = 'total'
+    const current = v.totals[key]
+    const item = (text: string, kind: TotalKind | null) => {
+      const b = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': `base-total-${kind ?? 'none'}` }, `${text}${(current ?? null) === kind ? ' ✓' : ''}`)
+      b.addEventListener('click', () => {
+        closePopover()
+        const totals = { ...v.totals }
+        if (kind) totals[key] = kind
+        else delete totals[key]
+        store.setView(v.id, { totals })
+      })
+      return b
+    }
+    // Les calculs utiles au type de la colonne d'abord.
+    const type = isFormulaKey(key) ? 'number' : typeOf(key)
+    const kinds = TOTAL_KINDS.filter(t => type === 'checkbox' ? !['sum', 'mean', 'median', 'min', 'max'].includes(t.kind)
+      : !['checked', 'unchecked'].includes(t.kind) && (type === 'number' || type === 'date' || !['sum', 'mean', 'median'].includes(t.kind)))
+    popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-total-menu' },
+      item('Aucun', null), ...kinds.map(t => item(t.label, t.kind))))
+    popover.hidden = false
+    // Sous le pied s'il reste de la place, sinon au-dessus.
+    const box = container?.getBoundingClientRect() ?? { left: 0, top: 0, bottom: 0 }
+    const at = anchor.getBoundingClientRect()
+    popover.style.left = `${Math.max(0, at.left - box.left)}px`
+    if (at.bottom + 320 <= box.bottom) popover.style.top = `${at.bottom - box.top + 4}px`
+    else { popover.style.top = 'auto'; popover.style.bottom = `${Math.max(0, box.bottom - at.top + 4)}px` }
+  }
+
   const openColumnMenu = (key: string, anchor: HTMLElement) => {
     if (isFormulaKey(key)) {
       const v = view()
@@ -596,7 +684,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column', 'formula'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula', 'total'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))
@@ -607,12 +695,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const force = sig !== lastFormulaSig && needsFormulas(q)
     lastFormulaSig = sig
     if (v.type === 'kanban') {
+      syncTotals(q, v)
       table.setQuery({ ...q, limit: 1 }, force)
       kanban.setQuery(q, v.groupBy, force)
       kanban.refresh()
       if (body.firstChild !== kanban.el) body.replaceChildren(kanban.el)
     } else {
       table.setQuery(q, force)
+      syncTotals(q, v)
       table.refresh()
       if (body.firstChild !== table.el) body.replaceChildren(table.el)
     }
@@ -632,7 +722,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, body, footer)
       root.addEventListener('focusin', () => { activeBaseView = handle })
       root.addEventListener('mousedown', e => {
-        if (popoverKind && !popover.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.base-btn, .base-th-label, .base-th-add')) closePopover()
+        if (popoverKind && !popover.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.base-btn, .base-th-label, .base-th-add, .base-tf')) closePopover()
       })
       el.replaceChildren(root)
       activeBaseView = handle
@@ -654,6 +744,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     destroy() {
       for (const u of unsubs) u()
       unsubs.length = 0
+      stopTotals()
       table?.destroy()
       kanban?.destroy()
       lightRows.close()

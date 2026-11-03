@@ -354,6 +354,34 @@ describe('plugin-base', () => {
     expect(A.el.querySelector('[data-testid="base-col-sort-asc"]')).not.toBeNull()
   })
 
+  it('totaux en bas des colonnes : choisis a deux, recalcules en direct', async () => {
+    const w = world(NOTES)
+    const a = w.member(0)
+    const b = w.member(1)
+    const A = await mount(w, 0, a.api)
+    const B = await mount(w, 1, b.api)
+    await tick()
+    const total = (el: HTMLElement, key: string) => el.querySelector(`[data-testid="base-total"][data-key="${key}"]`) as HTMLElement
+    click(total(A.el, 'priority'))
+    click(A.el.querySelector('[data-testid="base-total-sum"]'))
+    await tick(250)
+    expect(total(A.el, 'priority').textContent).toBe('Somme 3')
+    expect(total(B.el, 'priority').textContent).toBe('Somme 3')
+    // Une note modifiee : le total suit.
+    await w.editText('n1', t => t.replace('priority: 2', 'priority: 5'))
+    await tick(300)
+    expect(total(B.el, 'priority').textContent).toBe('Somme 6')
+    // Autre calcul, puis aucun.
+    click(total(B.el, 'status'))
+    click(B.el.querySelector('[data-testid="base-total-unique"]'))
+    await tick(250)
+    expect(total(A.el, 'status').textContent).toBe('Distinctes 2')
+    click(total(A.el, 'priority'))
+    click(A.el.querySelector('[data-testid="base-total-none"]'))
+    await tick(250)
+    expect(total(B.el, 'priority').textContent).toBe('Calculer')
+  })
+
   it('base integree dans une note (lecture seule) et bloc de requete, suivis en direct', async () => {
     const w = world(NOTES)
     const a = w.member(0)

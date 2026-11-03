@@ -10,7 +10,7 @@
 //     source:  { folder, filters }            dossier des lignes-pages, filtre
 //     columns: { <cle>: { width, order, formula? } }  proprietes affichees ;
 //                                             une cle '=Nom' : colonne formule
-//     views:   { <id>: { name, type, order, filters, sorts, groupBy, hidden } }
+//     views:   { <id>: { name, type, order, filters, sorts, groupBy, hidden, totals } }
 //     lotCount, lots: { <n>: true }           lots de lignes legeres (query.ts)
 //   }
 //
@@ -21,6 +21,7 @@
 //
 // Regle des documents CRDT neufs : un .base neuf est vide. La vue montre un
 // manifeste par defaut, et ne l'ecrit qu'a la premiere modification.
+import { isTotalKind, type TotalKind } from './totals'
 import { BASE_LOT_COUNT } from '@savoire/plugin-api'
 import type { FilterOp, ISharedTree, ITreeMap, PropertyValue, TreeValue } from '@savoire/plugin-api'
 
@@ -67,6 +68,8 @@ export interface BaseViewDef {
   groupBy: string
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
+  /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
+  totals: Record<string, TotalKind>
 }
 
 export interface BaseManifest {
@@ -100,7 +103,7 @@ function str(v: TreeValue | undefined, fallback: string): string {
 }
 
 export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 'table', order = 0): BaseViewDef {
-  return { id, name, type, order, filters: [], sorts: [], groupBy: '', hidden: [] }
+  return { id, name, type, order, filters: [], sorts: [], groupBy: '', hidden: [], totals: {} }
 }
 
 /** Manifeste par defaut d'une base neuve : le dossier qui porte son nom. */
@@ -152,6 +155,7 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         sorts: json(v.get('sorts'), []),
         groupBy: str(v.get('groupBy'), ''),
         hidden: json(v.get('hidden'), []),
+        totals: readTotals(json(v.get('totals'), {})),
       })
     }
   }
@@ -289,5 +293,15 @@ function viewEntries(v: BaseViewDef): Record<string, string | number> {
     sorts: JSON.stringify(v.sorts),
     groupBy: v.groupBy,
     hidden: JSON.stringify(v.hidden),
+    totals: JSON.stringify(v.totals),
   }
+}
+
+/** Seuls les calculs connus : un manifeste d'une autre version ne casse rien. */
+function readTotals(raw: unknown): Record<string, TotalKind> {
+  const out: Record<string, TotalKind> = {}
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) if (isTotalKind(v)) out[k] = v
+  }
+  return out
 }

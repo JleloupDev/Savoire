@@ -48,12 +48,17 @@ export interface TableHost {
   addColumn(anchor: HTMLElement): void
   /** Chaque resultat suivi (lignes vues, total) : pour les colonnes decouvertes et le compteur. */
   onResult(result: QueryResult): void
+  /** Texte du total de chaque colonne qui en a un (« Somme 42 ») ; absent : pas de pied. */
+  totals?(): Map<string, string>
+  /** Choisir le total d'une colonne. */
+  totalMenu?(key: string, anchor: HTMLElement): void
 }
 
 export class BaseTable {
   readonly el: HTMLElement
   private readonly head: HTMLElement
   private readonly body: HTMLElement
+  private readonly foot: HTMLElement
   private query: Query | null = null
   private stopWatch: (() => void) | null = null
   private pages = new Map<number, QueryRow[]>()
@@ -69,7 +74,8 @@ export class BaseTable {
   constructor(private readonly host: TableHost) {
     this.head = h('div', { class: 'base-thead', 'data-testid': 'base-thead' })
     this.body = h('div', { class: 'base-tbody', 'data-testid': 'base-tbody' })
-    this.el = h('div', { class: 'base-table', 'data-testid': 'base-table' }, this.head, this.body)
+    this.foot = h('div', { class: 'base-tfoot', 'data-testid': 'base-tfoot' })
+    this.el = h('div', { class: 'base-table', 'data-testid': 'base-table' }, this.head, this.body, this.foot)
     this.el.addEventListener('scroll', () => this.schedule())
   }
 
@@ -90,6 +96,27 @@ export class BaseTable {
   refresh(): void {
     this.renderHead()
     this.renderRows(true)
+    this.renderFoot()
+  }
+
+  /** Pied du tableau : le total de chaque colonne, ou « Calculer » au survol. */
+  renderFoot(): void {
+    const totals = this.host.totals?.()
+    const ro = this.host.readOnly()
+    if (!totals || (ro && totals.size === 0)) { this.foot.hidden = true; return }
+    this.foot.hidden = false
+    const cells = this.host.columns().map(col => {
+      const text = totals.get(col.key)
+      const td = h('button', {
+        class: text ? 'base-tf base-tf-set' : 'base-tf', type: 'button', 'data-key': col.key, 'data-testid': 'base-total',
+      }, text ?? (col.key === TITLE_COLUMN ? '' : 'Calculer'))
+      td.style.width = `${col.width}px`
+      if (ro || col.key === TITLE_COLUMN) td.setAttribute('disabled', '')
+      else td.addEventListener('click', () => this.host.totalMenu?.(col.key, td))
+      return td
+    })
+    this.foot.replaceChildren(...cells)
+    this.foot.style.width = `${this.width()}px`
   }
 
   destroy(): void {

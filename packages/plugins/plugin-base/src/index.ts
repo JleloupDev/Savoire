@@ -27,6 +27,8 @@ export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './em
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
 export { withFormulas, needsFormulas, splitWhere } from './formulaEngine'
+export { computeTotal, totalText, TOTAL_KINDS } from './totals'
+export type { TotalKind } from './totals'
 
 export function createBasePlugin(): VaultPlugin {
   let api: PluginAPI | undefined
