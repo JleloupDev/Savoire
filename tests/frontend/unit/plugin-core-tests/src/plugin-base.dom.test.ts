@@ -349,9 +349,9 @@ describe('plugin-base', () => {
     click(B.el.querySelector('[data-testid="base-formula-ok"]'))
     await tick()
     expect(cell(A.el, 'Alpha', '=Score').textContent).toBe('20 pts')
-    // Les formules ne sont proposees ni en filtre ni en tri.
+    // Une formule se trie depuis son menu (calcul cote client, voir formulaEngine).
     click(A.el.querySelector('[data-testid="base-th"][data-key="=Score"] .base-th-label'))
-    expect(A.el.querySelector('[data-testid="base-col-sort-asc"]')).toBeNull()
+    expect(A.el.querySelector('[data-testid="base-col-sort-asc"]')).not.toBeNull()
   })
 
   it('base integree dans une note (lecture seule) et bloc de requete, suivis en direct', async () => {
