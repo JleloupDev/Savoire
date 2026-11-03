@@ -293,7 +293,12 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
     })
     this.indexes.set(namespace, channel)
     channel.markLoaded(this.hub.joinIndex(namespace).then(ops => {
-      for (const op of ops) channel.applyUpdate(op)
+      // Un abonne qui plante sur une entree (donnee d'un autre client) ne
+      // doit ni bloquer les trames suivantes, ni empecher la compaction.
+      let failed = 0
+      for (const op of ops) {
+        try { channel.applyUpdate(op) } catch (err) { if (failed++ === 0) console.warn(`[VaultSession] index ${namespace} : trame mal lue`, err) }
+      }
       // Journal trop long : le remplacer par l'etat compacte, comme le
       // repertoire du vault et les documents. Le serveur ne remplace que les
       // trames rejouees ici ; celles arrivees entre-temps restent.

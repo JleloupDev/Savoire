@@ -167,6 +167,21 @@ describe('SavoireServerVaultSession — compaction d\'un canal d\'index', () => 
     expect(entriesOf(b)).toEqual(before)
   })
 
+  it('un abonne qui plante sur une entree n\'empeche ni la lecture ni la compaction', async () => {
+    seedJournal(INDEX_COMPACT_THRESHOLD + 20)
+    const a = await open()
+    const channel = a.openIndex(NS)
+    // Entree mal formee d'un autre client : l'abonne plante a chaque trame.
+    channel.onChange(() => { throw new TypeError('entries.find is not a function') })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await channel.loaded
+    await settle()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+    expect(Object.keys(entriesOf(a))).toHaveLength(INDEX_COMPACT_THRESHOLD + 20)
+    expect(server.snapshotCalls).toBe(1)
+  })
+
   it('une ecriture arrivee pendant la compaction n\'est pas perdue', async () => {
     seedJournal(INDEX_COMPACT_THRESHOLD + 10)
     let release!: () => void

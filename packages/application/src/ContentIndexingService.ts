@@ -100,7 +100,8 @@ export class ContentIndexingService {
       const feed = (): void => {
         const byDoc = new Map<string, SharedIndexEntry[]>()
         for (const { id, value } of channel.getAll()) {
-          byDoc.set(id, (value as SharedIndexEntry[] | undefined) ?? [])
+          // Entree ecrite par un autre client : on n'en garde que la forme attendue.
+          byDoc.set(id, Array.isArray(value) ? (value as SharedIndexEntry[]).filter(e => !!e && typeof e === 'object' && typeof e.key === 'string') : [])
         }
         contributor.onEntriesChanged(byDoc)
         // Un pair distant a modifie l'index : les panneaux doivent se rafraichir.
