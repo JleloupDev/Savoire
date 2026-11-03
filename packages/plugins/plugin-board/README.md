@@ -58,4 +58,3 @@ Limites connues :
   l'envoyer ainsi. À n'ouvrir que dans un vault de confiance ;
 - les lignes légères d'une base ne s'écrivent pas encore depuis un board
   (seulement les lignes-pages) ;
-- pas de coloration syntaxique du code (elle demanderait `@codemirror/lang-html`).

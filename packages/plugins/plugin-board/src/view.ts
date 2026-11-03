@@ -5,6 +5,8 @@
 // l'apercu, cote a cote ou l'un ou l'autre. L'apercu se recharge quand le
 // code ne bouge plus.
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { html } from '@codemirror/lang-html'
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Annotation, Compartment, EditorState, Transaction, type ChangeSpec } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import type { FileContext, FileView, ISharedText, PluginAPI, TextDelta } from '@savoire/plugin-api'
@@ -132,6 +134,8 @@ export function createBoardView(path: string, ctx: FileContext, api: PluginAPI |
             doc,
             extensions: [
               lineNumbers(), history(), EditorView.lineWrapping,
+              // HTML avec CSS et JavaScript en ligne.
+              html(), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
               keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
               editable.of(editableExt()),
               EditorView.updateListener.of(u => {

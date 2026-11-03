@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@codemirror/commands": "^6.3.0",
+    "@codemirror/lang-html": "^6.4.0",
+    "@codemirror/language": "^6.10.0",
     "@codemirror/state": "^6.4.0",
     "@codemirror/view": "^6.24.0",
     "@savoire/plugin-api": "workspace:*",
