@@ -413,11 +413,25 @@ function formatDate(d: Date, fmt: string): string {
 // ── Fonctions ────────────────────────────────────────────────────────────
 
 /** min / max : nombres, ou dates (le resultat reste une date). */
+/**
+ * Les agregats (sum, mean, median, min, max) ne comptent que les NOMBRES,
+ * comme le moteur de requetes et les totaux des colonnes : un « 3 » ecrit en
+ * texte reste du texte (typer la propriete en nombre pour qu'il compte).
+ */
+function numbersOf(args: Value[]): number[] {
+  return args.flatMap(asList).filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+}
+
+/** min / max : les nombres s'il y en a ; sinon des dates ; sinon les textes, compares tels quels. */
 function extreme(args: Value[], dir: 1 | -1): Value {
   const xs = args.flatMap(asList).filter(x => !isEmpty(x))
   if (!xs.length) return null
+  const nums = numbersOf(xs)
+  if (nums.length) return nums.reduce((m, n) => (n - m) * dir > 0 ? n : m)
   if (xs.every(isDateLike)) return xs.map(asDate).reduce((m, d) => (d.getTime() - m.getTime()) * dir > 0 ? d : m)
-  return finite(xs.map(asNumber).reduce((m, n) => (n - m) * dir > 0 ? n : m))
+  const texts = xs.filter((x): x is string => typeof x === 'string')
+  if (!texts.length) return null
+  return texts.reduce((m, t) => (dir > 0 ? t > m : t < m) ? t : m)
 }
 
 const AGGREGATES = new Set(['sum', 'mean', 'min', 'max', 'median', 'count'])
@@ -475,15 +489,15 @@ const FUNCTIONS: Record<string, FnDef> = {
   min: eager(1, Infinity, a => extreme(a, -1)),
   max: eager(1, Infinity, a => extreme(a, 1)),
   median: eager(1, Infinity, a => {
-    const xs = a.flatMap(asList).filter(x => !isEmpty(x)).map(asNumber).sort((x, y) => x - y)
+    const xs = numbersOf(a).sort((x, y) => x - y)
     if (!xs.length) return null
     const m = xs.length >> 1
     return xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2
   }),
   count: eager(0, 1, (a, env) => a.length === 0 ? env.row.rowCount ?? 1 : asList(a[0]).filter(x => !isEmpty(x)).length),
-  sum: eager(1, Infinity, a => a.flatMap(asList).filter(x => !isEmpty(x)).reduce<number>((s, x) => s + asNumber(x), 0)),
+  sum: eager(1, Infinity, a => numbersOf(a).reduce<number>((s, x) => s + x, 0)),
   mean: eager(1, Infinity, a => {
-    const xs = a.flatMap(asList).filter(x => !isEmpty(x)).map(asNumber)
+    const xs = numbersOf(a)
     return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null
   }),
   // Listes

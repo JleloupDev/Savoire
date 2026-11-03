@@ -26,17 +26,13 @@ export const isTotalKind = (k: unknown): k is TotalKind => TOTAL_KINDS.some(t =>
 
 const isEmpty = (v: PropertyValue | undefined) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
 
-/** Un nombre, y compris saisi en texte (« 3,5 ») ; null sinon. */
+/**
+ * Un nombre ; null sinon. Comme le moteur de requetes et les formules : un
+ * « 3 » ecrit en texte reste du texte (typer la propriete en nombre).
+ */
 function numberOf(v: PropertyValue | undefined): number | null {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null
-  if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v.trim().replace(',', '.'))
-    return Number.isFinite(n) ? n : null
-  }
-  return null
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
-
-const isDate = (v: PropertyValue | undefined): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)
 
 /** Le total d'une colonne ; null quand il n'a pas de sens (somme de textes). */
 export function computeTotal(kind: TotalKind, values: (PropertyValue | undefined)[]): PropertyValue {
@@ -54,13 +50,14 @@ export function computeTotal(kind: TotalKind, values: (PropertyValue | undefined
       return seen.size
     }
   }
-  // Min et max d'une colonne de dates : des dates.
   const present = values.filter(v => !isEmpty(v))
-  if ((kind === 'min' || kind === 'max') && present.length > 0 && present.every(isDate)) {
-    const sorted = [...present as string[]].sort()
-    return kind === 'min' ? sorted[0] : sorted[sorted.length - 1]
-  }
   const nums = present.map(numberOf).filter((n): n is number => n !== null)
+  // Min et max sans nombre : les textes (dates ISO comprises), compares tels quels.
+  if ((kind === 'min' || kind === 'max') && nums.length === 0) {
+    const texts = present.filter((v): v is string => typeof v === 'string').sort()
+    if (!texts.length) return null
+    return kind === 'min' ? texts[0] : texts[texts.length - 1]
+  }
   if (nums.length === 0) return kind === 'sum' ? 0 : null
   switch (kind) {
     case 'sum': return round(nums.reduce((a, b) => a + b, 0))

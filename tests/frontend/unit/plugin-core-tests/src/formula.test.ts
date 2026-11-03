@@ -71,7 +71,9 @@ describe('formules', () => {
     expect(run('prop("Tags").unique()')).toEqual(['a', 'b'])
     expect(run('contains(prop("Tags"), "b")')).toBe(true)
     expect(run('join(prop("Tags"), "-")')).toBe('a-b-a')
-    expect(run('sum([1, 2, prop("Quantité")])')).toBe(6)
+    // Un nombre ecrit en texte ne compte pas dans un agregat ; toNumber le convertit.
+    expect(run('sum([1, 2, prop("Quantité")])')).toBe(3)
+    expect(run('sum([1, 2, toNumber(prop("Quantité"))])')).toBe(6)
   })
 
   it('erreurs en francais, jamais de code JavaScript', () => {

@@ -38,8 +38,8 @@ describe('bloc de requete sur une base', () => {
     expect(evaluateBaseQuery(q('from db.base\nselect sum(prop("c1")) as "Total"'), ROWS).columns).toEqual(['Total'])
     // Dates : min et max restent des dates.
     expect(cells('from db.base\nselect max(prop("Fin"))')).toEqual([['2026-03-01']])
-    // Calcul autour des agregats.
-    expect(cells('from db.base\nselect (2 * (sum(prop("c1")) + sum(prop("c2")))) / 2')).toEqual([[66]])
+    // Calcul autour des agregats. c2 est du texte ('5', '1') : hors des sommes.
+    expect(cells('from db.base\nselect (2 * (sum(prop("c1")) + sum(prop("c2")))) / 2')).toEqual([[60]])
   })
 
   it('where : une formule par ligne, comme where id = 1', () => {
