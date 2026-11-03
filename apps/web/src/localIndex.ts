@@ -152,6 +152,7 @@ export class LocalIndexServices {
     const { query, search, powers } = this.deps
     this.binding = binding
     this.owns = true
+    console.debug('[index local] branche', binding.kind, binding.index.info.persistence)
     query.setMirror(binding.mirror)
     query.setPreferred(binding.index.queryEngine(), { partial: binding.kind === 'wasm' })
     search.setPreferred(binding.index.searchEngine())

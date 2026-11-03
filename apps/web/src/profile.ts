@@ -59,6 +59,39 @@ export function readProfileFromUrl(
   return withDisk ? 'desktop' : 'server'
 }
 
+/** Cle (sessionStorage) du profil choisi par ?profile= dans cet onglet. */
+export const PROFILE_SESSION_KEY = 'savoire.profile'
+
+type SessionLike = Pick<Storage, 'getItem' | 'setItem'>
+
+function sessionStore(): SessionLike | null {
+  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { return null }
+}
+
+/**
+ * Le profil de cet onglet. Un ?profile= explicite l'emporte et reste retenu
+ * pour l'onglet : la navigation dans l'appli retire la requete de l'adresse,
+ * et un rechargement repartait sinon sur le profil serveur (avec un autre
+ * vault, et sans index local). Un nouvel onglet repart du defaut.
+ */
+export function resolveProfile(
+  search: string = window.location.search,
+  storage: SessionLike | null = sessionStore(),
+  inTauri: boolean = isTauriRuntime(),
+  android: boolean = isAndroidRuntime(),
+): SyncProfileName {
+  const explicit = new URLSearchParams(search).get('profile')
+  if (explicit) {
+    const profile = readProfileFromUrl(search, inTauri, android)
+    try { storage?.setItem(PROFILE_SESSION_KEY, profile) } catch { /* stockage refuse : rien a retenir */ }
+    return profile
+  }
+  let kept: string | null = null
+  try { kept = storage?.getItem(PROFILE_SESSION_KEY) ?? null } catch { kept = null }
+  if (kept && (KNOWN as readonly string[]).includes(kept)) return readProfileFromUrl(`?profile=${kept}`, inTauri, android)
+  return readProfileFromUrl(search, inTauri, android)
+}
+
 /** Ce que le profil bureau ajoute (voir createDesktopRoot.ts). */
 export interface DesktopProfileExtras {
   host: import('@savoire/desktop').DesktopHost
@@ -215,7 +248,7 @@ export function getActiveProfile(): LoadedProfile {
 
 /** Appele une fois par main.tsx, avant createRoot().render(). */
 export async function initProfile(): Promise<LoadedProfile> {
-  active = await loadProfile(readProfileFromUrl(), {
+  active = await loadProfile(resolveProfile(), {
     getToken: () => runtimeDeps.getToken(),
     getVaultKey: () => runtimeDeps.getVaultKey(),
   })
