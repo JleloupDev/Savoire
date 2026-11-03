@@ -19,8 +19,10 @@ import { needsFormulas, withFormulas } from './formulaEngine'
 
 export const BASE_EMBED_RE = /^\s*!\[\[([^\]|#]+\.base)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]\s*$/i
 
-/** Lignes montrees au plus ; la suite s'ouvre dans la base. */
+/** Lignes montrees d'abord ; « Voir plus » en ajoute autant. */
 export const EMBED_ROWS = 100
+/** Au-dela, la suite s'ouvre dans la base. */
+export const EMBED_MAX_ROWS = 500
 
 export interface BaseEmbedTarget { path: string; view?: string }
 
@@ -42,6 +44,8 @@ export function embedQuery(baseId: string, manifest: BaseManifest, view: BaseVie
 export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefined): HTMLElement {
   const el = h('div', { class: 'base-q base-embed', 'data-testid': 'base-embed' }, h('div', { class: 'base-q-message' }, '…'))
   const fail = (msg: string) => el.replaceChildren(h('div', { class: 'base-q-message base-q-bad', 'data-testid': 'base-embed-error' }, `⚠ ${msg}`))
+  // Un lien ou un bouton du rendu ne fait pas entrer l'editeur dans le bloc.
+  el.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest?.('a, button')) e.stopPropagation() })
   const engine = api?.query
   if (!api || !engine) { fail('Aucun moteur de requêtes : ouvrez un vault.'); return el }
 
@@ -66,6 +70,7 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
     if (dead) { cleanup(); return }
     let watchStop: (() => void) | null = null
     let lastQuery = ''
+    let shown = EMBED_ROWS
     // Filtres et tris sur formules : calcules ici, avec les formules du manifeste courant.
     const rowsEngine = withFormulas(engine, key => {
       const f = tryCompileFormula(current?.manifest.columns.find(c => c.key === key)?.formula ?? '')
@@ -90,11 +95,11 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
       current = { manifest, view }
       const query = embedQuery(base.id, manifest, view)
       const formulas = needsFormulas(query) ? JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => c.formula)) : ''
-      const key = JSON.stringify(query) + formulas
+      const key = JSON.stringify(query) + formulas + shown
       if (key !== lastQuery) {
         lastQuery = key
         watchStop?.()
-        watchStop = rowsEngine.watch({ ...query, limit: EMBED_ROWS }, r => {
+        watchStop = rowsEngine.watch({ ...query, limit: shown }, r => {
           last = r
           if (alive() && current) render(r, current.manifest, current.view)
         })
@@ -135,8 +140,15 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
       }
       const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${base.path}` }, `🗃️ ${base.path.split('/').pop()} · ${view.name}`)
       open.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(base.path) })
+      let more: HTMLElement | null = null
+      if (r.total > r.rows.length && shown < EMBED_MAX_ROWS) {
+        const next = Math.min(EMBED_MAX_ROWS, shown + EMBED_ROWS)
+        more = h('button', { class: 'base-q-more', type: 'button', 'data-testid': 'base-embed-more' }, `Voir ${Math.min(next, r.total) - r.rows.length} de plus`)
+        more.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); shown = next; refresh() })
+      }
       const foot = h('div', { class: 'base-q-foot' }, open,
         h('span', { 'data-testid': 'base-embed-count' }, r.total > r.rows.length ? `${r.rows.length} / ${r.total} lignes` : `${r.total} ligne${r.total > 1 ? 's' : ''}`),
+        more,
         h('span', {}, 'lecture seule'))
 
       if (view.type === 'kanban' && view.groupBy) {
@@ -156,7 +168,7 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
       const head = h('tr', {}, h('th', {}, 'Nom'), ...keys.map(k => h('th', {}, label(k))))
       const body = r.rows.map(row => h('tr', { 'data-testid': 'base-embed-row' },
         h('td', {}, name(row)), ...keys.map(k => h('td', {}, cell(row, k)))))
-      el.replaceChildren(h('table', { class: 'base-q-table' }, h('thead', {}, head), h('tbody', {}, ...body)), foot)
+      el.replaceChildren(h('div', { class: 'base-q-scroll' }, h('table', { class: 'base-q-table' }, h('thead', {}, head), h('tbody', {}, ...body))), foot)
     }
     stops.push(() => watchStop?.())
     // Manifeste modifie (colonnes, filtres, vue) : on relit la vue.

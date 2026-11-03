@@ -374,6 +374,8 @@ export async function resolveBase(api: PluginAPI, from: string): Promise<{ id: s
 export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined): HTMLElement {
   const el = h('div', { class: 'base-q', 'data-testid': 'base-query' })
   const fail = (msg: string) => el.replaceChildren(h('div', { class: 'base-q-message base-q-bad', 'data-testid': 'base-query-error' }, `⚠ ${msg}`))
+  // Un lien ou un bouton du rendu ne fait pas entrer l'editeur dans le bloc.
+  el.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest?.('a, button')) e.stopPropagation() })
   const parsed = parseBaseQuery(source)
   if ('error' in parsed) { fail(parsed.error); return el }
   const q = parsed.query
@@ -404,7 +406,8 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
       folder = await manifestFolder(tree, folder)
       api.vault.closeTree?.(base.id)
     }
-    const query: Query = { from: { base: base.id, pages: { folder: folder.replace(/\/+$/, '') || undefined, ext: ['md'] } } }
+    // Par nom, comme la base : sans sort, l'ordre des lignes est celui-la.
+    const query: Query = { from: { base: base.id, pages: { folder: folder.replace(/\/+$/, '') || undefined, ext: ['md'] } }, sort: [{ field: { doc: 'title' } }] }
     const run = async () => {
       if (!alive()) return
       if (running) { again = true; return }

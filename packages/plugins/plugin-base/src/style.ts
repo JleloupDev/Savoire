@@ -48,10 +48,17 @@ const CSS = `
 .base-td { flex:0 0 auto; padding:0 8px; display:flex; align-items:center; gap:4px; overflow:hidden; white-space:nowrap; border-right:1px solid color-mix(in srgb, var(--border,#313244) 50%, transparent); box-sizing:border-box; }
 .base-td:focus { outline:1px solid var(--accent,#7c3aed); outline-offset:-1px; }
 .base-td-check { cursor:pointer; }
-.base-q { margin:6px 0; font-size:13px; }
+.base-q { margin:6px 0; font-size:13px; font-family:var(--font-ui,sans-serif); color:var(--text,#cdd6f4); line-height:1.4; }
+.base-q a { color:var(--text,#cdd6f4); text-decoration:none; }
+.base-q a:hover { text-decoration:underline; }
+.base-q-scroll { overflow-x:auto; }
 .base-q-table { border-collapse:collapse; width:100%; }
-.base-q-table th, .base-q-table td { border:1px solid var(--border,#313244); padding:3px 8px; text-align:left; }
-.base-q-table th { color:var(--text-muted,#a6adc8); font-weight:500; }
+.base-q-table th, .base-q-table td { border-bottom:1px solid color-mix(in srgb, var(--border,#313244) 60%, transparent); padding:5px 8px; text-align:left; white-space:nowrap; max-width:320px; overflow:hidden; text-overflow:ellipsis; }
+.base-q-table td + td, .base-q-table th + th { border-left:1px solid color-mix(in srgb, var(--border,#313244) 50%, transparent); }
+.base-q-table th { color:var(--text-muted,#a6adc8); font-weight:600; border-bottom-color:var(--border,#313244); }
+.base-q-table td .base-num { display:block; text-align:right; }
+.base-q-more { border:1px solid var(--border,#313244); background:transparent; color:var(--text-muted,#a6adc8); border-radius:4px; padding:1px 8px; font:inherit; font-size:11px; cursor:pointer; }
+.base-q-more:hover { color:var(--text,#cdd6f4); }
 .base-q-value { font-size:28px; font-weight:600; font-variant-numeric:tabular-nums; }
 .base-q-foot { display:flex; gap:12px; font-size:11px; color:var(--text-muted,#a6adc8); margin-top:4px; }
 .base-q-source { color:inherit; }
