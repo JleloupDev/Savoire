@@ -240,6 +240,18 @@ async function loadScopedPlugin(
 }
 
 export class EditorCore implements EditorController, EditorPositionAPI {
+  /** Editeurs ouverts : prevenus quand un plugin d'edition arrive apres eux. */
+  private static readonly live = new Set<EditorCore>()
+
+  /**
+   * Un plugin d'edition actif partout (defaultActive) vient d'etre charge :
+   * les editeurs deja ouverts le prennent en compte (ses blocs s'affichent
+   * sans rouvrir la note).
+   */
+  static refreshAll(): void {
+    for (const e of EditorCore.live) e.refreshPlugins()
+  }
+
   private view: EditorView
   private events = new EventBus()
   private activeFile: string | null = null
@@ -261,6 +273,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   readonly pluginAPI: IEditorHostAPI
 
   constructor(private options: EditorCoreOptions) {
+    EditorCore.live.add(this)
     this.activeFile = options.filePath ?? null
     // see ADR-008
     this.pluginAPI = options.pluginAPI ?? createNoopHostAPI()
@@ -358,7 +371,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
           ? []
           : [
               ...propertiesPanelExtension(propertiesHost),
-              ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => new Set(this.activationMap.keys())),
+              ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => { this.syncDefaults(); return new Set(this.activationMap.keys()) }),
             ]),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
@@ -839,7 +852,23 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     return [...this.activationMap.values()]
   }
 
+  /** Relit les plugins actifs partout (options.defaultPlugins a pu grandir) et redessine. */
+  refreshPlugins(): void {
+    if (this.syncDefaults()) this.events.emit('pluginLoaded')
+    this.view.dispatch({ effects: pluginsLoadedEffect.of(undefined) })
+  }
+
+  /** Plugins actifs partout, relus dans options.defaultPlugins ; vrai s'ils ont change. */
+  private syncDefaults(): boolean {
+    const ids = (this.options.defaultPlugins ?? []).filter(p => p.manifest.defaultActive).map(p => p.manifest.id)
+    if (ids.length === this.defaultActiveIds.size && ids.every(id => this.defaultActiveIds.has(id))) return false
+    this.defaultActiveIds = new Set(ids)
+    this.rebuildActivation()
+    return true
+  }
+
   destroy(): void {
+    EditorCore.live.delete(this)
     if (this.scopeDebounceTimer !== null) clearTimeout(this.scopeDebounceTimer)
     if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)
     this.unsubPropertyTypes?.()

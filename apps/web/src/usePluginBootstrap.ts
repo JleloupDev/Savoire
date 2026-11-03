@@ -28,7 +28,7 @@ import type { FullTextIndexLike, ITextChangeSource, IVaultSyncSession } from '@s
 import { IndexEngine } from '@savoire/domain-index'
 import type { ICollaborativeText, AnchorContributor } from '@savoire/domain-index'
 import { InMemoryIndexStorage } from '@savoire/platform'
-import { plumeCommands, type EditorController } from '@savoire/editor-core'
+import { EditorCore, plumeCommands, type EditorController } from '@savoire/editor-core'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
@@ -131,7 +131,11 @@ export function usePluginBootstrap({
     if (!entry || pluginLoaderRef.current.isLoaded(id)) return false
     const plugin = await entry.load(loadContext)
     await pluginLoaderRef.current.loadInternal(plugin, api)
-    if (entry.editorDefault) defaultPluginsRef.current.push(plugin)
+    if (entry.editorDefault) {
+      defaultPluginsRef.current.push(plugin)
+      // Notes deja ouvertes : leurs blocs s'affichent sans les rouvrir.
+      EditorCore.refreshAll()
+    }
     return true
   }
 
