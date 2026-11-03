@@ -203,6 +203,21 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-base')).default,
   },
   {
+    // editorDefault : ![[x.board]] s'affiche dans les notes.
+    id: 'plugin-board', preinstalled: true, editorDefault: true,
+    manifest: {
+      id: 'plugin-board',
+      name: 'Boards',
+      version: '0.0.1',
+      description: 'Des mini applis en HTML, CSS et JavaScript qui interrogent les bases (fichiers .board)',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: true,
+    },
+    extensions: ['board'],
+    load: async () => (await import('@savoire/plugin-board')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

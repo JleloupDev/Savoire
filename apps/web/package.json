@@ -36,6 +36,7 @@
     "@savoire/plugin-metadata": "workspace:*",
     "@savoire/plugin-mindmap": "workspace:*",
     "@savoire/plugin-office": "workspace:*",
+    "@savoire/plugin-board": "workspace:*",
     "@savoire/plugin-outline": "workspace:*",
     "@savoire/plugin-page": "workspace:*",
     "@savoire/plugin-wtf": "workspace:*",

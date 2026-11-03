@@ -170,6 +170,9 @@ importers:
       '@savoire/plugin-base':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-base
+      '@savoire/plugin-board':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-board
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-callout
@@ -557,6 +560,28 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-board:
+    dependencies:
+      '@codemirror/commands':
+        specifier: ^6.3.0
+        version: 6.10.3
+      '@codemirror/state':
+        specifier: ^6.4.0
+        version: 6.6.0
+      '@codemirror/view':
+        specifier: ^6.24.0
+        version: 6.40.0
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+      '@savoire/plugin-base':
+        specifier: workspace:*
+        version: link:../plugin-base
     devDependencies:
       typescript:
         specifier: ^5.4.0
@@ -1195,6 +1220,9 @@ importers:
       '@savoire/plugin-base':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-base
+      '@savoire/plugin-board':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-board
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-callout

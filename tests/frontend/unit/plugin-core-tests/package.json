@@ -19,7 +19,8 @@
     "@savoire/plugin-wtf": "workspace:*",
     "@savoire/plugin-chat": "workspace:*",
     "@savoire/plugin-page": "workspace:*",
-    "@savoire/plugin-base": "workspace:*"
+    "@savoire/plugin-base": "workspace:*",
+    "@savoire/plugin-board": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
