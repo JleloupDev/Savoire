@@ -57,6 +57,14 @@ public class InternalIndexerController(IMediator mediator, IOptionsMonitor<Index
             ? Ok(updates)
             : Error(404, "not_found", "Document inconnu dans ce vault.");
 
+    // GET /internal/indexer/vaults/{vaultId}/settings/{section}
+    // Reglages du vault lus par le pair (section « properties » : types des proprietes).
+    [HttpGet("vaults/{vaultId}/settings/{section}")]
+    public async Task<IActionResult> Settings(string vaultId, string section, CancellationToken ct) =>
+        await Mediator.Send(new GetIndexerSettingsQuery(vaultId, section), ct) is { } updates
+            ? Ok(updates)
+            : Error(404, "not_found", "Vault inconnu, non servi par le pair gere, ou section de reglages inconnue.");
+
     private IActionResult? UnknownInstance(string? instance)
     {
         if (string.IsNullOrWhiteSpace(instance))

@@ -199,6 +199,28 @@ public class InternalIndexerApiTests : IClassFixture<IndexerAppFactory>, IAsyncL
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact(DisplayName = "Reglages — types des proprietes : ligne settings dans le flux, journal lisible ; autres canaux ignores")]
+    public async Task Settings_PropertyTypes()
+    {
+        await using HubConnection vault = await _factory.HubAsync("/hubs/vault", _token);
+        await vault.InvokeAsync<string[]>("JoinIndex", _vaultId, "settings/properties");
+        await vault.InvokeAsync("PushIndexUpdate", _vaultId, "settings/properties", B64(0xC1));
+        await vault.InvokeAsync<string[]>("JoinIndex", _vaultId, "metadata");
+        await vault.InvokeAsync("PushIndexUpdate", _vaultId, "metadata", B64(0xC2));
+
+        var rows = Rows(await ChangesAsync(_owner), _vaultId).ToList();
+        rows.Where(r => r["kind"]!.GetValue<string>() == "settings").Should().HaveCount(1);
+        rows.Select(r => r["kind"]!.GetValue<string>()).Should().NotContain("index");
+
+        var log = (await _factory.ServiceClient().GetFromJsonAsync<JsonObject>($"/internal/indexer/vaults/{_vaultId}/settings/properties"))!;
+        log["updates"]!.AsArray().Select(u => u!.GetValue<string>()).Should().Equal(B64(0xC1));
+        log["format"]!.GetValue<string>().Should().Be("yjs");
+        (await _factory.ServiceClient().GetAsync($"/internal/indexer/vaults/{_vaultId}/settings/autre"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _factory.ServiceClient().GetAsync($"/internal/indexer/vaults/{Guid.NewGuid()}/settings/properties"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     // ── Perimetre du pair gere ───────────────────────────────────────────────
 
     [Fact(DisplayName = "Reglage none — vault-deleted dans le flux, plus liste ni lisible ; retour au pair gere : changement vault")]

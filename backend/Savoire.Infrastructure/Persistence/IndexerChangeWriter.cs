@@ -25,6 +25,7 @@ namespace Savoire.Infrastructure.Persistence;
 internal static class IndexerChangeWriter
 {
     private const string VaultResourcePrefix = "vault:";
+    private const string IndexResourcePrefix = "index:";
 
     /// <summary>Une ecriture dans le journal CRDT : arborescence ou document.</summary>
     public static async Task RecordOperationAsync(AppDbContext db, string resourceType, string resourceId, CancellationToken ct)
@@ -50,10 +51,33 @@ internal static class IndexerChangeWriter
                     """, ct);
                 return;
 
-            // Canaux d'index partages : ce ne sont ni des documents ni l'arborescence.
+            // Canaux d'index partages : seuls les reglages lus par le pair
+            // (types des proprietes) l'interessent. ResourceId =
+            // "index:{vaultId}:settings/{section}".
+            case CrdtResourceType.Index:
+                if (SettingsVaultOf(resourceId) is not { } vaultId) return;
+                string settingsKey = $"{IndexerChangeKind.Settings}:{vaultId}";
+                await db.Database.ExecuteSqlAsync($"""
+                    INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
+                    VALUES ({settingsKey}, {vaultId}, {IndexerChangeKind.Settings}, NULL, {now})
+                    """, ct);
+                return;
+
             default:
                 return;
         }
+    }
+
+    /// <summary>Vault d'un canal de reglages lu par le pair ; null pour tout autre canal.</summary>
+    internal static string? SettingsVaultOf(string resourceId)
+    {
+        if (!resourceId.StartsWith(IndexResourcePrefix, StringComparison.Ordinal)) return null;
+        int sep = resourceId.IndexOf(':', IndexResourcePrefix.Length);
+        if (sep <= IndexResourcePrefix.Length) return null;
+        string ns = resourceId[(sep + 1)..];
+        const string prefix = "settings/";
+        if (!ns.StartsWith(prefix, StringComparison.Ordinal) || !IndexerChangeKind.SettingsSections.Contains(ns[prefix.Length..])) return null;
+        return resourceId[IndexResourcePrefix.Length..sep];
     }
 
     /// <summary>L'arborescence du vault a change (ou le vault entre dans le pair gere).</summary>

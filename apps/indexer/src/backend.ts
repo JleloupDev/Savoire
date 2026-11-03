@@ -3,7 +3,7 @@
 //
 // Client de l'API interne du backend (indexer-protocol.md, « API interne ») :
 // liste des vaults de l'instance, flux de changements, journaux Yjs de
-// l'arbre et des documents. Lecture seule, jeton de service.
+// l'arbre, des documents et des reglages du vault (types des proprietes). Lecture seule, jeton de service.
 //
 //  - delai par appel, annulation (AbortSignal) ;
 //  - nouveaux essais avec attente croissante sur erreur reseau, delai depasse
@@ -59,7 +59,7 @@ export interface BackendMetrics {
   duration: Histogram
 }
 
-type Route = 'vaults' | 'changes' | 'tree' | 'document'
+type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings'
 
 export class BackendClient {
   constructor(
@@ -91,6 +91,15 @@ export class BackendClient {
   /** Journal d'un document ; null s'il n'est pas (ou plus) inscrit dans ce vault. */
   document(vaultId: string, docId: string, signal?: AbortSignal): Promise<UpdatesLog | null> {
     return this.log('document', `/internal/indexer/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}`, signal)
+  }
+
+  /**
+   * Journal d'une section des reglages du vault (canal « settings/<section> ») ;
+   * null si le vault n'est pas servi, ou si le backend ne connait pas cette
+   * route (version plus ancienne).
+   */
+  settings(vaultId: string, section: string, signal?: AbortSignal): Promise<UpdatesLog | null> {
+    return this.log('settings', `/internal/indexer/vaults/${encodeURIComponent(vaultId)}/settings/${encodeURIComponent(section)}`, signal)
   }
 
   private async log(route: Route, path: string, signal?: AbortSignal): Promise<UpdatesLog | null> {

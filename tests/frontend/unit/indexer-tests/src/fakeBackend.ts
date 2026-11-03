@@ -22,7 +22,7 @@ const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64')
 interface Row {
   seq: number
   vaultId: string
-  kind: 'vault' | 'document' | 'vault-deleted'
+  kind: 'vault' | 'document' | 'vault-deleted' | 'settings'
   docId?: string
 }
 
@@ -38,6 +38,8 @@ interface FakeVault {
   id: string
   tree: Journaled
   docs: Map<string, Journaled>
+  /** Canal « settings/properties » : types des proprietes (carte 'entries'). */
+  types: Journaled
   managed: boolean
 }
 
@@ -117,6 +119,12 @@ export class FakeBackend {
         if (!v || !v.managed) return send(404, { error: { code: 'not_found', message: '' } })
         return send(200, { updates: [...v.tree.log], format: 'yjs' })
       }
+      m = /^\/internal\/indexer\/vaults\/([^/]+)\/settings\/properties$/.exec(p)
+      if (m) {
+        const v = this.vaults.get(decodeURIComponent(m[1]!))
+        if (!v || !v.managed) return send(404, { error: { code: 'not_found', message: '' } })
+        return send(200, { updates: [...v.types.log], format: 'yjs' })
+      }
       m = /^\/internal\/indexer\/vaults\/([^/]+)\/documents\/([^/]+)$/.exec(p)
       if (m) {
         this.hits.document++
@@ -151,7 +159,7 @@ export class FakeBackend {
   vault(id: string): FakeVault {
     let v = this.vaults.get(id)
     if (!v) {
-      v = { id, tree: new Journaled(), docs: new Map(), managed: true }
+      v = { id, tree: new Journaled(), docs: new Map(), types: new Journaled(), managed: true }
       this.vaults.set(id, v)
       this.touch(id, 'vault')
     }
@@ -190,6 +198,13 @@ export class FakeBackend {
     const t = d.doc.getText('codemirror')
     t.insert(t.length, more)
     this.touch(vaultId, 'document', docId)
+  }
+
+  /** Type une propriete du vault (comme VaultPropertyTypes.set). */
+  setType(vaultId: string, key: string, type: string): void {
+    const v = this.vault(vaultId)
+    v.types.doc.getMap('entries').set(key, { type })
+    this.touch(vaultId, 'settings')
   }
 
   rename(vaultId: string, docId: string, path: string): void {

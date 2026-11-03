@@ -19,4 +19,12 @@ public static class IndexerChangeKind
     public const string Document     = "document";
     /// <summary>Vault supprime, ou sorti du pair gere (reglage none / organization).</summary>
     public const string VaultDeleted = "vault-deleted";
+    /// <summary>Reglages du vault lus par le pair modifies (types des proprietes).</summary>
+    public const string Settings     = "settings";
+
+    /// <summary>
+    /// Sections des reglages du vault que le pair lit (canal d'index
+    /// « settings/&lt;section&gt; ») : « properties », les types des proprietes.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SettingsSections = new HashSet<string>(StringComparer.Ordinal) { "properties" };
 }

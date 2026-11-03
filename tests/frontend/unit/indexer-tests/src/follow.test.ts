@@ -146,4 +146,19 @@ describe('construction et suivi du flux', () => {
     backend.rename('v1', 'B1', 'Projets.base')
     await until(async () => (await q()).total === 39, 5000, 'base restauree')
   })
+
+  it('types des proprietes du vault : valeurs typees, index reconstruit quand ils changent', async () => {
+    backend.writeNote('v1', 'a', 'A.md', '---\nprix: "12"\n---\nalpha')
+    backend.writeNote('v1', 'b', 'B.md', '---\nprix: "3"\n---\nbeta')
+    peer = await startPeer(backend, tmp.dir)
+    const sum = async () => (await peer!.call<{ aggregates: unknown[] }>('v1', 'query', 'run', { from: { notes: true }, aggregate: [{ op: 'sum', field: { prop: 'prix' } }] })).body.result?.aggregates?.[0]
+    await until(async () => (await peer!.found('v1', 'alpha')).length === 1, 5000, 'construction')
+    // Sans type : du texte, hors des sommes.
+    expect(await sum()).toBe(0)
+    backend.setType('v1', 'prix', 'number')
+    await until(async () => (await sum()) === 15, 10_000, 'reconstruction avec les types')
+    // Une note modifiee ensuite est typee elle aussi.
+    backend.writeNote('v1', 'b', 'B.md', '---\nprix: "5"\n---\nbeta')
+    await until(async () => (await sum()) === 17, 5000, 'note typee au fil de l eau')
+  })
 })

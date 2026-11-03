@@ -34,12 +34,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { join } from 'node:path'
 import {
   NOTE_EXTENSIONS, VaultIndex, baseManifestFromUpdates, defaultPowers, diffTree, extOf, isTrashPath, lightRowRecord,
-  lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, vaultTreeFromUpdates,
+  lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, propertySchemaFromUpdates, propertySchemaKey,
+  vaultTreeFromUpdates,
 } from '@savoire/indexer-core'
 import type { BaseManifest, IndexInspection, IndexPower, IndexStatus, NoteInput, NoteRecord } from '@savoire/indexer-core'
 import { NodeSqliteDriver } from '@savoire/indexer-core/node'
 import { BASE_LOT_COUNT, baseLotOf } from '@savoire/plugin-api'
-import type { IndexState } from '@savoire/plugin-api'
+import type { IndexState, PropertySchema } from '@savoire/plugin-api'
 import type { BackendClient, FeedChange, UpdatesLog } from './backend'
 import { BackendError } from './backend'
 import { HttpError, notOwner, unavailable } from './errors'
@@ -70,7 +71,7 @@ export interface StoreOptions {
 }
 
 /** Pourquoi un vault est (re)construit. */
-export type RebuildReason = 'missing' | 'core' | 'incomplete' | 'corrupt' | 'schema' | 'epoch' | 'stale'
+export type RebuildReason = 'missing' | 'core' | 'incomplete' | 'corrupt' | 'schema' | 'epoch' | 'stale' | 'types'
 const IN_PLACE: ReadonlySet<RebuildReason> = new Set(['missing', 'core', 'incomplete', 'corrupt'])
 
 interface Pending {
@@ -126,6 +127,11 @@ class Vault {
   lastWriteAt = 0
   /** Dernier etat rendu (pour faire avancer la generation quand il change sans ecriture). */
   lastStatus = ''
+  /** Types des proprietes du vault (reglages) ; schemaKey undefined : pas encore lus. */
+  schema?: PropertySchema
+  schemaKey?: string
+  /** Types changes pendant une construction : en refaire une ensuite. */
+  typesDirty = false
 
   constructor(readonly id: string, readonly file: string) {}
 
@@ -377,6 +383,9 @@ export class VaultStore {
       } else if (c.kind === 'document' && typeof c.docId === 'string' && c.docId) {
         v.docs.set(c.docId, merge(v.docs.get(c.docId), c.seq, now))
         this.pendingVaults.add(v)
+      } else if (c.kind === 'settings') {
+        // Types des proprietes : relus, et l'index reconstruit s'ils ont change.
+        this.track(this.onTypes(v), 'types', v.id)
       } else {
         this.m.skipped.inc({ reason: 'unknown_change' })
       }
@@ -510,12 +519,41 @@ export class VaultStore {
     return undefined
   }
 
+  /** Types du vault lus, differents de ceux de l'index : reconstruire. */
+  private typesChanged(info: IndexInspection, v: Vault): RebuildReason | undefined {
+    if (v.schemaKey === undefined || !info.exists) return undefined
+    return (info.host['types'] ?? '') !== v.schemaKey ? 'types' : undefined
+  }
+
+  /** Relit les types des proprietes du vault (HORS creneau : lecture du backend). */
+  private async loadSchema(v: Vault, signal?: AbortSignal): Promise<void> {
+    const log = await this.fetch(() => this.backend.settings(v.id, 'properties', signal))
+    const schema: PropertySchema = log && log.format === 'yjs' ? propertySchemaFromUpdates(bytesOf(log)) : { properties: [] }
+    v.schema = schema
+    v.schemaKey = propertySchemaKey(schema)
+    v.serving?.index.setSchema(schema)
+    v.target?.index.setSchema(schema)
+  }
+
+  /** Les types du vault ont change (flux « settings ») : reconstruire a cote si l'index en a d'autres. */
+  private async onTypes(v: Vault): Promise<void> {
+    const before = v.schemaKey
+    await this.loadSchema(v)
+    if (before === v.schemaKey || !v.owned) return
+    // Pas encore verifie : la verification comparera.
+    if (!v.checked && !v.serving) return
+    if (v.building) { v.typesDirty = true; return }
+    v.rebuild = v.rebuild ?? 'types'
+    this.enqueueBuild(v)
+    this.pumpBuilds()
+  }
+
   /** A appeler DANS le creneau. */
-  private async openHandle(file: string, powers: IndexPower[]): Promise<Handle> {
+  private async openHandle(file: string, powers: IndexPower[], schema?: PropertySchema): Promise<Handle> {
     const driver = NodeSqliteDriver.open(file)
     try {
       await driver.exec(`PRAGMA cache_size = -${this.opts.sqliteCacheKiB}`)
-      const index = await VaultIndex.open(driver, { powers })
+      const index = await VaultIndex.open(driver, { powers, schema })
       this.openCount++
       return { file, driver, index, powers: new Set(powers.map(p => p.name)), stateJson: '', off: () => {} }
     } catch (err) {
@@ -533,7 +571,7 @@ export class VaultStore {
     try {
       driver = NodeSqliteDriver.open(v.file)
       info = await VaultIndex.inspect(driver, { powers: this.powers() })
-      reason = this.decide(info, v)
+      reason = this.decide(info, v) ?? this.typesChanged(info, v)
       await driver.close()
       driver = undefined
     } catch (err) {
@@ -549,7 +587,7 @@ export class VaultStore {
     if (v.rebuild && !(reason && IN_PLACE.has(reason))) reason = v.rebuild
     const all = this.powers()
     const powers = reason === 'schema' ? all.filter(p => info.intact.includes(p.name)) : all
-    const h = await this.openHandle(v.file, powers)
+    const h = await this.openHandle(v.file, powers, v.schema)
     h.off = h.index.onChange(() => this.bump(v))
     v.serving = h
     v.lastUsed = Date.now()
@@ -613,13 +651,16 @@ export class VaultStore {
         while (this.checkQueue.length && !this.stopping) {
           const v = this.checkQueue.shift()!
           if (v.checked || v.serving || !v.owned) continue
+          if (v.schemaKey === undefined) {
+            await this.loadSchema(v).catch(err => this.log.warn('types des proprietes illisibles', { vault: v.id, err }))
+          }
           await this.slot.run(BUILD, async () => {
             if (v.serving || v.checked) return
             let driver: NodeSqliteDriver | undefined
             try {
               driver = NodeSqliteDriver.open(v.file)
               const info = await VaultIndex.inspect(driver, { powers: this.powers() })
-              const reason = this.decide(info, v)
+              const reason = this.decide(info, v) ?? this.typesChanged(info, v)
               if (reason && !(v.rebuild && !IN_PLACE.has(reason))) v.rebuild = reason
               if (!v.rebuild || v.rebuild === 'schema' || v.rebuild === 'stale') v.appliedSeq = info.seq
               v.stats = { docs: v.stats.docs, bytes: this.fileBytes(v.file), at: 0, dirty: true }
@@ -980,7 +1021,7 @@ export class VaultStore {
     for (const r of rows) {
       const sig = JSON.stringify([r.title, r.values])
       sigs.set(r.id, sig)
-      if (before?.get(r.id) !== sig) records.push(lightRowRecord(baseId, r))
+      if (before?.get(r.id) !== sig) records.push(lightRowRecord(baseId, r, v.schema))
     }
     for (let i = 0; i < records.length || i === 0; i += ROWS_PER_TX) {
       const chunk = records.slice(i, i + ROWS_PER_TX)
@@ -1067,11 +1108,15 @@ export class VaultStore {
     const buildingFile = v.file + '.building'
     this.log.info('construction', { vault: v.id, reason, mode: inPlace ? 'en place' : 'a cote' })
     try {
+      // Types du vault : les valeurs sont typees comme chez les clients.
+      v.typesDirty = false
+      await this.loadSchema(v, signal)
+      const typesKey = v.schemaKey ?? ''
       if (!inPlace) {
         v.replay = { docs: new Set(), tree: false }
         await this.slot.run(BUILD, async () => {
           this.rmIndex(buildingFile)
-          const h = await this.openHandle(buildingFile, this.powers())
+          const h = await this.openHandle(buildingFile, this.powers(), v.schema)
           h.off = h.index.onChange(() => this.bump(v))
           v.target = h
           if (v.serving) this.refreshState(v, v.serving)
@@ -1193,7 +1238,7 @@ export class VaultStore {
         await this.slot.run(BUILD, async () => {
           const h = await handle()
           await h.index.setSeq(seq)
-          await h.index.setHostMeta({ epoch: this.epoch ?? '', builtAt: new Date().toISOString() })
+          await h.index.setHostMeta({ epoch: this.epoch ?? '', builtAt: new Date().toISOString(), types: typesKey })
           await h.index.markBuilt()
           if (!inPlace) {
             await this.closeHandle(v, 'serving')
@@ -1220,6 +1265,13 @@ export class VaultStore {
       this.m.buildSeconds.observe({ mode: inPlace ? 'in_place' : 'beside' }, seconds)
       this.log.info('construction terminee', { vault: v.id, reason, notes: notes.length, bases: bases.size, seconds: Math.round(seconds * 10) / 10 })
       await this.refreshStats(v)
+      // Types changes pendant la construction : on recommence avec les bons.
+      if (v.typesDirty || (v.schemaKey ?? '') !== typesKey) {
+        v.typesDirty = false
+        v.rebuild = 'types'
+        this.enqueueBuild(v)
+        this.pumpBuilds()
+      }
     } catch (err) {
       v.progress = v.rebuild ? v.progress : undefined
       if (!inPlace) {

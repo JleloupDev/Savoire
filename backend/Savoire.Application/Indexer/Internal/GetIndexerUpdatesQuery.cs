@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // GET /internal/indexer/vaults/{vaultId}/tree
 // GET /internal/indexer/vaults/{vaultId}/documents/{docId}
+// GET /internal/indexer/vaults/{vaultId}/settings/{section}
 //
 // Le journal Yjs (apres compaction eventuelle) de l'arborescence d'un vault
 // ou d'un document. Le pair le rejoue dans un Y.Doc avec le code des clients.
@@ -11,6 +12,7 @@
 using MediatR;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Enums;
+using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
 
 namespace Savoire.Application.Indexer.Internal;
@@ -20,6 +22,28 @@ public sealed record GetIndexerTreeQuery(string VaultId) : IRequest<IndexerUpdat
 
 /// <summary>Null : document non inscrit dans ce vault, ou vault non servi par le pair gere (404).</summary>
 public sealed record GetIndexerDocumentQuery(string VaultId, string DocId) : IRequest<IndexerUpdatesDto?>;
+
+/// <summary>
+/// Journal d'une section des reglages du vault (canal d'index
+/// « settings/{section} »). Null : section que le pair ne lit pas, vault
+/// inconnu ou non servi par le pair gere (404). Un canal jamais ecrit : vide.
+/// </summary>
+public sealed record GetIndexerSettingsQuery(string VaultId, string Section) : IRequest<IndexerUpdatesDto?>;
+
+public sealed class GetIndexerSettingsQueryHandler(
+    IVaultRepository               vaults,
+    IVaultIndexerSettingRepository settings,
+    ICrdtOpRepository              ops) : IRequestHandler<GetIndexerSettingsQuery, IndexerUpdatesDto?>
+{
+    public async Task<IndexerUpdatesDto?> Handle(GetIndexerSettingsQuery q, CancellationToken ct)
+    {
+        if (!IndexerChangeKind.SettingsSections.Contains(q.Section)) return null;
+        if (await vaults.GetByIdAsync(q.VaultId, ct) is null) return null;
+        if ((await settings.GetAsync(q.VaultId, ct)).Mode != IndexerMode.Managed) return null;
+        IReadOnlyList<Operation> history = await ops.GetAllAsync(CrdtResourceType.Index, $"index:{q.VaultId}:settings/{q.Section}", ct);
+        return new IndexerUpdatesDto([.. history.Select(o => Convert.ToBase64String(o.OpBytes))], IndexerUpdateFormats.Yjs);
+    }
+}
 
 public sealed class GetIndexerTreeQueryHandler(
     IVaultRepository               vaults,
