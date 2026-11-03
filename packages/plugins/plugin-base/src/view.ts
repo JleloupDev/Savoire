@@ -271,7 +271,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (key === totalsKey) return
     totalsKey = key
     stopTotals()
-    // Les anciens totaux restent affiches pendant le calcul.
+    // Calcul sur les lignes lues ; les anciens totaux restent affiches pendant ce temps.
     const run = async () => {
       try {
         const { rows, truncated } = await fetchBaseRows(rowsEngine, q)
@@ -285,9 +285,34 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         table?.renderFoot()
       } catch (err) { console.warn('[plugin-base] totaux', err) }
     }
-    totalsStop = rowsEngine.watch({ ...q, limit: 1 }, () => {
-      if (totalsTimer) clearTimeout(totalsTimer)
-      totalsTimer = setTimeout(() => { totalsTimer = null; void run() }, 150)
+    const followRows = () => {
+      totalsStop = rowsEngine.watch({ ...q, limit: 1 }, () => {
+        if (totalsTimer) clearTimeout(totalsTimer)
+        totalsTimer = setTimeout(() => { totalsTimer = null; void run() }, 150)
+      })
+    }
+    // Le moteur sait calculer : un seul aller, sans lire les lignes.
+    const engineOps: Partial<Record<TotalKind, 'sum' | 'mean' | 'min' | 'max' | 'count'>> = { sum: 'sum', mean: 'mean', min: 'min', max: 'max', filled: 'count', empty: 'count' }
+    const viaEngine = !needsFormulas(q) && wanted.every(([k, kind]) => !isFormulaKey(k) && engineOps[kind])
+    if (!viaEngine) { followRows(); return }
+    const aggregate = wanted.map(([k, kind]) => ({ op: engineOps[kind]!, field: k === TITLE_COLUMN ? { doc: 'title' as const } : { prop: k } }))
+    let fallback = false
+    totalsStop = rowsEngine.watch({ ...q, aggregate, limit: 1 }, r => {
+      if (totalsKey !== key || fallback) return
+      if (!r.aggregates || r.aggregates.length !== wanted.length) {
+        // Moteur sans agregats : calcul sur les lignes (apres ce rappel, qui
+        // peut arriver avant que watch ait rendu sa fonction d'arret).
+        fallback = true
+        queueMicrotask(() => { if (totalsKey !== key) return; stopTotals(); followRows() })
+        return
+      }
+      const next = new Map<string, string>()
+      wanted.forEach(([k, kind], i) => {
+        const v = r.aggregates![i]
+        next.set(k, totalText(kind, kind === 'empty' ? r.total - Number(v ?? 0) : v))
+      })
+      totalTexts = next
+      table?.renderFoot()
     })
   }
   const kanban = rowsEngine ? new BaseKanban({

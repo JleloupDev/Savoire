@@ -17,6 +17,7 @@
 // en 'YYYY-MM-DD' (ou date-heure ISO si elle a une heure).
 
 import type { PropertyValue } from './properties'
+import type { FilterOp, QueryField, QueryFilter } from './query'
 
 export const FORMULA_MAX_LENGTH = 2000
 const MAX_DEPTH = 64
@@ -47,6 +48,32 @@ export interface CompiledFormula {
   /** Vrai si la formule utilise une fonction d'agregat (sum, mean, min, max, median, count). */
   readonly aggregates: boolean
   evaluate(row: FormulaRow, now?: Date): FormulaResult
+  /**
+   * Agregats simples de la formule (sum(prop("x")), count()...), quand un
+   * moteur de requetes peut tous les calculer : chaque agregat porte sur une
+   * propriete nue (ou rien pour count), aucune propriete hors agregat, pas de
+   * median. null sinon.
+   */
+  readonly aggregateCalls: readonly FormulaAggregateCall[] | null
+  /** Evalue avec les valeurs des agregats deja calculees (cle : aggregateKey). */
+  evaluateAggregates(values: ReadonlyMap<string, PropertyValue>, now?: Date): FormulaResult
+  /**
+   * La formule en filtre declaratif, quand c'est exactement la meme
+   * condition : comparaisons d'une propriete a un nombre ou a un booleen,
+   * empty(), and, or, not. null sinon (comparaisons de textes comprises : le
+   * moteur les fait sans casse ni accents).
+   */
+  toFilter(): QueryFilter | null
+}
+
+export interface FormulaAggregateCall {
+  fn: 'sum' | 'mean' | 'min' | 'max' | 'count'
+  /** Propriete agregee ; absente pour count(). */
+  prop?: string
+}
+
+export function aggregateKey(c: FormulaAggregateCall): string {
+  return `${c.fn}:${c.prop ?? ''}`
 }
 
 export type FormulaResult = { ok: true; value: PropertyValue } | { ok: false; error: string }
@@ -395,7 +422,7 @@ function extreme(args: Value[], dir: 1 | -1): Value {
 
 const AGGREGATES = new Set(['sum', 'mean', 'min', 'max', 'median', 'count'])
 
-interface Env { row: FormulaRow; now: Date }
+interface Env { row: FormulaRow; now: Date; presets?: ReadonlyMap<string, PropertyValue> }
 type Lazy = () => Value
 interface FnDef { min: number; max: number; run(args: Lazy[], env: Env): Value }
 
@@ -502,7 +529,13 @@ function evalNode(n: Node, env: Env): Value {
       if (n.op === '!') return !asBool(a)
       return n.op === '-' ? -asNumber(a) : asNumber(a)
     }
-    case 'call': return FUNCTIONS[n.fn].run(n.args.map(a => () => evalNode(a, env)), env)
+    case 'call': {
+      if (env.presets && AGGREGATES.has(n.fn)) {
+        const call = simpleAggregate(n)
+        if (call) { const v = env.presets.get(aggregateKey(call)); return v === undefined ? null : v as Value }
+      }
+      return FUNCTIONS[n.fn].run(n.args.map(a => () => evalNode(a, env)), env)
+    }
     case 'bin': {
       if (n.op === '&&') return asBool(evalNode(n.a, env)) && asBool(evalNode(n.b, env))
       if (n.op === '||') return asBool(evalNode(n.a, env)) || asBool(evalNode(n.b, env))
@@ -556,6 +589,87 @@ function collect(n: Node, props: Set<string>, calls: Set<string>): void {
   }
 }
 
+// ── Formule vers moteur de requetes ──────────────────────────────────────
+
+const ENGINE_AGGREGATES = new Set(['sum', 'mean', 'min', 'max', 'count'])
+
+/** sum(prop("x")) ou count() : l'appel, sinon null. */
+function simpleAggregate(n: Node): FormulaAggregateCall | null {
+  if (n.k !== 'call' || !ENGINE_AGGREGATES.has(n.fn)) return null
+  const fn = n.fn as FormulaAggregateCall['fn']
+  if (n.args.length === 0) return fn === 'count' ? { fn } : null
+  if (n.args.length === 1 && n.args[0].k === 'prop') return { fn, prop: n.args[0].name }
+  return null
+}
+
+/** Tous les agregats simples, ou null si un agregat ou une propriete ne l'est pas. */
+function aggregatePlan(ast: Node): FormulaAggregateCall[] | null {
+  const out = new Map<string, FormulaAggregateCall>()
+  let ok = true
+  const walk = (n: Node): void => {
+    if (!ok) return
+    switch (n.k) {
+      case 'prop': ok = false; return
+      case 'call': {
+        if (AGGREGATES.has(n.fn)) {
+          const c = simpleAggregate(n)
+          if (!c) { ok = false; return }
+          out.set(aggregateKey(c), c)
+          return
+        }
+        n.args.forEach(walk)
+        return
+      }
+      case 'un': walk(n.a); return
+      case 'bin': walk(n.a); walk(n.b); return
+      case 'tern': walk(n.c); walk(n.a); walk(n.b); return
+      case 'list': n.items.forEach(walk); return
+    }
+  }
+  walk(ast)
+  return ok && out.size > 0 ? [...out.values()] : null
+}
+
+const TITLE_PROPS = new Set(['Nom', 'Name', '@title'])
+const fieldOfProp = (name: string): QueryField => TITLE_PROPS.has(name) ? { doc: 'title' } : { prop: name }
+const FLIP: Record<string, string> = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!=' }
+const FILTER_OP: Record<string, FilterOp> = { '==': 'eq', '!=': 'neq', '<': 'lt', '<=': 'lte', '>': 'gt', '>=': 'gte' }
+
+function toFilterNode(n: Node): QueryFilter | null {
+  if (n.k === 'bin' && (n.op === '&&' || n.op === '||')) {
+    const a = toFilterNode(n.a), b = toFilterNode(n.b)
+    if (!a || !b) return null
+    return n.op === '&&' ? { and: [a, b] } : { or: [a, b] }
+  }
+  if (n.k === 'un' && n.op === '!') { const a = toFilterNode(n.a); return a ? { not: a } : null }
+  if (n.k === 'call' && n.fn === 'not' && n.args.length === 1) { const a = toFilterNode(n.args[0]); return a ? { not: a } : null }
+  if (n.k === 'call' && n.fn === 'empty' && n.args.length === 1 && n.args[0].k === 'prop') {
+    return { field: fieldOfProp(n.args[0].name), op: 'empty' }
+  }
+  if (n.k === 'bin' && n.op in FILTER_OP) {
+    let prop: string, lit: Value, op = n.op
+    if (n.a.k === 'prop' && n.b.k === 'lit') { prop = n.a.name; lit = n.b.v }
+    else if (n.b.k === 'prop' && n.a.k === 'lit') { prop = n.b.name; lit = n.a.v; op = FLIP[op] }
+    else return null
+    const field = fieldOfProp(prop)
+    const empty: QueryFilter = { field, op: 'empty' }
+    if (typeof lit === 'boolean') {
+      // equals(v, bool) : faux pour une valeur vide.
+      if (op === '==') return { field, op: 'eq', value: lit }
+      if (op === '!=') return { or: [empty, { field, op: 'neq', value: lit }] }
+      return null
+    }
+    if (typeof lit !== 'number') return null
+    if (op === '==') return { field, op: 'eq', value: lit }
+    if (op === '!=') return { or: [empty, { field, op: 'neq', value: lit }] }
+    // Une valeur vide vaut 0 dans une comparaison de nombres.
+    const zero = op === '<' ? 0 < lit : op === '<=' ? 0 <= lit : op === '>' ? 0 > lit : 0 >= lit
+    const cmp: QueryFilter = { field, op: FILTER_OP[op], value: lit }
+    return zero ? { or: [empty, cmp] } : cmp
+  }
+  return null
+}
+
 /** Compile une formule ; lance FormulaError (message en francais) si elle est mal ecrite. */
 export function compileFormula(source: string): CompiledFormula {
   if (source.length > FORMULA_MAX_LENGTH) throw new FormulaError(`Formule trop longue (${FORMULA_MAX_LENGTH} caractères au plus)`)
@@ -569,14 +683,22 @@ export function compileFormula(source: string): CompiledFormula {
     props: [...props],
     aggregates: [...calls].some(c => AGGREGATES.has(c)),
     evaluate(row, now = new Date()) {
-      try {
-        return { ok: true, value: output(evalNode(ast, { row, now })) }
-      } catch (err) {
-        if (err instanceof FormulaError) return { ok: false, error: err.message }
-        if (err instanceof RangeError) return { ok: false, error: 'Calcul trop profond' }
-        throw err
-      }
+      return run({ row, now })
     },
+    aggregateCalls: aggregatePlan(ast),
+    evaluateAggregates(values, now = new Date()) {
+      return run({ row: { title: '', values: {} }, now, presets: values })
+    },
+    toFilter: () => toFilterNode(ast),
+  }
+  function run(env: Env): FormulaResult {
+    try {
+      return { ok: true, value: output(evalNode(ast, env)) }
+    } catch (err) {
+      if (err instanceof FormulaError) return { ok: false, error: err.message }
+      if (err instanceof RangeError) return { ok: false, error: 'Calcul trop profond' }
+      throw err
+    }
   }
 }
 

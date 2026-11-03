@@ -20,8 +20,11 @@
 //  - sort   : expressions, « asc » (defaut) ou « desc » ;
 //  - limit  : nombre de lignes montrees (50 par defaut).
 // Le bloc suit la base en direct.
-import { BLOCK_DESTROY_EVENT, QUERY_MAX_LIMIT, tryCompileFormula } from '@savoire/plugin-api'
-import type { CompiledFormula, FormulaRow, IQueryEngine, ISharedTree, PluginAPI, PropertyValue, Query, QueryRow } from '@savoire/plugin-api'
+import { BLOCK_DESTROY_EVENT, QUERY_MAX_LIMIT, aggregateKey, tryCompileFormula } from '@savoire/plugin-api'
+import type {
+  CompiledFormula, FormulaAggregateCall, FormulaRow, IQueryEngine, ISharedTree, PluginAPI, PropertyValue, Query, QueryAggregate,
+  QueryFilter, QueryRow,
+} from '@savoire/plugin-api'
 import { h, valueText } from './cells'
 import { folderOfBase } from './notes'
 import { readManifest } from './manifest'
@@ -157,6 +160,34 @@ function cmp(a: PropertyValue, b: PropertyValue): number {
   if (empty(a) || empty(b)) return empty(a) === empty(b) ? 0 : empty(a) ? 1 : -1
   if (typeof a === 'number' && typeof b === 'number') return a - b
   return valueText(a).localeCompare(valueText(b), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+const TITLE_PROPS = new Set(['Nom', 'Name', '@title'])
+
+/**
+ * Le bloc peut-il etre calcule par le moteur, sans lire les lignes ?
+ * Oui pour des agregats simples (sum(prop("x")), count()...) et un where
+ * que le moteur fait a l'identique (voir CompiledFormula.toFilter).
+ */
+export function enginePlan(q: BaseQuery): { where?: QueryFilter; calls: FormulaAggregateCall[]; aggregate: QueryAggregate[] } | null {
+  if (!q.aggregate || q.select.length === 0) return null
+  const calls = new Map<string, FormulaAggregateCall>()
+  for (const s of q.select) {
+    if (!s.formula.aggregateCalls) return null
+    for (const c of s.formula.aggregateCalls) calls.set(aggregateKey(c), c)
+  }
+  let where: QueryFilter | undefined
+  if (q.where) {
+    const f = q.where.toFilter()
+    if (!f) return null
+    where = f
+  }
+  const list = [...calls.values()]
+  const aggregate: QueryAggregate[] = list.map(c => ({
+    op: c.fn,
+    ...(c.prop !== undefined ? { field: TITLE_PROPS.has(c.prop) ? { doc: 'title' as const } : { prop: c.prop } } : {}),
+  }))
+  return { where, calls: list, aggregate }
 }
 
 /** Applique where, sort, select et limit a des lignes deja lues. */
@@ -300,7 +331,28 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
       timer = setTimeout(() => { timer = null; void run() }, 120)
     }
     // Suivi en direct : la plus petite requete suivie sert de signal.
-    if (!dead) stop = engine.watch({ ...query, limit: 1 }, schedule)
+    const followRows = () => { if (!dead) stop = engine.watch({ ...query, limit: 1 }, schedule) }
+    const plan = enginePlan(q)
+    if (!plan) { followRows(); return }
+    // Agregats calcules par le moteur, sur toutes les lignes, sans les lire.
+    if (dead) return
+    let fallback = false
+    stop = engine.watch({ ...query, ...(plan.where ? { where: plan.where } : {}), aggregate: plan.aggregate, limit: 1 }, r => {
+      if (!alive() || fallback) return
+      if (!r.aggregates || r.aggregates.length !== plan.calls.length) {
+        // Moteur qui ne connait pas les agregats : on lit les lignes (apres
+        // ce rappel, qui peut arriver avant que watch ait rendu son arret).
+        fallback = true
+        queueMicrotask(() => { stop?.(); stop = null; followRows() })
+        return
+      }
+      const values = new Map(plan.calls.map((c, i) => [aggregateKey(c), r.aggregates![i]]))
+      const cells = q.select.map(s => {
+        const v = s.formula.evaluateAggregates(values)
+        return v.ok ? v.value : { error: v.error }
+      })
+      draw({ columns: q.select.map(s => s.label), rows: [{ cells }], matched: r.total, truncated: false }, base.path)
+    })
   })
 
   const draw = (r: BaseQueryResult, basePath: string) => {

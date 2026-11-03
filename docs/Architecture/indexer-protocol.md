@@ -146,7 +146,7 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 
 | Capacité | Méthode | Paramètres → résultat |
 |---|---|---|
-| `query` | `run` | `Query` → `QueryResult` (`packages/plugin-api/src/query.ts`) |
+| `query` | `run` | `Query` → `QueryResult` (`packages/plugin-api/src/query.ts`) ; `aggregate` (count, sum, mean, min, max, 32 au plus) rend `aggregates`, calculés sur tout le résultat. Un pair plus ancien les ignore : le client le voit à l'absence de `aggregates` et lit les lignes. |
 | `search` | `run` | `SearchQuery` → `SearchResult` (`packages/plugin-api/src/search.ts`) |
 | `links` | `backlinks` | `{ id, limit? }` → `{ items: [{ id, path, title, count }] }` : notes qui pointent vers `id` (sans elle-même), par chemin ; `limit` 1 000 par défaut, 10 000 au plus. |
 | `links` | `outgoing` | `{ id }` → `{ resolved: [{ id, path, title }], unresolved: [{ target }] }` (ordre du texte) |

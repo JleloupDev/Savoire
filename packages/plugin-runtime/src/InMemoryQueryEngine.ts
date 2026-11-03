@@ -8,10 +8,10 @@
 // Adaptee a quelques milliers de notes ; au-dela, un moteur SQLite.
 // Voir ADR-027.
 import {
-  QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT,
+  QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT,
 } from '@savoire/plugin-api'
 import type {
-  IQueryEngine, IndexState, PropertyValue, Query, QueryErrorInfo, QueryField,
+  IQueryEngine, IndexState, PropertyValue, Query, QueryAggregate, QueryErrorInfo, QueryField,
   QueryFilter, QueryGroup, QueryResult, QueryRow,
 } from '@savoire/plugin-api'
 
@@ -366,6 +366,14 @@ export class InMemoryQueryEngine implements IQueryEngine {
         || (a.key === null || b.key === null ? 0 : compareScalar(a.key as PropertyValue, b.key as PropertyValue)))
     }
 
+    let aggregates: PropertyValue[] | undefined
+    if (query.aggregate) {
+      if (!Array.isArray(query.aggregate) || query.aggregate.length > QUERY_MAX_AGGREGATES) {
+        throw new QueryError('too_complex', `Trop d'agregats (${QUERY_MAX_AGGREGATES} au plus).`)
+      }
+      aggregates = query.aggregate.map(a => aggregateOf(hits, a))
+    }
+
     const key = queryKey(query)
     const start = query.cursor ? decodeCursor(query.cursor, key) : 0
     const page = hits.slice(start, start + limit)
@@ -385,7 +393,35 @@ export class InMemoryQueryEngine implements IQueryEngine {
       next: end < hits.length ? encodeCursor(key, end) : undefined,
       total: hits.length,
       groups,
+      ...(aggregates ? { aggregates } : {}),
       index: this.current,
     }
   }
 }
+
+/** Un agregat sur les documents retenus (semantique : QueryAggregate). */
+function aggregateOf(hits: IndexedDoc[], a: QueryAggregate): PropertyValue {
+  if (!AGGREGATE_OPS.has(a?.op)) throw new QueryError('invalid_query', `Agregat inconnu : ${String(a?.op)}.`)
+  if (a.op === 'count') return a.field ? hits.filter(d => !isEmpty(fieldValue(d, a.field!))).length : hits.length
+  if (!a.field) throw new QueryError('invalid_query', `${a.op} : champ attendu.`)
+  const nums: number[] = []
+  const texts: string[] = []
+  for (const d of hits) {
+    const v = fieldValue(d, a.field)
+    if (typeof v === 'number' && Number.isFinite(v)) nums.push(v)
+    else if (typeof v === 'string' && v !== '') texts.push(v)
+  }
+  switch (a.op) {
+    case 'sum': return nums.reduce((x, y) => x + y, 0)
+    case 'mean': return nums.length ? nums.reduce((x, y) => x + y, 0) / nums.length : null
+    case 'min':
+    case 'max': {
+      if (nums.length) return nums.reduce((x, y) => (a.op === 'min' ? y < x : y > x) ? y : x)
+      if (!texts.length) return null
+      return texts.reduce((x, y) => (a.op === 'min' ? y < x : y > x) ? y : x)
+    }
+  }
+  return null
+}
+
+const AGGREGATE_OPS = new Set(['count', 'sum', 'mean', 'min', 'max'])

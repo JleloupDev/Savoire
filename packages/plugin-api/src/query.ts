@@ -59,6 +59,20 @@ export type QuerySource =
    */
   | { base: string; pages?: { folder?: string; ext?: string[]; where?: QueryFilter } }
 
+/**
+ * Calcul sur TOUT le resultat (pas seulement la page) :
+ *  - count sans champ : nombre de resultats ; avec : ceux ou le champ n'est pas vide ;
+ *  - sum, mean : sur les valeurs numeriques (pas les listes), sum vaut 0 et mean null sans nombre ;
+ *  - min, max : les nombres s'il y en a, sinon les textes (dates ISO comprises), compares tels quels.
+ */
+export interface QueryAggregate {
+  op: 'count' | 'sum' | 'mean' | 'min' | 'max'
+  field?: QueryField
+}
+
+/** Agregats d'une requete : QUERY_MAX_AGGREGATES au plus. */
+export const QUERY_MAX_AGGREGATES = 32
+
 export interface Query {
   from: QuerySource
   where?: QueryFilter
@@ -70,6 +84,8 @@ export interface Query {
   /** Comptes par valeur d'un champ, sur tout le resultat (pas seulement la page) ;
    *  les plus nombreux d'abord, les vides sous la cle null. */
   groupBy?: QueryField
+  /** Agregats calcules sur tout le resultat ; rendus dans QueryResult.aggregates, dans le meme ordre. */
+  aggregate?: QueryAggregate[]
   /** Taille de page : QUERY_DEFAULT_LIMIT par defaut, QUERY_MAX_LIMIT au plus. */
   limit?: number
   /** Suite d'une page precedente (`QueryResult.next`), pour la MEME requete. */
@@ -109,6 +125,8 @@ export interface QueryResult {
   /** Nombre total de resultats. */
   total: number
   groups?: QueryGroup[]
+  /** Valeurs des agregats demandes (Query.aggregate), dans le meme ordre. */
+  aggregates?: PropertyValue[]
   index: IndexState
 }
 

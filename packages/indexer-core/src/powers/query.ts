@@ -16,9 +16,9 @@
 // Ecart connu avec le moteur de reference : sur une propriete ou se melangent
 // nombres et textes, SQLite range tous les nombres avant les textes (le
 // moteur en memoire compare alors en texte, sans ordre total).
-import { QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT } from '@savoire/plugin-api'
+import { QUERY_DEFAULT_LIMIT, QUERY_MAX_AGGREGATES, QUERY_MAX_LIMIT } from '@savoire/plugin-api'
 import type {
-  PropertyValue, Query, QueryField, QueryFilter, QueryGroup, QueryResult, QueryRow, QuerySort,
+  PropertyValue, Query, QueryAggregate, QueryField, QueryFilter, QueryGroup, QueryResult, QueryRow, QuerySort,
 } from '@savoire/plugin-api'
 import { sql } from '../driver'
 import type { SqlStatement, SqlValue } from '../driver'
@@ -82,6 +82,24 @@ function parseSort(v: unknown): QuerySort[] | undefined {
   })
 }
 
+const AGGREGATE_OPS: ReadonlySet<string> = new Set(['count', 'sum', 'mean', 'min', 'max'])
+
+function parseAggregates(v: unknown): QueryAggregate[] | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v)) throw invalid('aggregate : liste attendue.')
+  if (v.length > QUERY_MAX_AGGREGATES) throw new IndexError('too_complex', `Trop d'agregats (${QUERY_MAX_AGGREGATES} au plus).`)
+  return v.map(a => {
+    const o = asObject(a, 'agregat')
+    if (typeof o.op !== 'string' || !AGGREGATE_OPS.has(o.op)) throw invalid(`Agregat inconnu : ${String(o.op)}.`)
+    const op = o.op as QueryAggregate['op']
+    if (o.field === undefined || o.field === null) {
+      if (op !== 'count') throw invalid(`${op} : champ attendu.`)
+      return { op }
+    }
+    return { op, field: parseField(o.field, 'agregat') }
+  })
+}
+
 function parseSource(v: unknown): Query['from'] {
   const from = v as Record<string, unknown> | null
   if (from && typeof from === 'object' && !Array.isArray(from)) {
@@ -122,6 +140,7 @@ export function parseQuery(v: unknown): ParsedQuery {
   const sort = parseSort(q.sort)
   const select = optStringList(q, 'select', MAX_SELECT, 256)
   const groupBy = q.groupBy === undefined || q.groupBy === null ? undefined : parseField(q.groupBy, 'groupBy')
+  const aggregate = parseAggregates(q.aggregate)
   const cursor = optString(q, 'cursor', 8192)
   const { cursor: _c, limit: _l, ...rest } = q
   const query: Query = {
@@ -131,6 +150,7 @@ export function parseQuery(v: unknown): ParsedQuery {
     ...(sort ? { sort } : {}),
     ...(select ? { select } : {}),
     ...(groupBy ? { groupBy } : {}),
+    ...(aggregate ? { aggregate } : {}),
     limit,
     ...(cursor !== undefined ? { cursor } : {}),
   }
@@ -239,6 +259,48 @@ async function groupsOf(ctx: PowerContext, field: QueryField, cond: Frag): Promi
   return sortGroups(out).slice(0, MAX_GROUPS)
 }
 
+/**
+ * Un agregat sur les documents retenus, meme semantique que le moteur de
+ * reference (QueryAggregate) : nombres seuls (pas les listes) pour sum et
+ * mean ; min et max sur les nombres, sinon sur les textes tels quels.
+ */
+async function aggregateOf(ctx: PowerContext, a: QueryAggregate, cond: Frag, total: number): Promise<PropertyValue> {
+  if (a.op === 'count' && !a.field) return total
+  const field = a.field!
+  if ('doc' in field) {
+    const col = DOC_FIELDS[field.doc]
+    const present = `(${col.raw} IS NOT NULL AND ${col.raw} <> '')`
+    const [r] = await ctx.driver.all<{ c: number; lo: string | null; hi: string | null }>(
+      `SELECT count(CASE WHEN ${present} THEN 1 END) AS c, min(CASE WHEN ${present} THEN ${col.raw} END) AS lo,
+              max(CASE WHEN ${present} THEN ${col.raw} END) AS hi FROM docs d WHERE ${cond.sql}`, cond.params)
+    switch (a.op) {
+      case 'count': return Number(r?.c ?? 0)
+      case 'sum': return 0
+      case 'mean': return null
+      case 'min': return r?.lo ?? null
+      case 'max': return r?.hi ?? null
+    }
+  }
+  if (a.op === 'count') {
+    const [r] = await ctx.driver.all<{ c: number }>(
+      `SELECT count(*) AS c FROM docs d WHERE ${cond.sql} AND EXISTS (SELECT 1 FROM props p WHERE p.doc = d.n AND p.key = ?)`,
+      [...cond.params, field.prop])
+    return Number(r?.c ?? 0)
+  }
+  const text = `CASE WHEN p.num IS NULL AND substr(p.val, 1, 1) = '"' THEN json_extract(p.val, '$') END`
+  const [r] = await ctx.driver.all<{ n: number; s: number | null; lo: number | null; hi: number | null; tlo: string | null; thi: string | null }>(
+    `SELECT count(p.num) AS n, sum(p.num) AS s, min(p.num) AS lo, max(p.num) AS hi, min(${text}) AS tlo, max(${text}) AS thi
+       FROM docs d JOIN props p ON p.doc = d.n AND p.key = ? AND p.list = 0 WHERE ${cond.sql}`,
+    [field.prop, ...cond.params])
+  const n = Number(r?.n ?? 0)
+  switch (a.op) {
+    case 'sum': return n ? Number(r!.s) : 0
+    case 'mean': return n ? Number(r!.s) / n : null
+    case 'min': return n ? Number(r!.lo) : r?.tlo ?? null
+    case 'max': return n ? Number(r!.hi) : r?.thi ?? null
+  }
+}
+
 /** Execute une requete deja verifiee. */
 export async function runQuery(ctx: PowerContext, parsed: ParsedQuery): Promise<QueryResult> {
   const { query, limit, key } = parsed
@@ -299,11 +361,13 @@ export async function runQuery(ctx: PowerContext, parsed: ParsedQuery): Promise<
     next = encodeOpaque({ q: key, k: sorts.map((_s, i) => last[`s${i}`] ?? null), id: last.id })
   }
   const groups = query.groupBy ? await groupsOf(ctx, query.groupBy, cond) : undefined
+  const aggregates = query.aggregate ? await Promise.all(query.aggregate.map(a => aggregateOf(ctx, a, cond, total))) : undefined
   return {
     rows,
     ...(next ? { next } : {}),
     total,
     ...(groups ? { groups } : {}),
+    ...(aggregates ? { aggregates } : {}),
     index: ctx.state(),
   }
 }

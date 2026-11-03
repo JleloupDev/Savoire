@@ -146,4 +146,5 @@ Mesures du 28/10/2026 (VM ARM Neoverse-N1, 2 vCPU, 11 Go, partagée avec d'autre
 - Ordre des textes : octets UTF-8 (SQLite) contre unités UTF-16 (JS) ; seuls diffèrent les caractères hors du plan multilingue de base face à ceux de U+E000 à U+FFFF.
 - `remove_diacritics 2` replie aussi des lettres que `foldText` garde (ø, ł, đ) : la recherche en trouve un peu plus que le moteur en mémoire.
 - `groups` : 1 000 groupes au plus (les plus nombreux).
+- Agrégats : `sum` et `mean` ne voient que les nombres (un « 3 » écrit en texte n'y entre pas) ; `min`/`max` de textes comparent les octets UTF-8.
 - Tri sur 100 000 lignes : lecture d'une valeur par ligne (pas d'index de tri) ; pour aller plus loin, des tables larges par base, plus tard.

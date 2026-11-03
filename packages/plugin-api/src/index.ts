@@ -99,7 +99,7 @@ export type * from './query'
 export type * from './search'
 export type * from './indexer'
 export {
-  QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT,
+  QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT, QUERY_MAX_AGGREGATES,
   BASE_ROW_PREFIX, BASE_ROW_TITLE, BASE_LOT_COUNT, baseLotName, baseLotOf,
 } from './query'
 export {
@@ -107,8 +107,8 @@ export {
   parseFrontmatter, findFrontmatter, setFrontmatterValue, removeFrontmatterKey,
   renameFrontmatterKey, frontmatterKeys, minimalTextChange,
 } from './properties'
-export type { CompiledFormula, FormulaResult, FormulaRow } from './formula'
+export type { CompiledFormula, FormulaResult, FormulaRow, FormulaAggregateCall } from './formula'
 export {
-  compileFormula, tryCompileFormula, FormulaError, FORMULA_FUNCTIONS, FORMULA_MAX_LENGTH,
+  compileFormula, tryCompileFormula, FormulaError, FORMULA_FUNCTIONS, FORMULA_MAX_LENGTH, aggregateKey,
 } from './formula'
 export { BLOCK_DESTROY_EVENT } from './blocks'

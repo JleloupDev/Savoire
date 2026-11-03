@@ -243,6 +243,43 @@ export function describeQueryEngineContract(name: string, harness: QueryEngineHa
       })
     })
 
+    describe('agregats', () => {
+      it('count, sum, mean, min, max sur tout le resultat, pas seulement la page', async () => {
+        const { engine } = await open()
+        const r = await engine.query({
+          ...all, limit: 1,
+          aggregate: [
+            { op: 'count' }, { op: 'count', field: { prop: 'priority' } }, { op: 'sum', field: { prop: 'priority' } },
+            { op: 'mean', field: { prop: 'priority' } }, { op: 'min', field: { prop: 'priority' } }, { op: 'max', field: { prop: 'priority' } },
+          ],
+        })
+        expect(r.rows).toHaveLength(1)
+        expect(r.aggregates).toEqual([5, 4, 8, 2, 1, 3])
+      })
+
+      it('avec un filtre ; textes et dates pour min et max ; listes et booleens hors des sommes', async () => {
+        const { engine } = await open()
+        const projets: Query = { from: { notes: true, folder: 'Projets' } }
+        const r = await engine.query({
+          ...projets,
+          where: { field: { prop: 'status' }, op: 'neq', value: 'Terminé' },
+          aggregate: [{ op: 'sum', field: { prop: 'priority' } }, { op: 'count', field: { prop: 'due' } }],
+        })
+        expect(r.aggregates).toEqual([5, 1])
+        const d = await engine.query({ ...all, aggregate: [{ op: 'min', field: { prop: 'due' } }, { op: 'max', field: { prop: 'due' } }, { op: 'max', field: { doc: 'title' } }] })
+        expect(d.aggregates).toEqual(['2026-10-01', '2026-12-24', 'Gamma'])
+        const none = await engine.query({ ...all, aggregate: [{ op: 'sum', field: { prop: 'tags' } }, { op: 'mean', field: { prop: 'done' } }, { op: 'min', field: { prop: 'absent' } }] })
+        expect(none.aggregates).toEqual([0, null, null])
+        expect((await engine.query(all)).aggregates).toBeUndefined()
+      })
+
+      it('un agregat inconnu ou sans champ est refuse', async () => {
+        const { engine } = await open()
+        await expect(engine.query({ ...all, aggregate: [{ op: 'median' as 'sum', field: { prop: 'priority' } }] })).rejects.toMatchObject({ code: 'invalid_query' })
+        await expect(engine.query({ ...all, aggregate: [{ op: 'sum' }] })).rejects.toMatchObject({ code: 'invalid_query' })
+      })
+    })
+
     describe('suivi', () => {
       it('watch rend le resultat a jour apres un ajout et une suppression', async () => {
         const { engine, upsert, remove } = await open()
