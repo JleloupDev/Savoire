@@ -22,6 +22,7 @@ import { LightRows } from './rows'
 import { createPageRow, folderOfBase, renamePageRow, writeNoteProperty, type NotesVault } from './notes'
 import { BaseTable, type TableColumn } from './table'
 import { BaseKanban } from './kanban'
+import { needsFormulas, withFormulas } from './formulaEngine'
 import { ensureStyle } from './style'
 
 const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
@@ -117,6 +118,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return c
   }
   const formulaOf = (key: string): string | undefined => manifest.columns.find(c => c.key === key)?.formula
+  /** Le moteur, plus les filtres et tris sur formules (calcules ici, voir formulaEngine). */
+  const rowsEngine = engine && withFormulas(engine, key => {
+    const f = compile(formulaOf(key) ?? '')
+    return 'formula' in f ? f.formula : undefined
+  })
+  /** Empreinte des formules : une formule modifiee relance une requete qui filtre ou trie dessus. */
+  const formulaSig = () => JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => [c.key, c.formula]))
+  let lastFormulaSig = ''
 
   const allColumns = (): TableColumn[] => {
     const title: TableColumn = { key: TITLE_COLUMN, label: 'Nom', width: manifest.columns.find(c => c.key === TITLE_COLUMN)?.width ?? TITLE_WIDTH, type: 'text' }
@@ -210,8 +219,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   // ── Rendu ────────────────────────────────────────────────────────────────
 
-  const table = engine ? new BaseTable({
-    engine,
+  const table = rowsEngine ? new BaseTable({
+    engine: rowsEngine,
     readOnly: () => readOnly,
     columns: visibleColumns,
     cells,
@@ -225,8 +234,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     addColumn: anchor => openAddColumn(anchor),
     onResult: r => onResult(r),
   }) : null
-  const kanban = engine ? new BaseKanban({
-    engine,
+  const kanban = rowsEngine ? new BaseKanban({
+    engine: rowsEngine,
     readOnly: () => readOnly,
     columns: visibleColumns,
     cells,
@@ -325,8 +334,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const propertyChoices = (withTitle: boolean): string[] => {
     const keys = new Set<string>([...allColumns().map(c => c.key), ...seen.keys(), ...(types?.schema().properties.map(p => p.key) ?? [])])
-    // Une formule se calcule a l'affichage : ni filtre, ni tri, ni groupe dessus.
-    for (const k of [...keys]) if (isFormulaKey(k)) keys.delete(k)
+    // Filtre et tri sur une formule : oui (calcules ici). Groupe : non.
+    if (!withTitle) for (const k of [...keys]) if (isFormulaKey(k)) keys.delete(k)
     if (!withTitle) keys.delete(TITLE_COLUMN)
     else keys.add(TITLE_COLUMN)
     return [...keys]
@@ -545,6 +554,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         return b
       }
       popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-column-menu' },
+        item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] })),
+        item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] })),
         item('ƒ Modifier la formule', 'base-col-formula', () => openFormulaEditor(anchor, key)),
         item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] })),
         item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key)),
@@ -592,13 +603,16 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       return
     }
     const q = query()
+    const sig = formulaSig()
+    const force = sig !== lastFormulaSig && needsFormulas(q)
+    lastFormulaSig = sig
     if (v.type === 'kanban') {
-      table.setQuery({ ...q, limit: 1 })
-      kanban.setQuery(q, v.groupBy)
+      table.setQuery({ ...q, limit: 1 }, force)
+      kanban.setQuery(q, v.groupBy, force)
       kanban.refresh()
       if (body.firstChild !== kanban.el) body.replaceChildren(kanban.el)
     } else {
-      table.setQuery(q)
+      table.setQuery(q, force)
       table.refresh()
       if (body.firstChild !== table.el) body.replaceChildren(table.el)
     }

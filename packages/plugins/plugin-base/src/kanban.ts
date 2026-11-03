@@ -47,8 +47,9 @@ export class BaseKanban {
     this.el = h('div', { class: 'base-kanban', 'data-testid': 'base-kanban' })
   }
 
-  setQuery(query: Query, groupBy: string): void {
-    if (this.query && JSON.stringify(this.query) === JSON.stringify(query) && this.group === groupBy) return
+  /** `force` : meme requete, mais ses formules ont change. */
+  setQuery(query: Query, groupBy: string, force = false): void {
+    if (!force && this.query && JSON.stringify(this.query) === JSON.stringify(query) && this.group === groupBy) return
     this.destroy()
     this.query = query
     this.group = groupBy

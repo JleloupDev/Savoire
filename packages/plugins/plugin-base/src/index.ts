@@ -26,6 +26,7 @@ export type { BaseQuery, BaseQueryResult } from './queryBlock'
 export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './embed'
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
+export { withFormulas, needsFormulas, splitWhere } from './formulaEngine'
 
 export function createBasePlugin(): VaultPlugin {
   let api: PluginAPI | undefined

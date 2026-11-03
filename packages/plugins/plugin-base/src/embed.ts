@@ -15,6 +15,7 @@ import { TITLE_COLUMN, isFormulaKey, FORMULA_PREFIX, readManifest, type BaseMani
 import { folderOfBase } from './notes'
 import { resolveBase } from './queryBlock'
 import { toSort, toWhere } from './view'
+import { needsFormulas, withFormulas } from './formulaEngine'
 
 export const BASE_EMBED_RE = /^\s*!\[\[([^\]|#]+\.base)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]\s*$/i
 
@@ -65,6 +66,11 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
     if (dead) { cleanup(); return }
     let watchStop: (() => void) | null = null
     let lastQuery = ''
+    // Filtres et tris sur formules : calcules ici, avec les formules du manifeste courant.
+    const rowsEngine = withFormulas(engine, key => {
+      const f = tryCompileFormula(current?.manifest.columns.find(c => c.key === key)?.formula ?? '')
+      return 'formula' in f ? f.formula : undefined
+    })
     const types = api.properties
     const ctx: CellContext = {
       members: [],
@@ -83,11 +89,12 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
       }
       current = { manifest, view }
       const query = embedQuery(base.id, manifest, view)
-      const key = JSON.stringify(query)
+      const formulas = needsFormulas(query) ? JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => c.formula)) : ''
+      const key = JSON.stringify(query) + formulas
       if (key !== lastQuery) {
         lastQuery = key
         watchStop?.()
-        watchStop = engine.watch({ ...query, limit: EMBED_ROWS }, r => {
+        watchStop = rowsEngine.watch({ ...query, limit: EMBED_ROWS }, r => {
           last = r
           if (alive() && current) render(r, current.manifest, current.view)
         })

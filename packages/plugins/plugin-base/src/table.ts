@@ -73,10 +73,13 @@ export class BaseTable {
     this.el.addEventListener('scroll', () => this.schedule())
   }
 
-  /** Change de requete (filtres, tris, source) : on repart de la premiere page. */
-  setQuery(query: Query): void {
+  /**
+   * Change de requete (filtres, tris, source) : on repart de la premiere page.
+   * `force` : meme requete, mais ses formules ont change.
+   */
+  setQuery(query: Query, force = false): void {
     const same = this.query && JSON.stringify(this.query) === JSON.stringify(query)
-    if (same) return
+    if (same && !force) return
     this.query = query
     this.stopWatch?.()
     this.reset()
