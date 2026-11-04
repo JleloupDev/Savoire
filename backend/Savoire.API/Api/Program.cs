@@ -119,20 +119,12 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    try
-    {
-        await db.Database.MigrateAsync();
-    }
-    catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("already exists"))
-    {
-        await db.Database.EnsureDeletedAsync();
-        await db.Database.MigrateAsync();
-    }
+    // PostgreSQL (ADR-028) : les migrations s'appliquent au demarrage.
+    await db.Database.MigrateAsync();
 
     await SeedAdminAsync(scope.ServiceProvider);
 
     // Seed "default" vault for backwards compatibility (idempotent)
-    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
     if (!db.Vaults.Any(v => v.Id == "default"))
     {
         db.Vaults.Add(new Savoire.Infrastructure.Persistence.VaultEntity

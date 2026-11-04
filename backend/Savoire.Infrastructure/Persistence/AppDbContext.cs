@@ -191,7 +191,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         modelBuilder.Entity<IndexerChangeEntity>(e =>
         {
             e.ToTable("indexer_changes");
-            // INTEGER PRIMARY KEY AUTOINCREMENT : une sequence jamais reutilisee,
+            // Colonne d'identite PostgreSQL : une sequence jamais reutilisee,
             // meme apres suppression de la plus grande.
             e.HasKey(c => c.Seq);
             e.Property(c => c.Seq).HasColumnName("seq").ValueGeneratedOnAdd();

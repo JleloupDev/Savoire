@@ -28,21 +28,22 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services, IConfiguration config)
     {
-        string rawRoot     = config.GetValue<string>("Storage:Root") ?? "storage";
-        string storageRoot = Path.IsPathRooted(rawRoot)
-            ? rawRoot
-            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, rawRoot));
+        // Lus a la resolution, pas a l'enregistrement : la configuration
+        // ajoutee ensuite (tests : WebApplicationFactory) compte aussi.
+        static string StorageRoot(IConfiguration c)
+        {
+            string raw = c.GetValue<string>("Storage:Root") ?? "storage";
+            string root = Path.IsPathRooted(raw) ? raw : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, raw));
+            Directory.CreateDirectory(root);
+            return root;
+        }
 
-        string rawDbPath = config.GetValue<string>("Database:Path") ?? Path.Combine(storageRoot, "metadata.db");
-        string dbPath = Path.IsPathRooted(rawDbPath)
-            ? rawDbPath
-            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, rawDbPath));
-
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
-        Directory.CreateDirectory(storageRoot);
-
-        // EF Core
-        services.AddDbContext<AppDbContext>(o => o.UseSqlite($"Data Source={dbPath}"));
+        // EF Core sur PostgreSQL (ADR-028). Une seule base pour tout l'etat du
+        // serveur ; ConnectionStrings:Savoire, ou ConnectionStrings__Savoire.
+        services.AddDbContext<AppDbContext>((sp, o) => o.UseNpgsql(
+            sp.GetRequiredService<IConfiguration>().GetConnectionString("Savoire")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:Savoire manquant (PostgreSQL). En dev : deploy/compose/docker-compose.dev.yml.")));
 
         services.AddIdentityCore<AppUser>(options =>
         {
@@ -125,7 +126,7 @@ public static class ServiceCollectionExtensions
         else
         {
             // see ADR-020
-            services.AddSingleton<IContentStore>(_ => new LocalFileContentStore(storageRoot));
+            services.AddSingleton<IContentStore>(sp => new LocalFileContentStore(StorageRoot(sp.GetRequiredService<IConfiguration>())));
         }
 
         // Existing repositories (scoped — depend on DbContext)

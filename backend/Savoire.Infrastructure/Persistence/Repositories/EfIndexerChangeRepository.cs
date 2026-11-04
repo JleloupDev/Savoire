@@ -25,7 +25,7 @@ public class EfIndexerChangeRepository(AppDbContext db) : IIndexerChangeReposito
         if (epoch is not null) return epoch;
         // Cree par la migration ; une base creee autrement le recoit ici, une fois.
         await db.Database.ExecuteSqlAsync(
-            $"INSERT OR IGNORE INTO indexer_feed_state (key, value) VALUES ({EpochKey}, lower(hex(randomblob(16))))", ct);
+            $"INSERT INTO indexer_feed_state (key, value) VALUES ({EpochKey}, replace(gen_random_uuid()::text, '-', '')) ON CONFLICT (key) DO NOTHING", ct);
         return await ReadEpochAsync(ct) ?? throw new InvalidOperationException("indexer_feed_state : epoch absent.");
     }
 

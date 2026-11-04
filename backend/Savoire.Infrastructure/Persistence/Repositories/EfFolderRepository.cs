@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
 
@@ -92,8 +92,8 @@ public class EfFolderRepository(AppDbContext db) : IFolderRepository
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
-        if (ex.InnerException is SqliteException sqlite)
-            return sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067;
+        if (ex.InnerException is PostgresException pg)
+            return pg.SqlState == PostgresErrorCodes.UniqueViolation;
         var msg = ex.InnerException?.Message ?? ex.Message;
         return msg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
                || msg.Contains("duplicate", StringComparison.OrdinalIgnoreCase);

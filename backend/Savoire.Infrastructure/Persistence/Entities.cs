@@ -90,7 +90,7 @@ public class VaultDocumentEntity
 /// <summary>
 /// Flux de changements du pair indexeur : une ligne par ressource (arborescence
 /// d'un vault, document), deplacee en fin de flux a chaque ecriture, plus une
-/// ligne par vault supprime. Seq vient d'AUTOINCREMENT : jamais reutilisee.
+/// ligne par vault supprime. Seq vient d'une identite PostgreSQL : jamais reutilisee.
 /// </summary>
 public class IndexerChangeEntity
 {

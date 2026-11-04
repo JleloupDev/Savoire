@@ -1,0 +1,16 @@
+# Dev : Zitadel et sa page de connexion derriere http://localhost:8090.
+{
+	auto_https off
+	admin off
+}
+
+:8090 {
+	# La page de connexion (login v2) : un conteneur Next.js a part.
+	handle /ui/v2/login* {
+		reverse_proxy zitadel-login:3000
+	}
+	# Le reste : l'API Zitadel (OIDC, console, gRPC/Connect en HTTP/2 clair).
+	handle {
+		reverse_proxy h2c://zitadel:8080
+	}
+}

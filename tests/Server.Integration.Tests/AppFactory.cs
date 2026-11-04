@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // WebApplicationFactory pour les tests d'intégration.
-// Remplace les stores par des implémentations de test (SQLite fichier temp + dossier temp).
+// Remplace les stores par des implémentations de test : une base PostgreSQL
+// neuve par factory (supprimee a la fin) et un dossier temporaire.
+// Serveur : SAVOIRE_TEST_POSTGRES, sinon le PostgreSQL de dev
+// (deploy/compose/docker-compose.dev.yml), avec un role qui cree des bases.
 // see ADR-019
 
 using System.Net.Http.Headers;
@@ -11,6 +14,7 @@ using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 
 namespace Savoire.Server.Integration.Tests;
 
@@ -28,6 +32,17 @@ public class AppFactory : WebApplicationFactory<Program>
     // Dossier temporaire isolé par instance de factory (un par classe de test)
     public string TempStoragePath { get; } =
         Path.Combine(Path.GetTempPath(), "poc-tests", Guid.NewGuid().ToString("N"));
+
+    /// <summary>Serveur PostgreSQL des tests (sans base).</summary>
+    public static string TestServer =>
+        Environment.GetEnvironmentVariable("SAVOIRE_TEST_POSTGRES")
+        ?? "Host=127.0.0.1;Port=5432;Username=postgres;Password=postgres";
+
+    /// <summary>Base propre a cette factory, creee par les migrations au demarrage.</summary>
+    public string DatabaseName { get; } = "savoire_test_" + Guid.NewGuid().ToString("N");
+
+    public string ConnectionString =>
+        new NpgsqlConnectionStringBuilder(TestServer) { Database = DatabaseName }.ConnectionString;
 
     public AppFactory()
     {
@@ -47,6 +62,7 @@ public class AppFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Storage:Root"]        = TempStoragePath,
+                ["ConnectionStrings:Savoire"] = ConnectionString,
                 // JWT
                 ["Jwt:Secret"]                       = JwtSecret,
                 ["Jwt:Issuer"]                       = JwtIssuer,
@@ -137,22 +153,27 @@ public class AppFactory : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
 
-        if (disposing && Directory.Exists(TempStoragePath))
+        if (!disposing) return;
+        DropDatabase();
+        if (Directory.Exists(TempStoragePath))
         {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            System.Threading.Thread.Sleep(100);
-
-            try
-            {
-                var dbPath = Path.Combine(TempStoragePath, "metadata.db");
-                if (File.Exists(dbPath + "-wal")) try { File.Delete(dbPath + "-wal"); } catch { }
-                if (File.Exists(dbPath + "-shm")) try { File.Delete(dbPath + "-shm"); } catch { }
-                if (File.Exists(dbPath)) try { File.Delete(dbPath); } catch { }
-                Directory.Delete(TempStoragePath, recursive: true);
-            }
-            catch { }
+            try { Directory.Delete(TempStoragePath, recursive: true); }
+            catch { /* fichiers encore ouverts : le dossier temporaire est nettoye plus tard */ }
         }
+    }
+
+    private void DropDatabase()
+    {
+        try
+        {
+            using var conn = new NpgsqlConnection(
+                new NpgsqlConnectionStringBuilder(TestServer) { Database = "postgres", Pooling = false }.ConnectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DROP DATABASE IF EXISTS \"{DatabaseName}\" WITH (FORCE)";
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* serveur arrete : rien a nettoyer */ }
     }
 
     // DTOs internes pour désérialiser les réponses auth

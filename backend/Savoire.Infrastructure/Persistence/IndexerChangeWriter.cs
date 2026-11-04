@@ -9,12 +9,18 @@
 // tous les chemins (hubs du vault, des documents, des rooms, compactions)
 // passent donc par ici.
 //
-// Une ligne par ressource : INSERT OR REPLACE supprime l'ancienne ligne et en
-// cree une neuve, dont la sequence (AUTOINCREMENT) est plus grande que toutes
-// celles jamais attribuees. SQLite n'a qu'un ecrivain a la fois et la
-// sequence est attribuee dans la transaction d'ecriture : l'ordre des
-// sequences est l'ordre des validations. Un lecteur qui a vu la sequence N ne
-// verra jamais apparaitre plus tard une sequence plus petite.
+// Une ligne par ressource : on supprime l'ancienne ligne et on en cree une
+// neuve, dont la sequence (identite PostgreSQL) est plus grande que toutes
+// celles jamais attribuees.
+//
+// L'ordre des sequences doit etre l'ordre des validations : un lecteur qui a
+// vu la sequence N ne doit jamais voir apparaitre plus tard une sequence plus
+// petite. PostgreSQL attribue une sequence a l'insertion, pas a la
+// validation : deux transactions peuvent valider dans le desordre. D'ou un
+// verrou transactionnel (pg_advisory_xact_lock) pris juste avant d'ecrire
+// dans le flux et rendu a la validation : les ecritures du flux passent une a
+// une, comme sous SQLite. Avec plusieurs instances de l'API, le verrou vaut
+// pour toutes (il est dans la base).
 
 using Microsoft.EntityFrameworkCore;
 using Savoire.Domain.Aggregates;
@@ -26,6 +32,22 @@ internal static class IndexerChangeWriter
 {
     private const string VaultResourcePrefix = "vault:";
     private const string IndexResourcePrefix = "index:";
+
+    /// <summary>Cle du verrou du flux (pg_advisory_xact_lock) : « SAVOIRE1 » en ASCII.</summary>
+    private const long FeedLockKey = 0x5341_564F_4952_4531;
+
+    /// <summary>
+    /// Remplace la ligne de <paramref name="key"/> par une neuve (sequence neuve),
+    /// verrou du flux tenu jusqu'a la validation. Toujours dans une transaction.
+    /// </summary>
+    private static async Task ReplaceAsync(AppDbContext db, string key, FormattableString insert, CancellationToken ct)
+    {
+        if (db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("Flux du pair indexeur : ecriture hors transaction.");
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({FeedLockKey})", ct);
+        await db.Database.ExecuteSqlAsync($"DELETE FROM indexer_changes WHERE resource_key = {key}", ct);
+        await db.Database.ExecuteSqlAsync(insert, ct);
+    }
 
     /// <summary>Une ecriture dans le journal CRDT : arborescence ou document.</summary>
     public static async Task RecordOperationAsync(AppDbContext db, string resourceType, string resourceId, CancellationToken ct)
@@ -47,13 +69,17 @@ internal static class IndexerChangeWriter
                 // registre) : le vault de son document (AnnexDocuments).
                 string key = $"{IndexerChangeKind.Document}:{resourceId}";
                 string parent = AnnexDocuments.ParentOf(resourceId) ?? resourceId;
-                await db.Database.ExecuteSqlAsync($"""
-                    INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
-                    SELECT {key}, vault_id, {IndexerChangeKind.Document}, {resourceId}, {now}
+                string? docVault = await db.Database.SqlQuery<string>($"""
+                    SELECT vault_id AS "Value"
                     FROM vault_documents
                     WHERE doc_id = {resourceId}
                        OR (doc_id = {parent} AND NOT EXISTS (SELECT 1 FROM vault_documents WHERE doc_id = {resourceId}))
                     LIMIT 1
+                    """).FirstOrDefaultAsync(ct);
+                if (docVault is null) return;
+                await ReplaceAsync(db, key, $"""
+                    INSERT INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
+                    VALUES ({key}, {docVault}, {IndexerChangeKind.Document}, {resourceId}, {now})
                     """, ct);
                 return;
 
@@ -63,8 +89,8 @@ internal static class IndexerChangeWriter
             case CrdtResourceType.Index:
                 if (SettingsVaultOf(resourceId) is not { } vaultId) return;
                 string settingsKey = $"{IndexerChangeKind.Settings}:{vaultId}";
-                await db.Database.ExecuteSqlAsync($"""
-                    INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
+                await ReplaceAsync(db, settingsKey, $"""
+                    INSERT INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
                     VALUES ({settingsKey}, {vaultId}, {IndexerChangeKind.Settings}, NULL, {now})
                     """, ct);
                 return;
@@ -91,8 +117,8 @@ internal static class IndexerChangeWriter
     {
         string key = $"{IndexerChangeKind.Vault}:{vaultId}";
         DateTime now = DateTime.UtcNow;
-        await db.Database.ExecuteSqlAsync($"""
-            INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
+        await ReplaceAsync(db, key, $"""
+            INSERT INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
             VALUES ({key}, {vaultId}, {IndexerChangeKind.Vault}, NULL, {now})
             """, ct);
     }
@@ -106,8 +132,8 @@ internal static class IndexerChangeWriter
     {
         string key = $"{IndexerChangeKind.VaultDeleted}:{vaultId}";
         DateTime now = DateTime.UtcNow;
-        await db.Database.ExecuteSqlAsync($"""
-            INSERT OR REPLACE INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
+        await ReplaceAsync(db, key, $"""
+            INSERT INTO indexer_changes (resource_key, vault_id, kind, doc_id, changed_at)
             VALUES ({key}, {vaultId}, {IndexerChangeKind.VaultDeleted}, NULL, {now})
             """, ct);
         if (purgeRows)

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Savoire.Infrastructure.Persistence;
 
 #nullable disable
@@ -11,31 +12,35 @@ using Savoire.Infrastructure.Persistence;
 namespace Savoire.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261016213642_AddAttachmentPlacement")]
-    partial class AddAttachmentPlacement
+    [Migration("20261104145828_InitialPostgres")]
+    partial class InitialPostgres
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.3");
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.4")
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("NormalizedName")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.HasKey("Id");
 
@@ -50,17 +55,19 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ClaimType")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ClaimValue")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("RoleId")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -73,17 +80,19 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ClaimType")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ClaimValue")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -95,17 +104,17 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
                 {
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ProviderKey")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ProviderDisplayName")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("LoginProvider", "ProviderKey");
 
@@ -117,10 +126,10 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
                 {
                     b.Property<string>("UserId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("RoleId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("UserId", "RoleId");
 
@@ -132,16 +141,16 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {
                     b.Property<string>("UserId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("UserId", "LoginProvider", "Name");
 
@@ -151,70 +160,70 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Domain.Entities.AppUser", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<int>("AccessFailedCount")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("integer");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.Property<bool>("EmailConfirmed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsAdmin")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastLoginAt")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("LockoutEnabled")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("NormalizedUserName")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("PasswordHash")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<bool>("PhoneNumberConfirmed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("PrivateKeyHex")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("SecurityStamp")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<bool>("TwoFactorEnabled")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("character varying(256)");
 
                     b.HasKey("Id");
 
@@ -231,31 +240,31 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("ClientIp")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ReplacedByToken")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Token")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -270,20 +279,20 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.EdgesyncBlobEntity", b =>
                 {
                     b.Property<string>("VaultId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.Property<string>("Key")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("key");
 
                     b.Property<byte[]>("Bytes")
                         .IsRequired()
-                        .HasColumnType("BLOB")
+                        .HasColumnType("bytea")
                         .HasColumnName("bytes");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
                     b.HasKey("VaultId", "Key");
@@ -294,21 +303,21 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
                     b.Property<string>("Path")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("path");
 
                     b.Property<string>("VaultId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.HasKey("Id");
@@ -322,38 +331,96 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("folders", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.IndexerChangeEntity", b =>
+                {
+                    b.Property<long>("Seq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("seq");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Seq"));
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("DocId")
+                        .HasColumnType("text")
+                        .HasColumnName("doc_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("ResourceKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("resource_key");
+
+                    b.Property<string>("VaultId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("vault_id");
+
+                    b.HasKey("Seq");
+
+                    b.HasIndex("ResourceKey")
+                        .IsUnique();
+
+                    b.HasIndex("VaultId");
+
+                    b.ToTable("indexer_changes", (string)null);
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.IndexerFeedStateEntity", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("value");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("indexer_feed_state", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.OperationEntity", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("id");
 
                     b.Property<string>("ClientId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("client_id");
 
                     b.Property<byte[]>("OpBytes")
                         .IsRequired()
-                        .HasColumnType("BLOB")
+                        .HasColumnType("bytea")
                         .HasColumnName("op_bytes");
 
                     b.Property<DateTime>("ProducedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("produced_at");
 
                     b.Property<DateTime>("ReceivedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("received_at");
 
                     b.Property<string>("ResourceId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_id");
 
                     b.Property<string>("ResourceType")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_type");
 
                     b.HasKey("Id");
@@ -367,12 +434,12 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefPermissionEntity", b =>
                 {
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("value");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("description");
 
                     b.HasKey("Value");
@@ -400,12 +467,12 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefResourceTypeEntity", b =>
                 {
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("value");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("description");
 
                     b.HasKey("Value");
@@ -428,12 +495,12 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefSubjectTypeEntity", b =>
                 {
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("value");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("description");
 
                     b.HasKey("Value");
@@ -451,12 +518,12 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefSyncChangeTypeEntity", b =>
                 {
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("value");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("description");
 
                     b.HasKey("Value");
@@ -489,12 +556,12 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefVaultRoleEntity", b =>
                 {
                     b.Property<string>("Value")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("value");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("description");
 
                     b.HasKey("Value");
@@ -522,45 +589,45 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.ResourcePermissionEntity", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("id");
 
                     b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
                     b.Property<DateTime>("GrantedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("granted_at");
 
                     b.Property<string>("GrantedBy")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("granted_by");
 
                     b.Property<string>("Permission")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("permission");
 
                     b.Property<string>("ResourceId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_id");
 
                     b.Property<string>("ResourceType")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_type");
 
                     b.Property<string>("SubjectId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("subject_id");
 
                     b.Property<string>("SubjectType")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("subject_type");
 
                     b.HasKey("Id");
@@ -582,44 +649,44 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.ShareLinkEntity", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("created_by");
 
                     b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
                     b.Property<string>("Permission")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("permission");
 
                     b.Property<string>("ResourceId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_id");
 
                     b.Property<string>("ResourceType")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_type");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
 
                     b.Property<string>("Token")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("token");
 
                     b.HasKey("Id");
@@ -639,20 +706,20 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.SyncVectorEntity", b =>
                 {
                     b.Property<string>("ResourceId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("resource_id");
 
                     b.Property<string>("ClientId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("client_id");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
                     b.Property<byte[]>("Vector")
                         .IsRequired()
-                        .HasColumnType("BLOB")
+                        .HasColumnType("bytea")
                         .HasColumnName("vector");
 
                     b.HasKey("ResourceId", "ClientId");
@@ -663,29 +730,29 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultDocumentEntity", b =>
                 {
                     b.Property<string>("DocId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("doc_id");
 
                     b.Property<string>("Name")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("name");
 
                     b.Property<string>("ParentDocId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("parent_doc_id");
 
                     b.Property<DateTime>("RegisteredAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("registered_at");
 
                     b.Property<string>("RegisteredBy")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("registered_by");
 
                     b.Property<string>("VaultId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.HasKey("DocId");
@@ -700,21 +767,21 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultEntity", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("name");
 
                     b.Property<string>("OwnerId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("owner_id");
 
                     b.HasKey("Id");
@@ -722,23 +789,52 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("vaults", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultIndexerSettingEntity", b =>
+                {
+                    b.Property<string>("VaultId")
+                        .HasColumnType("text")
+                        .HasColumnName("vault_id");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("VaultId");
+
+                    b.ToTable("vault_indexer_settings", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultKeyWrapEntity", b =>
                 {
                     b.Property<string>("UserId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("user_id");
 
                     b.Property<string>("VaultId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
                     b.Property<byte[]>("WrappedKeyBytes")
                         .IsRequired()
-                        .HasColumnType("BLOB")
+                        .HasColumnType("bytea")
                         .HasColumnName("wrapped_key_bytes");
 
                     b.HasKey("UserId", "VaultId");
@@ -749,20 +845,20 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultMemberEntity", b =>
                 {
                     b.Property<string>("VaultId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.Property<string>("UserId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("user_id");
 
                     b.Property<DateTime>("JoinedAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("joined_at");
 
                     b.Property<string>("Role")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("role");
 
                     b.HasKey("VaultId", "UserId");
@@ -775,20 +871,20 @@ namespace Savoire.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultMemberIdentityEntity", b =>
                 {
                     b.Property<string>("VaultId")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("vault_id");
 
                     b.Property<byte[]>("SignPub")
-                        .HasColumnType("BLOB")
+                        .HasColumnType("bytea")
                         .HasColumnName("sign_pub");
 
                     b.Property<DateTime>("RegisteredAt")
-                        .HasColumnType("TEXT")
+                        .HasColumnType("timestamp with time zone")
                         .HasColumnName("registered_at");
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("TEXT")
+                        .HasColumnType("text")
                         .HasColumnName("user_id");
 
                     b.HasKey("VaultId", "SignPub");
@@ -897,6 +993,15 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultDocumentEntity", b =>
+                {
+                    b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
+                        .WithMany()
+                        .HasForeignKey("VaultId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.VaultIndexerSettingEntity", b =>
                 {
                     b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
                         .WithMany()
