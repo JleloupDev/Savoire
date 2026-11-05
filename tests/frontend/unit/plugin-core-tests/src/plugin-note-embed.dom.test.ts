@@ -6,6 +6,7 @@ import type { BlockSpec, PluginAPI } from '@savoire/plugin-api'
 
 const VAULT: Record<string, string> = {
   'note.md': `## Hello\n\nThis is the **embedded** note.\n\n- Item A\n- Item B\n`,
+  'blocks.md': `First paragraph. ^b1\n\nSecond paragraph. ^b2\n`,
   'with-frontmatter.md': `---\ntitle: My Note\n---\n## Title\n\nBody content.\n`,
 }
 
@@ -56,6 +57,8 @@ describe('deserialize', () => {
   it('extracts nested paths', () => expect((getSpec().deserialize('![[folder/note.md]]') as {targetPath:string}).targetPath).toBe('folder/note.md'))
   it('drops alias from target path', () => expect((getSpec().deserialize('![[note.md|My title]]') as {targetPath:string}).targetPath).toBe('note.md'))
   it('drops heading from target path', () => expect((getSpec().deserialize('![[note.md#Section]]') as {targetPath:string}).targetPath).toBe('note.md'))
+  it('keeps the heading as subpath', () => expect((getSpec().deserialize('![[note.md#A#B|x]]') as {subpath:unknown}).subpath).toEqual({ kind: 'heading', headings: ['A', 'B'] }))
+  it('keeps the block id as subpath', () => expect((getSpec().deserialize('![[note#^abc-1]]') as {subpath:unknown}).subpath).toEqual({ kind: 'block', id: 'abc-1' }))
   it('returns empty targetPath for malformed input', () => expect((getSpec().deserialize('not an embed') as {targetPath:string}).targetPath).toBe(''))
 })
 
@@ -113,10 +116,28 @@ describe('renderClient — K1 read-only', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect(el.querySelector('.note-embed-body')?.innerHTML).toContain('embedded')
   })
-  it('loads underlying note when heading ref is present', async () => {
-    const el = getSpec().renderClient(getSpec().deserialize('![[note.md#Heading]]'), { editorView: null })
+  it('loads the section when heading ref is present', async () => {
+    const el = getSpec().renderClient(getSpec().deserialize('![[note.md#Hello]]'), { editorView: null })
     await new Promise((r) => setTimeout(r, 50))
     expect(el.querySelector('.note-embed-body')?.innerHTML).toContain('embedded')
+  })
+  it('reports a missing section instead of the whole note', async () => {
+    const el = getSpec().renderClient(getSpec().deserialize('![[note.md#Absent]]'), { editorView: null })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(el.querySelector('.note-embed-body')?.textContent).toContain('Section introuvable')
+  })
+  it('renders only the marked block', async () => {
+    const el = getSpec().renderClient(getSpec().deserialize('![[blocks.md#^b2]]'), { editorView: null })
+    await new Promise((r) => setTimeout(r, 50))
+    const html = el.querySelector('.note-embed-body')?.innerHTML ?? ''
+    expect(html).toContain('Second')
+    expect(html).not.toContain('First')
+    expect(html).not.toContain('^b2')
+  })
+  it('keeps one frame per section of the same note', () => {
+    const a = getSpec().renderClient(getSpec().deserialize('![[blocks.md#^b1]]'), { editorView: null })
+    const b = getSpec().renderClient(getSpec().deserialize('![[blocks.md#^b2]]'), { editorView: null })
+    expect(a).not.toBe(b)
   })
   it('uses the same parser when renderClient receives a raw embed string', async () => {
     const el = getSpec().renderClient('![[note.md|Alias]]', { editorView: null })

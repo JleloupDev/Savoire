@@ -3,9 +3,13 @@
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { renderImageEmbed } from './image'
+import { parseSubpath, describeSubpath, extractSubpath, stripBlockIds } from './section'
+import type { EmbedSubpath } from './section'
 
 export { parseImageEmbed, withImageWidth, applyImageSize, renderImageEmbed } from './image'
 export type { ImageEmbed } from './image'
+export { parseSubpath, extractSubpath, stripBlockIds } from './section'
+export type { EmbedSubpath } from './section'
 
 const FULL_EMBED_RE = /^\s*!\[\[([^\]]+)\]\]\s*$/
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
@@ -13,6 +17,8 @@ const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 interface EmbedData {
   raw: string
   targetPath: string
+  /** Section (#Titre) ou bloc (#^id) demande ; absent : toute la note. */
+  subpath?: EmbedSubpath
 }
 
 interface EmbedElements {
@@ -30,8 +36,10 @@ function parseFrontmatter(source: string): { body: string } {
 function parseEmbedTarget(raw: string): EmbedData {
   const source = raw.trim()
   const noAlias = source.split('|', 1)[0].trim()
-  const noHeading = noAlias.split('#', 1)[0].trim()
-  return { raw: source, targetPath: noHeading }
+  const hash = noAlias.indexOf('#')
+  const targetPath = (hash < 0 ? noAlias : noAlias.slice(0, hash)).trim()
+  const subpath = hash < 0 ? null : parseSubpath(noAlias.slice(hash + 1))
+  return subpath ? { raw: source, targetPath, subpath } : { raw: source, targetPath }
 }
 
 function parseEmbedBlock(blockText: string): EmbedData | null {
@@ -46,10 +54,11 @@ function normalizeEmbedData(input: unknown): EmbedData {
   }
   if (input && typeof input === 'object') {
     const raw = 'raw' in input && typeof input.raw === 'string' ? input.raw : ''
+    const parsed = parseEmbedTarget(raw)
     const targetPath = 'targetPath' in input && typeof input.targetPath === 'string'
       ? input.targetPath
-      : parseEmbedTarget(raw).targetPath
-    return { raw, targetPath }
+      : parsed.targetPath
+    return parsed.subpath ? { raw, targetPath, subpath: parsed.subpath } : { raw, targetPath }
   }
   return { raw: '', targetPath: '' }
 }
@@ -103,6 +112,10 @@ const plugin: VaultPlugin = {
       })
     }
 
+    // Marqueurs de bloc « ^id » : caches dans le rendu (pas dans le texte
+    // source), comme dans Obsidian.
+    api.hooks.beforeParse(stripBlockIds)
+
     api.triggers.register({ id: 'note-embed', character: '![[', description: 'Note embed lecture seule' })
 
     api.blocks.register({
@@ -135,7 +148,7 @@ const plugin: VaultPlugin = {
       }),
 
       renderClient(data, ctx) {
-        const { raw, targetPath } = normalizeEmbedData(data)
+        const { raw, targetPath, subpath } = normalizeEmbedData(data)
 
         if (!targetPath) {
           const err = document.createElement('span')
@@ -157,7 +170,9 @@ const plugin: VaultPlugin = {
           containerCache.set(ctx, instanceCache)
         }
 
-        let els = instanceCache.get(targetPath)
+        // Deux morceaux d'une meme note ne partagent pas leur cadre.
+        const cacheKey = subpath ? `${targetPath}#${describeSubpath(subpath)}` : targetPath
+        let els = instanceCache.get(cacheKey)
         if (!els) {
           const container = document.createElement('div') as HTMLDivElement
           container.className = 'note-embed'
@@ -181,7 +196,7 @@ const plugin: VaultPlugin = {
           container.appendChild(body)
 
           els = { container, body, rawSpan }
-          instanceCache.set(targetPath, els)
+          instanceCache.set(cacheKey, els)
         } else {
           // Update the displayed raw path in case alias changed (e.g. ![[file|alias]])
           els.rawSpan.textContent = raw
@@ -198,7 +213,14 @@ const plugin: VaultPlugin = {
         void (async () => {
           try {
             const source = await api.vault.readDocumentByPath(targetPath)
-            const { body: mdBody } = parseFrontmatter(source)
+            const { body: whole } = parseFrontmatter(source)
+            const mdBody = subpath ? extractSubpath(whole, subpath) : whole
+            if (mdBody === null) {
+              body.textContent = subpath?.kind === 'block'
+                ? `⚠ Bloc introuvable : ^${subpath.id} dans « ${targetPath} »`
+                : `⚠ Section introuvable : ${subpath ? describeSubpath(subpath) : ''} dans « ${targetPath} »`
+              return
+            }
             const preprocessed = await api.hooks.runBeforeParse(mdBody)
             // breaks : meme rendu des retours a la ligne que dans l'editeur.
             body.innerHTML = String(marked.parse(preprocessed, { breaks: true }))
