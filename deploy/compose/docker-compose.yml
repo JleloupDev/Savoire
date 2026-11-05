@@ -1,0 +1,271 @@
+# Savoire sur une machine (ADR-028, etape A) : tout ce qu'il faut, en images
+# publiees par la CI (ghcr.io). Voir SELF_HOSTING.md.
+#
+#   cp deploy/compose/.env.example deploy/compose/.env   # puis le remplir
+#   docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up -d
+#
+# Deux noms de domaine pointent vers la machine : SAVOIRE_DOMAIN (l'appli) et
+# AUTH_DOMAIN (la connexion, Zitadel). Caddy obtient leurs certificats HTTPS
+# tout seul (Let's Encrypt). Seuls les ports 80 et 443 sont ouverts.
+#
+# Construire depuis les sources plutot que tirer les images :
+#   ... -f docker-compose.yml -f docker-compose.build.yml up -d --build
+name: savoire
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # ── Entree : HTTPS automatique ─────────────────────────────────────────────
+  caddy:
+    <<: *restart
+    image: caddy:2.10.2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SAVOIRE_DOMAIN: ${SAVOIRE_DOMAIN:?}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      default:
+      # L'API et le pair joignent Zitadel par son adresse publique, sans
+      # sortir de la machine : Caddy repond a ce nom sur les reseaux internes.
+      backend:
+        aliases: ["${AUTH_DOMAIN:?}"]
+      indexer:
+        aliases: ["${AUTH_DOMAIN:?}"]
+
+  # ── Base de donnees : Savoire et Zitadel, deux bases ───────────────────────
+  postgres:
+    <<: *restart
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      SAVOIRE_DB_PASSWORD: ${SAVOIRE_DB_PASSWORD:?}
+      ZITADEL_DB_PASSWORD: ${ZITADEL_DB_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ── Identites : Zitadel et sa page de connexion ────────────────────────────
+  zitadel:
+    <<: *restart
+    image: ghcr.io/zitadel/zitadel:${ZITADEL_VERSION:-v4.16.0}
+    user: "0"
+    command: start-from-init --masterkeyFromEnv --tlsMode external
+    environment:
+      ZITADEL_MASTERKEY: ${ZITADEL_MASTERKEY:?}
+      ZITADEL_PORT: 8080
+      ZITADEL_EXTERNALDOMAIN: ${AUTH_DOMAIN:?}
+      ZITADEL_EXTERNALPORT: 443
+      ZITADEL_EXTERNALSECURE: "true"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://zitadel:${ZITADEL_DB_PASSWORD:?}@postgres:5432/zitadel?sslmode=disable
+      ZITADEL_DEFAULTINSTANCE_DEFAULTLANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+      # Premiere instance : l'organisation, son administrateur (ADMIN_EMAIL,
+      # aussi administrateur de Savoire), un compte machine pour le bootstrap.
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: Savoire
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: ${ADMIN_EMAIL:?}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ADMIN_PASSWORD:?}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: savoire-bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: Savoire bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/admin.pat
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Login client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: https://${AUTH_DOMAIN:?}/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: https://${AUTH_DOMAIN:?}/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: https://${AUTH_DOMAIN:?}/ui/v2/login/logout?post_logout_redirect=
+      # Courriels (verification de l'adresse, mot de passe oublie).
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: ${SMTP_HOST:?}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: ${SMTP_USER:-}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: ${SMTP_TLS:-true}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: ${SMTP_FROM:?}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: ${SMTP_FROM_NAME:-Savoire}
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  zitadel-login:
+    <<: *restart
+    image: ghcr.io/zitadel/zitadel-login:${ZITADEL_VERSION:-v4.16.0}
+    user: "0"
+    environment:
+      ZITADEL_API_URL: http://zitadel:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${LOGIN_COOKIE_SECRET:?}
+      CUSTOM_REQUEST_HEADERS: Host:${AUTH_DOMAIN:?},X-Forwarded-Proto:https
+      # Adresse a verifier (code par courriel) avant d'entrer.
+      EMAIL_VERIFICATION: "true"
+      NEXT_PUBLIC_APPLICATION_NAME: Savoire
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      zitadel:
+        condition: service_healthy
+
+  # Projet, applis et comptes de service dans Zitadel ; ecrit leurs
+  # identifiants dans le volume savoire-config, puis s'arrete. Relance sans
+  # risque a chaque demarrage.
+  zitadel-bootstrap:
+    image: node:24-alpine
+    restart: "no"
+    command: ["node", "/bootstrap/bootstrap.mjs"]
+    environment:
+      ZITADEL_URL: http://zitadel:8080
+      ZITADEL_HOST: ${AUTH_DOMAIN:?}
+      ZITADEL_ISSUER: https://${AUTH_DOMAIN:?}
+      ZITADEL_PAT_FILE: /zitadel/bootstrap/admin.pat
+      WEB_ORIGINS: https://${SAVOIRE_DOMAIN:?}
+      DEV_MODE: "false"
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+      OUT_DIR: /out
+      # Le pair tourne sous l'utilisateur « node » (1000) ; l'API sous root.
+      INDEXER_FILE_OWNER: "1000:1000"
+    volumes:
+      - ./zitadel/bootstrap.mjs:/bootstrap/bootstrap.mjs:ro
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+      - savoire-config:/out
+    networks: [backend]
+    depends_on:
+      zitadel:
+        condition: service_healthy
+
+  # ── Savoire ────────────────────────────────────────────────────────────────
+  api:
+    <<: *restart
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-api:${SAVOIRE_VERSION:-latest}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Sans Kerberos (GSS) : absent de l'image, et la base est sur le reseau interne.
+      ConnectionStrings__Savoire: Host=postgres;Port=5432;Database=savoire;Username=savoire;Password=${SAVOIRE_DB_PASSWORD:?};GSS Encryption Mode=Disable
+      Storage__Root: /data
+      Savoire__OidcConfigFile: /run/savoire/savoire-oidc.json
+      Auth__AdminEmails__0: ${ADMIN_EMAIL:?}
+      AllowedOrigins__0: https://${SAVOIRE_DOMAIN:?}
+      # Liens de partage et vues integrees : signes par Savoire.
+      Jwt__Secret: ${JWT_SECRET:?}
+      Jwt__Issuer: savoire-server
+      Jwt__Audience: savoire-client
+      Indexer__Instances__0__Name: idx-a
+      Indexer__Instances__0__Url: http://indexer:7070
+    volumes:
+      - savoire-data:/data
+      - savoire-config:/run/savoire:ro
+    networks: [backend, indexer]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zitadel-bootstrap:
+        condition: service_completed_successfully
+
+  # Pair indexeur (ADR-027) : jamais expose, reseau interne seulement.
+  indexer:
+    <<: *restart
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-indexer:${SAVOIRE_VERSION:-latest}
+    environment:
+      SAVOIRE_INDEXER_NAME: idx-a
+      SAVOIRE_INDEXER_OIDC_FILE: /run/savoire/indexer-oidc.json
+      SAVOIRE_INDEXER_BACKEND_URL: http://api:8080
+      SAVOIRE_INDEXER_LOG_LEVEL: ${INDEXER_LOG_LEVEL:-info}
+    volumes:
+      - indexer-data:/data
+      - savoire-config:/run/savoire:ro
+    networks: [indexer]
+    stop_grace_period: 30s
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    <<: *restart
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-web:${SAVOIRE_VERSION:-latest}
+    environment:
+      API_URL: http://api:8080
+    networks: [default, backend]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ── Sauvegardes : chaque nuit, gardees BACKUP_KEEP_DAYS jours ──────────────
+  # Les deux bases (Savoire, Zitadel) et les fichiers des vaults. A recopier
+  # hors de la machine (voir SELF_HOSTING.md). L'index du pair n'est pas
+  # sauvegarde : il se reconstruit.
+  backup:
+    <<: *restart
+    image: postgres:17.10-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_AT: ${BACKUP_AT:-03:30}
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    volumes:
+      - ./backup/backup.sh:/backup.sh:ro
+      - savoire-data:/data:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  default:
+  # Base, identites, API : pas d'acces depuis l'exterieur.
+  backend:
+  # API <-> pair indexeur, sans sortie (Zitadel par l'alias de Caddy).
+  indexer:
+    internal: true
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+  zitadel-bootstrap:
+  savoire-config:
+  savoire-data:
+  indexer-data:

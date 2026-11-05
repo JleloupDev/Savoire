@@ -1,86 +1,142 @@
-# Self-hosting Savoire
+# Héberger Savoire
 
-## Requirements
+Savoire tourne sur une seule machine avec Docker Compose. Les images sont
+publiées par la CI sur `ghcr.io`. Rien n'est construit sur le serveur.
 
-- Docker and Docker Compose
-- A server with at least 1 GB RAM (2 GB recommended)
-- Ports 5000 (API) and 8082 (web) open
+Le choix de cette architecture est expliqué dans
+`docs/Architecture/ADR/ADR-028-publication-et-identites.md`.
 
-## Quick start
+## Ce qui tourne
+
+| Service | Rôle |
+|---|---|
+| `caddy` | Entrée HTTPS (certificats Let's Encrypt automatiques), ports 80 et 443 |
+| `web` | L'application (page web), qui relaie `/api` et `/hubs` vers l'API |
+| `api` | Le backend .NET : vaults, synchro temps réel, droits |
+| `indexer` | Le pair indexeur (recherche, bases), jamais exposé |
+| `postgres` | Les données de Savoire et de Zitadel (deux bases) |
+| `zitadel`, `zitadel-login` | Les comptes : inscription, connexion, mot de passe oublié |
+| `zitadel-bootstrap` | Prépare Zitadel pour Savoire au démarrage, puis s'arrête |
+| `backup` | Sauvegarde de nuit des bases et des fichiers |
+
+Savoire ne gère aucun mot de passe. Les comptes vivent dans Zitadel, le
+fournisseur d'identité. Savoire garde les vaults, les membres et les droits.
+
+## Prérequis
+
+- Une machine Linux avec Docker et le plugin Compose, 2 Go de RAM au moins
+  (4 Go conseillés).
+- Deux noms de domaine qui pointent vers elle, par exemple
+  `savoire.exemple.fr` (l'appli) et `auth.exemple.fr` (la connexion).
+- Les ports 80 et 443 ouverts. Aucun autre.
+- Un service d'envoi de courriels (SMTP) : Brevo, Mailjet, Scaleway… Sans lui,
+  personne ne peut vérifier son adresse, donc personne ne peut s'inscrire.
+
+## Installer
 
 ```bash
 git clone https://github.com/JleloupDev/Savoire.git
-cd Savoire
-
-# Copy and edit the environment file
+cd Savoire/deploy/compose
 cp .env.example .env
-$EDITOR .env
-
-# Start
-docker compose up -d
+$EDITOR .env        # domaines, administrateur, secrets, SMTP
+docker compose --env-file .env up -d
 ```
 
-The web interface is available at `http://<your-server>:8082`.
+Au premier démarrage, Zitadel prépare sa base (une à deux minutes), puis
+`zitadel-bootstrap` crée le projet Savoire, ses applis et ses comptes de
+service. L'API démarre ensuite.
 
-## Environment variables
+- L'appli : `https://savoire.exemple.fr`.
+- La console de Zitadel : `https://auth.exemple.fr/ui/console`, identifiant
+  `ADMIN_EMAIL`, mot de passe `ADMIN_PASSWORD`.
 
-Copy `.env.example` to `.env` and fill in the values:
+Ce compte (adresse `ADMIN_EMAIL`) est aussi administrateur de Savoire.
+D'autres administrateurs : `Auth__AdminEmails__1=...` dans l'environnement de
+l'API. Une adresse ne donne ce droit qu'une fois vérifiée.
 
-| Variable | Required | Description |
+## Les comptes
+
+- Chacun crée son compte depuis l'écran de connexion (« Créer un compte »).
+  L'adresse est vérifiée par un code envoyé par courriel.
+- Mot de passe oublié, double authentification, passkeys : sur la page de
+  connexion de Zitadel.
+- Connexion avec Google, GitHub ou Microsoft : dans la console de Zitadel,
+  *Paramètres → Fournisseurs d'identité*. Il faut d'abord déclarer une appli
+  chez le fournisseur choisi (quelques minutes), avec l'adresse de retour que
+  Zitadel indique.
+- Fermer l'inscription libre : console, *Paramètres → Paramètres de
+  connexion*, décocher « Enregistrement autorisé ».
+- Bloquer un compte dans Savoire : page Administration de l'appli. Ses
+  jetons sont refusés aussitôt, même encore valides chez Zitadel.
+
+## Les secrets
+
+| Variable | Rôle | Changer plus tard ? |
 |---|---|---|
-| `JWT_SECRET` | Yes | Secret key for signing JWT tokens. Generate with `openssl rand -base64 48` |
-| `JWT_ISSUER` | No | JWT issuer claim (default: `savoire-server`) |
-| `JWT_AUDIENCE` | No | JWT audience claim (default: `savoire-client`) |
-| `ALLOWED_ORIGIN_1` | No | Extra CORS origin to allow (e.g. `http://your-server:8082`) |
+| `ZITADEL_MASTERKEY` | Chiffre les secrets de Zitadel, 32 caractères exactement | Jamais : le perdre, c'est perdre Zitadel |
+| `POSTGRES_PASSWORD`, `SAVOIRE_DB_PASSWORD`, `ZITADEL_DB_PASSWORD` | Base de données | Oui, dans PostgreSQL puis ici |
+| `LOGIN_COOKIE_SECRET` | Cookie de la page de connexion | Oui (les sessions en cours se ferment) |
+| `JWT_SECRET` | Liens de partage et vues intégrées | Oui (les liens déjà donnés cessent de marcher) |
 
-CORS accepts only the listed origins (`AllowedOrigins`) plus the Savoire
-desktop app (`DesktopAppOrigins`, default `tauri://localhost`,
-`http://tauri.localhost`, `https://tauri.localhost`; set
-`DesktopAppOrigins=` to an empty value to refuse it). With nothing configured,
-only the desktop app is accepted, plus local addresses (`localhost`,
-`127.0.0.1`) in Development. Authentication never uses cookies: the token
-travels in the `Authorization` header (and `access_token` for SignalR
-WebSockets).
+Générer un secret : `openssl rand -base64 48 | tr -d '/+=' | cut -c1-32`.
 
-Generate a secure JWT secret:
+## Sauvegardes
 
-```bash
-openssl rand -base64 48
-```
+Le service `backup` sauvegarde chaque nuit (heure `BACKUP_AT`, UTC) dans
+`BACKUP_DIR` :
 
-## Users
+- `savoire-<date>-db.sql.gz` : les deux bases (Savoire et Zitadel) ;
+- `savoire-<date>-files.tar.gz` : les fichiers des vaults (pièces jointes).
 
-Users are declared in `docker-compose.yml` under the `api` service environment:
+Il garde `BACKUP_KEEP_DAYS` jours. **Recopiez ce dossier hors de la machine**
+(rclone, restic, ou la sauvegarde de votre hébergeur) : une sauvegarde sur le
+même disque ne protège pas d'une panne de disque.
 
-```yaml
-- Users__0__Id=alice
-- Users__0__DisplayName=Alice
-- Users__0__DefaultVaultPath=/data/alice
-- Users__0__PasswordHash=<bcrypt hash>
-```
+Sauvegarder tout de suite : `docker compose --env-file .env run --rm backup now`.
 
-> There is no user management UI yet. Add users by editing `docker-compose.yml` and restarting the API container.
+L'index du pair n'est pas sauvegardé : il se reconstruit tout seul.
 
-## Data
-
-Vault data is stored in `.local/data/` on the host, mounted into the container at `/data`. Back up this directory to preserve your notes.
-
-## Updating
+### Restaurer
 
 ```bash
-git pull
-docker compose build
-docker compose up -d
+docker compose --env-file .env stop api indexer zitadel zitadel-login
+gunzip -c backups/savoire-<date>-db.sql.gz \
+  | docker compose --env-file .env exec -T postgres psql -U postgres -d postgres
+docker run --rm -v savoire_savoire-data:/data -v "$PWD/backups:/b:ro" alpine:3 \
+  sh -c 'rm -rf /data/* && tar -C /data -xzf /b/savoire-<date>-files.tar.gz'
+docker compose --env-file .env up -d
 ```
 
-## Swap
-
-On servers with less than 4 GB RAM, add a swap file before building to avoid OOM kills during the frontend build:
+## Mettre à jour
 
 ```bash
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+docker compose --env-file .env pull
+docker compose --env-file .env up -d
 ```
+
+`SAVOIRE_VERSION` choisit la version : `latest` (branche principale), une
+version (`v1.2.0`) ou un commit (`sha-abc1234`). Les migrations de la base
+s'appliquent au démarrage de l'API. Sauvegardez avant une mise à jour.
+
+## Construire depuis les sources
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+## Essayer sur un poste, sans domaine
+
+`docker-compose.local.yml` lance la même pile en http sur `127.0.0.1:8480`
+(appli : `http://savoire.localhost:8480`, connexion :
+`http://auth.localhost:8480`, courriels : Mailpit sur `127.0.0.1:8425`). Pour
+essayer seulement, jamais en production.
+
+## Développer
+
+Le poste de développement n'a besoin que de PostgreSQL et de Zitadel :
+
+```bash
+docker compose -f deploy/compose/docker-compose.dev.yml up -d --wait
+```
+
+Voir l'en-tête de ce fichier pour les adresses et le compte de dev.

@@ -7,6 +7,9 @@ server {
     large_client_header_buffers 4 32k;
     client_header_buffer_size 4k;
 
+    # Pieces jointes : le defaut de nginx (1 Mio) est trop juste.
+    client_max_body_size 64m;
+
     # Proxy vers l'API — miroir du proxy Vite en dev
     # DECISION: Timeouts longs pour absorber le cold-start Azure Container Apps (scale-to-zero).
     location /api/ {

@@ -1,0 +1,37 @@
+# Essai de la pile de production sur un poste, sans nom de domaine ni HTTPS :
+#   docker compose -p savoire-local -f docker-compose.yml -f docker-compose.build.yml \
+#     -f docker-compose.local.yml --env-file .env.local up -d --build
+# Appli : http://savoire.localhost:8480 ; connexion : http://auth.localhost:8480.
+# Tout reste sur 127.0.0.1. Jamais en production (pas de HTTPS).
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:8480:8480"
+    volumes:
+      - ./caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+  zitadel:
+    command: start-from-init --masterkeyFromEnv --tlsMode disabled
+    environment:
+      ZITADEL_EXTERNALPORT: 8480
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://${AUTH_DOMAIN}:8480/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://${AUTH_DOMAIN}:8480/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://${AUTH_DOMAIN}:8480/ui/v2/login/logout?post_logout_redirect=
+  zitadel-login:
+    environment:
+      CUSTOM_REQUEST_HEADERS: Host:${AUTH_DOMAIN}:8480,X-Forwarded-Proto:http
+  zitadel-bootstrap:
+    environment:
+      ZITADEL_HOST: ${AUTH_DOMAIN}:8480
+      ZITADEL_ISSUER: http://${AUTH_DOMAIN}:8480
+      WEB_ORIGINS: http://${SAVOIRE_DOMAIN}:8480
+      DEV_MODE: "true"
+  api:
+    environment:
+      AllowedOrigins__0: http://${SAVOIRE_DOMAIN}:8480
+  # Courriels : Mailpit (http://127.0.0.1:8425).
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    ports:
+      - "127.0.0.1:8425:8025"
+    networks: [backend]

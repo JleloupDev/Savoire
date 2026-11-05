@@ -5,20 +5,26 @@
 # DECISION: nginx proxifie /api et /hubs vers API_URL à l'exécution
 #           (pas de rebuild nécessaire si l'URL de l'API change).
 
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /repo
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Meme pnpm que le pair indexeur (apps/indexer/Dockerfile) : version figee,
+# pas « latest » (un pnpm neuf peut refuser le lockfile).
+RUN npm install -g pnpm@11
 
-# Layer cache : manifestes d'abord
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./frontend/
+# Layer cache : manifestes d'abord. L'appli web importe le profil bureau
+# (@savoire/desktop, apps/desktop/src) : il est dans le paquet web aussi.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/tsconfig.base.json ./frontend/
 COPY apps/web/package.json ./apps/web/
+COPY apps/desktop/package.json ./apps/desktop/
 COPY packages/ ./packages/
 
-RUN cd frontend && pnpm install --frozen-lockfile
+RUN cd frontend && pnpm install --frozen-lockfile --filter "@savoire/web..."
 
 COPY frontend/ ./frontend/
 COPY apps/web/ ./apps/web/
+COPY apps/desktop/package.json apps/desktop/tsconfig.json ./apps/desktop/
+COPY apps/desktop/src/ ./apps/desktop/src/
 COPY packages/ ./packages/
 RUN cd frontend && pnpm --filter @savoire/web build
 

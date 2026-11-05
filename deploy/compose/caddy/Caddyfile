@@ -1,0 +1,21 @@
+# Savoire en production (ADR-028) : HTTPS automatique (Let's Encrypt) pour
+# l'appli et pour la connexion. Voir docker-compose.yml.
+{
+	email {$ACME_EMAIL}
+}
+
+# L'appli : le conteneur web sert la page et relaie /api et /hubs (WebSocket).
+{$SAVOIRE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:8080
+}
+
+# La connexion : Zitadel et sa page de connexion (login v2).
+{$AUTH_DOMAIN} {
+	handle /ui/v2/login* {
+		reverse_proxy zitadel-login:3000
+	}
+	handle {
+		reverse_proxy h2c://zitadel:8080
+	}
+}

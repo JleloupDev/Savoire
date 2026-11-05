@@ -1,0 +1,17 @@
+# Essai local (docker-compose.local.yml) : http seulement, port 8480.
+{
+	auto_https off
+}
+
+http://{$SAVOIRE_DOMAIN}:8480 {
+	reverse_proxy web:8080
+}
+
+http://{$AUTH_DOMAIN}:8480 {
+	handle /ui/v2/login* {
+		reverse_proxy zitadel-login:3000
+	}
+	handle {
+		reverse_proxy h2c://zitadel:8080
+	}
+}

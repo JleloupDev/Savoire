@@ -1,0 +1,18 @@
+# Construire les images depuis les sources au lieu de les tirer de ghcr.io :
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml --env-file .env up -d --build
+services:
+  api:
+    image: savoire-api:local
+    build:
+      context: ../..
+      dockerfile: backend/Savoire.API/Dockerfile
+  indexer:
+    image: savoire-indexer:local
+    build:
+      context: ../..
+      dockerfile: apps/indexer/Dockerfile
+  web:
+    image: savoire-web:local
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
