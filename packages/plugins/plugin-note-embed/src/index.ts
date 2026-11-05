@@ -213,7 +213,8 @@ const plugin: VaultPlugin = {
         void (async () => {
           try {
             const source = await api.vault.readDocumentByPath(targetPath)
-            const { body: whole } = parseFrontmatter(source)
+            // Fins de ligne Windows (notes venues d'Obsidian sous Windows).
+            const { body: whole } = parseFrontmatter(source.replace(/\r\n?/g, '\n'))
             const mdBody = subpath ? extractSubpath(whole, subpath) : whole
             if (mdBody === null) {
               body.textContent = subpath?.kind === 'block'

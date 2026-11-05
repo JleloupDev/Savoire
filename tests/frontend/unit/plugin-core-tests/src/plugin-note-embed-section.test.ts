@@ -72,9 +72,16 @@ describe('blocks', () => {
   it('returns null for an unknown id', () => expect(block('nope')).toBeNull())
 })
 
+describe('verses (marker glued to the text)', () => {
+  const CHAPTER = '---\ntags:\n- Bible/Chapter\n---\n*Ruben, Siméon,*\n*Exode 1 : 2*^2\n\n*Issachar,*\n*Exode 1 : 3*^3\n'
+  it('takes the two-line verse block', () => {
+    expect(extractSubpath(CHAPTER, { kind: 'block', id: '3' })).toBe('*Issachar,*\n*Exode 1 : 3*')
+  })
+})
+
 describe('stripBlockIds', () => {
   it('hides markers but keeps code', () => {
     expect(stripBlockIds('a ^x\n^y\n```\nb ^z\n```')).toBe('a\n```\nb ^z\n```')
   })
-  it('leaves footnotes and text alone', () => expect(stripBlockIds('x[^1] and 2^3')).toBe('x[^1] and 2^3'))
+  it('leaves footnotes and text alone', () => expect(stripBlockIds('x[^1] and 2^3 ok')).toBe('x[^1] and 2^3 ok'))
 })

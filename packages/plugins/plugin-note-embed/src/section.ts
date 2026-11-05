@@ -18,7 +18,8 @@ export type EmbedSubpath =
 
 const HEADING_RE = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
-const BLOCK_ID_RE = /(?:^|[ \t])\^([A-Za-z0-9-]+)[ \t]*$/
+// Comme Obsidian, le marqueur peut suivre le texte sans espace (« *Exode 1 : 1*^1 »).
+const BLOCK_ID_RE = /[ \t]*\^([A-Za-z0-9-]+)[ \t]*$/
 const BLOCK_ID_ONLY_RE = /^[ \t]*\^([A-Za-z0-9-]+)[ \t]*$/
 const LIST_ITEM_RE = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]/
 
@@ -42,7 +43,7 @@ export function describeSubpath(subpath: EmbedSubpath): string {
 interface Line { text: string; inCode: boolean }
 
 function scan(markdown: string): Line[] {
-  const lines = markdown.split('\n')
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
   const out: Line[] = []
   let fence: string | null = null
   for (const text of lines) {
