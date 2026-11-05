@@ -18,6 +18,7 @@ Le choix de cette architecture est expliqué dans
 | `zitadel`, `zitadel-login` | Les comptes : inscription, connexion, mot de passe oublié |
 | `zitadel-bootstrap` | Prépare Zitadel pour Savoire au démarrage, puis s'arrête |
 | `backup` | Sauvegarde de nuit des bases et des fichiers |
+| `portainer` | Administration des conteneurs (interface web), sur 127.0.0.1 seulement |
 
 Savoire ne gère aucun mot de passe. Les comptes vivent dans Zitadel, le
 fournisseur d'identité. Savoire garde les vaults, les membres et les droits.
@@ -53,6 +54,20 @@ service. L'API démarre ensuite.
 Ce compte (adresse `ADMIN_EMAIL`) est aussi administrateur de Savoire.
 D'autres administrateurs : `Auth__AdminEmails__1=...` dans l'environnement de
 l'API. Une adresse ne donne ce droit qu'une fois vérifiée.
+
+## Administrer les conteneurs (Portainer)
+
+Portainer pilote tout Docker : il n'est jamais exposé sur Internet. Il écoute
+sur `127.0.0.1:9443` (`PORTAINER_PORT`). Depuis votre poste :
+
+```bash
+ssh -L 9443:127.0.0.1:9443 <utilisateur>@<serveur>
+```
+
+puis `https://localhost:9443` (certificat auto-signé, à accepter). Créez le
+compte administrateur **dans les 5 minutes** qui suivent le premier
+démarrage ; passé ce délai, Portainer se verrouille par sécurité :
+`docker compose --env-file .env restart portainer` pour recommencer.
 
 ## Les comptes
 

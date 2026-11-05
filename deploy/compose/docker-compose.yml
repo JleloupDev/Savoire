@@ -253,6 +253,21 @@ services:
       postgres:
         condition: service_healthy
 
+  # ── Administration des conteneurs : Portainer ────────────────────────────
+  # Il pilote tout Docker (socket monte) : jamais expose sur Internet. Lie a
+  # 127.0.0.1 ; depuis votre poste : ssh -L 9443:127.0.0.1:9443 <serveur>,
+  # puis https://localhost:9443 (certificat auto-signe). Creez le compte
+  # administrateur dans les 5 minutes qui suivent le premier demarrage.
+  portainer:
+    <<: *restart
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.45.3}
+    command: ["--http-disabled"]
+    ports:
+      - "127.0.0.1:${PORTAINER_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+
 networks:
   default:
   # Base, identites, API : pas d'acces depuis l'exterieur.
@@ -269,3 +284,4 @@ volumes:
   savoire-config:
   savoire-data:
   indexer-data:
+  portainer-data:

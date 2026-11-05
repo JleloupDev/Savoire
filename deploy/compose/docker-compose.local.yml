@@ -29,6 +29,10 @@ services:
   api:
     environment:
       AllowedOrigins__0: http://${SAVOIRE_DOMAIN}:8480
+  # Portainer : https://127.0.0.1:9444 (le 9443 du poste peut etre pris).
+  portainer:
+    ports: !override
+      - "127.0.0.1:9444:9443"
   # Courriels : Mailpit (http://127.0.0.1:8425).
   mailpit:
     image: axllent/mailpit:v1.27.10
