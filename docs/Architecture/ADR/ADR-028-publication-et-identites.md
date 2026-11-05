@@ -2,8 +2,9 @@
 
 ## Statut
 
-Proposé (04/11/2026). Étude de débroussaillage : rien n'est encore construit.
-Les questions de la fin sont à trancher avant le premier chantier.
+Accepté le 04/11/2026, avec les décisions ci-dessous (section « Décisions »).
+Chantiers 1 à 3 livrés le même jour : images publiées par la CI, compose de
+production, PostgreSQL, connexion par Zitadel.
 
 ## Contexte
 
@@ -136,7 +137,73 @@ hachés en PBKDF2. On importe les comptes dans l'IdP. Si l'IdP choisi ne sait
 pas reprendre ce format de hachage, chaque personne choisit un nouveau mot de
 passe par un lien envoyé par courriel. À vérifier sur l'IdP retenu.
 
-## Ordre proposé des chantiers
+## Décisions (04/11/2026)
+
+1. **Hébergement : Docker Compose sur une VM**, chez un hébergeur au choix
+   (européen de préférence). Aucune dépendance à Azure : le déploiement de dev
+   sur Azure Container Apps (`infra/`, `deploy.yml`) n'est plus maintenu.
+   Kubernetes (géré, par exemple Scaleway ou OVH) seulement quand une machine
+   ne suffira plus. Chaque appli ne dépend que de son image et de ses
+   variables : le passage restera simple.
+2. **PostgreSQL** remplace SQLite pour le serveur, en production comme en dev
+   (un seul moteur, une seule série de migrations). On repart d'une base vide.
+3. **Pas de Redis pour l'instant.** Il ne sert qu'à faire tourner plusieurs
+   exemplaires de l'API. Un seul exemplaire suffit au départ. Le jour venu,
+   un relais générique (Valkey ou NATS), pas celui propre à SignalR.
+4. **SignalR n'est pas portable** : son protocole n'existe vraiment que côté
+   .NET. On n'ajoute plus rien qui en dépende. Plus tard : un protocole de
+   synchro à nous, en WebSocket brut, binaire et documenté, qui ouvrira la
+   voie à un backend Rust.
+5. **Zitadel dès la v1**, pour ne pas gérer l'inscription, la vérification
+   de l'adresse ni le mot de passe oublié. Plus de comptes locaux dans
+   Savoire : l'auto-hébergement embarque son propre Zitadel.
+6. **Créer un compte au plus simple** : adresse et mot de passe (vérifiés par
+   Zitadel), puis Google et GitHub à activer dans la console de Zitadel.
+   Microsoft plus tard.
+
+## Ce qui est construit
+
+- **Images** : `.github/workflows/images.yml` teste le backend sur
+  PostgreSQL puis publie `ghcr.io/<propriétaire>/savoire-{api,web,indexer}`
+  (`latest`, `sha-<commit>`, `vX.Y.Z`).
+- **Compose de production** : `deploy/compose/docker-compose.yml` (Caddy en
+  HTTPS automatique, PostgreSQL, Zitadel et sa page de connexion, l'API, le
+  web, le pair, la sauvegarde de nuit). Guide : `SELF_HOSTING.md`.
+- **Dev** : `deploy/compose/docker-compose.dev.yml` (PostgreSQL, Zitadel,
+  Mailpit) ; les tests .NET créent une base neuve par factory.
+- **Zitadel préparé par script** : `deploy/compose/zitadel/bootstrap.mjs`
+  crée le projet, l'appli web (PKCE), l'appli de bureau (native, retour sur
+  127.0.0.1 à port libre), les comptes de service du pair et de l'API, et
+  écrit leurs identifiants. Relançable sans risque.
+- **Backend** : deux sortes de jetons derrière un seul schéma « Bearer » :
+  ceux de Zitadel pour les comptes (vérifiés par JWKS), ceux de Savoire pour
+  les liens de partage et les vues intégrées. Un compte est créé à sa
+  première requête, avec l'id du sujet (`sub`). Seule une adresse vérifiée
+  est gardée (on invite par adresse). Administrateurs : `Auth:AdminEmails`.
+  Blocage d'un compte : effet immédiat. `GET /api/v1/auth/config` (où se
+  connecter) et `GET /api/v1/auth/me` remplacent login, refresh et
+  changement de mot de passe.
+- **Web** : redirection vers Zitadel et retour sur `/auth/callback` ; la
+  déconnexion ferme aussi la session de Zitadel.
+- **Bureau** : la connexion s'ouvre dans le navigateur du système et revient
+  sur `http://127.0.0.1:<port>/callback` (`src-tauri/src/oauth.rs`, RFC 8252).
+- **Pair indexeur** : identité de service chez Zitadel dans les deux sens
+  (client credentials vers l'API ; jetons de l'API vérifiés par JWKS). Le
+  jeton partagé reste accepté pour les tests et les installations sans
+  fournisseur d'identité.
+
+## Limites connues
+
+- Android (serveur seulement) : la connexion passe par une redirection dans
+  la WebView, non vérifiée, et l'appli native n'a pas encore d'adresse de
+  retour pour elle.
+- Les textes de la page de connexion disent « Zitadel » : à personnaliser
+  dans la console (textes et marque).
+- Le flux du pair indexeur sérialise ses écritures par un verrou PostgreSQL
+  (`pg_advisory_xact_lock`), comme le faisait SQLite : à revoir pour
+  plusieurs exemplaires de l'API.
+
+## Ordre proposé des chantiers (étude initiale)
 
 1. Images publiées par la CI, `docker-compose.prod.yml` avec HTTPS et
    sauvegardes (étape A).
@@ -146,7 +213,7 @@ passe par un lien envoyé par courriel. À vérifier sur l'IdP retenu.
 4. PostgreSQL et fond de panier SignalR (étape B) ; test de charge à 2 instances.
 5. Chart Helm et déploiement Kubernetes (étape C).
 
-## Questions à trancher
+## Questions de l'étude initiale (tranchées plus haut)
 
 1. Hébergement cible : Kubernetes chez un hébergeur (lequel ?), ou garder
    Azure Container Apps ?

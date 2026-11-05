@@ -12,7 +12,10 @@ client ──HTTPS──▶ backend (public)  ──HTTP privé──▶ instanc
 
 - Le client ne parle qu'au backend. Le backend authentifie, vérifie les droits sur le vault, limite le débit, puis relaie au pair qui possède le vault.
 - Le pair n'est jamais exposé. Il lit les vaults par l'API interne du backend.
-- Les deux sens utilisent le même **jeton de service** (`Indexer:ServiceToken` côté backend, `SAVOIRE_INDEXER_TOKEN` côté pair), en `Authorization: Bearer`. Sans jeton configuré, l'API interne n'existe pas et les routes publiques répondent 503.
+- Authentification des deux sens, en `Authorization: Bearer` :
+  - **en production (ADR-028)**, des jetons du fournisseur d'identité : le pair présente un jeton « client credentials » de son compte de service (reconnu par `Indexer:Oidc:PeerSubject`) ; l'API présente celui de son propre compte, que le pair vérifie (clés JWKS, émetteur, audience, sujet). Configuration écrite par `deploy/compose/zitadel/bootstrap.mjs` (`Indexer:Oidc` côté backend, `SAVOIRE_INDEXER_OIDC_FILE` côté pair) ;
+  - sinon, un **jeton de service partagé** (`Indexer:ServiceToken` côté backend, `SAVOIRE_INDEXER_TOKEN` côté pair) : tests, installation sans fournisseur.
+  Ni l'un ni l'autre : l'API interne n'existe pas et les routes publiques répondent 503.
 
 ## Répartition des vaults entre instances
 
