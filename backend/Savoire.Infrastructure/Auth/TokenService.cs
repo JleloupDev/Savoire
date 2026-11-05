@@ -2,9 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -13,14 +11,13 @@ using Savoire.Domain.Entities;
 using Savoire.Domain.Enums;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.Interfaces;
-using Savoire.Domain.Repositories;
 
 namespace Savoire.Infrastructure.Auth;
 
+// Jetons signes par Savoire lui-meme : liens de partage et vues integrees.
+// Les comptes, eux, se connectent chez le fournisseur d'identite (ADR-028).
 public class TokenService(
     IConfiguration config,
-    UserManager<AppUser> userManager,
-    IRefreshTokenRepository refreshTokens,
     ILogger<TokenService> logger) : ITokenService
 {
     public string GenerateShareLinkAccessToken(ShareLink link)
@@ -166,107 +163,6 @@ public class TokenService(
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
-
-    public string GenerateAccessToken(AppUser user)
-    {
-        var jwtConfig = config.GetSection("Jwt");
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(jwtConfig["Secret"]!));
-
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email!),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new("display_name", user.DisplayName),
-            new("is_admin", user.IsAdmin.ToString().ToLower())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: jwtConfig["Issuer"] ?? "vault-server",
-            audience: jwtConfig["Audience"] ?? "vault-client",
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(
-                jwtConfig.GetValue<int>("AccessTokenExpirationMinutes", 15)),
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
-
-    public async Task<RefreshToken> GenerateRefreshTokenAsync(AppUser user, string clientIp)
-    {
-        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-        var hashedToken = HashToken(rawToken);
-
-        var refreshToken = new RefreshToken
-        {
-            UserId = user.Id,
-            Token = hashedToken,
-            ExpiresAt = DateTime.UtcNow.AddDays(
-                config.GetValue<int>("Jwt:RefreshTokenExpirationDays", 7)),
-            ClientIp = clientIp
-        };
-
-        await refreshTokens.AddAsync(refreshToken);
-        await refreshTokens.SaveChangesAsync();
-
-        // Return a copy with the raw token for the client (hashed in the database)
-        return new RefreshToken
-        {
-            Id        = refreshToken.Id,
-            UserId    = refreshToken.UserId,
-            Token     = rawToken,
-            CreatedAt = refreshToken.CreatedAt,
-            ExpiresAt = refreshToken.ExpiresAt,
-            ClientIp  = refreshToken.ClientIp
-        };
-    }
-
-    public async Task<(AppUser user, RefreshToken newRefreshToken)> RotateRefreshTokenAsync(
-        string rawToken, string clientIp)
-    {
-        var existing = await refreshTokens.GetByHashedTokenAsync(HashToken(rawToken))
-            ?? throw new InvalidRefreshTokenException("Refresh token invalide.");
-
-        if (existing.IsRevoked)
-        {
-            await RevokeAllUserRefreshTokensAsync(existing.UserId);
-            throw new InvalidRefreshTokenException("Refresh token révoqué.");
-        }
-
-        if (existing.IsExpired)
-            throw new InvalidRefreshTokenException("Refresh token expiré.");
-
-        var user = await userManager.FindByIdAsync(existing.UserId)
-            ?? throw new UserNotFoundException(existing.UserId);
-
-        existing.RevokedAt = DateTime.UtcNow;
-        var newToken = await GenerateRefreshTokenAsync(user, clientIp);
-        existing.ReplacedByToken = newToken.Id;
-        await refreshTokens.SaveChangesAsync();
-
-        return (user, newToken);
-    }
-
-    public async Task RevokeRefreshTokenAsync(string rawToken)
-    {
-        var token = await refreshTokens.GetByHashedTokenAsync(HashToken(rawToken));
-        if (token is null) return;
-        token.RevokedAt = DateTime.UtcNow;
-        await refreshTokens.SaveChangesAsync();
-    }
-
-    public async Task RevokeAllUserRefreshTokensAsync(string userId)
-    {
-        var tokens = await refreshTokens.GetActiveByUserIdAsync(userId);
-        foreach (var token in tokens)
-            token.RevokedAt = DateTime.UtcNow;
-        await refreshTokens.SaveChangesAsync();
-    }
-
-    private static string HashToken(string rawToken) =>
-        Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)));
 
     private static string MaskPrefix(string? token)
     {

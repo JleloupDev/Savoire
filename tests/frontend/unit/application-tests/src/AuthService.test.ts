@@ -2,15 +2,22 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi } from 'vitest'
 import { AuthService } from '@savoire/application'
-import type { IAuthBackend, AppAuthResponse } from '@savoire/application'
+import type { IAuthBackend, AppAuthResponse, PendingLogin } from '@savoire/application'
 
 function makeBackend(): IAuthBackend {
   return {
-    login: vi.fn(),
+    config: vi.fn(),
+    beginLogin: vi.fn(),
+    completeLogin: vi.fn(),
     refresh: vi.fn(),
     logout: vi.fn(),
-    changePassword: vi.fn(),
+    endSessionUrl: vi.fn(),
   }
+}
+
+const PENDING: PendingLogin = {
+  issuer: 'https://idp.test', clientId: 'web', redirectUri: 'https://app.test/auth/callback',
+  state: 's', codeVerifier: 'v', tokenEndpoint: 'https://idp.test/token',
 }
 
 const AUTH_RESPONSE: AppAuthResponse = {
@@ -21,13 +28,16 @@ const AUTH_RESPONSE: AppAuthResponse = {
 }
 
 describe('AuthService', () => {
-  it('login delegates to backend.login', async () => {
+  it('beginLogin and completeLogin delegate to the backend', async () => {
     const backend = makeBackend()
-    vi.mocked(backend.login).mockResolvedValue(AUTH_RESPONSE)
+    vi.mocked(backend.beginLogin).mockResolvedValue({ url: 'https://idp.test/authorize?x', pending: PENDING })
+    vi.mocked(backend.completeLogin).mockResolvedValue(AUTH_RESPONSE)
     const svc = new AuthService(backend)
-    const result = await svc.login('alice@example.com', 'password')
-    expect(result).toEqual(AUTH_RESPONSE)
-    expect(backend.login).toHaveBeenCalledWith('alice@example.com', 'password')
+    expect(await svc.beginLogin('https://app.test/auth/callback', 'create')).toEqual({ url: 'https://idp.test/authorize?x', pending: PENDING })
+    expect(backend.beginLogin).toHaveBeenCalledWith('https://app.test/auth/callback', 'create')
+    const params = new URLSearchParams('code=c&state=s')
+    expect(await svc.completeLogin(PENDING, params)).toEqual(AUTH_RESPONSE)
+    expect(backend.completeLogin).toHaveBeenCalledWith(PENDING, params)
   })
 
   it('refresh delegates to backend.refresh', async () => {
@@ -47,19 +57,11 @@ describe('AuthService', () => {
     expect(backend.logout).toHaveBeenCalledWith('access-token', 'refresh-token')
   })
 
-  it('changePassword delegates to backend.changePassword', async () => {
+  it('propagates error from backend.completeLogin', async () => {
     const backend = makeBackend()
-    vi.mocked(backend.changePassword).mockResolvedValue(undefined)
+    vi.mocked(backend.completeLogin).mockRejectedValue(new Error('401'))
     const svc = new AuthService(backend)
-    await svc.changePassword('access-token', 'old', 'new')
-    expect(backend.changePassword).toHaveBeenCalledWith('access-token', 'old', 'new')
-  })
-
-  it('propagates error from backend.login', async () => {
-    const backend = makeBackend()
-    vi.mocked(backend.login).mockRejectedValue(new Error('401'))
-    const svc = new AuthService(backend)
-    await expect(svc.login('x', 'wrong')).rejects.toThrow('401')
+    await expect(svc.completeLogin(PENDING, new URLSearchParams())).rejects.toThrow('401')
   })
 
   it('propagates error from backend.refresh', async () => {

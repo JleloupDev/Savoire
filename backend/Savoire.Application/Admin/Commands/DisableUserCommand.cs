@@ -12,7 +12,7 @@ public sealed record DisableUserCommand(string UserId) : IRequest;
 
 public sealed class DisableUserCommandHandler(
     UserManager<AppUser> userManager,
-    ITokenService tokenService) : IRequestHandler<DisableUserCommand>
+    IAccountCache accounts) : IRequestHandler<DisableUserCommand>
 {
     public async Task Handle(DisableUserCommand request, CancellationToken ct)
     {
@@ -21,6 +21,7 @@ public sealed class DisableUserCommandHandler(
 
         await userManager.SetLockoutEnabledAsync(user, true);
         await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
-        await tokenService.RevokeAllUserRefreshTokensAsync(request.UserId);
+        // Ses jetons, encore valides chez l'IdP, sont refuses des maintenant.
+        accounts.Forget(request.UserId);
     }
 }

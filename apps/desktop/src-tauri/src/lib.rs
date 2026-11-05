@@ -15,6 +15,8 @@ mod folders;
 #[cfg(desktop)]
 pub mod index_db;
 #[cfg(desktop)]
+mod oauth;
+#[cfg(desktop)]
 mod paths;
 mod servers;
 #[cfg(desktop)]
@@ -39,6 +41,8 @@ pub fn run() {
             app.manage(index_db::IndexDbs::default());
             // Serveurs Savoire connus et leurs sessions (servers.json, server-sessions.json).
             app.manage(servers::ServerSettings::load(&app.path().app_config_dir()?));
+            // Connexion a un serveur : retour du navigateur sur 127.0.0.1 (ADR-028).
+            app.manage(oauth::OAuthLoopback::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -69,6 +73,9 @@ pub fn run() {
             servers::server_forget,
             servers::server_session_get,
             servers::server_session_set,
+            oauth::oauth_listen,
+            oauth::oauth_wait,
+            oauth::open_external,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");

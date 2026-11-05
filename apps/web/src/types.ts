@@ -21,6 +21,11 @@ export interface AccountEntry {
   email: string
   displayName: string
   refreshToken: string
+  /**
+   * Jeton d'identite du fournisseur (OIDC) : il designe la session a fermer
+   * chez lui a la deconnexion, sans rien demander. Absent : session locale.
+   */
+  idToken?: string
   isActive: boolean
 }
 

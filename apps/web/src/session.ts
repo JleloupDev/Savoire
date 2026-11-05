@@ -3,9 +3,9 @@
 //
 // Renouvellement du jeton d'acces du compte actif.
 //
-// Le jeton d'acces vit 15 minutes, le jeton de renouvellement 7 jours. Le
-// serveur fait tourner ce dernier : chaque renouvellement en rend un neuf et
-// invalide l'ancien. Le reutiliser revoque toutes les sessions du compte.
+// Les jetons viennent du fournisseur d'identite du serveur (ADR-028). Il fait
+// tourner le jeton de renouvellement : chaque renouvellement en rend un neuf
+// et invalide l'ancien.
 // D'ou trois regles :
 // - un seul renouvellement a la fois par jeton (single-flight) ;
 // - le jeton neuf est garde aussitot (sessionStorage, ou server-sessions.json
@@ -17,7 +17,7 @@
 
 import type { AccountEntry } from './types'
 import { getAccountStorage } from './accountStorage'
-import { isNetworkError } from './serverErrors'
+import { httpStatusOf, isNetworkError } from './serverErrors'
 
 /** Marge avant l'expiration du jeton d'acces. */
 export const RENEW_BEFORE_MS = 60_000
@@ -45,6 +45,7 @@ export function jwtExpiresAt(token: string): number | null {
 export interface RefreshedTokens {
   accessToken: string
   refreshToken: string
+  idToken?: string
 }
 
 // Renouvellements en cours, par jeton de renouvellement.
@@ -130,8 +131,9 @@ export function createSessionRenewal(deps: SessionRenewalDeps): SessionRenewal {
     try {
       res = await refreshOnce(deps.refresh, active.refreshToken)
     } catch (err) {
-      if (isNetworkError(err)) {
-        // Serveur injoignable : le compte reste garde, on reessaie plus tard.
+      if (isNetworkError(err) || (httpStatusOf(err) ?? 0) >= 500) {
+        // Serveur ou fournisseur d'identite injoignable (ou en panne) : le
+        // compte reste garde, on reessaie plus tard.
         schedule(now() + RETRY_AFTER_MS)
         return null
       }
@@ -146,7 +148,7 @@ export function createSessionRenewal(deps: SessionRenewalDeps): SessionRenewal {
     // Le jeton neuf est garde meme si l'on a change de compte entre-temps :
     // l'ancien ne vaut plus rien.
     const accounts = storage.load().map(a =>
-      a.userId === active.userId ? { ...a, refreshToken: res.refreshToken } : a)
+      a.userId === active.userId ? { ...a, refreshToken: res.refreshToken, idToken: res.idToken ?? a.idToken } : a)
     storage.save(accounts)
     if (!accounts.find(a => a.userId === active.userId)?.isActive) return null
     setToken(res.accessToken)

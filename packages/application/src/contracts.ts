@@ -347,21 +347,59 @@ export interface AppAuthResponse {
   refreshToken: string
   expiresIn: number
   user: AppAuthUser
+  /** Jeton d'identite (OIDC) : fermer la session du fournisseur a la deconnexion. */
+  idToken?: string
 }
 
+/**
+ * Ou se connecter (ADR-028) : le fournisseur d'identite (OpenID Connect) du
+ * serveur et les applis qui y sont declarees. GET /api/v1/auth/config.
+ */
+export interface AppAuthConfig {
+  issuer: string
+  webClientId: string
+  desktopClientId: string | null
+  scopes: string
+}
+
+/**
+ * Une connexion en cours chez le fournisseur d'identite (code + PKCE) :
+ * de quoi echanger le code recu au retour. A garder jusqu'au retour (le web
+ * quitte la page : sessionStorage).
+ */
+export interface PendingLogin {
+  issuer: string
+  clientId: string
+  redirectUri: string
+  state: string
+  codeVerifier: string
+  tokenEndpoint: string
+}
+
+/** Ce que la personne demande au fournisseur d'identite. */
+export type LoginPrompt = 'login' | 'create' | 'select_account'
+
+/**
+ * Connexion par le fournisseur d'identite du serveur (ADR-028). Les mots de
+ * passe, l'inscription et leur reprise vivent chez lui, jamais dans Savoire.
+ */
 export interface IAuthBackend {
-  login(email: string, password: string): Promise<AppAuthResponse>
+  config(): Promise<AppAuthConfig>
+  /** Adresse ou envoyer la personne, et l'etat a garder jusqu'au retour. */
+  beginLogin(redirectUri: string, prompt?: LoginPrompt): Promise<{ url: string; pending: PendingLogin }>
+  /** Retour du fournisseur (adresse complete ou ses parametres) : jetons et compte. */
+  completeLogin(pending: PendingLogin, callback: URLSearchParams): Promise<AppAuthResponse>
   refresh(refreshToken: string): Promise<AppAuthResponse>
+  /** Revoque la session chez le fournisseur (meilleur effort). */
   logout(accessToken: string, refreshToken: string): Promise<void>
-  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>
+  /**
+   * Fin de la session du fournisseur lui-meme (redirection), ou null.
+   * `idTokenHint` : la session a fermer, sans demander laquelle.
+   */
+  endSessionUrl(postLogoutRedirectUri: string, idTokenHint?: string): Promise<string | null>
 }
 
-export interface IAuthAPI {
-  login(email: string, password: string): Promise<AppAuthResponse>
-  refresh(refreshToken: string): Promise<AppAuthResponse>
-  logout(accessToken: string, refreshToken: string): Promise<void>
-  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>
-}
+export type IAuthAPI = IAuthBackend
 
 // ── Sharing ───────────────────────────────────────────────────────────────────
 
@@ -470,19 +508,15 @@ export interface AppAdminUser {
   isLockedOut: boolean
 }
 
+// Les comptes se creent chez le fournisseur d'identite (ADR-028) : ici,
+// seulement la liste et le blocage.
 export interface IAdminBackend {
   listUsers(token: string): Promise<AppAdminUser[]>
-  createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void>
-  resetPassword(token: string, userId: string, newPassword: string): Promise<void>
-  revokeSessions(token: string, userId: string): Promise<void>
   disableUser(token: string, userId: string): Promise<void>
 }
 
 export interface IAdminAPI {
   listUsers(token: string): Promise<AppAdminUser[]>
-  createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void>
-  resetPassword(token: string, userId: string, newPassword: string): Promise<void>
-  revokeSessions(token: string, userId: string): Promise<void>
   disableUser(token: string, userId: string): Promise<void>
 }
 

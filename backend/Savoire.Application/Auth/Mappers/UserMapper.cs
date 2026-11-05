@@ -10,12 +10,12 @@ namespace Savoire.Application.Auth.Mappers;
 public static class UserMapper
 {
     public static AuthUserDto ToDto(AppUser user) =>
-        new(user.Id, user.DisplayName, user.Email!, user.IsAdmin);
+        new(user.Id, user.DisplayName, user.Email ?? string.Empty, user.IsAdmin);
 
     public static AdminUserDto ToAdminDto(AppUser user, bool isLockedOut) =>
-        new(user.Id, user.Email!, user.DisplayName, user.IsAdmin,
+        new(user.Id, user.Email ?? string.Empty, user.DisplayName, user.IsAdmin,
             user.CreatedAt, user.LastLoginAt, isLockedOut);
 
     public static UserRecord ToRecord(AppUser user) =>
-        new(user.Id, user.DisplayName, user.Email!, user.IsAdmin);
+        new(user.Id, user.DisplayName, user.Email ?? string.Empty, user.IsAdmin);
 }

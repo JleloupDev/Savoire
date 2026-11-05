@@ -10,12 +10,6 @@ public class InvalidEmailException(string email)
 public class EmailAlreadyUsedException(string email)
     : Exception($"L'email '{email}' est déjà associé à un compte.");
 
-public class InvalidCredentialsException()
-    : Exception("Identifiants incorrects.");
-
-public class InvalidRefreshTokenException(string message)
-    : Exception(message);
-
 public class AccountLockedException()
     : Exception("Compte temporairement verrouillé.");
 

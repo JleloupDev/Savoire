@@ -64,8 +64,8 @@ describe('resolution des URL du serveur', () => {
   it('la connexion passe par la base (fetch global)', async () => {
     setServerBaseUrl('https://savoire.exemple.fr')
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
-    await new HttpAuthBackend().login('a@b.c', 'x')
-    expect(String(spy.mock.calls[0][0])).toBe('https://savoire.exemple.fr/api/v1/auth/login')
+    await new HttpAuthBackend().config()
+    expect(String(spy.mock.calls[0][0])).toBe('https://savoire.exemple.fr/api/v1/auth/config')
     spy.mockRestore()
   })
 })

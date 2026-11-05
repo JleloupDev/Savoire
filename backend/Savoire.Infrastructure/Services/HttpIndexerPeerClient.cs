@@ -4,11 +4,12 @@
 //
 // Client nomme d'IHttpClientFactory (« savoire-indexer ») : les tests
 // remplacent son gestionnaire par un faux pair. Jeton de service en
-// Authorization: Bearer, delai Indexer:TimeoutMs, reponse lue au plus
+// Authorization: Bearer (IndexerServiceTokens), delai Indexer:TimeoutMs, reponse lue au plus
 // Indexer:MaxResponseBytes. Ne leve pas pour un pair absent : rend un
 // IndexerPeerResponse que le relais traduit en 503.
 
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Savoire.Application.Abstractions;
@@ -19,6 +20,7 @@ namespace Savoire.Infrastructure.Services;
 public sealed class HttpIndexerPeerClient(
     IHttpClientFactory              httpClients,
     IOptionsMonitor<IndexerOptions> options,
+    IndexerServiceTokens            serviceTokens,
     ILogger<HttpIndexerPeerClient>  logger) : IIndexerPeerClient
 {
     public const string HttpClientName = "savoire-indexer";
@@ -36,9 +38,20 @@ public sealed class HttpIndexerPeerClient(
         IndexerInstanceOptions instance, HttpMethod method, string path, byte[]? jsonBody, CancellationToken ct)
     {
         IndexerOptions opts = options.CurrentValue;
+        string? token;
+        try
+        {
+            // Jeton du fournisseur d'identite (Indexer:Oidc), sinon le jeton partage.
+            token = await serviceTokens.GetAsync(ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or KeyNotFoundException)
+        {
+            logger.LogError("Pair indexeur : pas de jeton de service ({Message}).", ex.Message);
+            return IndexerPeerResponse.Failed(IndexerPeerOutcome.Unreachable);
+        }
         var baseUri = new Uri(instance.Url.EndsWith('/') ? instance.Url : instance.Url + "/");
         using var request = new HttpRequestMessage(method, new Uri(baseUri, path));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", opts.ServiceToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (jsonBody is not null)
         {
@@ -59,6 +72,8 @@ public sealed class HttpIndexerPeerClient(
                 { Date: { } date }   => date - DateTimeOffset.UtcNow,
                 _                    => null,
             };
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) serviceTokens.Invalidate();
 
             if (response.Content.Headers.ContentLength > opts.MaxResponseBytes)
                 return IndexerPeerResponse.Failed(IndexerPeerOutcome.TooLarge);

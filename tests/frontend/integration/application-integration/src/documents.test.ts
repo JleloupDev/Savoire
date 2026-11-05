@@ -3,9 +3,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { makeAppRoot } from './helpers/makeAppRoot'
 import { makeVaultHub } from './helpers/makeVaultHub'
+import { ADMIN_LOGIN, ADMIN_PASSWORD, devLogin } from './helpers/idp'
 
-const ADMIN_EMAIL = 'admin@local.dev'
-const ADMIN_PASSWORD = 'Admin1234!'
 
 describe('Documents — CRDT vault directory', () => {
   let token = ''
@@ -14,7 +13,7 @@ describe('Documents — CRDT vault directory', () => {
   const root = makeAppRoot(() => token)
 
   beforeAll(async () => {
-    const res = await root.api.auth.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+    const res = await devLogin(ADMIN_LOGIN, ADMIN_PASSWORD)
     token = res.accessToken
     userId = res.user.id
     const vault = await root.api.vaults.create(userId, 'Documents Test Vault', token)

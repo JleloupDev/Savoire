@@ -31,7 +31,7 @@ public class CorsTests : IClassFixture<AppFactory>
     [InlineData("http://tauri.localhost")]
     public async Task Desktop_app_origin_is_accepted_on_api_and_hubs(string origin)
     {
-        foreach (var path in new[] { "/api/v1/auth/login", "/hubs/vault/negotiate?negotiateVersion=1" })
+        foreach (var path in new[] { "/api/v1/auth/me", "/hubs/vault/negotiate?negotiateVersion=1" })
         {
             var res = await PreflightAsync(path, origin);
             AllowedOrigin(res).Should().Be(origin, $"preflight {path}");
@@ -43,7 +43,7 @@ public class CorsTests : IClassFixture<AppFactory>
     [Fact]
     public async Task Unknown_origin_is_refused()
     {
-        var res = await PreflightAsync("/api/v1/auth/login", "https://evil.example");
+        var res = await PreflightAsync("/api/v1/auth/me", "https://evil.example");
         AllowedOrigin(res).Should().BeNull();
     }
 
@@ -51,10 +51,7 @@ public class CorsTests : IClassFixture<AppFactory>
     public async Task Actual_request_from_desktop_app_carries_the_cors_header()
     {
         var client = _factory.CreateClient();
-        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
-        {
-            Content = System.Net.Http.Json.JsonContent.Create(new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword }),
-        };
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/config");
         req.Headers.Add("Origin", "tauri://localhost");
         var res = await client.SendAsync(req);
         res.IsSuccessStatusCode.Should().BeTrue();

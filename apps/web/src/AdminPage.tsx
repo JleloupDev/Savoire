@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import type { IAdminAPI, AppAdminUser } from '@savoire/application'
 import { t, ti } from '@savoire/i18n'
-import { notify } from '@savoire/notifications'
 
 export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
   const { token, isReady, logout } = useAuth()
@@ -13,17 +12,6 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
 
   const [users, setUsers] = useState<AppAdminUser[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-
-  const [newEmail, setNewEmail] = useState('')
-  const [newDisplayName, setNewDisplayName] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [newIsAdmin, setNewIsAdmin] = useState(false)
-  const [createLoading, setCreateLoading] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [createSuccess, setCreateSuccess] = useState<string | null>(null)
-
-  const [resetTarget, setResetTarget] = useState<string | null>(null)
-  const [resetPassword, setResetPassword] = useState('')
 
   const loadUsers = useCallback(async () => {
     if (!token) return
@@ -38,39 +26,6 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
     void loadUsers()
   }, [isReady, token, navigate, loadUsers])
 
-  async function createUser() {
-    if (!token || !newEmail || !newPassword || !newDisplayName) return
-    setCreateLoading(true)
-    setCreateError(null)
-    setCreateSuccess(null)
-    try {
-      await adminApi.createUser(token, newEmail.trim(), newPassword, newDisplayName.trim(), newIsAdmin)
-      setCreateSuccess(ti('app', 'admin.user.created', { email: newEmail }))
-      setNewEmail(''); setNewDisplayName(''); setNewPassword(''); setNewIsAdmin(false)
-      await loadUsers()
-      notify('success', t('app', 'notify.admin.userCreated'))
-    } catch (e) {
-      setCreateError(String(e))
-    }
-    finally { setCreateLoading(false) }
-  }
-
-  async function confirmReset(userId: string) {
-    if (!token || !resetPassword) return
-    try {
-      await adminApi.resetPassword(token, userId, resetPassword)
-      setResetTarget(null); setResetPassword('')
-      notify('success', t('app', 'notify.admin.passwordReset'))
-    } catch (e) {
-      setLoadError(String(e))
-    }
-  }
-
-  async function handleRevoke(userId: string) {
-    if (!token) return
-    try { await adminApi.revokeSessions(token, userId) } catch { /* POC: ignore */ }
-  }
-
   async function handleDisable(userId: string) {
     if (!token) return
     try { await adminApi.disableUser(token, userId); await loadUsers() } catch { /* POC: ignore */ }
@@ -79,18 +34,6 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
   async function handleLogout() {
     await logout()
     navigate('/login')
-  }
-
-  const inp: React.CSSProperties = {
-    padding: '6px 8px',
-    background: 'var(--bg-base)',
-    color: 'var(--text)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    fontSize: '0.8rem',
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box',
   }
 
   const topBtn: React.CSSProperties = {
@@ -141,7 +84,7 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: 16, gap: 16 }}>
 
-        {/* ── Create form ── */}
+        {/* ── Comptes : chez le fournisseur d'identite ── */}
         <div style={{
           width: 300,
           minWidth: 300,
@@ -151,72 +94,24 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
           padding: 18,
           display: 'flex',
           flexDirection: 'column',
-          gap: 12,
+          gap: 10,
           flexShrink: 0,
           alignSelf: 'flex-start',
           boxShadow: 'var(--shadow)',
+          fontSize: '0.8rem',
+          lineHeight: 1.5,
+          color: 'var(--text-muted)',
         }}>
-          <h3 style={sectionTitle}>{t('app', 'admin.user.create')}</h3>
-
-          {createError && (
-            <div style={{
-              background: `color-mix(in srgb, var(--color-danger) 12%, var(--bg-base))`,
-              color: 'var(--color-danger)',
-              padding: '6px 10px',
-              borderRadius: 'var(--radius)',
-              fontSize: '0.75rem',
-              border: `1px solid color-mix(in srgb, var(--color-danger) 35%, var(--border))`,
-            }}>{createError}</div>
-          )}
-          {createSuccess && (
-            <div style={{
-              background: `color-mix(in srgb, var(--color-success) 12%, var(--bg-base))`,
-              color: 'var(--color-success)',
-              padding: '6px 10px',
-              borderRadius: 'var(--radius)',
-              fontSize: '0.75rem',
-              border: `1px solid color-mix(in srgb, var(--color-success) 35%, var(--border))`,
-            }}>{createSuccess}</div>
-          )}
-
-          {[
-            { label: t('app', 'admin.user.email'), type: 'email', value: newEmail, set: setNewEmail, ph: 'user@example.com' },
-            { label: t('app', 'admin.user.displayName'), type: 'text', value: newDisplayName, set: setNewDisplayName, ph: 'Jean Dupont' },
-            { label: t('app', 'admin.user.password'), type: 'password', value: newPassword, set: setNewPassword, ph: t('app', 'admin.user.passwordHint') },
-          ].map(({ label, type, value, set, ph }) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</label>
-              <input type={type} value={value} onChange={e => set(e.target.value)} placeholder={ph} style={inp} />
-            </div>
-          ))}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="checkbox"
-              id="isAdmin"
-              checked={newIsAdmin}
-              onChange={e => setNewIsAdmin(e.target.checked)}
-              style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
-            />
-            <label htmlFor="isAdmin" style={{ fontSize: '0.82rem', cursor: 'pointer' }}>{t('app', 'admin.user.isAdmin')}</label>
+          <h3 style={sectionTitle}>Comptes</h3>
+          <div>
+            Chacun crée son compte depuis l'écran de connexion. Les mots de passe,
+            l'inscription et les connexions externes se gèrent dans la console
+            du fournisseur d'identité (Zitadel).
           </div>
-
-          <button
-            onClick={createUser}
-            disabled={createLoading || !newEmail || !newPassword || !newDisplayName}
-            style={{
-              padding: '8px 0',
-              background: 'var(--accent)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 'var(--radius)',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              opacity: (createLoading || !newEmail || !newPassword || !newDisplayName) ? 0.5 : 1,
-            }}
-          >
-            {createLoading ? t('app', 'admin.user.creating') : t('app', 'admin.user.createSubmit')}
-          </button>
+          <div>
+            Un compte apparaît ici à sa première connexion. Le bloquer lui ferme
+            Savoire, même si sa connexion reste valide chez le fournisseur.
+          </div>
         </div>
 
         {/* ── User list ── */}
@@ -293,41 +188,11 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
               </div>
 
               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                {resetTarget === user.id ? (
-                  <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                    <input
-                      type="password"
-                      value={resetPassword}
-                      onChange={e => setResetPassword(e.target.value)}
-                      placeholder="Nouveau mdp"
-                      style={{ ...inp, width: 120, padding: '3px 6px', fontSize: '0.72rem' }}
-                    />
-                    <button onClick={() => confirmReset(user.id)} disabled={!resetPassword} style={{
-                      padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-success)',
-                      border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.7rem',
-                    }}>OK</button>
-                    <button onClick={() => { setResetTarget(null); setResetPassword('') }} style={{
-                      padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-danger)',
-                      border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.7rem',
-                    }}>Ann.</button>
-                  </div>
-                ) : (
-                  <>
-                    <button onClick={() => setResetTarget(user.id)} title="Réinitialiser le mot de passe" style={{
-                      padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-warn)',
-                      border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.72rem',
-                    }}>🔑 Reset</button>
-                    <button onClick={() => handleRevoke(user.id)} title="Révoquer toutes les sessions" style={{
-                      padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-info)',
-                      border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.72rem',
-                    }}>🔒 Sessions</button>
-                    {!user.isLockedOut && (
-                      <button onClick={() => handleDisable(user.id)} title="Désactiver le compte" style={{
-                        padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-danger)',
-                        border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.72rem',
-                      }}>✕</button>
-                    )}
-                  </>
+                {!user.isLockedOut && (
+                  <button onClick={() => handleDisable(user.id)} title="Bloquer le compte" data-testid="admin-disable" style={{
+                    padding: '3px 8px', background: 'var(--bg-elevated)', color: 'var(--color-danger)',
+                    border: '1px solid var(--border)', borderRadius: 3, fontSize: '0.72rem',
+                  }}>Bloquer</button>
                 )}
               </div>
             </div>

@@ -22,7 +22,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<FolderEntity>      Folders     => Set<FolderEntity>();
     public DbSet<OperationEntity>  Operations  => Set<OperationEntity>();
     public DbSet<SyncVectorEntity> SyncVectors => Set<SyncVectorEntity>();
-    public DbSet<RefreshToken>              RefreshTokens       => Set<RefreshToken>();
     public DbSet<ResourcePermissionEntity>  ResourcePermissions => Set<ResourcePermissionEntity>();
     public DbSet<ShareLinkEntity>           ShareLinks          => Set<ShareLinkEntity>();
     public DbSet<EdgesyncBlobEntity>        EdgesyncBlobs       => Set<EdgesyncBlobEntity>();
@@ -225,13 +224,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .WithMany()
              .HasForeignKey(s => s.VaultId)
              .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<RefreshToken>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Token).IsUnique();
-            e.HasIndex(x => x.UserId);
         });
 
         modelBuilder.Entity<ResourcePermissionEntity>(e =>

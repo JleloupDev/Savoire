@@ -3,10 +3,12 @@
 export const appFr = {
   // Login
   'login.title': 'Connexion',
-  'login.subtitle': 'Entrez vos identifiants pour accéder à votre vault.',
+  'login.subtitle': 'Connectez-vous avec votre compte, ou créez-en un.',
   'login.email': 'Email',
   'login.password': 'Mot de passe',
   'login.submit': 'Se connecter →',
+  'login.create': 'Créer un compte',
+  'login.hint': 'Mot de passe oublié, autres moyens de connexion : sur la page de connexion qui s\'ouvre.',
   'login.submitting': 'Connexion…',
   'login.forgot': 'Mot de passe oublié ?',
   'login.error.credentials': 'Email ou mot de passe incorrect.',

@@ -8,6 +8,7 @@
 import { getHeapStatistics } from 'node:v8'
 import type { IndexPower } from '@savoire/indexer-core'
 import { BackendClient } from './backend'
+import { bearerSourceFor } from './serviceAuth'
 import type { FeedChange } from './backend'
 import type { IndexerConfig } from './config'
 import { toWire, unavailable } from './errors'
@@ -78,7 +79,7 @@ export class Shard {
       unavailableRetryAfterS: c.unavailableRetryAfterS,
       ...(powers ? { powers } : {}),
     }, metrics => new BackendClient({
-      url: c.backendUrl, token: c.token, name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,
+      url: c.backendUrl, token: bearerSourceFor(c), name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,
       maxBytes: c.maxDocBytes, userAgent: `savoire-indexer/${init.version}`,
     }, metrics), log, (vaultId, gen) => this.emit({ t: 'gen', vaultId, gen }))
     this.store.start(id => shardOf(id, count) === init.index)

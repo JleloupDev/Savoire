@@ -9,6 +9,7 @@
 // Le deroule est ici, sans React, pour etre teste ; la fenetre du bouton
 // serveur (DesktopServerDialog.tsx) ne fait que l'appeler.
 
+import type { LoginPrompt } from '@savoire/application'
 import { HttpAuthBackend, normalizeServerAddress } from '@savoire/infrastructure-sync'
 import { chooseServer, clearServerSession, forgetServer, getServerChoice } from './serverConnection'
 import { classifyLoginError } from './serverErrors'
@@ -27,8 +28,11 @@ export interface DesktopConnectionDeps {
   chooseServer(input: string): Promise<string>
   /** Adresses deja connues (pour ne pas garder une adresse neuve qui ne mene nulle part). */
   knownServers(): string[]
-  /** Connexion du compte sur le serveur choisi (AuthContext.login, un seul compte). */
-  login(email: string, password: string): Promise<void>
+  /**
+   * Connexion sur le serveur choisi, chez son fournisseur d'identite
+   * (AuthContext.login, un seul compte) : le navigateur du systeme s'ouvre.
+   */
+  login(prompt?: LoginPrompt): Promise<void>
   /** Revoque une session sur un serveur donne (meilleur effort). */
   revoke(server: string, accessToken: string, refreshToken: string): Promise<void>
   /** Efface la session gardee d'un serveur. */
@@ -40,29 +44,28 @@ export interface DesktopConnectionDeps {
 /** Branchement reel : serverConnection.ts et le client HTTP d'authentification. */
 export function desktopConnectionDeps(auth: {
   current(): CurrentServerAccount
-  login(email: string, password: string): Promise<void>
+  login(prompt?: LoginPrompt): Promise<void>
 }): DesktopConnectionDeps {
   return {
     current: auth.current,
     login: auth.login,
     chooseServer,
     knownServers: () => getServerChoice().servers,
-    revoke: (server, accessToken, refreshToken) => new HttpAuthBackend(server).logout(accessToken, refreshToken),
+    revoke: (server, accessToken, refreshToken) => new HttpAuthBackend(server, 'desktop').logout(accessToken, refreshToken),
     clearSession: clearServerSession,
     forget: forgetServer,
   }
 }
 
 /**
- * Se connecter a `serverInput` avec ce compte. Rend l'adresse retenue.
+ * Se connecter a `serverInput` (chez son fournisseur d'identite). Rend l'adresse retenue.
  * En cas d'echec, rien ne change : le serveur et le compte d'avant restent.
  * Rejette avec l'erreur d'origine (a dire en clair avec describeLoginError).
  */
 export async function connectToServer(
   deps: DesktopConnectionDeps,
   serverInput: string,
-  email: string,
-  password: string,
+  prompt?: LoginPrompt,
 ): Promise<string> {
   const before = deps.current()
   // Rejette une adresse invalide (ServerAddressError) avant de rien toucher.
@@ -70,7 +73,7 @@ export async function connectToServer(
   const isNew = !deps.knownServers().includes(wanted)
   const url = await deps.chooseServer(wanted)
   try {
-    await deps.login(email.trim(), password)
+    await deps.login(prompt)
   } catch (err) {
     // Retour au serveur d'avant : son compte, s'il y en avait un, reste connecte.
     if (before.server && before.server !== url) await deps.chooseServer(before.server).catch(() => {})

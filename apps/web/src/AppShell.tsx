@@ -11,7 +11,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
-import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry } from '@savoire/application'
+import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
@@ -1175,11 +1175,11 @@ export function AppShell() {
   }
 
   // Bureau : connexion au serveur (un seul compte : remplace le precedent).
-  async function handleServerConnect(server: string, email: string, password: string) {
+  async function handleServerConnect(server: string, prompt?: LoginPrompt) {
     const url = await connectToServer(desktopConnectionDeps({
       current: () => ({ server: getServerChoice().current, account: auth.activeAccount, token: auth.token }),
       login: auth.login,
-    }), server, email, password)
+    }), server, prompt)
     notify('success', 'Connecté au serveur', `${serverLabel(url)} : les vaults de votre compte sont dans la liste des vaults.`)
   }
 

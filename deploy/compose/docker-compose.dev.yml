@@ -3,7 +3,12 @@
 # Le backend, le front (Vite) et le pair indexeur tournent sur le poste.
 #
 #   docker compose -f deploy/compose/docker-compose.dev.yml up -d --wait
-#   node deploy/compose/zitadel/bootstrap.mjs --env dev
+#
+# Le service zitadel-bootstrap prepare Zitadel puis s'arrete ; il ecrit
+# .local/zitadel/savoire-oidc.json (backend) et indexer-oidc.json (pair).
+# Console Zitadel : http://localhost:8090/ui/console (admin@savoire.localhost /
+# Admin-Dev-1234!), aussi administrateur de Savoire (Auth:AdminEmails).
+# Courriels envoyes par Zitadel : http://localhost:8025 (Mailpit).
 #
 # Tout est lie a 127.0.0.1 : rien n'est expose hors de la machine.
 # Mots de passe de dev uniquement, jamais en production (docker-compose.yml).
@@ -67,6 +72,7 @@ services:
       ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "false"
       ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: noreply@savoire.localhost
       ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: Savoire (dev)
+      ZITADEL_DEFAULTINSTANCE_DEFAULTLANGUAGE: fr
     volumes:
       - zitadel-bootstrap:/zitadel/bootstrap
     healthcheck:
@@ -89,6 +95,10 @@ services:
       ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
       ZITADEL_SESSION_COOKIE_SECRET: DevSessionCookieSecretAtLeast32Characters
       CUSTOM_REQUEST_HEADERS: Host:localhost:8090,X-Forwarded-Proto:http
+      # Adresse a verifier (code par courriel) avant d'entrer : Savoire
+      # n'invite que des adresses verifiees.
+      EMAIL_VERIFICATION: "true"
+      NEXT_PUBLIC_APPLICATION_NAME: Savoire
     volumes:
       - zitadel-bootstrap:/zitadel/bootstrap:ro
     healthcheck:
@@ -112,6 +122,29 @@ services:
     depends_on:
       - zitadel
       - zitadel-login
+
+  # Projet, applis et comptes de service dans Zitadel (zitadel/bootstrap.mjs).
+  # Ecrit .local/zitadel/savoire-oidc.json, lu par le backend de dev.
+  zitadel-bootstrap:
+    image: node:24-alpine
+    restart: "no"
+    command: ["node", "/bootstrap/bootstrap.mjs"]
+    environment:
+      ZITADEL_URL: http://zitadel:8080
+      ZITADEL_HOST: localhost:8090
+      ZITADEL_ISSUER: http://localhost:8090
+      ZITADEL_PAT_FILE: /zitadel/bootstrap/admin.pat
+      WEB_ORIGINS: http://localhost:3002,http://127.0.0.1:3002
+      DEV_MODE: "true"
+      DEFAULT_LANGUAGE: fr
+      OUT_DIR: /out
+    volumes:
+      - ./zitadel/bootstrap.mjs:/bootstrap/bootstrap.mjs:ro
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+      - ../../.local/zitadel:/out
+    depends_on:
+      zitadel:
+        condition: service_healthy
 
   mailpit:
     image: axllent/mailpit:v1.27.10

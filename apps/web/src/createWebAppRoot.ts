@@ -12,11 +12,13 @@ import {
 } from '@savoire/infrastructure-sync'
 import { DocumentStore } from '@savoire/platform'
 import type { IIdentityProvider } from '@savoire/plugin-api'
+import { isTauriRuntime } from './tauriRuntime'
 
 // ── Backends (singletons partagés entre services) ─────────────────────────────
 
 const adminBackend  = new HttpAdminBackend()
-const authBackend   = new HttpAuthBackend()
+// Bureau (Tauri) : l'appli native declaree chez le fournisseur d'identite.
+const authBackend   = new HttpAuthBackend('', isTauriRuntime() ? 'desktop' : 'web')
 const sharingBackend = new HttpSharingBackend()
 const backend: IVaultsBackend = new HttpVaultsBackend()
 

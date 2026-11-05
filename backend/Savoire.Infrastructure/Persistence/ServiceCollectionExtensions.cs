@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Savoire.Application.Abstractions;
@@ -45,69 +46,13 @@ public static class ServiceCollectionExtensions
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:Savoire manquant (PostgreSQL). En dev : deploy/compose/docker-compose.dev.yml.")));
 
-        services.AddIdentityCore<AppUser>(options =>
-        {
-            options.Password.RequiredLength = 10;
-            options.Password.RequireDigit = true;
-            options.Password.RequireUppercase = false;
-            options.Password.RequireNonAlphanumeric = false;
-            options.SignIn.RequireConfirmedEmail = false;
-            options.Lockout.MaxFailedAccessAttempts = 5;
-            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-        })
-        .AddRoles<IdentityRole>()
-        .AddSignInManager()
-        .AddEntityFrameworkStores<AppDbContext>()
-        .AddDefaultTokenProviders();
+        // Comptes Savoire (ASP.NET Identity, sans mot de passe) : la connexion
+        // se fait chez le fournisseur d'identite (ADR-028, AuthenticationSetup).
+        services.AddIdentityCore<AppUser>()
+            .AddRoles<IdentityRole>()
+            .AddEntityFrameworkStores<AppDbContext>();
 
-        // JWT
-        services
-            .AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
-            .AddJwtBearer(options =>
-            {
-                options.MapInboundClaims = false;
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuerSigningKey = true,
-                    // Dynamic resolution: reads from IConfiguration on every validation
-                    IssuerSigningKeyResolver = (_, _, _, _) =>
-                    {
-                        var secret = config["Jwt:Secret"]
-                            ?? throw new InvalidOperationException("Jwt:Secret manquant.");
-                        return [new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))];
-                    },
-                    ValidateIssuer = true,
-                    ValidIssuer = config["Jwt:Issuer"] ?? "vault-server",
-                    ValidateAudience = true,
-                    ValidAudience = config["Jwt:Audience"] ?? "vault-client",
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromSeconds(30)
-                };
-
-                // SignalR: token from query string
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        var token = context.Request.Query["access_token"];
-                        if (!string.IsNullOrEmpty(token) &&
-                            context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
-                            context.Token = token;
-                        return Task.CompletedTask;
-                    }
-                };
-            });
-
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy("AdminOnly",
-                policy => policy.RequireClaim("is_admin", "true"));
-        });
+        services.AddSavoireAuthentication(config);
 
         // Content store — same code, different target depending on the injected connection string
         // Locally: Azurite (via Aspire)
@@ -134,9 +79,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFolderRepository, EfFolderRepository>();
         services.AddScoped<ICrdtOpRepository, EfCrdtOpRepository>();
 
-        // Auth repositories
-        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
-
         // Sharing repositories
         services.AddScoped<IResourcePermissionRepository, EfResourcePermissionRepository>();
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
@@ -159,6 +101,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIndexerChangeRepository, EfIndexerChangeRepository>();
         services.AddScoped<IVaultIndexerSettingRepository, EfVaultIndexerSettingRepository>();
         services.AddHttpClient(HttpIndexerPeerClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
+        services.AddHttpClient(IndexerServiceTokens.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IndexerServiceTokens>();
         services.AddSingleton<IIndexerPeerClient, HttpIndexerPeerClient>();
 
         // Domain Auth services

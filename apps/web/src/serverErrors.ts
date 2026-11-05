@@ -5,6 +5,8 @@
 
 /** Code HTTP porte par le message (« 401 », « HTTP 404 », « 500: ... »), ou null. */
 export function httpStatusOf(err: unknown): number | null {
+  const status = (err as { status?: unknown } | null)?.status
+  if (typeof status === 'number') return status
   const msg = err instanceof Error ? err.message : String(err)
   const m = /^(?:HTTP )?(\d{3})\b/.exec(msg.trim())
   return m ? Number(m[1]) : null

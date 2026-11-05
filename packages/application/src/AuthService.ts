@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { IAuthAPI, IAuthBackend, AppAuthResponse } from './contracts'
+import type { IAuthAPI, IAuthBackend, AppAuthConfig, AppAuthResponse, LoginPrompt, PendingLogin } from './contracts'
 
 export class AuthService implements IAuthAPI {
   constructor(private readonly backend: IAuthBackend) {}
 
-  login(email: string, password: string): Promise<AppAuthResponse> {
-    return this.backend.login(email, password)
+  config(): Promise<AppAuthConfig> {
+    return this.backend.config()
+  }
+
+  beginLogin(redirectUri: string, prompt?: LoginPrompt): Promise<{ url: string; pending: PendingLogin }> {
+    return this.backend.beginLogin(redirectUri, prompt)
+  }
+
+  completeLogin(pending: PendingLogin, callback: URLSearchParams): Promise<AppAuthResponse> {
+    return this.backend.completeLogin(pending, callback)
   }
 
   refresh(refreshToken: string): Promise<AppAuthResponse> {
@@ -17,7 +25,7 @@ export class AuthService implements IAuthAPI {
     return this.backend.logout(accessToken, refreshToken)
   }
 
-  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
-    return this.backend.changePassword(token, currentPassword, newPassword)
+  endSessionUrl(postLogoutRedirectUri: string, idTokenHint?: string): Promise<string | null> {
+    return this.backend.endSessionUrl(postLogoutRedirectUri, idTokenHint)
   }
 }

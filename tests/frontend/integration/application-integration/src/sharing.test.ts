@@ -2,9 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { makeAppRoot } from './helpers/makeAppRoot'
+import { ADMIN_LOGIN, ADMIN_PASSWORD, devLogin, ensureDevUser } from './helpers/idp'
 
-const ADMIN_EMAIL = 'admin@local.dev'
-const ADMIN_PASSWORD = 'Admin1234!'
 const GUEST_EMAIL = `test-sharing-${Date.now()}@local.dev`
 const GUEST_PASSWORD = 'Guest12345!'
 
@@ -17,13 +16,13 @@ describe('Sharing — via Application layer', () => {
   const root = makeAppRoot(() => adminToken)
 
   beforeAll(async () => {
-    const adminRes = await root.api.auth.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+    const adminRes = await devLogin(ADMIN_LOGIN, ADMIN_PASSWORD)
     adminToken = adminRes.accessToken
     adminUserId = adminRes.user.id
 
-    await root.api.admin.createUser(adminToken, GUEST_EMAIL, GUEST_PASSWORD, 'Guest', false)
-    const users = await root.api.admin.listUsers(adminToken)
-    guestUserId = users.find(u => u.email === GUEST_EMAIL)!.id
+    await ensureDevUser(GUEST_EMAIL, GUEST_PASSWORD, 'Guest')
+    // Le compte Savoire nait a la premiere connexion (ADR-028).
+    guestUserId = (await devLogin(GUEST_EMAIL, GUEST_PASSWORD)).user.id
 
     const vault = await root.api.vaults.create(adminUserId, 'Sharing Test Vault', adminToken)
     vaultId = vault.id

@@ -9,11 +9,22 @@ public sealed class IndexerOptions
 {
     public const string Section = "Indexer";
 
+    /// <summary>Claim pose sur le compte de service du pair (jeton du fournisseur d'identite).</summary>
+    public const string PeerClaim = "savoire_service";
+
     /// <summary>
     /// Jeton de service partage avec le pair (SAVOIRE_INDEXER_TOKEN cote pair).
-    /// Absent : pas d'API interne (404), routes publiques en 503.
+    /// Facultatif quand le pair a son identite chez le fournisseur (Oidc).
+    /// Ni l'un ni l'autre : pas d'API interne (404), routes publiques en 503.
     /// </summary>
     public string? ServiceToken { get; set; }
+
+    /// <summary>
+    /// Identites de service chez le fournisseur d'identite (ADR-028), ecrites
+    /// par deploy/compose/zitadel/bootstrap.mjs : le pair vers l'API
+    /// (PeerSubject), l'API vers le pair (client credentials).
+    /// </summary>
+    public IndexerOidcOptions Oidc { get; set; } = new();
 
     /// <summary>Instances du pair : [{ name, url }]. Les vaults sont repartis par hachage de rendez-vous.</summary>
     public List<IndexerInstanceOptions> Instances { get; set; } = [];
@@ -35,8 +46,8 @@ public sealed class IndexerOptions
 
     public IndexerRateLimitOptions RateLimit { get; set; } = new();
 
-    /// <summary>Pair indexeur active : un jeton de service est configure.</summary>
-    public bool Enabled => !string.IsNullOrWhiteSpace(ServiceToken);
+    /// <summary>Pair indexeur active : un jeton de service, ou une identite chez le fournisseur.</summary>
+    public bool Enabled => !string.IsNullOrWhiteSpace(ServiceToken) || Oidc.Configured;
 
     /// <summary>L'instance de ce nom, ou null.</summary>
     public IndexerInstanceOptions? FindInstance(string? name) =>
@@ -76,4 +87,23 @@ public sealed class IndexerRateLimitOptions
 {
     public int PerUserPerMinute  { get; set; } = 300;
     public int PerVaultPerMinute { get; set; } = 1200;
+}
+
+/// <summary>Section « Indexer:Oidc » : identites de service chez le fournisseur d'identite.</summary>
+public sealed class IndexerOidcOptions
+{
+    /// <summary>Sujet (« sub ») des jetons du pair : son compte de service.</summary>
+    public string? PeerSubject { get; set; }
+
+    /// <summary>Compte de service de l'API (client credentials) quand elle appelle le pair.</summary>
+    public string? ClientId { get; set; }
+    public string? ClientSecret { get; set; }
+    public string? TokenEndpoint { get; set; }
+
+    /// <summary>Portees demandees ; l'audience du projet Savoire comprise.</summary>
+    public string? Scope { get; set; }
+
+    public bool Configured =>
+        !string.IsNullOrWhiteSpace(PeerSubject) && !string.IsNullOrWhiteSpace(ClientId)
+        && !string.IsNullOrWhiteSpace(ClientSecret) && !string.IsNullOrWhiteSpace(TokenEndpoint);
 }

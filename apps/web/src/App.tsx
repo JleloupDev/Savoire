@@ -11,17 +11,27 @@ import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
 import { ToastContainer } from './ToastContainer'
 import { getServerChoice } from './serverConnection'
+import { CALLBACK_PATH, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
+import { isAndroidRuntime, isTauriRuntime } from './tauriRuntime'
 
 const { authApi, adminApi, sharingApi, setTokenRenewer } = createWebServices()
+
+// Bureau : navigateur du systeme et retour sur 127.0.0.1. Navigateur et
+// Android (pas de port local a ecouter) : redirection dans la page.
+const loginDriver = isTauriRuntime() && !isAndroidRuntime()
+  ? loopbackLoginDriver(tauriLoopbackBridge())
+  : redirectLoginDriver()
 
 export function App() {
   return (
     // Version bureau (serveur au choix) : un seul compte a la fois.
-    <AuthProvider authApi={authApi} singleAccount={getServerChoice().configurable} setTokenRenewer={setTokenRenewer}>
+    <AuthProvider authApi={authApi} loginDriver={loginDriver} singleAccount={getServerChoice().configurable} setTokenRenewer={setTokenRenewer}>
       <VaultKeyProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
+            <Route path={CALLBACK_PATH} element={<LoginPage />} />
             <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
             <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} />} />
             <Route path="/view" element={<ViewGrantPage />} />

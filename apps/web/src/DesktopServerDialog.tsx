@@ -8,10 +8,11 @@
 // reste ouvert : seul un vault DU SERVEUR se ferme a la deconnexion.
 
 import { useEffect, useState } from 'react'
+import type { LoginPrompt } from '@savoire/application'
 import { t } from '@savoire/i18n'
 import { ServerAddressError } from '@savoire/infrastructure-sync'
 import { getServerChoice, subscribeServerChoice, type ServerChoice } from './serverConnection'
-import { describeLoginError } from './serverErrors'
+import { describeAuthError } from './loginFlow'
 import { serverLabel, type ServerStatus } from './desktopConnection'
 
 /** Le choix du serveur, suivi (il change quand on se connecte ailleurs). */
@@ -63,8 +64,11 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
   status: ServerStatus
   /** Adresse proposee quand aucun serveur n'est encore choisi. */
   defaultServer: string
-  /** Se connecter (remplace le compte precedent). Rejette avec l'erreur d'origine. */
-  onConnect: (server: string, email: string, password: string) => Promise<void>
+  /**
+   * Se connecter (remplace le compte precedent) : le navigateur du systeme
+   * s'ouvre sur la page de connexion du serveur. Rejette avec l'erreur d'origine.
+   */
+  onConnect: (server: string, prompt?: LoginPrompt) => Promise<void>
   onDisconnect: () => Promise<void>
   /** Compte garde, serveur injoignable : reessayer la session gardee. */
   onRetry: () => Promise<boolean>
@@ -72,8 +76,6 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
 }) {
   const choice = useServerChoice()
   const [server, setServer] = useState(choice.current ?? defaultServer)
-  const [email, setEmail] = useState(status.account?.email ?? '')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -88,17 +90,14 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
     }
   }
 
-  function connect() {
-    if (!server.trim() || !email.trim() || !password) return
+  function connect(prompt?: LoginPrompt) {
+    if (!server.trim()) return
     void run(async () => {
       try {
-        await onConnect(server, email, password)
-        setPassword('')
+        await onConnect(server, prompt)
         onClose()
       } catch (err) {
-        setError(err instanceof ServerAddressError
-          ? err.message
-          : describeLoginError(err, { server: server.trim(), credentials: t('app', 'login.error.credentials') }))
+        setError(err instanceof ServerAddressError ? err.message : describeAuthError(err))
       }
     })
   }
@@ -130,7 +129,6 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
           {status.state !== 'none' && (
             <button data-testid="server-disconnect" disabled={busy} style={{ ...btn, color: 'var(--color-danger)' }} onClick={() => void run(async () => {
               await onDisconnect()
-              setPassword('')
             })}>Se déconnecter</button>
           )}
         </div>
@@ -164,19 +162,26 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
             Par exemple https://savoire.exemple.fr, ou {defaultServer} (tunnel SSH vers le serveur).
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={label}>{t('app', 'login.email')}</span>
-          <input data-testid="server-email" style={input} type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && connect()} />
-          <span style={label}>{t('app', 'login.password')}</span>
-          <input data-testid="server-password" style={input} type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && connect()} />
-        </div>
+        {busy && (
+          <div data-testid="server-dialog-waiting" style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+            La page de connexion s'est ouverte dans votre navigateur. Revenez ici une fois connecté.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={btn}>Fermer</button>
           <button
+            data-testid="server-create"
+            disabled={busy || !server.trim()}
+            onClick={() => connect('create')}
+            style={btn}
+          >
+            {t('app', 'login.create')}
+          </button>
+          <button
             data-testid="server-connect"
-            disabled={busy || !server.trim() || !email.trim() || !password}
-            onClick={connect}
-            style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-text, #fff)', border: 'none', opacity: (!server.trim() || !email.trim() || !password) ? 0.5 : 1 }}
+            disabled={busy || !server.trim()}
+            onClick={() => connect()}
+            style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-text, #fff)', border: 'none', opacity: !server.trim() ? 0.5 : 1 }}
           >
             {busy ? t('app', 'login.submitting') : status.state === 'connected' ? 'Se connecter (remplace le compte)' : 'Se connecter'}
           </button>

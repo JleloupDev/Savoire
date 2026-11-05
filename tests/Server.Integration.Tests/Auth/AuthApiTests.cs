@@ -1,197 +1,146 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Tests d'intégration — API Auth
-// Couvre : login, refresh, logout, change-password
+// Tests d'intégration — connexion par le fournisseur d'identite (ADR-028).
+// Couvre : configuration publique, compte cree a la premiere requete,
+// administrateurs par adresse, jetons refuses (emetteur, signature, audience,
+// expiration, adresse non verifiee).
 
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using Savoire.Application.Auth.DTOs;
+using Savoire.Domain.Interfaces;
 
 namespace Savoire.Server.Integration.Tests.Auth;
 
 [Collection("Integration")]
 public class AuthApiTests : IClassFixture<AppFactory>
 {
-    private readonly AppFactory  _factory;
-    private readonly HttpClient  _anon;   // client sans auth
+    private readonly AppFactory _factory;
 
     public AuthApiTests(AppFactory factory)
     {
         _factory = factory;
-        _anon    = factory.CreateClient();
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // LOGIN
-    // ──────────────────────────────────────────────────────────────────
+    private HttpClient ClientWith(string token)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
 
     [Fact]
-    public async Task POST_login_WithValidCredentials_Returns200WithTokens()
+    public async Task GET_config_IsPublic_AndNamesTheIdentityProvider()
     {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword });
+        var response = await _factory.CreateClient().GetAsync("/api/v1/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var body = await response.Content.ReadFromJsonAsync<AuthResponse>();
-        body.Should().NotBeNull();
-        body!.AccessToken.Should().NotBeNullOrWhiteSpace();
-        body.RefreshToken.Should().NotBeNullOrWhiteSpace();
-        body.ExpiresIn.Should().Be(15 * 60);
-        body.User.Email.Should().Be(AppFactory.AdminEmail);
-        body.User.IsAdmin.Should().BeTrue();
+        var config = await response.Content.ReadFromJsonAsync<AuthConfigDto>();
+        config!.Issuer.Should().Be(AppFactory.IdpIssuer);
+        config.WebClientId.Should().Be("web-test-client");
+        config.DesktopClientId.Should().Be("desktop-test-client");
+        config.Scopes.Should().Contain("offline_access");
     }
 
     [Fact]
-    public async Task POST_login_WithWrongPassword_Returns401()
+    public async Task GET_me_FirstRequest_CreatesTheAccount_FromTheToken()
     {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AppFactory.AdminEmail, Password = "WrongPassword!" });
+        string subject = "first-" + Guid.NewGuid().ToString("N");
+        string email = $"{subject}@test.local";
+        var client = ClientWith(AppFactory.MintIdpToken(subject, email, "Premiere Fois"));
 
+        var me = await client.GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+
+        me!.Id.Should().Be(subject);
+        me.Email.Should().Be(email);
+        me.DisplayName.Should().Be("Premiere Fois");
+        me.IsAdmin.Should().BeFalse();
+
+        // Meme sujet, second jeton : le meme compte, pas un nouveau.
+        var again = await ClientWith(AppFactory.MintIdpToken(subject, email, "Premiere Fois"))
+            .GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+        again!.Id.Should().Be(subject);
+    }
+
+    [Fact]
+    public async Task GET_me_AdminEmail_Verified_IsAdmin()
+    {
+        var me = await ClientWith(await _factory.GetAdminTokenAsync())
+            .GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+
+        me!.IsAdmin.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GET_me_AdminEmail_NotVerified_IsNotAdmin()
+    {
+        // Une adresse non verifiee par l'IdP ne donne aucun droit.
+        string subject = "unverified-" + Guid.NewGuid().ToString("N");
+        var me = await ClientWith(AppFactory.MintIdpToken(subject, AppFactory.AdminEmail, "Usurpateur", emailVerified: false))
+            .GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+
+        me!.IsAdmin.Should().BeFalse();
+        me.Email.Should().BeEmpty("une adresse non verifiee n'est pas gardee");
+    }
+
+    [Fact]
+    public async Task GET_me_EmailVerifiedLater_IsPickedUp()
+    {
+        string subject = "later-" + Guid.NewGuid().ToString("N");
+        string email = $"{subject}@test.local";
+        var first = await ClientWith(AppFactory.MintIdpToken(subject, email, "Plus Tard", emailVerified: false))
+            .GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+        first!.Email.Should().BeEmpty();
+
+        // L'etat du compte est garde une minute : on l'oublie, comme a son expiration.
+        _factory.Services.GetRequiredService<IAccountCache>().Forget(subject);
+        var later = await ClientWith(AppFactory.MintIdpToken(subject, email, "Plus Tard", emailVerified: true))
+            .GetFromJsonAsync<AuthUserDto>("/api/v1/auth/me");
+        later!.Email.Should().Be(email);
+    }
+
+    [Fact]
+    public async Task GET_me_WithoutToken_Returns401()
+    {
+        var response = await _factory.CreateClient().GetAsync("/api/v1/auth/me");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    public static TheoryData<string> RejectedTokens()
+    {
+        string subject = "rejected-" + Guid.NewGuid().ToString("N");
+        string email = $"{subject}@test.local";
+        var otherKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "test-key" };
+        return new TheoryData<string>
+        {
+            AppFactory.MintIdpToken(subject, email, key: otherKey),
+            AppFactory.MintIdpToken(subject, email, issuer: "https://autre-idp.test"),
+            AppFactory.MintIdpToken(subject, email, audience: "un-autre-projet"),
+            AppFactory.MintIdpToken(subject, email, expires: DateTime.UtcNow.AddMinutes(-5)),
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(RejectedTokens))]
+    public async Task GET_me_InvalidToken_Returns401(string token)
+    {
+        var response = await ClientWith(token).GetAsync("/api/v1/auth/me");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
-    public async Task POST_login_WithUnknownEmail_Returns401()
+    public async Task OldPasswordRoutes_AreGone()
     {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = "nobody@unknown.com", Password = "AnyPassword1!" });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task POST_login_WithInvalidEmailFormat_Returns400()
-    {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = "notanemail", Password = "AnyPassword1!" });
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // REFRESH
-    // ──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task POST_refresh_WithValidRefreshToken_Returns200WithNewTokens()
-    {
-        // Arrange — login pour obtenir les tokens initiaux
-        var loginResp = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword });
-        var loginBody = await loginResp.Content.ReadFromJsonAsync<AuthResponse>();
-
-        // Act
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { RefreshToken = loginBody!.RefreshToken });
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var newBody = await response.Content.ReadFromJsonAsync<AuthResponse>();
-        newBody.Should().NotBeNull();
-        newBody!.AccessToken.Should().NotBeNullOrWhiteSpace();
-        newBody.RefreshToken.Should().NotBe(loginBody.RefreshToken);
-    }
-
-    [Fact]
-    public async Task POST_refresh_TwiceWithSameToken_SecondReturns401()
-    {
-        // Rotation : chaque renouvellement invalide le jeton utilise.
-        // Le client ne doit donc jamais renouveler deux fois en parallele.
-        var loginResp = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword });
-        var loginBody = await loginResp.Content.ReadFromJsonAsync<AuthResponse>();
-
-        var first = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { RefreshToken = loginBody!.RefreshToken });
-        var second = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { RefreshToken = loginBody.RefreshToken });
-
-        first.StatusCode.Should().Be(HttpStatusCode.OK);
-        second.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task POST_refresh_WithInvalidToken_Returns401()
-    {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { RefreshToken = "invalid-refresh-token" });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // LOGOUT
-    // ──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task POST_logout_WithValidToken_Returns204()
-    {
-        // Arrange — login
-        var loginResp = await _anon.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AppFactory.AdminEmail, Password = AppFactory.AdminPassword });
-        var loginBody = await loginResp.Content.ReadFromJsonAsync<AuthResponse>();
-
-        var authClient = _factory.CreateClient();
-        authClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", loginBody!.AccessToken);
-
-        // Act
-        var response = await authClient.PostAsJsonAsync("/api/v1/auth/logout",
-            new { RefreshToken = loginBody.RefreshToken });
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
-    public async Task POST_logout_WithoutJwt_Returns401()
-    {
-        var response = await _anon.PostAsJsonAsync("/api/v1/auth/logout",
-            new { RefreshToken = "any-token" });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // CHANGE PASSWORD
-    // ──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task POST_changePassword_WithValidCredentials_Returns204()
-    {
-        // Arrange — créer un utilisateur via admin
-        var email  = $"changepw-{Guid.NewGuid():N}@test.local";
-        var (token, _) = await _factory.CreateUserAndGetTokenAsync(
-            email, password: "InitialPass1!");
-
-        var authClient = _factory.CreateClient();
-        authClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", token);
-
-        // Act
-        var response = await authClient.PostAsJsonAsync("/api/v1/auth/change-password",
-            new { CurrentPassword = "InitialPass1!", NewPassword = "NewPassword1!" });
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
-    public async Task POST_changePassword_WithWrongCurrentPassword_Returns400()
-    {
-        var (token, _) = await _factory.CreateUserAndGetTokenAsync(
-            $"changepw2-{Guid.NewGuid():N}@test.local", password: "InitialPass1!");
-
-        var authClient = _factory.CreateClient();
-        authClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", token);
-
-        var response = await authClient.PostAsJsonAsync("/api/v1/auth/change-password",
-            new { CurrentPassword = "WrongPassword!", NewPassword = "NewPassword1!" });
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var anon = _factory.CreateClient();
+        foreach (string path in new[] { "/api/v1/auth/login", "/api/v1/auth/refresh" })
+        {
+            var response = await anon.PostAsJsonAsync(path, new { Email = "a@b.c", Password = "x" });
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+        }
     }
 }

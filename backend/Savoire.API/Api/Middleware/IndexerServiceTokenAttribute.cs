@@ -3,10 +3,15 @@
 // Jeton de service de l'API interne du pair indexeur
 // (docs/Architecture/indexer-protocol.md) : Authorization: Bearer <jeton>.
 //
-// Sans jeton configure (Indexer:ServiceToken), l'API interne n'existe pas :
-// 404. Jeton absent ou faux : 401. La comparaison se fait en temps constant
-// sur les empreintes SHA-256 : ni le contenu ni la longueur du jeton ne
-// fuient par le temps de reponse.
+// Deux facons d'etre le pair (ADR-028) :
+//  - un jeton du fournisseur d'identite au nom du compte de service du pair
+//    (Indexer:Oidc:PeerSubject) : deja verifie par l'authentification, qui
+//    pose le claim savoire_service=indexer ;
+//  - le jeton partage Indexer:ServiceToken (tests, installation sans
+//    fournisseur), compare en temps constant sur les empreintes SHA-256 : ni
+//    le contenu ni la longueur du jeton ne fuient par le temps de reponse.
+// Ni l'un ni l'autre configure : l'API interne n'existe pas (404). Sinon,
+// appelant non reconnu : 401.
 
 using System.Security.Cryptography;
 using System.Text;
@@ -30,8 +35,12 @@ public sealed class IndexerServiceTokenAttribute : Attribute, IAuthorizationFilt
             return;
         }
 
+        // Pose par l'authentification seulement pour le sujet Indexer:Oidc:PeerSubject.
+        if (context.HttpContext.User.HasClaim(IndexerOptions.PeerClaim, "indexer"))
+            return;
+
         string? presented = BearerToken(context.HttpContext.Request.Headers.Authorization.ToString());
-        if (presented is null || !TokenMatches(presented, opts.ServiceToken!))
+        if (presented is null || string.IsNullOrEmpty(opts.ServiceToken) || !TokenMatches(presented, opts.ServiceToken))
         {
             context.HttpContext.Response.Headers.WWWAuthenticate = "Bearer";
             context.Result = new ContentResult

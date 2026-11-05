@@ -19,9 +19,7 @@ public class DomainExceptionHandler : IExceptionHandler
         (int status, string type, string title) = exception switch
         {
             // Auth
-            InvalidCredentialsException  => (401, "invalid-credentials",   "Invalid credentials"),
             AccountLockedException       => (401, "account-locked",        "Account locked"),
-            InvalidRefreshTokenException => (401, "invalid-refresh-token", "Invalid token"),
             UnauthorizedAccessException  => (401, "unauthorized",          "Not authenticated"),
             // Identity
             EmailAlreadyUsedException    => (400, "email-already-used",    "Email already in use"),

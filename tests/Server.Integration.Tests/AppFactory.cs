@@ -7,24 +7,38 @@
 // (deploy/compose/docker-compose.dev.yml), avec un role qui cree des bases.
 // see ADR-019
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 
 namespace Savoire.Server.Integration.Tests;
 
 public class AppFactory : WebApplicationFactory<Program>
 {
-    // Credentials admin seedé au démarrage
+    // Administrateur : son adresse est dans Auth:AdminEmails.
     public const string AdminEmail    = "admin@test.local";
-    public const string AdminPassword = "AdminTest1!";
+    public const string AdminSubject  = "admin-test-subject";
 
-    // JWT config partagée pour les tests
+    // Fournisseur d'identite de test (ADR-028) : une cle RSA propre au
+    // processus ; les jetons des comptes sont signes ici, comme par Zitadel.
+    public const string IdpIssuer   = "https://idp.test";
+    public const string IdpAudience = "savoire-test-project";
+    private static readonly RsaSecurityKey IdpKey = new(RSA.Create(2048)) { KeyId = "test-key" };
+
+    // Jetons signes par Savoire (liens de partage, vues integrees).
     public const string JwtSecret   = "test-secret-key-for-tests-minimum-32-chars!!";
     public const string JwtIssuer   = "vault-server";
     public const string JwtAudience = "vault-client";
@@ -56,6 +70,8 @@ public class AppFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(TempStoragePath);
+        // Jamais le fichier de bootstrap.mjs du poste de dev.
+        builder.UseSetting("Savoire:OidcConfigFile", "");
 
         builder.ConfigureAppConfiguration(config =>
         {
@@ -67,14 +83,54 @@ public class AppFactory : WebApplicationFactory<Program>
                 ["Jwt:Secret"]                       = JwtSecret,
                 ["Jwt:Issuer"]                       = JwtIssuer,
                 ["Jwt:Audience"]                     = JwtAudience,
-                ["Jwt:AccessTokenExpirationMinutes"] = "15",
-                ["Jwt:RefreshTokenExpirationDays"]   = "7",
-                // Admin seedé au démarrage
-                ["Admin:Email"]       = AdminEmail,
-                ["Admin:Password"]    = AdminPassword,
-                ["Admin:DisplayName"] = "Test Admin"
+                // Fournisseur d'identite (cles fournies plus bas, sans reseau)
+                ["Auth:Oidc:Authority"]   = IdpIssuer,
+                ["Auth:Oidc:Audience"]    = IdpAudience,
+                ["Auth:Oidc:WebClientId"] = "web-test-client",
+                ["Auth:Oidc:DesktopClientId"] = "desktop-test-client",
+                ["Auth:AdminEmails:0"]    = AdminEmail,
             });
         });
+
+        // Les cles de l'IdP de test, au lieu de les chercher a son adresse.
+        builder.ConfigureTestServices(services =>
+            services.PostConfigure<JwtBearerOptions>("oidc", o =>
+            {
+                o.ConfigurationManager = null;
+                var configuration = new OpenIdConnectConfiguration { Issuer = IdpIssuer };
+                configuration.SigningKeys.Add(IdpKey);
+                o.Configuration = configuration;
+                o.TokenValidationParameters.ValidIssuer = IdpIssuer;
+                o.TokenValidationParameters.ValidAudience = IdpAudience;
+                o.TokenValidationParameters.IssuerSigningKey = IdpKey;
+            }));
+    }
+
+    /// <summary>
+    /// Un jeton d'acces de l'IdP de test. Par defaut, comme Zitadel : pas
+    /// d'adresse dans le jeton ; on la met ici pour que le compte la recoive
+    /// a sa creation (pas d'appel userinfo dans les tests).
+    /// </summary>
+    public static string MintIdpToken(
+        string subject, string? email, string? name = null, bool emailVerified = true,
+        DateTime? expires = null, string issuer = IdpIssuer, string audience = IdpAudience, SecurityKey? key = null)
+    {
+        var claims = new List<Claim> { new("sub", subject), new("jti", Guid.NewGuid().ToString()) };
+        if (email is not null)
+        {
+            claims.Add(new Claim("email", email));
+            claims.Add(new Claim("email_verified", emailVerified ? "true" : "false"));
+        }
+        if (name is not null) claims.Add(new Claim("name", name));
+        DateTime exp = expires ?? DateTime.UtcNow.AddMinutes(30);
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            notBefore: exp.AddHours(-1),
+            expires: exp,
+            signingCredentials: new SigningCredentials(key ?? IdpKey, SecurityAlgorithms.RsaSha256));
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     /// <summary>Retourne un HttpClient avec le token admin en Authorization: Bearer.</summary>
@@ -87,17 +143,9 @@ public class AppFactory : WebApplicationFactory<Program>
         return client;
     }
 
-    /// <summary>Retourne le JWT admin (appel POST /api/v1/auth/login).</summary>
-    public async Task<string> GetAdminTokenAsync()
-    {
-        var client = CreateClient();
-        var response = await client.PostAsJsonAsync("/api/v1/auth/login",
-            new { Email = AdminEmail, Password = AdminPassword });
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<AuthTokenResponse>()
-            ?? throw new InvalidOperationException("Réponse login vide.");
-        return body.AccessToken;
-    }
+    /// <summary>Jeton de l'administrateur ; son compte est cree a la premiere requete.</summary>
+    public Task<string> GetAdminTokenAsync() =>
+        Task.FromResult(MintIdpToken(AdminSubject, AdminEmail, "Test Admin"));
 
     /// <summary>
     /// Inscrit un nouveau document dans un vault, comme le fait le client
@@ -122,31 +170,19 @@ public class AppFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Crée un utilisateur via l'API admin et retourne son JWT + userId.
+    /// Un compte neuf : un sujet neuf chez l'IdP de test, dont le compte
+    /// Savoire est cree par une premiere requete (GET /api/v1/auth/me).
+    /// Rend son jeton et son id.
     /// </summary>
     public async Task<(string token, string userId)> CreateUserAndGetTokenAsync(
-        string email, string password = "TestPass1!", string displayName = "Test User 2")
+        string email, string displayName = "Test User 2")
     {
-        var adminClient = await CreateAdminClientAsync();
-
-        // V2 : création directe via POST /admin/users
-        var createResp = await adminClient.PostAsJsonAsync(
-            "/api/v1/admin/users",
-            new { Email = email, Password = password, DisplayName = displayName });
-        createResp.EnsureSuccessStatusCode();
-        var createdUser = await createResp.Content.ReadFromJsonAsync<UserInfo>()
-            ?? throw new InvalidOperationException("Réponse create-user vide.");
-
-        // Login pour obtenir les tokens
-        var loginClient = CreateClient();
-        var loginResp = await loginClient.PostAsJsonAsync(
-            "/api/v1/auth/login",
-            new { Email = email, Password = password });
-        loginResp.EnsureSuccessStatusCode();
-        var authResp = await loginResp.Content.ReadFromJsonAsync<AuthTokenResponse>()
-            ?? throw new InvalidOperationException("Réponse login vide.");
-
-        return (authResp.AccessToken, authResp.User.Id);
+        string token = MintIdpToken("user-" + Guid.NewGuid().ToString("N"), email, displayName);
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var me = await client.GetFromJsonAsync<UserInfo>("/api/v1/auth/me")
+            ?? throw new InvalidOperationException("Reponse /auth/me vide.");
+        return (token, me.Id);
     }
 
     protected override void Dispose(bool disposing)
@@ -176,7 +212,6 @@ public class AppFactory : WebApplicationFactory<Program>
         catch { /* serveur arrete : rien a nettoyer */ }
     }
 
-    // DTOs internes pour désérialiser les réponses auth
-    private record AuthTokenResponse(string AccessToken, string RefreshToken, int ExpiresIn, UserInfo User);
+    // DTO interne pour lire /api/v1/auth/me
     private record UserInfo(string Id, string DisplayName, string Email, bool IsAdmin);
 }

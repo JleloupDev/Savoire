@@ -14,3 +14,14 @@ permissions = [
   "allow-server-session-get",
   "allow-server-session-set",
 ]
+
+# Connexion a un serveur (ADR-028) : le navigateur du systeme s'ouvre sur la
+# page de connexion, le retour arrive sur 127.0.0.1 (voir src/oauth.rs).
+[[set]]
+identifier = "server-login"
+description = "Se connecter a un serveur dans le navigateur du systeme (retour sur 127.0.0.1)."
+permissions = [
+  "allow-oauth-listen",
+  "allow-oauth-wait",
+  "allow-open-external",
+]

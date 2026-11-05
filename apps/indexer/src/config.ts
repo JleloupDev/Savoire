@@ -7,6 +7,7 @@
 // arrete le service avec la liste des erreurs, plutot qu'un comportement
 // surprenant plus tard. Une variable SAVOIRE_INDEXER_* inconnue (faute de
 // frappe) est signalee.
+import { readOidcFile, type OidcServiceConfig } from './serviceAuth'
 import { readFileSync } from 'node:fs'
 import { availableParallelism } from 'node:os'
 import { resolve } from 'node:path'
@@ -28,7 +29,10 @@ interface Setting {
 
 export interface IndexerConfig {
   name: string
+  /** Jeton partage avec le backend ; vide si l'identite vient du fournisseur (oidc). */
   token: string
+  /** Identite de service chez le fournisseur d'identite (SAVOIRE_INDEXER_OIDC_FILE, ADR-028). */
+  oidc?: OidcServiceConfig
   backendUrl: string
   dataDir: string
   host: string
@@ -73,7 +77,7 @@ const defaultWorkers = () => String(Math.max(1, Math.min(4, availableParallelism
 
 export const SETTINGS: readonly Setting[] = [
   { key: 'name', env: 'SAVOIRE_INDEXER_NAME', kind: 'string', doc: 'Nom de cette instance, tel qu\'il figure dans `Indexer:Instances` du backend. Obligatoire.' },
-  { key: 'token', env: 'SAVOIRE_INDEXER_TOKEN', kind: 'secret', doc: 'Jeton de service partage avec le backend (`Indexer:ServiceToken`), 16 caracteres au moins. Obligatoire, sauf `SAVOIRE_INDEXER_TOKEN_FILE`.' },
+  { key: 'token', env: 'SAVOIRE_INDEXER_TOKEN', kind: 'secret', doc: 'Jeton de service partage avec le backend (`Indexer:ServiceToken`), 16 caracteres au moins. Obligatoire, sauf `SAVOIRE_INDEXER_TOKEN_FILE` ou `SAVOIRE_INDEXER_OIDC_FILE` (identite chez le fournisseur d\'identite, ADR-028).' },
   { key: 'backendUrl', env: 'SAVOIRE_INDEXER_BACKEND_URL', kind: 'url', doc: 'Adresse du backend sur le reseau prive (API interne `/internal/indexer`). Obligatoire.' },
   { key: 'dataDir', env: 'SAVOIRE_INDEXER_DATA_DIR', kind: 'path', def: './data', doc: 'Dossier des index : un `{vaultId}.sqlite` par vault, plus l\'etat du flux. SSD local (jamais un partage SMB/NFS).' },
   { key: 'host', env: 'SAVOIRE_INDEXER_HOST', kind: 'string', def: '0.0.0.0', doc: 'Adresse d\'ecoute.' },
@@ -115,7 +119,7 @@ export const SETTINGS: readonly Setting[] = [
 ]
 
 /** Variables lues sans etre dans la table. */
-const EXTRA_ENV = new Set(['SAVOIRE_INDEXER_TOKEN_FILE'])
+const EXTRA_ENV = new Set(['SAVOIRE_INDEXER_TOKEN_FILE', 'SAVOIRE_INDEXER_OIDC_FILE'])
 
 const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/i
 const UNIT_MS: Record<string, number> = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 }
@@ -165,9 +169,22 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     }
   }
 
+  // Identite de service chez le fournisseur d'identite (ADR-028) : le jeton
+  // partage devient facultatif.
+  let oidc: OidcServiceConfig | undefined
+  const oidcFile = env['SAVOIRE_INDEXER_OIDC_FILE']?.trim()
+  if (oidcFile) {
+    try {
+      oidc = readOidcFile(oidcFile)
+    } catch (err) {
+      problems.push(`SAVOIRE_INDEXER_OIDC_FILE : ${(err as Error).message}.`)
+    }
+  }
+
   for (const s of SETTINGS) {
     let raw = env[s.env]
     if (s.key === 'token' && (raw === undefined || raw === '') && tokenFromFile !== undefined) raw = tokenFromFile
+    if (s.key === 'token' && (raw === undefined || raw === '') && oidcFile) { out.token = ''; continue }
     if (raw === undefined || raw.trim() === '') {
       if (s.def === undefined) { problems.push(`${s.env} : obligatoire. ${s.doc}`); continue }
       raw = typeof s.def === 'function' ? s.def() : s.def
@@ -223,6 +240,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
 
   const c = out as unknown as IndexerConfig
+  if (oidc) c.oidc = oidc
   if (!problems.length) {
     if (c.debounceMaxMs < c.debounceMs) problems.push('SAVOIRE_INDEXER_DEBOUNCE_MAX_MS doit etre superieur ou egal a SAVOIRE_INDEXER_DEBOUNCE_MS.')
     if (c.feedIdleMs < c.feedActiveMs) problems.push('SAVOIRE_INDEXER_FEED_IDLE_MS doit etre superieur ou egal a SAVOIRE_INDEXER_FEED_ACTIVE_MS.')
@@ -242,7 +260,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
 /** La configuration, jeton masque, pour le journal de demarrage. */
 export function redacted(c: IndexerConfig): Record<string, unknown> {
-  return { ...c, token: `*** (${c.token.length} caracteres)` }
+  return {
+    ...c,
+    token: c.token ? `*** (${c.token.length} caracteres)` : '(aucun : fournisseur d\'identite)',
+    ...(c.oidc ? { oidc: { ...c.oidc, clientSecret: '***' } } : {}),
+  }
 }
 
 /** Table Markdown des variables (README, `--help --markdown`). */

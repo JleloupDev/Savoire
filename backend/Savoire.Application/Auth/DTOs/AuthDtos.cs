@@ -2,16 +2,16 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 namespace Savoire.Application.Auth.DTOs;
 
-public record LoginRequest(string Email, string Password);
-public record RefreshRequest(string RefreshToken);
-public record LogoutRequest(string RefreshToken);
-public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
-
-public record AuthResponse(
-    string AccessToken,
-    string RefreshToken,
-    int ExpiresIn,
-    AuthUserDto User
+/// <summary>
+/// Ou et comment se connecter a ce serveur (ADR-028) : le fournisseur
+/// d'identite et les applis qui y sont declarees. Public : le web et le
+/// bureau le lisent avant toute connexion.
+/// </summary>
+public record AuthConfigDto(
+    string Issuer,
+    string WebClientId,
+    string? DesktopClientId,
+    string Scopes
 );
 
 public record AuthUserDto(string Id, string DisplayName, string Email, bool IsAdmin);

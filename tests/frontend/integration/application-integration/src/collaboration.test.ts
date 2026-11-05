@@ -4,9 +4,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { IDocumentMeta } from '@savoire/platform'
 import { makeAppRoot } from './helpers/makeAppRoot'
 import { makeVaultHub } from './helpers/makeVaultHub'
+import { ADMIN_LOGIN, ADMIN_PASSWORD, devLogin, ensureDevUser } from './helpers/idp'
 
-const ADMIN_EMAIL = 'admin@local.dev'
-const ADMIN_PASSWORD = 'Admin1234!'
 const GUEST_EMAIL = `collab-guest-${Date.now()}@local.dev`
 const GUEST_PASSWORD = 'Guest12345!'
 
@@ -22,15 +21,15 @@ describe('Collaboration — two clients via Application layer', () => {
   const guestRoot = makeAppRoot(() => guestToken)
 
   beforeAll(async () => {
-    const adminRes = await adminRoot.api.auth.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+    const adminRes = await devLogin(ADMIN_LOGIN, ADMIN_PASSWORD)
     adminToken = adminRes.accessToken
     adminUserId = adminRes.user.id
 
-    await adminRoot.api.admin.createUser(adminToken, GUEST_EMAIL, GUEST_PASSWORD, 'Guest User', false)
-    const users = await adminRoot.api.admin.listUsers(adminToken)
-    guestUserId = users.find(u => u.email === GUEST_EMAIL)!.id
+    await ensureDevUser(GUEST_EMAIL, GUEST_PASSWORD, 'Guest User')
+    // Le compte Savoire nait a la premiere connexion (ADR-028).
+    guestUserId = (await devLogin(GUEST_EMAIL, GUEST_PASSWORD)).user.id
 
-    const guestRes = await guestRoot.api.auth.login(GUEST_EMAIL, GUEST_PASSWORD)
+    const guestRes = await devLogin(GUEST_EMAIL, GUEST_PASSWORD)
     guestToken = guestRes.accessToken
 
     const vault = await adminRoot.api.vaults.create(adminUserId, 'Collab Test Vault', adminToken)

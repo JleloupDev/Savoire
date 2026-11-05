@@ -26,7 +26,9 @@ node dist/indexer.mjs --help                 # toutes les variables
 node dist/indexer.mjs --check                # vérifie la configuration et s'arrête
 ```
 
-Côté backend : `Indexer:ServiceToken` (le même jeton) et `Indexer:Instances` (`[{ "Name": "idx-a", "Url": "http://idx-a:7070" }]`), voir `backend/Savoire.API/appsettings.Example.json`. Docker : `apps/indexer/Dockerfile` et le service `indexer` de `docker-compose.yml` (variable `INDEXER_TOKEN` du `.env`).
+Côté backend : `Indexer:ServiceToken` (le même jeton) et `Indexer:Instances` (`[{ "Name": "idx-a", "Url": "http://idx-a:7070" }]`), voir `backend/Savoire.API/appsettings.Example.json`. Docker : `apps/indexer/Dockerfile` et le service `indexer` de `deploy/compose/docker-compose.yml`.
+
+En production (ADR-028), pas de jeton partagé : le pair a son identité chez le fournisseur d'identité (Zitadel). `SAVOIRE_INDEXER_OIDC_FILE` désigne le fichier écrit par `deploy/compose/zitadel/bootstrap.mjs` (`indexer-oidc.json`) : le pair y prend ses identifiants (client credentials) pour appeler l'API, et n'accepte que les jetons du compte de service de l'API, vérifiés par les clés publiées du fournisseur (JWKS). Côté backend : `Indexer:Oidc` (écrit dans `savoire-oidc.json`). Le jeton partagé reste accepté s'il est configuré (tests).
 
 ## Ce qu'il fait
 
@@ -48,12 +50,12 @@ Côté backend : `Indexer:ServiceToken` (le même jeton) et `Indexer:Instances` 
 
 ## Configuration
 
-Variables d'environnement, vérifiées au démarrage (toutes les erreurs d'un coup, code de sortie 78). Une variable `SAVOIRE_INDEXER_*` inconnue est signalée (faute de frappe). Durées : `500` (ms), `30s`, `15m`, `24h`, `7d` ; tailles : `65536`, `256KiB`, `32MiB`. `SAVOIRE_INDEXER_TOKEN_FILE` : lire le jeton dans un fichier (secrets Docker / Kubernetes).
+Variables d'environnement, vérifiées au démarrage (toutes les erreurs d'un coup, code de sortie 78). Une variable `SAVOIRE_INDEXER_*` inconnue est signalée (faute de frappe). Durées : `500` (ms), `30s`, `15m`, `24h`, `7d` ; tailles : `65536`, `256KiB`, `32MiB`. `SAVOIRE_INDEXER_TOKEN_FILE` : lire le jeton dans un fichier (secrets Docker / Kubernetes). `SAVOIRE_INDEXER_OIDC_FILE` : identité de service chez le fournisseur d'identité (voir plus haut) ; le jeton devient alors facultatif.
 
 | Variable | Defaut | Role |
 |---|---|---|
 | `SAVOIRE_INDEXER_NAME` | `(obligatoire)` | Nom de cette instance, tel qu'il figure dans `Indexer:Instances` du backend. Obligatoire. |
-| `SAVOIRE_INDEXER_TOKEN` | `(obligatoire)` | Jeton de service partage avec le backend (`Indexer:ServiceToken`), 16 caracteres au moins. Obligatoire, sauf `SAVOIRE_INDEXER_TOKEN_FILE`. |
+| `SAVOIRE_INDEXER_TOKEN` | `(obligatoire)` | Jeton de service partage avec le backend (`Indexer:ServiceToken`), 16 caracteres au moins. Obligatoire, sauf `SAVOIRE_INDEXER_TOKEN_FILE` ou `SAVOIRE_INDEXER_OIDC_FILE` (identite chez le fournisseur d'identite, ADR-028). |
 | `SAVOIRE_INDEXER_BACKEND_URL` | `(obligatoire)` | Adresse du backend sur le reseau prive (API interne `/internal/indexer`). Obligatoire. |
 | `SAVOIRE_INDEXER_DATA_DIR` | `./data` | Dossier des index : un `{vaultId}.sqlite` par vault, plus l'etat du flux. SSD local (jamais un partage SMB/NFS). |
 | `SAVOIRE_INDEXER_HOST` | `0.0.0.0` | Adresse d'ecoute. |

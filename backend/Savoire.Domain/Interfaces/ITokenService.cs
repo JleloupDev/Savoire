@@ -7,8 +7,6 @@ namespace Savoire.Domain.Interfaces;
 
 public interface ITokenService
 {
-    string GenerateAccessToken(AppUser user);
-
     /// <summary>
     /// Generates a scoped JWT for a share link holder (no user account required).
     /// The token carries resource claims so handlers can validate access without a DB lookup.
@@ -32,12 +30,6 @@ public interface ITokenService
     /// sub = "view:{vaultId}:{docId}:{permission}"
     /// </summary>
     string GenerateViewAccessToken(ViewGrantPayload payload);
-
-    Task<RefreshToken> GenerateRefreshTokenAsync(AppUser user, string clientIp);
-    Task<(AppUser user, RefreshToken newRefreshToken)> RotateRefreshTokenAsync(
-        string rawToken, string clientIp);
-    Task RevokeRefreshTokenAsync(string rawToken);
-    Task RevokeAllUserRefreshTokensAsync(string userId);
 }
 
 public sealed record ViewGrantPayload(

@@ -168,10 +168,11 @@ describe('connexion au serveur a tout moment, un seul compte', () => {
       current: () => ({ ...state }),
       knownServers: () => opts.known ?? (state.server ? [state.server] : []),
       chooseServer: async (input) => { log.push(`choose ${input}`); state.server = input; return input },
-      login: async (email) => {
-        log.push(`login ${email}`)
+      // Connexion chez le fournisseur d'identite : le compte « bob » revient.
+      login: async (prompt) => {
+        log.push(prompt ? `login ${prompt}` : 'login')
         if (opts.loginError) throw opts.loginError
-        state.account = account(email.split('@')[0]); state.token = 'new-jwt'
+        state.account = account('bob'); state.token = 'new-jwt'
       },
       revoke: async (server, token, refresh) => { log.push(`revoke ${server} ${token} ${refresh}`) },
       clearSession: async (server) => { log.push(`clear ${server}`) },
@@ -182,20 +183,20 @@ describe('connexion au serveur a tout moment, un seul compte', () => {
 
   it('premiere connexion : choisit le serveur puis connecte', async () => {
     const { deps, log } = setup({ server: null, account: null, token: null })
-    expect(await connectToServer(deps, '127.0.0.1:5000', ' bob@x.fr ', 'pw')).toBe('https://127.0.0.1:5000')
-    expect(log).toEqual(['choose https://127.0.0.1:5000', 'login bob@x.fr'])
+    expect(await connectToServer(deps, '127.0.0.1:5000')).toBe('https://127.0.0.1:5000')
+    expect(log).toEqual(['choose https://127.0.0.1:5000', 'login'])
   })
 
   it('autre compte, meme serveur : le precedent est revoque, pas d\'effacement de session', async () => {
     const { deps, log } = setup({ server: 'http://s1', account: account('alice'), token: 'jwt-a' })
-    await connectToServer(deps, 'http://s1', 'bob@x.fr', 'pw')
-    expect(log).toEqual(['choose http://s1', 'login bob@x.fr', 'revoke http://s1 jwt-a rt-alice'])
+    await connectToServer(deps, 'http://s1')
+    expect(log).toEqual(['choose http://s1', 'login', 'revoke http://s1 jwt-a rt-alice'])
   })
 
   it('autre serveur : le compte precedent est revoque sur SON serveur et sa session effacee', async () => {
     const { deps, log, state } = setup({ server: 'http://s1', account: account('alice'), token: 'jwt-a' })
-    await connectToServer(deps, 'http://s2', 'bob@x.fr', 'pw')
-    expect(log).toEqual(['choose http://s2', 'login bob@x.fr', 'revoke http://s1 jwt-a rt-alice', 'clear http://s1'])
+    await connectToServer(deps, 'http://s2')
+    expect(log).toEqual(['choose http://s2', 'login', 'revoke http://s1 jwt-a rt-alice', 'clear http://s1'])
     expect(state.account?.userId).toBe('bob')
   })
 
@@ -203,20 +204,20 @@ describe('connexion au serveur a tout moment, un seul compte', () => {
     const { deps, log, state } = setup({ server: 'http://s1', account: account('alice'), token: 'jwt-a' }, {
       known: ['http://s1', 'http://s2'], loginError: new Error('401'),
     })
-    await expect(connectToServer(deps, 'http://s2', 'bob@x.fr', 'bad')).rejects.toThrow('401')
-    expect(log).toEqual(['choose http://s2', 'login bob@x.fr', 'choose http://s1'])
+    await expect(connectToServer(deps, 'http://s2')).rejects.toThrow('401')
+    expect(log).toEqual(['choose http://s2', 'login', 'choose http://s1'])
     expect(state).toMatchObject({ server: 'http://s1', token: 'jwt-a' })
   })
 
   it('adresse neuve injoignable : elle n\'est pas gardee', async () => {
     const { deps, log } = setup({ server: null, account: null, token: null }, { loginError: new TypeError('Failed to fetch') })
-    await expect(connectToServer(deps, 'http://nulle-part', 'bob@x.fr', 'pw')).rejects.toBeInstanceOf(TypeError)
-    expect(log).toEqual(['choose http://nulle-part', 'login bob@x.fr', 'forget http://nulle-part'])
+    await expect(connectToServer(deps, 'http://nulle-part')).rejects.toBeInstanceOf(TypeError)
+    expect(log).toEqual(['choose http://nulle-part', 'login', 'forget http://nulle-part'])
   })
 
   it('adresse invalide : rien ne bouge', async () => {
     const { deps, log } = setup({ server: 'http://s1', account: account('alice'), token: 'jwt-a' })
-    await expect(connectToServer(deps, 'ftp://x', 'bob@x.fr', 'pw')).rejects.toThrow(/http/)
+    await expect(connectToServer(deps, 'ftp://x')).rejects.toThrow(/http/)
     expect(log).toEqual([])
   })
 

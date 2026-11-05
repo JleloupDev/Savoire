@@ -13,9 +13,16 @@
 import type { Counter, Histogram } from './metrics'
 import { sleep } from './util'
 
+/** Jeton presente au backend : fixe (jeton partage) ou renouvele (fournisseur d'identite). */
+export interface BearerSource {
+  get(): Promise<string>
+  /** Jeton refuse (401) : le suivant sera neuf. */
+  invalidate?(): void
+}
+
 export interface BackendOptions {
   url: string
-  token: string
+  token: BearerSource
   name: string
   timeoutMs: number
   retries: number
@@ -137,7 +144,7 @@ export class BackendClient {
     let status = 0
     try {
       const res = await fetch(this.opts.url + path, {
-        headers: { authorization: `Bearer ${this.opts.token}`, accept: 'application/json', 'user-agent': this.opts.userAgent },
+        headers: { authorization: `Bearer ${await this.opts.token.get()}`, accept: 'application/json', 'user-agent': this.opts.userAgent },
         signal: combined,
       })
       status = res.status
@@ -149,6 +156,7 @@ export class BackendClient {
           throw new BackendError(502, 'malformed', `Reponse illisible (${route}).`, true)
         }
       }
+      if (res.status === 401) this.opts.token.invalidate?.()
       let code = 'http_' + res.status
       let message = `Le backend a repondu ${res.status}.`
       try {

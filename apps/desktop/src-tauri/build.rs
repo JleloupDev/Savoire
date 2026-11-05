@@ -32,6 +32,9 @@ const COMMANDS: &[&str] = &[
     "server_forget",
     "server_session_get",
     "server_session_set",
+    "oauth_listen",
+    "oauth_wait",
+    "open_external",
 ];
 
 fn main() {

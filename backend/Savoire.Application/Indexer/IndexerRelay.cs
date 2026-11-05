@@ -96,7 +96,7 @@ public static class IndexerRelay
                 return PassThrough(response, retryAfter);
             case 401:
             case 403:
-                logger.LogError("Pair indexeur : jeton de service refuse ({Status}). Verifier Indexer:ServiceToken et SAVOIRE_INDEXER_TOKEN.", response.StatusCode);
+                logger.LogError("Pair indexeur : jeton de service refuse ({Status}). Verifier Indexer:ServiceToken et SAVOIRE_INDEXER_TOKEN, ou Indexer:Oidc et SAVOIRE_INDEXER_OIDC_FILE.", response.StatusCode);
                 return IndexerReply.Unavailable("Le pair indexeur est indisponible.", opts.RetryAfterSeconds);
             case 409:
                 return IndexerReply.Unavailable("Le routage du pair indexeur change, reessayer.", retryAfter);

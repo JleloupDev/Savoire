@@ -3,10 +3,12 @@
 export const appEn = {
   // Login
   'login.title': 'Sign in',
-  'login.subtitle': 'Enter your credentials to access your vault.',
+  'login.subtitle': 'Sign in with your account, or create one.',
   'login.email': 'Email',
   'login.password': 'Password',
   'login.submit': 'Sign in →',
+  'login.create': 'Create an account',
+  'login.hint': 'Forgot your password, other ways to sign in: on the sign-in page that opens.',
   'login.submitting': 'Signing in…',
   'login.forgot': 'Forgot password?',
   'login.error.credentials': 'Invalid email or password.',

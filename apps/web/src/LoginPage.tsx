@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useEffect, useState, type KeyboardEvent } from 'react'
+import type { LoginPrompt } from '@savoire/application'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { t } from '@savoire/i18n'
 import { ServerAddressError } from '@savoire/infrastructure-sync'
 import { getServerChoice } from './serverConnection'
-import { describeLoginError } from './serverErrors'
 import { connectToServer, desktopConnectionDeps } from './desktopConnection'
+import { describeAuthError } from './loginFlow'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: '📝', key: 'login.feature.markdown' },
@@ -65,23 +66,27 @@ function InputField({
 }
 
 export function LoginPage() {
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError]       = useState<string | null>(null)
-  const [loading, setLoading]   = useState(false)
-  const { token, login, activeAccount } = useAuth()
+  const [loading, setLoading]   = useState<LoginPrompt | 'login' | null>(null)
+  const { token, login, activeAccount, accounts, loginError } = useAuth()
   const navigate                = useNavigate()
   // Version bureau : la personne saisit l'adresse du serveur.
   const serverChoice            = getServerChoice()
   const [server, setServer]     = useState(serverChoice.current ?? '')
+  const shownError              = error ?? loginError
 
   useEffect(() => {
     if (token) navigate('/', { replace: true })
   }, [token, navigate])
 
-  async function handleLogin() {
-    if (!email || !password) return
-    setLoading(true)
+  // La connexion se fait chez le fournisseur d'identite du serveur (ADR-028) :
+  // inscription, mot de passe oublie, Google ou GitHub, tout se passe la-bas.
+  async function handleLogin(requested?: LoginPrompt) {
+    if (serverChoice.configurable && !server.trim()) return
+    // Un compte de plus (navigateur) : le fournisseur propose de choisir,
+    // sinon il reprendrait le compte deja ouvert chez lui.
+    const prompt = requested ?? (!serverChoice.configurable && accounts.length > 0 ? 'select_account' : undefined)
+    setLoading(requested ?? 'login')
     setError(null)
     try {
       if (serverChoice.configurable) {
@@ -89,17 +94,16 @@ export function LoginPage() {
         setServer(await connectToServer(desktopConnectionDeps({
           current: () => ({ server: getServerChoice().current, account: activeAccount, token }),
           login,
-        }), server, email, password))
+        }), server, prompt))
+        navigate('/')
       } else {
-        await login(email.trim(), password)
+        // Navigateur : la page part chez le fournisseur.
+        await login(prompt)
       }
-      navigate('/')
     } catch (e) {
-      setError(e instanceof ServerAddressError
-        ? e.message
-        : describeLoginError(e, { server: serverChoice.configurable ? server.trim() : null, credentials: t('app', 'login.error.credentials') }))
+      setError(e instanceof ServerAddressError ? e.message : describeAuthError(e))
     } finally {
-      setLoading(false)
+      setLoading(null)
     }
   }
 
@@ -169,43 +173,47 @@ export function LoginPage() {
         </div>
 
         {/* Error */}
-        {error && (
-          <div style={{ padding: '10px 14px', background: `color-mix(in srgb, var(--color-danger) 10%, var(--bg-base))`, borderRadius: 'var(--radius)', border: '1px solid color-mix(in srgb, var(--color-danger) 30%, var(--border))', color: 'var(--color-danger)', fontSize: 13, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 15 }}>⚠</span>{error}
+        {shownError && (
+          <div data-testid="login-error" style={{ padding: '10px 14px', background: `color-mix(in srgb, var(--color-danger) 10%, var(--bg-base))`, borderRadius: 'var(--radius)', border: '1px solid color-mix(in srgb, var(--color-danger) 30%, var(--border))', color: 'var(--color-danger)', fontSize: 13, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 15 }}>⚠</span>{shownError}
           </div>
         )}
 
-        {/* Fields */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 24 }}>
-          {serverChoice.configurable && (
-            <div>
-              <InputField testId="login-server" label="Serveur" type="url" value={server} onChange={setServer} placeholder="https://savoire.exemple.fr" onEnter={handleLogin} list="login-server-list" />
-              <datalist id="login-server-list">
-                {serverChoice.servers.map(s => <option key={s} value={s} />)}
-              </datalist>
-              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
-                Adresse du serveur Savoire, par exemple https://savoire.exemple.fr ou http://192.168.1.10:5000.
-              </div>
-            </div>
-          )}
-          <InputField testId="login-email" label={t('app', 'login.email')} type="email" value={email} onChange={setEmail} placeholder="admin@local.dev" onEnter={handleLogin} />
-          <div>
-            <InputField testId="login-password" label={t('app', 'login.password')} type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={handleLogin} />
-            <div style={{ textAlign: 'right', marginTop: 6 }}>
-              <span style={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer' }}>{t('app', 'login.forgot')}</span>
+        {serverChoice.configurable && (
+          <div style={{ marginBottom: 24 }}>
+            <InputField testId="login-server" label="Serveur" type="url" value={server} onChange={setServer} placeholder="https://savoire.exemple.fr" onEnter={() => handleLogin()} list="login-server-list" />
+            <datalist id="login-server-list">
+              {serverChoice.servers.map(s => <option key={s} value={s} />)}
+            </datalist>
+            <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
+              Adresse du serveur Savoire, par exemple https://savoire.exemple.fr ou http://192.168.1.10:5000.
+              {' '}La connexion s'ouvre dans votre navigateur.
             </div>
           </div>
-        </div>
+        )}
 
         {/* Submit */}
         <button
           data-testid="login-submit"
-          onClick={handleLogin}
-          disabled={loading || !email || !password || (serverChoice.configurable && !server.trim())}
-          style={{ padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: (!email || !password || loading) ? 'not-allowed' : 'pointer', opacity: (!email || !password) ? 0.45 : 1, transition: 'opacity 0.15s, filter 0.12s', letterSpacing: '0.01em', marginBottom: 28, width: '100%', fontFamily: 'var(--font-ui)' }}
+          onClick={() => handleLogin()}
+          disabled={loading !== null || (serverChoice.configurable && !server.trim())}
+          style={{ padding: 11, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s, filter 0.12s', letterSpacing: '0.01em', marginBottom: 12, width: '100%', fontFamily: 'var(--font-ui)' }}
         >
-          {loading ? t('app', 'login.submitting') : t('app', 'login.submit')}
+          {loading === 'login' || loading === 'select_account' ? t('app', 'login.submitting') : t('app', 'login.submit')}
         </button>
+
+        <button
+          data-testid="login-create"
+          onClick={() => handleLogin('create')}
+          disabled={loading !== null || (serverChoice.configurable && !server.trim())}
+          style={{ padding: 10, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', fontSize: 13.5, color: 'var(--text)', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-ui)', marginBottom: 12, width: '100%' }}
+        >
+          {loading === 'create' ? t('app', 'login.submitting') : t('app', 'login.create')}
+        </button>
+
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginBottom: 28 }}>
+          {t('app', 'login.hint')}
+        </div>
 
         {serverChoice.configurable && (
           <button
@@ -218,24 +226,6 @@ export function LoginPage() {
           </button>
         )}
 
-        {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>ou</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-        </div>
-
-        {/* SSO */}
-        <button style={{ padding: 10, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', fontSize: 13.5, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, width: '100%' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Continuer avec SSO
-        </button>
-
-        {/* Dev credentials */}
-        <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Identifiants dev</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-code)' }}>admin@local.dev / Admin1234!</div>
-        </div>
       </div>
     </div>
   )

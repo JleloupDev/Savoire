@@ -27,6 +27,7 @@ import { Feed } from './feed'
 import { decodeCursor, encodeCursor, mergePages, worstIndex } from './globalSearch'
 import type { Part, VaultPage } from './globalSearch'
 import { parseJson, readBody, sendError, sendJson, sendText, tokenMatches } from './http'
+import { bearerSourceFor, serviceCallerCheck } from './serviceAuth'
 import type { Logger } from './log'
 import { Counter, Histogram, counterFamily, gauge, render } from './metrics'
 import type { Family } from './metrics'
@@ -67,9 +68,13 @@ export class IndexerService {
     backendSeconds: new Histogram('savoire_indexer_backend_request_duration_seconds', 'Duree des appels au backend, par route.'),
   }
 
+  /** Qui peut appeler : l'API (jeton partage, ou jeton du fournisseur d'identite). */
+  private readonly authorized: (header: string | undefined) => Promise<boolean>
+
   constructor(private readonly opts: ServiceOptions) {
     const c = opts.config
     this.cache = new ResultCache(c.cacheEntries, c.cacheMaxBytes, c.cacheTtlMs)
+    this.authorized = serviceCallerCheck(c, tokenMatches)
   }
 
   get port(): number {
@@ -99,7 +104,7 @@ export class IndexerService {
       ...(this.opts.powers ? { powers: this.opts.powers } : {}),
     })
     const backend = new BackendClient({
-      url: c.backendUrl, token: c.token, name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,
+      url: c.backendUrl, token: bearerSourceFor(c), name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,
       maxBytes: c.maxDocBytes, userAgent: `savoire-indexer/${this.opts.version}`,
     }, { requests: this.m.backendRequests, duration: this.m.backendSeconds })
     this.feed = new Feed({
@@ -191,7 +196,7 @@ export class IndexerService {
     }
     if (path === '/metrics') {
       route = 'metrics'
-      if (c.metricsAuth === 'token' && !tokenMatches(req.headers.authorization, c.token)) return this.unauthorized(res)
+      if (c.metricsAuth === 'token' && !await this.authorized(req.headers.authorization)) return this.unauthorized(res)
       return sendText(res, 200, await this.metrics(), 'text/plain; version=0.0.4; charset=utf-8')
     }
 
@@ -201,7 +206,7 @@ export class IndexerService {
     route = isSearch ? 'search' : call![2]!
     const method = route === 'status' ? 'GET' : 'POST'
     if (req.method !== method) return sendError(res, new HttpError(405, 'method_not_allowed', `${method} attendu.`))
-    if (!tokenMatches(req.headers.authorization, c.token)) return this.unauthorized(res)
+    if (!await this.authorized(req.headers.authorization)) return this.unauthorized(res)
 
     this.inflight++
     const ac = new AbortController()

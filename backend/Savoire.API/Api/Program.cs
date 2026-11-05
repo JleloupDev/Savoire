@@ -6,7 +6,6 @@
 using System.Reflection;
 using FluentValidation;
 using MediatR;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -20,6 +19,17 @@ using Savoire.Server.Hubs;
 using Savoire.Server.Middleware;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+// Fournisseur d'identite (ADR-028) : deploy/compose/zitadel/bootstrap.mjs
+// ecrit Auth:Oidc et Indexer:Oidc dans un fichier JSON. Savoire:OidcConfigFile
+// (ou Savoire__OidcConfigFile) le designe ; relu s'il change.
+if (builder.Configuration["Savoire:OidcConfigFile"] is { Length: > 0 } oidcFile)
+{
+    string path = Path.IsPathRooted(oidcFile)
+        ? oidcFile
+        : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, oidcFile));
+    builder.Configuration.AddJsonFile(path, optional: true, reloadOnChange: true);
+}
 
 // 1. Infrastructure (EF Core, Identity, JWT, repositories, content store)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -114,7 +124,8 @@ builder.Services.AddCors(options =>
 
 WebApplication app = builder.Build();
 
-// Run EF migrations + seed admin on startup
+// Migrations EF au demarrage. Les comptes viennent du fournisseur d'identite :
+// rien a amorcer (administrateurs : Auth:AdminEmails).
 using (IServiceScope scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -122,7 +133,6 @@ using (IServiceScope scope = app.Services.CreateScope())
     // PostgreSQL (ADR-028) : les migrations s'appliquent au demarrage.
     await db.Database.MigrateAsync();
 
-    await SeedAdminAsync(scope.ServiceProvider);
 
     // Seed "default" vault for backwards compatibility (idempotent)
     if (!db.Vaults.Any(v => v.Id == "default"))
@@ -164,6 +174,13 @@ app.MapGet("/openapi.yaml", async context =>
     await context.Response.SendFileAsync(yamlPath);
 });
 
+// Sante (conteneurs, proxy) : vivant, et pret (base joignable).
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
+app.MapGet("/health/ready", async (AppDbContext db, CancellationToken ct) =>
+    await db.Database.CanConnectAsync(ct)
+        ? Results.Ok(new { status = "ready" })
+        : Results.Json(new { status = "database-unreachable" }, statusCode: 503)).AllowAnonymous();
+
 app.MapControllers();
 app.MapHub<SyncHub>("/hubs/sync");
 app.MapHub<VaultHub>("/hubs/vault");
@@ -172,41 +189,6 @@ app.MapHub<EdgeSyncHub>("/hubs/edgesync");
 // DocumentHub removed — legacy hub replaced by VaultHub (MediatR)
 
 app.Run();
-
-static async Task SeedAdminAsync(IServiceProvider services)
-{
-    var userManager = services.GetRequiredService<UserManager<AppUser>>();
-    var config = services.GetRequiredService<IConfiguration>();
-    var env = services.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>();
-
-    var email = config["Admin:Email"];
-    var password = config["Admin:Password"];
-
-    if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
-    {
-        if (!env.IsDevelopment())
-            return;
-
-        email ??= "admin@local.dev";
-        password ??= "Admin1234!";
-    }
-
-    if (await userManager.FindByEmailAsync(email) is not null) return;
-
-    var admin = new AppUser
-    {
-        UserName      = email,
-        Email         = email,
-        DisplayName   = config["Admin:DisplayName"] ?? "Admin",
-        IsAdmin       = true,
-        EmailConfirmed = true
-    };
-
-    var result = await userManager.CreateAsync(admin, password);
-    if (!result.Succeeded)
-        throw new InvalidOperationException(
-            $"Admin seed failed: {string.Join(", ", result.Errors.Select(e => e.Description))}");
-}
 
 // Accessible to WebApplicationFactory in integration tests
 public partial class Program { }

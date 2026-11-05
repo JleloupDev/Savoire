@@ -75,7 +75,7 @@ docs/
 # ===== Local build outputs =====
 .tmp_build/
 aspire/data
-/.local/data/
+/.local/
 
 # ===== Frontend package build outputs =====
 packages/*/dist/

@@ -25,26 +25,6 @@ export class HttpAdminBackend implements IAdminBackend {
     return this.fetch(serverUrl(`/api/v1/admin/users`, this.baseUrl), token)
   }
 
-  createUser(token: string, email: string, password: string, displayName: string, isAdmin: boolean): Promise<void> {
-    return this.fetch(serverUrl(`/api/v1/admin/users`, this.baseUrl), token, {
-      method: 'POST',
-      body: JSON.stringify({ email, password, displayName, isAdmin }),
-    })
-  }
-
-  resetPassword(token: string, userId: string, newPassword: string): Promise<void> {
-    return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/reset-password`, this.baseUrl), token, {
-      method: 'POST',
-      body: JSON.stringify({ newPassword }),
-    })
-  }
-
-  revokeSessions(token: string, userId: string): Promise<void> {
-    return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, this.baseUrl), token, {
-      method: 'POST',
-    })
-  }
-
   disableUser(token: string, userId: string): Promise<void> {
     return this.fetch(serverUrl(`/api/v1/admin/users/${encodeURIComponent(userId)}/disable`, this.baseUrl), token, {
       method: 'POST',

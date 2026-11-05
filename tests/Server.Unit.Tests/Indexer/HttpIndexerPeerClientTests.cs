@@ -40,7 +40,8 @@ public class HttpIndexerPeerClientTests
         factory.CreateClient(HttpIndexerPeerClient.HttpClientName).Returns(_ => new HttpClient(peer, disposeHandler: false));
         IndexerOptions opts = Options("idx-a");
         tune?.Invoke(opts);
-        return (new HttpIndexerPeerClient(factory, Monitor(opts), NullLogger<HttpIndexerPeerClient>.Instance), peer);
+        var monitor = Monitor(opts);
+        return (new HttpIndexerPeerClient(factory, monitor, new IndexerServiceTokens(factory, monitor, TimeProvider.System), NullLogger<HttpIndexerPeerClient>.Instance), peer);
     }
 
     private static Task<HttpResponseMessage> Json(HttpStatusCode status, string body)
@@ -64,6 +65,56 @@ public class HttpIndexerPeerClientTests
         request.Headers.Authorization!.Scheme.Should().Be("Bearer");
         request.Headers.Authorization.Parameter.Should().Be("service-token");
         body.Should().Be("""{"a":1}""");
+    }
+
+    [Fact(DisplayName = "Identite chez le fournisseur — jeton client credentials, garde, redemande apres un 401")]
+    public async Task Oidc_ClientCredentials_Cached_RenewedAfter401()
+    {
+        int issued = 0;
+        var idp = new FakePeer((_, _) => { issued++; return Json(HttpStatusCode.OK, $$"""{"access_token":"at-{{issued}}","expires_in":3600}"""); });
+        int calls = 0;
+        var peer = new FakePeer((_, _) => { calls++; return Json(calls == 2 ? HttpStatusCode.Unauthorized : HttpStatusCode.OK, "{}"); });
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(HttpIndexerPeerClient.HttpClientName).Returns(_ => new HttpClient(peer, disposeHandler: false));
+        factory.CreateClient(IndexerServiceTokens.HttpClientName).Returns(_ => new HttpClient(idp, disposeHandler: false));
+        IndexerOptions opts = Options("idx-a");
+        opts.ServiceToken = null;
+        opts.Oidc = new IndexerOidcOptions
+        {
+            PeerSubject = "peer-sub", ClientId = "savoire-api", ClientSecret = "s3cret",
+            TokenEndpoint = "https://auth.test/oauth/v2/token", Scope = "openid urn:zitadel:iam:org:project:id:p1:aud",
+        };
+        var monitor = Monitor(opts);
+        var client = new HttpIndexerPeerClient(factory, monitor, new IndexerServiceTokens(factory, monitor, TimeProvider.System), NullLogger<HttpIndexerPeerClient>.Instance);
+
+        for (int i = 0; i < 3; i++) await client.CallAsync(Instance, "v", "{}"u8.ToArray());
+
+        peer.Seen.Select(s => s.Request.Headers.Authorization!.Parameter).Should().Equal("at-1", "at-1", "at-2");
+        issued.Should().Be(2);
+        var (tokenRequest, form) = idp.Seen[0];
+        tokenRequest.RequestUri!.AbsoluteUri.Should().Be("https://auth.test/oauth/v2/token");
+        tokenRequest.Headers.Authorization!.Scheme.Should().Be("Basic");
+        Encoding.UTF8.GetString(Convert.FromBase64String(tokenRequest.Headers.Authorization.Parameter!)).Should().Be("savoire-api:s3cret");
+        form.Should().Contain("grant_type=client_credentials").And.Contain("scope=openid");
+    }
+
+    [Fact(DisplayName = "Identite chez le fournisseur injoignable — pair Unreachable, pas d'exception")]
+    public async Task Oidc_ProviderDown_Unreachable()
+    {
+        var idp = new FakePeer((_, _) => Json(HttpStatusCode.ServiceUnavailable, "{}"));
+        var peer = new FakePeer((_, _) => Json(HttpStatusCode.OK, "{}"));
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(HttpIndexerPeerClient.HttpClientName).Returns(_ => new HttpClient(peer, disposeHandler: false));
+        factory.CreateClient(IndexerServiceTokens.HttpClientName).Returns(_ => new HttpClient(idp, disposeHandler: false));
+        IndexerOptions opts = Options("idx-a");
+        opts.Oidc = new IndexerOidcOptions { PeerSubject = "p", ClientId = "c", ClientSecret = "s", TokenEndpoint = "https://auth.test/token" };
+        var monitor = Monitor(opts);
+        var client = new HttpIndexerPeerClient(factory, monitor, new IndexerServiceTokens(factory, monitor, TimeProvider.System), NullLogger<HttpIndexerPeerClient>.Instance);
+
+        IndexerPeerResponse response = await client.CallAsync(Instance, "v", "{}"u8.ToArray());
+
+        response.Outcome.Should().Be(IndexerPeerOutcome.Unreachable);
+        peer.Seen.Should().BeEmpty();
     }
 
     [Fact(DisplayName = "Recherche et etat — /v1/search et GET /v1/vaults/{id}/status")]

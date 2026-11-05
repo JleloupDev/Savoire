@@ -2,9 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { makeAppRoot } from './helpers/makeAppRoot'
+import { ADMIN_LOGIN, ADMIN_PASSWORD, devLogin } from './helpers/idp'
 
-const ADMIN_EMAIL = 'admin@local.dev'
-const ADMIN_PASSWORD = 'Admin1234!'
 
 describe('Vaults — via Application layer', () => {
   let token = ''
@@ -13,7 +12,7 @@ describe('Vaults — via Application layer', () => {
   const root = makeAppRoot(() => token)
 
   beforeAll(async () => {
-    const res = await root.api.auth.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+    const res = await devLogin(ADMIN_LOGIN, ADMIN_PASSWORD)
     token = res.accessToken
     userId = res.user.id
   })
