@@ -155,6 +155,8 @@ services:
   # Administration des conteneurs (tout Docker du poste) : http://localhost:9000
   # ou https://localhost:9443. Sur 127.0.0.1 seulement. Compte admin a creer
   # dans les 5 minutes du premier demarrage (sinon : restart portainer).
+  # L'ecran de creation demande un jeton, ecrit dans les journaux a chaque
+  # demarrage : docker compose ... logs portainer | grep setup_token
   portainer:
     image: portainer/portainer-ce:2.45.3
     restart: unless-stopped

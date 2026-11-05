@@ -69,6 +69,13 @@ compte administrateur **dans les 5 minutes** qui suivent le premier
 démarrage ; passé ce délai, Portainer se verrouille par sécurité :
 `docker compose --env-file .env restart portainer` pour recommencer.
 
+L'écran de création demande un jeton (*setup token*). Portainer l'écrit dans
+ses journaux, et en tire un nouveau à chaque démarrage :
+
+```bash
+docker compose --env-file .env logs portainer | grep setup_token | tail -1
+```
+
 ## Les comptes
 
 - Chacun crée son compte depuis l'écran de connexion (« Créer un compte »).
