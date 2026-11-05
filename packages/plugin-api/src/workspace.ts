@@ -31,4 +31,8 @@ export interface WorkspaceAPI {
   subscribeActiveDocument?(cb: (path: string) => void): () => void
   /** Subscribe to document-indexed events (fired after metadata extraction completes). */
   subscribeDocumentIndexed?(cb: (docId: string, path: string) => void): () => void
+  /** Afficher l'extension des fichiers (preference de la personne) ? Absent : non. */
+  showFileExtensions?(): boolean
+  /** Une preference d'affichage a change (extension des fichiers...). */
+  subscribeDisplayPreferences?(cb: () => void): () => void
 }

@@ -104,6 +104,7 @@ export const appEn = {
   'settings.triggers.col.plugin': 'Plugin',
   'settings.triggers.col.description': 'Description',
   'settings.themes.description': 'Select a theme. The preference is saved locally.',
+  'settings.files.showExtensions': 'Show file extensions (“note.md” instead of “note”)',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.sepia': 'Sepia',

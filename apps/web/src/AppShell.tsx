@@ -21,6 +21,8 @@ import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
+import { resolveLinkPath } from '@savoire/plugin-api'
+import { useShowFileExtensions } from './displayPreferences'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
@@ -252,6 +254,7 @@ type KeyModalRequest =
 
 export function AppShell() {
   const auth = useAuth()
+  const showExt = useShowFileExtensions()
   const { accounts, isReady, logout, switchAccount } = auth
   // Profil sans compte (version bureau) : personne n'est connecte, on
   // travaille avec un compte et un jeton locaux, jamais envoyes nulle part.
@@ -408,7 +411,10 @@ export function AppShell() {
   const vaultProxy = useMemo((): VaultAPI => application.workspace.createVaultProxy(
     () => vaultAPIRef.current,
     (path: string): string | undefined => {
-      const found = documentsRef.current.find(d => d.path === path || d.path === `${path}.md`)
+      const docs = documentsRef.current
+      const exact = docs.find(d => d.path === path || d.path === `${path}.md`)
+      const linked = exact ? undefined : resolveLinkPath(path, docs.map(d => d.path))
+      const found = exact ?? (linked === undefined ? undefined : docs.find(d => d.path === linked))
       if (!found) console.warn(`[EditorPage] resolveDocId("${path}") — not found in ${documentsRef.current.length} docs:`, documentsRef.current.map(d => d.path))
       return found?.id
     },
@@ -1380,7 +1386,7 @@ export function AppShell() {
         {activeDoc && <>
           <span style={{ color: 'var(--border)', fontSize: 14 }}>/</span>
           <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            {activeDoc.path}
+            {showExt ? activeDoc.path : activeDoc.path.replace(/\.md$/i, '')}
           </span>
         </>}
         {!activeDoc && <span style={{ flex: 1 }} />}

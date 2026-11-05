@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { IIndexerAPI, ViewContext, WorkspaceAPI, VaultAPI } from '@savoire/plugin-api'
+import { createLinkResolver } from '@savoire/plugin-api'
 import type { GraphIndexContributor, GraphNode, GraphEdge } from './GraphIndexContributor'
 
 /** Notes au plus quand le graphe vient de l'index complet (les plus reliees d'abord). */
@@ -49,22 +50,24 @@ function buildSimulation(
 
   const nodeById = new Map(simNodes.map(n => [n.docId, n]))
   // Un wikilink s'ecrit rarement comme le chemin complet : [[nouvelle-note]]
-  // doit atteindre "dossier/nouvelle-note.md". On indexe donc chaque noeud par
-  // son chemin, son radical sans extension, et son seul nom de fichier — le
-  // tout insensible a la casse.
-  const norm = (v: string) => v.trim().replace(/\.md$/i, '').toLowerCase()
-  const byName = new Map<string, SimNode>()
-  for (const n of simNodes) {
-    byName.set(norm(n.path), n)
-    const base = n.path.split('/').at(-1) ?? n.path
-    if (!byName.has(norm(base))) byName.set(norm(base), n)
+  // doit atteindre "dossier/nouvelle-note.md". Meme resolution qu'Obsidian
+  // (plugin-api, links.ts), memoisee par cible.
+  const byPath = new Map(simNodes.map(n => [n.path, n]))
+  const resolver = createLinkResolver(simNodes.map(n => n.path))
+  const resolved = new Map<string, SimNode | undefined>()
+  const resolve = (target: string): SimNode | undefined => {
+    if (!resolved.has(target)) {
+      const p = resolver.resolve(target)
+      resolved.set(target, p === undefined ? undefined : byPath.get(p))
+    }
+    return resolved.get(target)
   }
 
   const simEdges: SimEdge[] = []
   const seen = new Set<string>()
   for (const e of edges) {
     const src = nodeById.get(e.sourceId)
-    const tgt = nodeById.get(e.targetPath) ?? byName.get(norm(e.targetPath))
+    const tgt = nodeById.get(e.targetPath) ?? resolve(e.targetPath)
     if (!src || !tgt || src === tgt) continue
     // Deduplique : plusieurs liens vers la meme note ne font qu'une arete.
     const key = `${src.docId}->${tgt.docId}:${e.linkType}`

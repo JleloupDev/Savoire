@@ -112,6 +112,8 @@ export {
   compileFormula, tryCompileFormula, FormulaError, FORMULA_FUNCTIONS, FORMULA_MAX_LENGTH, aggregateKey,
 } from './formula'
 export { BLOCK_DESTROY_EVENT } from './blocks'
+export type { LinkResolver } from './links'
+export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName } from './links'
 export {
   QUERY_MAX_FORMULAS, QueryEvalError, FieldReader, foldText, isEmptyValue, isFormulaField, queryUsesFormula,
   splitFormulaFilter, compareScalar, matchesDoc, sortDocs, groupDocs, checkAggregates, aggregateDocs,

@@ -92,27 +92,6 @@ function baseName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
-/**
- * Resout la cible d'un lien comme Obsidian : chemin exact d'abord ; sinon,
- * pour un nom sans dossier, le fichier qui porte ce nom (le chemin le plus
- * court s'il y en a plusieurs) ; sinon un chemin qui finit par la cible.
- */
-export function resolveLinkPath(target: string, paths: readonly string[]): string | undefined {
-  const t = target.trim().replace(/^\/+/, '')
-  if (!t) return undefined
-  if (paths.includes(t)) return t
-  const shortest = (list: string[]): string | undefined =>
-    list.sort((a, b) => a.length - b.length || a.localeCompare(b))[0]
-  if (!t.includes('/')) return shortest(paths.filter(p => baseName(p) === t))
-  return shortest(paths.filter(p => p.endsWith(`/${t}`)))
-}
-
-/**
- * Texte a mettre dans `![[...]]` pour ce chemin : son nom seul s'il est
- * unique dans le vault (comme Obsidian), sinon le chemin complet.
- */
-export function linkTargetFor(path: string, paths: readonly string[]): string {
-  const name = baseName(path)
-  const sameName = paths.filter(p => baseName(p) === name)
-  return sameName.length === 1 && sameName[0] === path ? name : path
-}
+// Resolution des liens par nom (comme Obsidian) : une seule regle pour toute
+// l'appli, dans plugin-api (links.ts).
+export { resolveLinkPath, linkTargetFor } from '@savoire/plugin-api'

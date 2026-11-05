@@ -37,6 +37,7 @@ import { ReviewWidget } from './ReviewWidget'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
+import { showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
 interface PluginBootstrapOptions {
   /** The shared SyncAPI instance (stable, created once). */
   roomClient: SyncAPI
@@ -214,6 +215,7 @@ export function usePluginBootstrap({
   }
 
   const onBeforeReady = useCallback(async (manager: WorkspaceManagerImpl) => {
+    manager.setDisplayPreferences({ showFileExtensions, subscribe: subscribeDisplayPreferences })
     const editorAreaRefs = editorAreaRefsHolder.current
     if (!editorAreaRefs) {
       console.error('[usePluginBootstrap] editorAreaRefsHolder was not populated before onBeforeReady fired')

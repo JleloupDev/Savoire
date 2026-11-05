@@ -6,6 +6,7 @@ import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLi
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
+import { resolveLinkPath } from '@savoire/plugin-api'
 import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand } from './types'
 import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader, Hotkey, PluginCommand, PluginCommandContext } from '@savoire/plugin-api'
 import { resolveActivePlugins } from './PluginActivationResolver'
@@ -173,20 +174,8 @@ function createNoopPluginLoader(): IPluginLoader {
 
 // ── Liens des proprietes ──────────────────────────────────────────────────
 
-/**
- * Chemin de la note visee par `[[cible]]`, comme Obsidian : chemin exact
- * (extension .md facultative), sinon la note qui porte ce nom (la plus
- * proche de la racine).
- */
-function resolveNotePath(target: string, paths: readonly string[]): string | undefined {
-  const t = target.trim().replace(/^\/+/, '')
-  if (!t) return undefined
-  if (paths.includes(t)) return t
-  if (paths.includes(`${t}.md`)) return `${t}.md`
-  const stem = (p: string) => p.slice(p.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
-  const same = paths.filter(p => stem(p) === t || p.endsWith(`/${t}`) || p.endsWith(`/${t}.md`))
-  return same.sort((a, b) => a.length - b.length || a.localeCompare(b))[0]
-}
+/** Chemin de la note visee par `[[cible]]`, comme Obsidian (voir plugin-api, links.ts). */
+const resolveNotePath = resolveLinkPath
 
 // ── Note-scope helpers ────────────────────────────────────────────────────
 

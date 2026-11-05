@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { IIndexerAPI, ViewContext, Widget } from '@savoire/plugin-api'
 import type { WikilinkIndexContributor, BacklinkEntry } from './WikilinkIndexContributor'
+import { allFilePaths } from './vaultFiles'
 
 /** Le pair indexe une modification une a deux secondes apres : on relit alors. */
 const PEER_DELAY_MS = 1_500
@@ -40,9 +41,12 @@ function BacklinksPanel({
     const n = ++request.current
     if (!path) { setBacklinks([]); setWhole(false); return }
     const local = () => {
-      if (n !== request.current) return
-      setWhole(false)
-      setBacklinks(contributor.getBacklinks(path).filter(bl => !ctx.vault.isTrashed?.(bl.docId)))
+      // Les liens se resolvent contre tous les fichiers du vault (noms ambigus).
+      void allFilePaths(ctx.vault).catch(() => undefined).then(paths => {
+        if (n !== request.current) return
+        setWhole(false)
+        setBacklinks(contributor.getBacklinks(path, paths).filter(bl => !ctx.vault.isTrashed?.(bl.docId)))
+      })
     }
     const id = indexer?.available() ? ctx.vault.resolveDocumentId(path) : undefined
     if (!indexer || !id) { local(); return }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { IndexContributor, SharedIndexEntry, ICollaborativeText, AnchorIndex } from '@savoire/plugin-api'
-import { validateEntry, anchorKey } from '@savoire/plugin-api'
+import { validateEntry, anchorKey, createLinkResolver } from '@savoire/plugin-api'
 
 export interface BacklinkEntry {
   docId: string
@@ -64,7 +64,21 @@ export class WikilinkIndexContributor implements IndexContributor {
     }
   }
 
-  getBacklinks(targetPath: string): BacklinkEntry[] {
+  /**
+   * Notes qui pointent vers `targetPath`. Avec `paths` (tous les fichiers du
+   * vault), chaque lien est resolu comme Obsidian : un nom porte par deux
+   * notes ne vise que l'une d'elles. Sans, comparaison par nom.
+   */
+  getBacklinks(targetPath: string, paths?: readonly string[]): BacklinkEntry[] {
+    if (paths) {
+      const resolver = createLinkResolver(paths)
+      const results = new Map<string, BacklinkEntry>()
+      for (const [target, inner] of this.backlinks) {
+        if (target !== targetPath && resolver.resolve(target) !== targetPath) continue
+        for (const [id, entry] of inner) results.set(id, entry)
+      }
+      return [...results.values()]
+    }
     const exact = this.backlinks.get(targetPath)
     if (exact) return [...exact.values()]
     const stem = (targetPath.split('/').pop() ?? targetPath).replace(/\.[^.]+$/, '')

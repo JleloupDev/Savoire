@@ -10,10 +10,20 @@ import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
 import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
+import { resolveLinkPath } from '@savoire/plugin-api'
+import { displayFileName, useShowFileExtensions } from './displayPreferences'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
+
+/** Document ouvert par un chemin ou un lien (nom seul, .md facultatif), comme Obsidian. */
+function findByLink<T extends { path: string }>(docs: readonly T[], target: string): T | undefined {
+  const exact = docs.find(d => d.path === target || d.path === target + '.md')
+  if (exact) return exact
+  const path = resolveLinkPath(target, docs.map(d => d.path))
+  return path === undefined ? undefined : docs.find(d => d.path === path)
+}
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
@@ -61,6 +71,7 @@ export interface EditorAreaRefs {
 // ou creer une note fermait tous les editeurs.
 function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
   const doc = props.params?.doc
+  const showExt = useShowFileExtensions()
   return (
     <div
       data-testid="editor-tab"
@@ -68,7 +79,7 @@ function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
       data-doc-path={doc?.path}
       style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', height: '100%' }}
     >
-      <span className="dv-default-tab-content">{props.api.title}</span>
+      <span className="dv-default-tab-content">{showExt && doc ? displayFileName(doc.path, true) : props.api.title}</span>
       <span
         onClick={(e) => { e.stopPropagation(); props.api.close() }}
         style={{ cursor: 'pointer', opacity: 0.6, fontSize: 12 }}
@@ -464,14 +475,14 @@ function EditorAreaPanel({
     if (pendingOpensRef.current.has(path)) return
     pendingOpensRef.current.add(path)
     try {
-      let doc = refs.documents.current.find(d => d.path === path || d.path === path + '.md')
+      let doc = findByLink(refs.documents.current, path)
       if (!doc) {
         const refreshed = await refs.refreshDocuments.current()
-        doc = refreshed.find(d => d.path === path || d.path === path + '.md')
+        doc = findByLink(refreshed, path)
       }
       // see ADR-010
       if (!doc) {
-        const meta = refs.vaultAPI.current?.documents.find(d => d.path === path || d.path === path + '.md')
+        const meta = findByLink(refs.vaultAPI.current?.documents ?? [], path)
         if (meta) {
           const now = new Date().toISOString()
           doc = { id: meta.id, path: meta.path, title: null, hash: '', sizeBytes: 0, createdAt: now, updatedAt: now }

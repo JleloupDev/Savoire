@@ -17,6 +17,7 @@
  * anciens chemins `documentStore` / `storage` restent utilises.
  */
 import type { AttachmentUploadOptions, TrashEntry, VaultAPI } from '@savoire/plugin-api'
+import { withNoteExtension } from '@savoire/plugin-api'
 import { documentSyncKind, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
 import {
   ATTACHMENTS_DIR, attachmentFolderFor, folderNoteOf, isAttachmentPath, linkTargetFor, resolveLinkPath, uniqueAttachmentPath,
@@ -109,7 +110,8 @@ export class VaultClient implements VaultAPI {
       return this.session.readDocument(doc.id, this.syncKindOf(doc.path))
     }
     if (doc) {
-      const ext = path.split('.').at(-1) ?? ''
+      // Le chemin du document, pas celui du lien (« Genese 2 » vise « .../Genese 2.md »).
+      const ext = doc.path.split('.').at(-1) ?? ''
       if (ext !== 'md') return this.documentStore.readDirect(this.vaultId, doc.id, this.token)
       return this.documentStore.readContent(this.vaultId, doc.id, this.token, doc)
     }
@@ -177,7 +179,7 @@ export class VaultClient implements VaultAPI {
   }
 
   async createFile(path: string): Promise<void> {
-    const normalizedPath = path.includes('.') ? path : `${path}.md`
+    const normalizedPath = withNoteExtension(path)
     if (this._findDocumentByPath(path) || this._findDocumentByPath(normalizedPath)) return
 
     // Documents are CRDT-only: adding to the directory emits a local vault op
@@ -400,7 +402,7 @@ export class VaultClient implements VaultAPI {
   }
 
   async renameDocument(documentId: string, newPath: string): Promise<void> {
-    const normalizedNewPath = newPath.includes('.') ? newPath : `${newPath}.md`
+    const normalizedNewPath = withNoteExtension(newPath)
     this.renameDocumentInCache(documentId, normalizedNewPath)
     if (isAttachmentPath(normalizedNewPath)) this.schedulePlacement(documentId)
   }
@@ -409,13 +411,16 @@ export class VaultClient implements VaultAPI {
     this.removeDocument(documentId)
   }
 
+  /**
+   * Document designe par un chemin, ou par un lien : chemin exact (.md
+   * facultatif), sinon par son nom comme Obsidian (resolveLinkPath).
+   */
   private _resolveDocumentByPath(path: string): IDocumentMeta | undefined {
-    const normalizedPath = path.includes('.') ? path : `${path}.md`
-    // Check directory first, then fall back to external resolver
+    const withMd = `${path}.md`
     for (const doc of this.directory.getAll()) {
-      if (doc.path === path || doc.path === normalizedPath) return doc
+      if (doc.path === path || doc.path === withMd) return doc
     }
-    return this.resolveDoc(path) ?? this.resolveDoc(normalizedPath)
+    return this.resolveLinkDocument(path) ?? this.resolveDoc(path) ?? this.resolveDoc(withMd)
   }
 
   private _findDocumentByPath(path: string): IDocumentMeta | undefined {

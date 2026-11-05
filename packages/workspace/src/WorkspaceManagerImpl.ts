@@ -77,6 +77,22 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
     }
   }
 
+  // ── Preferences d'affichage, posees par l'application ─────────────────────
+  private displayPreferences?: { showFileExtensions(): boolean; subscribe(cb: () => void): () => void }
+
+  /** L'application branche ici ses preferences d'affichage (extension des fichiers...). */
+  setDisplayPreferences(prefs: { showFileExtensions(): boolean; subscribe(cb: () => void): () => void }): void {
+    this.displayPreferences = prefs
+  }
+
+  showFileExtensions(): boolean {
+    return this.displayPreferences?.showFileExtensions() ?? false
+  }
+
+  subscribeDisplayPreferences(cb: () => void): () => void {
+    return this.displayPreferences?.subscribe(cb) ?? (() => {})
+  }
+
   subscribeActiveDocument(cb: (path: string) => void): () => void {
     this.activeDocumentCallbacks.push(cb)
     return () => { this.activeDocumentCallbacks = this.activeDocumentCallbacks.filter(x => x !== cb) }

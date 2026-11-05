@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, useRef } from 'react'
 import type { ViewContext, VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
+import { fileExtensionOf } from '@savoire/plugin-api'
 import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
 import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
 import { ConfirmDialog, TrashSection, type DialogChoice, type DialogRequest } from './TrashPanel'
@@ -24,7 +25,11 @@ function isDerivedDoc(path: string): boolean {
   return path.endsWith('.derived.md')
 }
 
-function displayName(name: string, fileTypes: FileTypeSpec[]): string {
+/** Afficher les extensions (preference de la personne, api.workspace.showFileExtensions). */
+const ShowExtensionsContext = createContext(false)
+
+function displayName(name: string, fileTypes: FileTypeSpec[], showExtension = false): string {
+  if (showExtension) return name
   const spec = fileTypes.find(s => name === s.extension || name.endsWith('.' + s.extension))
   return spec ? name.slice(0, -(spec.extension.length + 1)) : name
 }
@@ -74,6 +79,7 @@ function FileNodeRow({
   /** Fenetre de confirmation de l'explorateur. */
   ask: (request: DialogRequest) => Promise<DialogChoice>
 }) {
+  const showExt = useContext(ShowExtensionsContext)
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileNode[]>([])
   const [childTick, setChildTick] = useState(0)
@@ -145,7 +151,8 @@ function FileNodeRow({
       return
     }
     // Sans extension, on garde celle du fichier (une page reste une page).
-    const normalized = lastSegment(target).includes('.') ? target : `${target}.${extensionOf(node.path) || 'md'}`
+    // Un point dans le nom n'est pas une extension (« Ps. 23 »).
+    const normalized = fileExtensionOf(lastSegment(target)) ? target : `${target}.${extensionOf(node.path) || 'md'}`
     if (normalized === node.path) return
     // Fichier ou note de dossier : le dossier frere suit s'il existe.
     await moveNote(vault, node.path, normalized)
@@ -296,7 +303,7 @@ function FileNodeRow({
                 setIsEditing(true)
               }}
             >
-              {node.kind === 'folderNote' ? node.name : displayName(node.name, fileTypes)}
+              {node.kind === 'folderNote' ? node.name : displayName(node.name, fileTypes, showExt)}
             </span>
           )}
         </span>
@@ -405,6 +412,9 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
     setDialog(current => { current?.resolve(choice); return null })
   }, [])
 
+  const [showExt, setShowExt] = useState(() => workspace.showFileExtensions?.() ?? false)
+  useEffect(() => workspace.subscribeDisplayPreferences?.(() => setShowExt(workspace.showFileExtensions?.() ?? false)), [workspace])
+
   useEffect(() => {
     const manager = workspace as unknown as { subscribeVaultChange?: (cb: () => void) => () => void }
     return manager.subscribeVaultChange?.(() => setTick(t => t + 1))
@@ -423,7 +433,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
     if (!p) return
     try {
       if (creating === 'file') {
-        const normalized = p.includes('.') ? p : `${p}.${selectedExtension}`
+        const normalized = fileExtensionOf(p) ? p : `${p}.${selectedExtension}`
         await createDocument(vault, normalized, fileTypes)
         setCreating(null); setNewPath(''); setTick(t => t + 1)
         onOpenFile(normalized)
@@ -463,6 +473,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
   const canCreateFolder = !!vault.createFolder
 
   return (
+    <ShowExtensionsContext.Provider value={showExt}>
     <div
       style={{ fontFamily: 'inherit', color: 'inherit', height: '100%', display: 'flex', flexDirection: 'column' }}
       onDragOver={vault.uploadAttachment ? e => { e.preventDefault(); setIsDropTarget(true) } : undefined}
@@ -558,6 +569,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
         </div>
       )}
     </div>
+    </ShowExtensionsContext.Provider>
   )
 }
 

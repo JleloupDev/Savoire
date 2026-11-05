@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
+import { linkTargetFor, noteName } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
 import { HeadingIndexContributor, headingToAnchor } from './HeadingIndexContributor'
 import { BacklinksWidget } from './BacklinksWidget'
+import { allFilePaths } from './vaultFiles'
 
 // [[Page]], [[Page#Heading]], [[Page|Alias]], [[Page#Heading|Alias]]
 // Negative lookbehind for "!" so ![[...]] embeds are not touched.
@@ -46,7 +48,7 @@ export function createWikilinksPlugin(options: {
       let notePaths: string[] = []
       const refreshNotes = async (): Promise<void> => {
         try {
-          notePaths = (await api.vault?.list?.() ?? []).filter(p => !p.endsWith('/'))
+          notePaths = typeof api.vault?.list === 'function' ? await allFilePaths(api.vault) : []
         } catch (err) {
           console.warn('[wikilinks] liste du vault indisponible', err)
           notePaths = []
@@ -55,10 +57,7 @@ export function createWikilinksPlugin(options: {
       void refreshNotes()
       api.workspace?.subscribeVaultChange?.(() => void refreshNotes())
 
-      const stemOf = (path: string): string => {
-        const base = path.split('/').at(-1) ?? path
-        return base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base
-      }
+      const stemOf = noteName
 
       api.triggers.register({
         id: 'wikilinks',
@@ -86,8 +85,9 @@ export function createWikilinksPlugin(options: {
               icon: '[[',
               category: 'Notes',
               // commitTriggerInsert() remplace « [[ » ET la requete saisie :
-              // l'insertion doit donc porter le lien complet.
-              insert: `[[${stem}]]`,
+              // l'insertion doit donc porter le lien complet. Le nom seul
+              // s'il est unique, sinon le chemin (comme Obsidian).
+              insert: `[[${linkTargetFor(path, notePaths)}]]`,
             }))
 
             // Rien ne correspond mais l'utilisateur a tape quelque chose :

@@ -86,6 +86,10 @@ export class PluginWorkspaceAPIAdapter implements IPluginWorkspaceAPI {
   subscribeDocumentIndexed(cb: (docId: string, path: string) => void): () => void {
     return this.inner.subscribeDocumentIndexed?.(cb) ?? (() => {})
   }
+  showFileExtensions(): boolean { return this.inner.showFileExtensions?.() ?? false }
+  subscribeDisplayPreferences(cb: () => void): () => void {
+    return this.inner.subscribeDisplayPreferences?.(cb) ?? (() => {})
+  }
 }
 
 export class PluginCommandsAPIAdapter implements IPluginCommandsAPI {

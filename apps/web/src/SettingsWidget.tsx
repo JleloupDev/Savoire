@@ -12,6 +12,7 @@ import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
+import { setShowFileExtensions, useShowFileExtensions } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ export function SettingsPanel({
             <button data-testid="settings-tab-hotkeys" style={tabStyle(tab === 'hotkeys')} onClick={() => setTab('hotkeys')}>{t('app', 'settings.tab.hotkeys')}</button>
           )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
-          <button style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
+          <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
           {vaultIndexer && (
             <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
           )}
@@ -513,7 +514,23 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
           )
         })}
       </div>
+      <ShowExtensionsOption />
     </div>
+  )
+}
+
+function ShowExtensionsOption() {
+  const show = useShowFileExtensions()
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 20, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        data-testid="settings-show-extensions"
+        checked={show}
+        onChange={e => setShowFileExtensions(e.target.checked)}
+      />
+      {t('app', 'settings.files.showExtensions')}
+    </label>
   )
 }
 
