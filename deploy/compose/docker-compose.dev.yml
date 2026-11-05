@@ -152,6 +152,20 @@ services:
     ports:
       - "127.0.0.1:8025:8025"
 
+  # Administration des conteneurs (tout Docker du poste) : http://localhost:9000
+  # ou https://localhost:9443. Sur 127.0.0.1 seulement. Compte admin a creer
+  # dans les 5 minutes du premier demarrage (sinon : restart portainer).
+  portainer:
+    image: portainer/portainer-ce:2.45.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+
 volumes:
   postgres-data:
   zitadel-bootstrap:
+  portainer-data:
