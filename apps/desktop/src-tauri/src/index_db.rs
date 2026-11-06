@@ -440,7 +440,10 @@ mod tests {
         assert!(Arc::ptr_eq(&db, &dbs.get(&reg, &key).unwrap()));
         dbs.close(&reg, &key).unwrap();
         assert!(!Arc::ptr_eq(&db, &dbs.get(&reg, &key).unwrap()));
+        // Windows refuse d'effacer un fichier ouvert : fermer toutes les
+        // connexions (dont celle gardee par `dbs`) avant de nettoyer.
         drop(db);
+        drop(dbs);
         fs::remove_dir_all(&base).unwrap();
     }
 

@@ -82,7 +82,10 @@ jobs:
 
       - name: Tests Rust
         working-directory: apps/desktop/src-tauri
-        run: cargo test
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee ../test.log
 
       - name: Construire
         working-directory: apps/desktop
@@ -98,9 +101,11 @@ jobs:
         shell: bash
         working-directory: apps/desktop
         run: |
-          [ -f build.log ] || exit 0
-          msg=$(tail -n 60 build.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::error title=tauri build (${{ matrix.name }})::${msg}"
+          for log in test.log build.log; do
+            [ -f "$log" ] || continue
+            msg=$(tail -n 60 "$log" | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=${log} (${{ matrix.name }})::${msg}"
+          done
 
       - name: Installeurs
         uses: actions/upload-artifact@v7
