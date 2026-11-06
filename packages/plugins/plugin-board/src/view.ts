@@ -62,6 +62,7 @@ export function createBoardView(path: string, ctx: FileContext, api: PluginAPI |
   let status: HTMLElement
   let preview: HTMLElement
   let codePane: HTMLElement
+  let example: HTMLButtonElement
   let root: HTMLElement
   const buttons = new Map<Mode, HTMLButtonElement>()
   const editable = new Compartment()
@@ -112,7 +113,17 @@ export function createBoardView(path: string, ctx: FileContext, api: PluginAPI |
       status.className = 'board-status'; status.dataset.testid = 'board-status'
       const spacer = document.createElement('span')
       spacer.className = 'board-spacer'
-      toolbar.append(btn('Code', 'code'), btn('Côte à côte', 'split'), btn('Aperçu', 'preview'), again, spacer, status)
+      // Board vide : l'exemple s'insere a la demande. Jamais tout seul a
+      // l'ouverture : le texte partage peut etre encore vide le temps de la
+      // synchro, et l'exemple s'ajoutait alors au vrai contenu.
+      example = document.createElement('button')
+      example.type = 'button'; example.className = 'board-btn'; example.textContent = 'Insérer l\'exemple'; example.dataset.testid = 'board-example'
+      example.hidden = true
+      example.addEventListener('click', () => {
+        if (!editor || readOnly || editor.state.doc.length > 0) return
+        editor.dispatch({ changes: { from: 0, insert: BOARD_TEMPLATE } })
+      })
+      toolbar.append(btn('Code', 'code'), btn('Côte à côte', 'split'), btn('Aperçu', 'preview'), again, example, spacer, status)
       codePane = document.createElement('div')
       codePane.className = 'board-code'
       preview = document.createElement('div')
@@ -140,6 +151,7 @@ export function createBoardView(path: string, ctx: FileContext, api: PluginAPI |
               editable.of(editableExt()),
               EditorView.updateListener.of(u => {
                 if (!u.docChanged) return
+                example.hidden = readOnly || u.state.doc.length > 0
                 for (const tr of u.transactions) {
                   if (!tr.docChanged || tr.annotation(fromShared) || !text) continue
                   const delta: TextDelta = []
@@ -167,9 +179,8 @@ export function createBoardView(path: string, ctx: FileContext, api: PluginAPI |
       }
       setMode(mode)
       if (text) {
-        // Un board neuf commence vide : on y pose l'exemple.
-        if (!readOnly && text.length === 0) text.insert(0, BOARD_TEMPLATE)
         start(text.toString())
+        example.hidden = readOnly || text.length > 0
       } else {
         setStatus('Lecture seule : ce board n\'est pas relié à la synchronisation du vault.')
         void readContent(path, ctx).then(start, err => setStatus(`⚠ ${String(err)}`, true))
