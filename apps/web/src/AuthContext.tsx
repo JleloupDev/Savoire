@@ -13,6 +13,8 @@ import { accountsAfterLogin, getAccountStorage } from './accountStorage'
 import { httpStatusOf, isNetworkError } from './serverErrors'
 import { createSessionRenewal, refreshOnce, SESSION_EXPIRED_MESSAGE, type SessionRenewal } from './session'
 import { describeAuthError, readLoginCallback, type LoginDriver } from './loginFlow'
+import { exposeBridge, findHostBridge, type AuthBridge } from './authBridge'
+import { readNoteWindow } from './noteWindow'
 
 // Navigateur : sessionStorage. Version bureau : la session du serveur
 // choisi, gardee sur la machine (voir accountStorage.ts, serverConnection.ts).
@@ -65,9 +67,12 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   singleAccount?: boolean
   setTokenRenewer?: (renewer: ((rejected: string) => Promise<string | null>) | null) => void
 }) {
-  const [accounts, setAccounts] = useState<AccountEntry[]>(loadAccounts)
-  const [token, setToken] = useState<string | null>(null)
-  const [isReady, setIsReady] = useState(false)
+  // Fenetre de note ouverte par une autre fenetre : sa session est celle de
+  // l'hote, jamais renouvelee ici (voir authBridge.ts).
+  const [host] = useState<AuthBridge | null>(() => readNoteWindow() ? findHostBridge() : null)
+  const [accounts, setAccounts] = useState<AccountEntry[]>(() => host ? host.accounts() : loadAccounts())
+  const [token, setToken] = useState<string | null>(() => host ? host.token() : null)
+  const [isReady, setIsReady] = useState(!!host)
   const [loginError, setLoginError] = useState<string | null>(null)
   // Retour du fournisseur (/auth/callback) : lu au premier rendu, avant que
   // le routeur ne renvoie ailleurs.
@@ -92,11 +97,34 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   })
   const renewal = renewalRef.current
 
-  useEffect(() => { renewal.setToken(token) }, [renewal, token])
+  useEffect(() => { if (!host) renewal.setToken(token) }, [renewal, token, host])
+
+  // Fenetre de note : le jeton de l'hote, et ses renouvellements.
+  useEffect(() => {
+    if (!host) return
+    setTokenRenewer?.(rejected => host.renew(rejected))
+    const unsub = host.subscribe(t => setToken(t))
+    window.addEventListener('pagehide', unsub)
+    return () => { unsub(); window.removeEventListener('pagehide', unsub); setTokenRenewer?.(null) }
+  }, [host, setTokenRenewer])
+
+  // Ce que cette fenetre donne aux fenetres qu'elle ouvre : sa session (une
+  // fenetre de note relaie celle de son hote).
+  const tokenRef = useRef(token)
+  tokenRef.current = token
+  const listenersRef = useRef(new Set<(t: string | null) => void>())
+  useEffect(() => { for (const cb of [...listenersRef.current]) cb(token) }, [token])
+  useEffect(() => exposeBridge(host ?? {
+    token: () => tokenRef.current,
+    accounts: () => loadAccounts(),
+    renew: rejected => renewal.renewRejected(rejected),
+    subscribe: cb => { listenersRef.current.add(cb); return () => { listenersRef.current.delete(cb) } },
+  }), [host, renewal])
 
   // Rejeu des requetes refusees (401), et reprise apres une mise en veille :
   // le minuteur a pu dormir, on regarde l'echeance au retour.
   useEffect(() => {
+    if (host) { renewal.stop(); return }
     setTokenRenewer?.(rejected => renewal.renewRejected(rejected))
     const check = () => { if (document.visibilityState !== 'hidden') renewal.check() }
     document.addEventListener('visibilitychange', check)
@@ -109,7 +137,7 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
       window.removeEventListener('online', check)
       renewal.stop()
     }
-  }, [renewal, setTokenRenewer])
+  }, [renewal, setTokenRenewer, host])
 
   const acceptLogin = useCallback((res: AppAuthResponse) => {
     const newEntry: AccountEntry = {
@@ -197,12 +225,14 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
         }
         return
       }
+      // Fenetre de note : deja prete, avec la session de l'hote.
+      if (host) return
       const active = loadAccounts().find(a => a.isActive)
       if (active) await switchAccount(active.userId)
       if (!cancelled) setIsReady(true)
     })()
     return () => { cancelled = true }
-  }, [callback, authApi, loginDriver, acceptLogin, switchAccount])
+  }, [callback, authApi, loginDriver, acceptLogin, switchAccount, host])
 
   return (
     <AuthContext.Provider value={{ token, accounts, activeAccount, isReady, loginError, login, logout, switchAccount, reloadAccounts }}>

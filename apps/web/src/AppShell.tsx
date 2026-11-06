@@ -23,6 +23,8 @@ import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
 import { useShowFileExtensions } from './displayPreferences'
+import { canPinNote, noteTitle, openNoteWindow, pinNote, readNoteWindow } from './noteWindow'
+import { isTauriRuntime } from './tauriRuntime'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
@@ -61,6 +63,7 @@ interface DesktopAccountMenu {
   onDisconnect: () => void
 }
 
+const TOPBAR_BUTTON: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }
 const menuBtn: React.CSSProperties = { textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }
 const menuHead: React.CSSProperties = { padding: '4px 10px 0', fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }
 
@@ -338,6 +341,11 @@ export function AppShell() {
 
   const [activeDoc, setActiveDoc] = useState<DocumentDto | null>(null)
   const [vaults, setVaults] = useState<VaultSummary[]>([])
+  // Fenetre d'une seule note (« Nouvelle fenetre », « Epingler ») : voir noteWindow.ts.
+  const noteWindow = useMemo(() => readNoteWindow(), [])
+  const noteWindowOpenedRef = useRef(false)
+  // Pas dans l'appli de bureau : une fenetre du navigateur n'y a pas de sens.
+  const windowActions = !isTauriRuntime()
   const [sharedWithMe, setSharedWithMe] = useState<SharedNote[]>([])
   const sharedWithMeRef = useRef<SharedNote[]>(sharedWithMe)
   const [selectedVault, setSelectedVault] = useState<VaultSummary | null>(null)
@@ -770,12 +778,12 @@ export function AppShell() {
         if (desktopAutoOpenedRef.current || selectedVaultRef.current) autoVault = undefined
         desktopAutoOpenedRef.current = true
       }
-      if (autoVault && opts.autoOpen !== false) void switchToVault(autoVault, token)
+      if (autoVault && opts.autoOpen !== false && !noteWindow) void switchToVault(autoVault, token)
     } catch (err) {
       console.error(err)
     }
   // serverKey : la liste du bureau change quand on se connecte ou se deconnecte.
-  }, [token, activeAccount, accounts, application.vaults, switchToVault, activeProfile.desktop, serverKey])
+  }, [token, activeAccount, accounts, application.vaults, switchToVault, activeProfile.desktop, serverKey, noteWindow])
 
   closeGoneVaultRef.current = async (vault: VaultSummary) => {
     // Seulement si c'est encore le vault actif : entre-temps, la personne a
@@ -991,6 +999,35 @@ export function AppShell() {
     })
     return () => indexerServices.setGlobalHost(null)
   }, [indexerServices, switchToVault])
+
+  // Fenetre d'une note : son vault, puis la note, des que la liste est la.
+  useEffect(() => {
+    if (!noteWindow || noteWindowOpenedRef.current) return
+    const vault = vaults.find(v => v.id === noteWindow.vaultId)
+    const tok = tokenRef.current
+    if (!vault || !tok) return
+    noteWindowOpenedRef.current = true
+    document.title = `${noteWindow.pinned ? '📌 ' : ''}${noteTitle(noteWindow.path)}`
+    void (async () => {
+      await switchToVault(vault, tok)
+      for (let i = 0; i < 50 && !documentsRef.current.some(d => d.path === noteWindow.path); i++) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+      // La zone d'edition peut naitre de ce premier appel (elle n'ecoute
+      // qu'une fois montee) : on redemande tant que l'onglet n'est pas la.
+      const opened = () => document.querySelector(`[data-testid="editor-tab"][data-doc-path="${CSS.escape(noteWindow.path)}"]`)
+      for (let i = 0; i < 20 && !opened(); i++) {
+        await managerRef.current?.openFile(noteWindow.path)
+        await new Promise(r => setTimeout(r, 250))
+      }
+    })().catch(err => console.error('[fenetre de note]', err))
+  }, [noteWindow, vaults, switchToVault])
+
+  const handlePinNote = useCallback(() => {
+    const vault = selectedVaultRef.current
+    if (!vault || !activeDoc) return
+    pinNote(vault.id, activeDoc.path).catch(err => notify('danger', 'Épingler impossible', String(err?.message ?? err)))
+  }, [activeDoc])
 
   onOpenSharedNoteRef.current = (note: SharedNote) => {
     if (!token) return
@@ -1329,8 +1366,8 @@ export function AppShell() {
       style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
     >
 
-      {/* ── Icon rail ── */}
-      <IconRail
+      {/* ── Icon rail (pas dans la fenetre d'une note) ── */}
+      {!noteWindow && <IconRail
         ribbonItems={ribbonItems}
         activeViewId={activeViewId}
         onRibbonClick={(item) => {
@@ -1354,7 +1391,7 @@ export function AppShell() {
           onOpenServer: () => setServerDialogOpen(true),
           onDisconnect: () => void handleServerDisconnect(),
         } : undefined}
-      />
+      />}
 
       {/* ── Main area (topbar + workspace stacked) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -1399,6 +1436,22 @@ export function AppShell() {
 
           {activeDoc && (
             <span data-testid="save-status" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{t('app', 'topbar.saved')}</span>
+          )}
+
+          {/* Note dans une autre fenetre, ou epinglee au premier plan (navigateur seulement). */}
+          {windowActions && selectedVault && activeDoc && !noteWindow && (
+            <button data-testid="open-note-window" onClick={() => { if (!openNoteWindow(selectedVault.id, activeDoc.path)) notify('warn', 'Fenêtre bloquée', 'Autorisez les fenêtres surgissantes pour ce site.') }} title={t('app', 'topbar.newWindow')} style={TOPBAR_BUTTON}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="7" width="14" height="14" rx="2"/><path d="M10 3h11v11"/><path d="M21 3l-8 8"/>
+              </svg>
+            </button>
+          )}
+          {windowActions && selectedVault && activeDoc && !noteWindow?.pinned && canPinNote() && (
+            <button data-testid="pin-note" onClick={handlePinNote} title={t('app', 'topbar.pin')} style={TOPBAR_BUTTON}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 17v5"/><path d="M5 17h14l-2-4V5h1V3H6v2h1v8z"/>
+              </svg>
+            </button>
           )}
 
           {/* Share : capacite du profil, absente sans arbitre (voir IVaultSyncSession.sharing) */}
@@ -1455,13 +1508,15 @@ export function AppShell() {
           m.notifyVaultChange()
           setRibbonItems(m.getRibbonItems())
           m.subscribeActiveView(setActiveViewId)
+          // Fenetre d'une note : rien que l'editeur.
+          if (noteWindow) { m.collapsePane('left'); m.collapsePane('right') }
           // Onglet deja ouvert rendu actif (clic sur un onglet, lien vers une
           // note ouverte) : le fil d'Ariane suit, pas seulement a l'ouverture.
           m.subscribeActiveDocument(path => {
             const doc = documentsRef.current.find(d => d.path === path)
             if (doc) setActiveDoc(cur => cur?.id === doc.id ? cur : doc)
           })
-          m.openDefaultLeft('explorer')
+          if (!noteWindow) m.openDefaultLeft('explorer')
         }}
         style={{ flex: 1, overflow: 'hidden' }}
       />

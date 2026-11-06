@@ -135,6 +135,8 @@ export const appFr = {
   'notify.admin.passwordReset': 'Mot de passe réinitialisé',
 
   // Topbar
+  'topbar.newWindow': 'Ouvrir la note dans une nouvelle fenêtre',
+  'topbar.pin': 'Épingler la note au premier plan (toujours visible)',
   'topbar.share': 'Partager',
   'topbar.noVault': '—',
   'topbar.saved': 'Enregistré ✓',

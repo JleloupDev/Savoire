@@ -135,6 +135,8 @@ export const appEn = {
   'notify.admin.passwordReset': 'Password reset',
 
   // Topbar
+  'topbar.newWindow': 'Open the note in a new window',
+  'topbar.pin': 'Pin the note on top (always visible)',
   'topbar.share': 'Share',
   'topbar.noVault': '—',
   'topbar.saved': 'Saved ✓',
