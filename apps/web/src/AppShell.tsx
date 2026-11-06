@@ -1455,6 +1455,12 @@ export function AppShell() {
           m.notifyVaultChange()
           setRibbonItems(m.getRibbonItems())
           m.subscribeActiveView(setActiveViewId)
+          // Onglet deja ouvert rendu actif (clic sur un onglet, lien vers une
+          // note ouverte) : le fil d'Ariane suit, pas seulement a l'ouverture.
+          m.subscribeActiveDocument(path => {
+            const doc = documentsRef.current.find(d => d.path === path)
+            if (doc) setActiveDoc(cur => cur?.id === doc.id ? cur : doc)
+          })
           m.openDefaultLeft('explorer')
         }}
         style={{ flex: 1, overflow: 'hidden' }}

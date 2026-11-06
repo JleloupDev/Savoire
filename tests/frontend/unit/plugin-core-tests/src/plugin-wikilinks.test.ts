@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll } from 'vitest'
-import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin, linkPageOf } from '@savoire/plugin-wikilinks'
 const plugin = createWikilinksPlugin({ belowOf: 'plugin-inspector' })
 import type { PluginAPI } from '@savoire/plugin-api'
 
@@ -95,5 +95,14 @@ describe('plugin-wikilinks — embed exclusion', () => {
   it('does NOT transform multiple embeds', () => {
     const result = run('![[a.md]] and ![[b.md]]')
     expect(result).toBe('![[a.md]] and ![[b.md]]')
+  })
+})
+
+describe('plugin-wikilinks : noms avec espaces', () => {
+  it('le lien reste un lien Markdown (adresse entre chevrons)', () => {
+    const md = run('Voir [[Genèse 8#^11]] et [[Luc 3]].')
+    expect(md).toBe('Voir [Genèse 8 > ^11](<#Genèse 8#11>) et [Luc 3](<#Luc 3>).')
+    expect(linkPageOf('#Gen%C3%A8se%208#11')).toBe('Genèse 8')
+    expect(linkPageOf('#Luc 3')).toBe('Luc 3')
   })
 })

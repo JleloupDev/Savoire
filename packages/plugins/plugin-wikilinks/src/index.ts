@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
-import { linkTargetFor, noteName } from '@savoire/plugin-api'
+import { linkTargetFor, noteName, resolveLinkPath } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
 import { HeadingIndexContributor, headingToAnchor } from './HeadingIndexContributor'
 import { BacklinksWidget } from './BacklinksWidget'
@@ -16,7 +16,17 @@ const WIKILINK_RE = /(?<!!)(\[\[([^\]#|]+?)(?:#([^\]|]+?))?(?:\|([^\]]+))?\]\])/
 function toMarkdownLink(page: string, heading: string | undefined, alias: string | undefined): string {
   const label = alias ?? (heading ? `${page} > ${heading}` : page)
   const href = heading ? `#${page}#${headingToAnchor(heading)}` : `#${page}`
-  return `[${label}](${href})`
+  // Une adresse avec des espaces (« Genese 8 ») n'est un lien Markdown
+  // qu'entre chevrons ; sans eux, le lien s'affichait en texte brut.
+  const dest = /[\s()<>]/.test(href) ? `<${href.replace(/[<>]/g, '')}>` : href
+  return `[${label}](${dest})`
+}
+
+/** La note visee par un lien rendu (`#Page` ou `#Page#ancre`). */
+export function linkPageOf(href: string): string {
+  let raw = href.replace(/^#/, '')
+  try { raw = decodeURIComponent(raw) } catch { /* garde tel quel */ }
+  return raw.split('#')[0].trim()
 }
 
 export function createWikilinksPlugin(options: {
@@ -25,6 +35,7 @@ export function createWikilinksPlugin(options: {
   belowOf?: string
   initialSize?: number
 } = {}): VaultPlugin {
+  let removeListeners: (() => void) | null = null
   return {
     manifest: {
       id: 'plugin-wikilinks',
@@ -108,6 +119,32 @@ export function createWikilinksPlugin(options: {
         },
       })
 
+      // Clic sur un lien rendu dans une note : ouvrir la note visee (comme
+      // Obsidian). Avant l'editeur, qui passerait la ligne en edition.
+      if (typeof document !== 'undefined') {
+        const linkAt = (e: MouseEvent): string | null => {
+          if (e.button !== 0) return null
+          const a = (e.target as Element | null)?.closest?.('a[href^="#"]')
+          if (!a || !a.closest('.cm-editor')) return null
+          const page = linkPageOf(a.getAttribute('href') ?? '')
+          return page ? resolveLinkPath(page, notePaths) ?? null : null
+        }
+        const onDown = (e: MouseEvent) => {
+          const path = linkAt(e)
+          if (!path) return
+          e.preventDefault()
+          e.stopPropagation()
+          void api.workspace?.openFile(path)
+        }
+        const onClick = (e: MouseEvent) => { if (linkAt(e)) e.preventDefault() }
+        document.addEventListener('mousedown', onDown, true)
+        document.addEventListener('click', onClick, true)
+        removeListeners = () => {
+          document.removeEventListener('mousedown', onDown, true)
+          document.removeEventListener('click', onClick, true)
+        }
+      }
+
       api.hooks.beforeParse((source) => {
         return source.replace(
           WIKILINK_RE,
@@ -137,7 +174,10 @@ export function createWikilinksPlugin(options: {
       })
     },
 
-    async onunload() {},
+    async onunload() {
+      removeListeners?.()
+      removeListeners = null
+    },
   }
 }
 
