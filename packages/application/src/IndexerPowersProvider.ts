@@ -48,6 +48,7 @@ export class IndexerPowersProvider implements IIndexerAPI {
     backlinks: (params, options) => this.call('links', 'backlinks', params, options),
     outgoing: (params, options) => this.call('links', 'outgoing', params, options),
     unresolved: (params, options) => this.call('links', 'unresolved', params ?? {}, options),
+    citing: (params, options) => this.call('links', 'citing', params, options),
     graph: (params, options) => this.call('links', 'graph', params ?? {}, options),
   }
 

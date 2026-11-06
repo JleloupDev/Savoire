@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { createContext, useCallback, useContext, useEffect, useState, useRef } from 'react'
-import type { ViewContext, VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
+import type { ViewContext, VaultAPI, FileTypeSpec, IIndexerAPI } from '@savoire/plugin-api'
 import { fileExtensionOf } from '@savoire/plugin-api'
 import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
 import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
@@ -15,6 +15,8 @@ interface FileTreeProps {
   vault: VaultAPI
   onOpenFile: (path: string) => void
   workspace: ViewContext['workspace']
+  /** Index du vault : trouve les notes a recrire apres un deplacement sans tout relire. */
+  indexer?: IIndexerAPI
   fileTypes: FileTypeSpec[]
   /** Relit les types a chaque rendu (plugins actives ou desactives). */
   readFileTypes?: () => FileTypeSpec[]
@@ -388,7 +390,7 @@ function FileNodeRow({
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
-export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileTypes, readFileTypes }: FileTreeProps) {
+export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: initialFileTypes, readFileTypes }: FileTreeProps) {
   // Relu a chaque rendu : un plugin active ou desactive change les types
   // disponibles (icones, choix a la creation). Le rendu suit la notification
   // de changement du workspace.
@@ -418,10 +420,10 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
 
   const [showExt, setShowExt] = useState(() => workspace.showFileExtensions?.() ?? false)
   const relink = useCallback((moves: Move[]) => {
-    relinkAfterMoves(vault, moves)
+    relinkAfterMoves(vault, moves, indexer)
       .then(n => { if (n) workspace.notify?.('success', 'Liens mis à jour', `${n} note${n > 1 ? 's' : ''} modifiée${n > 1 ? 's' : ''}`) })
       .catch(err => console.warn('[filetree] liens non mis a jour', err))
-  }, [vault, workspace])
+  }, [vault, workspace, indexer])
   useEffect(() => workspace.subscribeDisplayPreferences?.(() => setShowExt(workspace.showFileExtensions?.() ?? false)), [workspace])
 
   useEffect(() => {
@@ -594,13 +596,14 @@ function btnStyle(color: string): React.CSSProperties {
 // ─── FileTreeWidget — implements Widget ──────────────────────────────────
 
 export class FileTreeWidget {
-  constructor(private readonly ctx: ViewContext) {}
+  constructor(private readonly ctx: ViewContext, private readonly indexer?: IIndexerAPI) {}
 
   render() {
     return (
       <FileTree
         vault={this.ctx.vault}
         workspace={this.ctx.workspace}
+        indexer={this.indexer}
         fileTypes={this.ctx.fileTypes.getAll()}
         readFileTypes={() => this.ctx.fileTypes.getAll()}
         onOpenFile={(path) => void this.ctx.workspace.openFile(path)}

@@ -69,6 +69,12 @@ export interface IIndexerLinks {
   backlinks(params: { id: string; limit?: number }, options?: IndexerCallOptions): Promise<{ items: BacklinkItem[] }>
   /** Liens d'une note, dans l'ordre du texte. */
   outgoing(params: { id: string }, options?: IndexerCallOptions): Promise<{ resolved: IndexedNoteRef[]; unresolved: { target: string }[] }>
+  /**
+   * Notes dont un lien vise un fichier de ce nom (`photo.png`, `projet`),
+   * resolu ou non. Un sur-ensemble : sert a retrouver les liens a recrire
+   * apres un deplacement. Absent d'un index ancien.
+   */
+  citing?(params: { names: string[]; limit?: number }, options?: IndexerCallOptions): Promise<{ items: IndexedNoteRef[] }>
   /** Liens vers des notes qui n'existent pas, les plus nombreux d'abord. */
   unresolved(params?: { limit?: number }, options?: IndexerCallOptions): Promise<{ items: UnresolvedLinkItem[] }>
   /** Graphe des notes ; au-dela de `limit`, les plus reliees d'abord. */

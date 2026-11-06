@@ -91,6 +91,44 @@ describe('les liens suivent un deplacement', () => {
   })
 })
 
+describe('les liens suivent : avec l\'index', () => {
+  it('seules les notes que l\'index donne sont lues', async () => {
+    const texts: Record<string, string> = {
+      'Lecteur.md': '![[Note/image.png]]',
+      'Autre.md': 'Aussi ![[Note/image.png]] mais l\'index ne la connait pas.',
+      'Image.md': 'x',
+    }
+    const files = [...Object.keys(texts), 'Classe/image.png', 'Ailleurs/image.png']
+    const reads: string[] = []
+    const vault = {
+      list: async (dir?: string) => {
+        const d = dir ?? ''
+        const out = new Set<string>()
+        for (const f of files) {
+          if (!f.startsWith(d)) continue
+          const rest = f.slice(d.length)
+          const slash = rest.indexOf('/')
+          out.add(slash < 0 ? f : d + rest.slice(0, slash + 1))
+        }
+        return [...out]
+      },
+      readDocumentByPath: async (p: string) => { reads.push(p); return texts[p] },
+      resolveDocumentId: (p: string) => texts[p] !== undefined ? p : undefined,
+      editText: async (id: string, edit: (t: string) => string) => { texts[id] = edit(texts[id]); return true },
+    }
+    const asked: string[][] = []
+    const indexer = {
+      available: () => true,
+      links: { citing: async ({ names }: { names: string[] }) => { asked.push(names); return { items: [{ id: 'l', path: 'Lecteur.md', title: 'Lecteur' }] } } },
+    } as never
+    const n = await relinkAfterMoves(vault, [{ from: 'Note/image.png', to: 'Classe/image.png' }], indexer)
+    expect(asked).toEqual([['image.png']])
+    expect(reads).toEqual(['Lecteur.md'])
+    expect(n).toBe(1)
+    expect(texts['Lecteur.md']).toBe('![[Classe/image.png]]')
+  })
+})
+
 describe('/page', () => {
   it('range la page sous la note, nom libre', () => {
     expect(newPagePath('A/Note.md', [])).toBe('A/Note/Nouvelle page.md')

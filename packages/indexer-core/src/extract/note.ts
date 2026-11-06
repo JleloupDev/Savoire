@@ -50,6 +50,8 @@ export interface NoteRecord {
   props: Record<string, PropertyValue>
   sections: Section[]
   links: LinkRef[]
+  /** Fichiers cites qui ne sont pas des notes (images...), tels qu'ecrits. */
+  files?: string[]
   tags: string[]
   aliases: string[]
   created?: string
@@ -137,6 +139,7 @@ export function extractNote(input: NoteInput, options: ExtractOptions = {}): Not
     props,
     sections: parts.sections,
     links: parts.links,
+    files: parts.files,
     tags: distinctFold([...frontmatterTags(props), ...parts.tags]),
     aliases: distinctFold(frontmatterAliases(props)),
     ...(input.created ? { created: input.created } : {}),

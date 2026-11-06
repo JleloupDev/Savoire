@@ -21,7 +21,7 @@ import type { LinkRef } from '../extract/markdown'
 import { docKeys, folderOf, nameOf, normalizePath, resolveFrom } from '../paths'
 import type { DocRef, IndexPower, PowerContext } from '../power'
 import { method } from '../power'
-import { asObject, optInt, optString, reqString } from '../validate'
+import { asObject, optInt, optString, optStringList, reqString } from '../validate'
 import { notesFilter } from './query'
 
 /**
@@ -121,6 +121,24 @@ async function outgoing(ctx: PowerContext, p: { id: string }) {
 
 const MAX_SOURCES = 50
 
+/**
+ * Notes dont un lien vise un fichier de ce nom (casse ignoree), resolu ou
+ * non : une image, une note. Le nom tel qu'un lien l'ecrit (`photo.png`,
+ * `projet`, `projet.md`). Sert a retrouver les liens a recrire quand un
+ * fichier change de chemin, sans relire tout le vault : un sur-ensemble, le
+ * client verifie chaque note.
+ */
+async function citing(ctx: PowerContext, p: { names: string[]; limit: number }) {
+  const rows = await ctx.driver.all<DocItem>(
+    `SELECT s.id AS id, s.path AS path, s.title AS title
+     FROM docs s WHERE s.n IN (
+       SELECT l.src FROM links l WHERE l.n_key IN (SELECT value FROM json_each(?))
+       UNION SELECT f.src FROM file_refs f WHERE f.n_key IN (SELECT value FROM json_each(?)))
+     ORDER BY s.path_fold, s.id LIMIT ?`,
+    [JSON.stringify(p.names.map(n => n.toLowerCase())), JSON.stringify(p.names.map(n => n.toLowerCase())), p.limit])
+  return { items: rows.map(r => ({ id: r.id, path: r.path, title: r.title })) }
+}
+
 async function unresolvedLinks(ctx: PowerContext, p: { limit: number }) {
   const groups = await ctx.driver.all<{ k: string; target: string; c: number }>(
     `SELECT l.t_key AS k, min(l.raw) AS target, count(*) AS c FROM links l
@@ -169,8 +187,9 @@ async function graph(ctx: PowerContext, p: { folder?: string; limit: number }) {
 
 export const linksPower: IndexPower = {
   name: 'links',
-  version: 1,
-  tables: ['links', 'aliases'],
+  // 2 : fichiers cites (file_refs), pour links.citing.
+  version: 2,
+  tables: ['links', 'aliases', 'file_refs'],
   schema: [
     `CREATE TABLE IF NOT EXISTS links (
       src INTEGER NOT NULL,
@@ -195,6 +214,13 @@ export const linksPower: IndexPower = {
       PRIMARY KEY (doc, alias_key)
     ) WITHOUT ROWID`,
     'CREATE INDEX IF NOT EXISTS aliases_key ON aliases (alias_key)',
+    // Images et pieces jointes citees : nom du fichier vise, en minuscules.
+    `CREATE TABLE IF NOT EXISTS file_refs (
+      src INTEGER NOT NULL,
+      n_key TEXT NOT NULL,
+      PRIMARY KEY (src, n_key)
+    ) WITHOUT ROWID`,
+    'CREATE INDEX IF NOT EXISTS file_refs_n ON file_refs (n_key)',
   ],
 
   write(_ctx, doc, note) {
@@ -209,10 +235,13 @@ export const linksPower: IndexPower = {
     }
     out.push(...linkRows(doc, note.links))
     out.push(resolveAround(doc.n, doc.path, aliasKeys))
+    const names = new Set((note.files ?? []).map(f => nameOf(f.replace(/\\/g, '/')).toLowerCase()).filter(Boolean))
+    for (const name of names) out.push(sql('INSERT OR IGNORE INTO file_refs (src, n_key) VALUES (?, ?)', doc.n, name))
     return out
   },
 
   remove: (_ctx, doc) => [
+    sql('DELETE FROM file_refs WHERE src = ?', doc.n),
     sql('DELETE FROM links WHERE src = ?', doc.n),
     sql('DELETE FROM aliases WHERE doc = ?', doc.n),
   ],
@@ -246,6 +275,15 @@ export const linksPower: IndexPower = {
         return { id: reqString(asObject(v), 'id', 256) }
       },
       run: (ctx, p) => outgoing(ctx, p),
+    }),
+    citing: method({
+      parse(v: unknown) {
+        const p = asObject(v)
+        const names = optStringList(p, 'names', 500, 512) ?? []
+        if (!names.length) throw invalid('names : au moins un nom.')
+        return { names, limit: optInt(p, 'limit', 1, 20_000, 5000) }
+      },
+      run: (ctx, p) => citing(ctx, p),
     }),
     unresolved: method({
       parse(v: unknown) {

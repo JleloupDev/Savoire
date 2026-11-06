@@ -22,7 +22,7 @@ describe('schema', () => {
   it('base neuve : tables du noyau et des pouvoirs, reconstruction demandee jusqu a markBuilt', async () => {
     const driver = NodeSqliteDriver.open(':memory:')
     const index = await VaultIndex.open(driver)
-    expect(await tables(driver)).toEqual(['aliases', 'docs', 'links', 'meta', 'props', 'search_fts', 'search_text', 'tags'])
+    expect(await tables(driver)).toEqual(['aliases', 'docs', 'file_refs', 'links', 'meta', 'props', 'search_fts', 'search_text', 'tags'])
     expect(index.rebuildRequired).toBe(true)
     expect(await index.seq()).toBe(0)
     await index.applyDoc({ id: 'a', path: 'A.md', content: '#tag' }, { seq: 12 })

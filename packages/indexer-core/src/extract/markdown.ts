@@ -43,6 +43,12 @@ export interface MarkdownParts {
   h1?: string
   sections: Section[]
   links: LinkRef[]
+  /**
+   * Fichiers cites qui ne sont pas des notes (images, pieces jointes), tels
+   * qu'ecrits : pas des liens entre notes, mais a retrouver quand le fichier
+   * change de chemin (links.citing).
+   */
+  files: string[]
   /** Tags du texte, sans '#', dans l'ordre, sans doublon (casse ignoree). */
   tags: string[]
 }
@@ -94,7 +100,7 @@ function decode(s: string): string {
   try { return decodeURIComponent(s) } catch { return s }
 }
 
-function wikiLink(bang: string, inner: string): { link: LinkRef | null; display: string } {
+function wikiLink(bang: string, inner: string): { link: LinkRef | null; display: string; file?: string } {
   const body = inner.replace(/\\\|/g, '|')
   const bar = body.indexOf('|')
   const linkPart = bar < 0 ? body : body.slice(0, bar)
@@ -105,14 +111,15 @@ function wikiLink(bang: string, inner: string): { link: LinkRef | null; display:
   const embed = bang === '!'
   const display = embed ? '' : alias ?? (target || subpath || '')
   // [[#titre]] : un lien dans la note elle-meme, pas un lien entre notes.
-  if (!target || ATTACHMENT_EXTENSIONS.has(extOf(target))) return { link: null, display }
+  if (!target) return { link: null, display }
+  if (ATTACHMENT_EXTENSIONS.has(extOf(target))) return { link: null, display, file: target }
   return {
     link: { target, embed, kind: 'wiki', ...(subpath ? { subpath } : {}), ...(alias ? { alias } : {}) },
     display,
   }
 }
 
-function markdownLink(bang: string, label: string, rawUrl: string): { link: LinkRef | null; display: string } {
+function markdownLink(bang: string, label: string, rawUrl: string): { link: LinkRef | null; display: string; file?: string } {
   const embed = bang === '!'
   const display = label
   let url = rawUrl.trim()
@@ -122,7 +129,8 @@ function markdownLink(bang: string, label: string, rawUrl: string): { link: Link
   const target = decode(hash < 0 ? url : url.slice(0, hash)).trim()
   const subpath = hash < 0 ? undefined : decode(url.slice(hash + 1)).trim() || undefined
   const ext = extOf(target)
-  if (!target || (ext !== '' && !NOTE_EXTENSIONS.has(ext))) return { link: null, display }
+  if (!target) return { link: null, display }
+  if (ext !== '' && !NOTE_EXTENSIONS.has(ext)) return { link: null, display, file: target }
   return {
     link: { target, embed, kind: 'markdown', ...(subpath ? { subpath } : {}), ...(label.trim() ? { alias: label.trim() } : {}) },
     display,
@@ -144,12 +152,14 @@ function stripInline(s: string): string {
 interface Inline {
   plain: string
   links: LinkRef[]
+  files: string[]
   tags: string[]
 }
 
 /** Une ligne (deja sans sa syntaxe de bloc) : texte brut, liens, tags. */
 function inline(line: string): Inline {
   const links: LinkRef[] = []
+  const files: string[] = []
   const tags: string[] = []
   let plain = ''
   for (const seg of splitCode(line.replace(BLOCK_ID, ''))) {
@@ -158,14 +168,16 @@ function inline(line: string): Inline {
     // positions pour chercher les tags hors des liens.
     let masked = seg.text
     let shown = seg.text.replace(WIKILINK, (_m, bang: string, inner: string) => {
-      const { link, display } = wikiLink(bang, inner)
+      const { link, display, file } = wikiLink(bang, inner)
       if (link) links.push(link)
+      if (file) files.push(file)
       return display
     })
     masked = masked.replace(WIKILINK, m => blank(m))
     shown = shown.replace(MDLINK, (_m, bang: string, label: string, url: string) => {
-      const { link, display } = markdownLink(bang, label, url)
+      const { link, display, file } = markdownLink(bang, label, url)
       if (link) links.push(link)
+      if (file) files.push(file)
       return display
     })
     masked = masked.replace(MDLINK, m => blank(m)).replace(/<!--.*?-->/g, m => blank(m))
@@ -175,7 +187,7 @@ function inline(line: string): Inline {
     }
     plain += stripInline(shown)
   }
-  return { plain: plain.replace(/[ \t ]+/g, ' ').trim(), links, tags }
+  return { plain: plain.replace(/[ \t ]+/g, ' ').trim(), links, files, tags }
 }
 
 /** Retire les commentaires %% ... %% d'une ligne ; dit si un commentaire reste ouvert. */
@@ -219,6 +231,7 @@ function stripBlock(raw: string): { line: string; table: boolean } | null {
 export function parseMarkdownBody(body: string): MarkdownParts {
   const sections: Section[] = []
   const links: LinkRef[] = []
+  const files: string[] = []
   const tagSeen = new Set<string>()
   const tags: string[] = []
   let h1: string | undefined
@@ -267,6 +280,7 @@ export function parseMarkdownBody(body: string): MarkdownParts {
     if (h) {
       const parsed = inline(h[2] ?? '')
       links.push(...parsed.links)
+      files.push(...parsed.files)
       addTags(parsed.tags)
       flush()
       current = { heading: parsed.plain, level: h[1].length, lines: parsed.plain ? [parsed.plain] : [] }
@@ -278,9 +292,10 @@ export function parseMarkdownBody(body: string): MarkdownParts {
     if (!block) continue
     const parsed = inline(block.line)
     links.push(...parsed.links)
+    files.push(...parsed.files)
     addTags(parsed.tags)
     pushLine(block.table ? parsed.plain.replace(/(?<!\\)\|/g, ' ').replace(/ {2,}/g, ' ').trim() : parsed.plain)
   }
   flush()
-  return { ...(h1 !== undefined ? { h1 } : {}), sections, links, tags }
+  return { ...(h1 !== undefined ? { h1 } : {}), sections, links, files: [...new Set(files)], tags }
 }
