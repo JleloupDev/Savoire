@@ -137,6 +137,7 @@ export const appFr = {
   // Topbar
   'topbar.newWindow': 'Ouvrir la note dans une nouvelle fenêtre',
   'topbar.pin': 'Épingler la note au premier plan (toujours visible)',
+  'topbar.unpin': 'Désépingler (ne plus rester au premier plan)',
   'topbar.share': 'Partager',
   'topbar.noVault': '—',
   'topbar.saved': 'Enregistré ✓',

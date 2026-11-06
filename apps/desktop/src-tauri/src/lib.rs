@@ -15,6 +15,8 @@ mod folders;
 #[cfg(desktop)]
 pub mod index_db;
 #[cfg(desktop)]
+mod note_window;
+#[cfg(desktop)]
 mod oauth;
 #[cfg(desktop)]
 mod paths;
@@ -76,6 +78,8 @@ pub fn run() {
             oauth::oauth_listen,
             oauth::oauth_wait,
             oauth::open_external,
+            note_window::note_window_open,
+            note_window::note_window_pin,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");

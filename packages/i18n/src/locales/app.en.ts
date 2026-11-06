@@ -137,6 +137,7 @@ export const appEn = {
   // Topbar
   'topbar.newWindow': 'Open the note in a new window',
   'topbar.pin': 'Pin the note on top (always visible)',
+  'topbar.unpin': 'Unpin (stop staying on top)',
   'topbar.share': 'Share',
   'topbar.noVault': '—',
   'topbar.saved': 'Saved ✓',

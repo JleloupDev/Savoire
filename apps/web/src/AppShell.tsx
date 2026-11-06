@@ -23,7 +23,7 @@ import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
 import { useShowFileExtensions } from './displayPreferences'
-import { canPinNote, noteTitle, openNoteWindow, pinNote, readNoteWindow } from './noteWindow'
+import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
@@ -344,8 +344,10 @@ export function AppShell() {
   // Fenetre d'une seule note (« Nouvelle fenetre », « Epingler ») : voir noteWindow.ts.
   const noteWindow = useMemo(() => readNoteWindow(), [])
   const noteWindowOpenedRef = useRef(false)
-  // Pas dans l'appli de bureau : une fenetre du navigateur n'y a pas de sens.
-  const windowActions = !isTauriRuntime()
+  // Navigateur et appli de bureau (pas Android : une seule fenetre).
+  const windowActions = !isTauriRuntime() || desktopWindows()
+  // Fenetre de note du bureau : epinglee ou non (bascule).
+  const [desktopPinned, setDesktopPinned] = useState(() => noteWindow?.pinned === true)
   const [sharedWithMe, setSharedWithMe] = useState<SharedNote[]>([])
   const sharedWithMeRef = useRef<SharedNote[]>(sharedWithMe)
   const [selectedVault, setSelectedVault] = useState<VaultSummary | null>(null)
@@ -1026,8 +1028,15 @@ export function AppShell() {
   const handlePinNote = useCallback(() => {
     const vault = selectedVaultRef.current
     if (!vault || !activeDoc) return
+    // Fenetre de note du bureau : elle-meme passe (ou non) au premier plan.
+    if (noteWindow && desktopWindows()) {
+      const next = !desktopPinned
+      void setDesktopPinnedNative(next).then(ok => { if (ok) setDesktopPinned(next) })
+        .catch(err => notify('danger', 'Épingler impossible', String(err?.message ?? err)))
+      return
+    }
     pinNote(vault.id, activeDoc.path).catch(err => notify('danger', 'Épingler impossible', String(err?.message ?? err)))
-  }, [activeDoc])
+  }, [activeDoc, noteWindow, desktopPinned])
 
   onOpenSharedNoteRef.current = (note: SharedNote) => {
     if (!token) return
@@ -1446,8 +1455,8 @@ export function AppShell() {
               </svg>
             </button>
           )}
-          {windowActions && selectedVault && activeDoc && !noteWindow?.pinned && canPinNote() && (
-            <button data-testid="pin-note" onClick={handlePinNote} title={t('app', 'topbar.pin')} style={TOPBAR_BUTTON}>
+          {windowActions && selectedVault && activeDoc && (desktopWindows() || !noteWindow?.pinned) && canPinNote() && (
+            <button data-testid="pin-note" data-pinned={desktopPinned ? 'true' : 'false'} onClick={handlePinNote} title={t('app', desktopPinned ? 'topbar.unpin' : 'topbar.pin')} style={desktopPinned ? { ...TOPBAR_BUTTON, color: 'var(--accent)', borderColor: 'var(--accent)' } : TOPBAR_BUTTON}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 17v5"/><path d="M5 17h14l-2-4V5h1V3H6v2h1v8z"/>
               </svg>

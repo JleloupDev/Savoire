@@ -13,6 +13,8 @@ export interface TauriBridge {
   invoke<T>(cmd: string, args?: Record<string, unknown> | Uint8Array, options?: InvokeOptions): Promise<T>
   /** Rend une fonction d'arret (asynchrone cote Tauri, d'ou la promesse). */
   listen<T>(event: string, cb: (payload: T) => void): Promise<() => void>
+  /** Evenement vers toutes les fenetres (fenetres de note). */
+  emit?(event: string, payload?: unknown): Promise<void>
 }
 
 /** Le vrai pont, sur @tauri-apps/api (charge a la demande). */
@@ -22,5 +24,6 @@ export async function loadTauriBridge(): Promise<TauriBridge> {
   return {
     invoke: (cmd, args, options) => core.invoke(cmd, args, options?.headers ? { headers: options.headers } : undefined),
     listen: (event, cb) => events.listen(event, e => cb(e.payload as never)),
+    emit: (event, payload) => events.emit(event, payload),
   }
 }

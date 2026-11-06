@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Une note dans sa propre fenetre, epinglee ou non (voir src/note_window.rs).
+
+[[set]]
+identifier = "note-window"
+description = "Ouvrir une note dans une nouvelle fenetre, garder une fenetre au premier plan."
+permissions = [
+  "allow-note-window-open",
+  "allow-note-window-pin",
+]

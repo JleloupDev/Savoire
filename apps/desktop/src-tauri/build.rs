@@ -35,6 +35,8 @@ const COMMANDS: &[&str] = &[
     "oauth_listen",
     "oauth_wait",
     "open_external",
+    "note_window_open",
+    "note_window_pin",
 ];
 
 fn main() {

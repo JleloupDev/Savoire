@@ -11,6 +11,7 @@ import { BaseRowFeeder } from '@savoire/indexer-core/local'
 import { DesktopVaultIndexer, loadTauriBridge, openDesktopIndex, pathForVaultId } from '@savoire/desktop'
 import { loadDesktopProfile } from './createDesktopRoot'
 import type { LocalIndexBinding } from './localIndex'
+import { readNoteWindow } from './noteWindow'
 
 /** Null : ce vault n'est pas un dossier de la machine. */
 export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId: string): Promise<LocalIndexBinding | null> {
@@ -40,7 +41,9 @@ export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId:
       lot: (baseId, lot, lotCount, docs) => rows.lot(baseId, lot, lotCount, docs),
       rows: (upserts, removed) => rows.rows(upserts, removed),
     },
-    start: () => indexer.start(),
+    // Une fenetre de note partage l'index de la fenetre principale : elle ne
+    // le reconstruit pas une deuxieme fois.
+    start: () => { if (!readNoteWindow()) indexer.start() },
     noteText: (id, path, content) => indexer.noteText(id, path, content),
     dispose: async () => {
       indexer.dispose()

@@ -5,7 +5,7 @@
 // La connexion se fait chez le fournisseur d'identite du serveur (ADR-028) :
 // voir loginFlow.ts (navigateur : redirection ; bureau : navigateur du
 // systeme et retour sur 127.0.0.1).
-import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { AppAuthResponse, IAuthAPI, LoginPrompt } from '@savoire/application'
 import { notify } from '@savoire/notifications'
 import type { AccountEntry } from './types'
@@ -13,7 +13,8 @@ import { accountsAfterLogin, getAccountStorage } from './accountStorage'
 import { httpStatusOf, isNetworkError } from './serverErrors'
 import { createSessionRenewal, refreshOnce, SESSION_EXPIRED_MESSAGE, type SessionRenewal } from './session'
 import { describeAuthError, readLoginCallback, type LoginDriver } from './loginFlow'
-import { exposeBridge, findHostBridge, type AuthBridge } from './authBridge'
+import { connectAuthOverEvents, exposeBridge, findHostBridge, serveAuthOverEvents, type AuthBridge } from './authBridge'
+import { isTauriRuntime } from './tauriRuntime'
 import { readNoteWindow } from './noteWindow'
 
 // Navigateur : sessionStorage. Version bureau : la session du serveur
@@ -69,10 +70,36 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
 }) {
   // Fenetre de note ouverte par une autre fenetre : sa session est celle de
   // l'hote, jamais renouvelee ici (voir authBridge.ts).
-  const [host] = useState<AuthBridge | null>(() => readNoteWindow() ? findHostBridge() : null)
-  const [accounts, setAccounts] = useState<AccountEntry[]>(() => host ? host.accounts() : loadAccounts())
+  // Navigateur : la fenetre qui l'a ouverte. Bureau (Tauri) : par evenements,
+  // plus bas. Une fenetre de note ne renouvelle jamais la session.
+  // Sans hote (adresse rouverte a la main dans un onglet), une fenetre de
+  // note se comporte comme l'application normale.
+  const [noteWindow] = useState(() => readNoteWindow() !== null && (isTauriRuntime() || findHostBridge() !== null))
+  const [host, setHost] = useState<AuthBridge | null>(() => noteWindow && !isTauriRuntime() ? findHostBridge() : null)
+  const [accounts, setAccounts] = useState<AccountEntry[]>(() => host ? host.accounts() : noteWindow ? [] : loadAccounts())
   const [token, setToken] = useState<string | null>(() => host ? host.token() : null)
   const [isReady, setIsReady] = useState(!!host)
+
+  // Fenetre de note du bureau : la session de la fenetre principale.
+  useEffect(() => {
+    if (!noteWindow || !isTauriRuntime()) return
+    let closed = false
+    let close: (() => void) | null = null
+    void (async () => {
+      const { loadTauriBridge } = await import('@savoire/desktop')
+      const bridge = await loadTauriBridge()
+      if (!bridge.emit) { setIsReady(true); return }
+      const remote = await connectAuthOverEvents({ emit: bridge.emit, listen: bridge.listen })
+      close = remote.close
+      await remote.ready
+      if (closed) { remote.close(); return }
+      setAccounts(remote.accounts())
+      setToken(remote.token())
+      setHost(remote)
+      setIsReady(true)
+    })().catch(err => { console.warn('[fenetre de note] session indisponible', err); setIsReady(true) })
+    return () => { closed = true; close?.() }
+  }, [noteWindow])
   const [loginError, setLoginError] = useState<string | null>(null)
   // Retour du fournisseur (/auth/callback) : lu au premier rendu, avant que
   // le routeur ne renvoie ailleurs.
@@ -97,13 +124,13 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   })
   const renewal = renewalRef.current
 
-  useEffect(() => { if (!host) renewal.setToken(token) }, [renewal, token, host])
+  useEffect(() => { if (!noteWindow) renewal.setToken(token) }, [renewal, token, noteWindow])
 
   // Fenetre de note : le jeton de l'hote, et ses renouvellements.
   useEffect(() => {
     if (!host) return
     setTokenRenewer?.(rejected => host.renew(rejected))
-    const unsub = host.subscribe(t => setToken(t))
+    const unsub = host.subscribe(t => { setToken(t); setAccounts(host.accounts()) })
     window.addEventListener('pagehide', unsub)
     return () => { unsub(); window.removeEventListener('pagehide', unsub); setTokenRenewer?.(null) }
   }, [host, setTokenRenewer])
@@ -114,17 +141,33 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   tokenRef.current = token
   const listenersRef = useRef(new Set<(t: string | null) => void>())
   useEffect(() => { for (const cb of [...listenersRef.current]) cb(token) }, [token])
-  useEffect(() => exposeBridge(host ?? {
+  const ownBridge = useMemo<AuthBridge>(() => ({
     token: () => tokenRef.current,
     accounts: () => loadAccounts(),
     renew: rejected => renewal.renewRejected(rejected),
     subscribe: cb => { listenersRef.current.add(cb); return () => { listenersRef.current.delete(cb) } },
-  }), [host, renewal])
+  }), [renewal])
+  useEffect(() => exposeBridge(host ?? ownBridge), [host, ownBridge])
+
+  // Bureau : la fenetre principale sert sa session aux fenetres de note.
+  useEffect(() => {
+    if (noteWindow || !isTauriRuntime()) return
+    let stop: (() => void) | null = null
+    let closed = false
+    void (async () => {
+      const { loadTauriBridge } = await import('@savoire/desktop')
+      const bridge = await loadTauriBridge()
+      if (!bridge.emit || closed) return
+      stop = await serveAuthOverEvents(ownBridge, { emit: bridge.emit, listen: bridge.listen })
+      if (closed) stop()
+    })().catch(err => console.warn('[session] fenetres de note sans session', err))
+    return () => { closed = true; stop?.() }
+  }, [noteWindow, ownBridge])
 
   // Rejeu des requetes refusees (401), et reprise apres une mise en veille :
   // le minuteur a pu dormir, on regarde l'echeance au retour.
   useEffect(() => {
-    if (host) { renewal.stop(); return }
+    if (noteWindow) { renewal.stop(); return }
     setTokenRenewer?.(rejected => renewal.renewRejected(rejected))
     const check = () => { if (document.visibilityState !== 'hidden') renewal.check() }
     document.addEventListener('visibilitychange', check)
@@ -137,7 +180,7 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
       window.removeEventListener('online', check)
       renewal.stop()
     }
-  }, [renewal, setTokenRenewer, host])
+  }, [renewal, setTokenRenewer, noteWindow])
 
   const acceptLogin = useCallback((res: AppAuthResponse) => {
     const newEntry: AccountEntry = {
@@ -225,14 +268,14 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
         }
         return
       }
-      // Fenetre de note : deja prete, avec la session de l'hote.
-      if (host) return
+      // Fenetre de note : la session de l'hote, jamais renouvelee ici.
+      if (noteWindow) return
       const active = loadAccounts().find(a => a.isActive)
       if (active) await switchAccount(active.userId)
       if (!cancelled) setIsReady(true)
     })()
     return () => { cancelled = true }
-  }, [callback, authApi, loginDriver, acceptLogin, switchAccount, host])
+  }, [callback, authApi, loginDriver, acceptLogin, switchAccount, noteWindow])
 
   return (
     <AuthContext.Provider value={{ token, accounts, activeAccount, isReady, loginError, login, logout, switchAccount, reloadAccounts }}>
