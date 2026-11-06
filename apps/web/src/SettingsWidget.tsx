@@ -12,7 +12,7 @@ import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
-import { setShowFileExtensions, useShowFileExtensions } from './displayPreferences'
+import { setLinkPreviewDelay, setShowFileExtensions, useLinkPreviewDelay, useShowFileExtensions } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -515,6 +515,7 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
         })}
       </div>
       <ShowExtensionsOption />
+      <LinkPreviewOption />
     </div>
   )
 }
@@ -530,6 +531,34 @@ function ShowExtensionsOption() {
         onChange={e => setShowFileExtensions(e.target.checked)}
       />
       {t('app', 'settings.files.showExtensions')}
+    </label>
+  )
+}
+
+function LinkPreviewOption() {
+  const delay = useLinkPreviewDelay()
+  const [text, setText] = useState(String(delay / 1000))
+  useEffect(() => { setText(String(delay / 1000)) }, [delay])
+  const commit = (raw: string) => {
+    const seconds = raw.trim() === '' ? NaN : Number(raw.replace(',', '.'))
+    if (Number.isFinite(seconds) && seconds >= 0) setLinkPreviewDelay(seconds * 1000)
+    else setText(String(delay / 1000))
+  }
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+      {t('app', 'settings.links.previewDelay')}
+      <input
+        type="number"
+        min={0}
+        step={0.1}
+        data-testid="settings-link-preview-delay"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        style={{ width: 70, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+      />
+      {t('app', 'settings.links.previewDelayUnit')}
     </label>
   )
 }

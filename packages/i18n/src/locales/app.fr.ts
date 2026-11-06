@@ -104,6 +104,8 @@ export const appFr = {
   'settings.triggers.col.plugin': 'Plugin',
   'settings.triggers.col.description': 'Description',
   'settings.themes.description': 'Sélectionnez un thème. La préférence est sauvegardée localement.',
+  'settings.links.previewDelay': 'Aperçu d\'un lien survolé après',
+  'settings.links.previewDelayUnit': 'secondes (0 : jamais)',
   'settings.files.showExtensions': 'Afficher l\'extension des fichiers (« note.md » au lieu de « note »)',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',

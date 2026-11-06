@@ -88,6 +88,7 @@ export class PluginWorkspaceAPIAdapter implements IPluginWorkspaceAPI {
     return this.inner.subscribeDocumentIndexed?.(cb) ?? (() => {})
   }
   showFileExtensions(): boolean { return this.inner.showFileExtensions?.() ?? false }
+  linkPreviewDelay(): number { return this.inner.linkPreviewDelay?.() ?? 800 }
   subscribeDisplayPreferences(cb: () => void): () => void {
     return this.inner.subscribeDisplayPreferences?.(cb) ?? (() => {})
   }

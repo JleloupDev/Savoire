@@ -3,7 +3,7 @@
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { linkTargetFor, noteName, resolveLinkPath } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
-import { HeadingIndexContributor, headingToAnchor } from './HeadingIndexContributor'
+import { HeadingIndexContributor } from './HeadingIndexContributor'
 import { BacklinksWidget } from './BacklinksWidget'
 import { allFilePaths } from './vaultFiles'
 
@@ -11,22 +11,29 @@ import { allFilePaths } from './vaultFiles'
 // Negative lookbehind for "!" so ![[...]] embeds are not touched.
 const WIKILINK_RE = /(?<!!)(\[\[([^\]#|]+?)(?:#([^\]|]+?))?(?:\|([^\]]+))?\]\])/g
 
-// DECISION: follows Obsidian's wikilink convention — `#Page#heading` is intercepted by the
-// editor router to open Page and scroll to the heading. The router is not yet implemented.
+// Adresse d'un lien rendu : `#Page`, ou `#Page#Titre`, `#Page#^bloc` (la cible
+// telle qu'ecrite). Le clic ouvre la note ; le survol en montre l'apercu
+// (plugin-note-embed), titre ou bloc compris.
 function toMarkdownLink(page: string, heading: string | undefined, alias: string | undefined): string {
   const label = alias ?? (heading ? `${page} > ${heading}` : page)
-  const href = heading ? `#${page}#${headingToAnchor(heading)}` : `#${page}`
+  const href = heading ? `#${page}#${heading}` : `#${page}`
   // Une adresse avec des espaces (« Genese 8 ») n'est un lien Markdown
   // qu'entre chevrons ; sans eux, le lien s'affichait en texte brut.
   const dest = /[\s()<>]/.test(href) ? `<${href.replace(/[<>]/g, '')}>` : href
   return `[${label}](${dest})`
 }
 
-/** La note visee par un lien rendu (`#Page` ou `#Page#ancre`). */
-export function linkPageOf(href: string): string {
+/** La note et le morceau vises par un lien rendu (`#Page`, `#Page#Titre`, `#Page#^bloc`). */
+export function linkTargetOf(href: string): { page: string; subpath: string } {
   let raw = href.replace(/^#/, '')
   try { raw = decodeURIComponent(raw) } catch { /* garde tel quel */ }
-  return raw.split('#')[0].trim()
+  const at = raw.indexOf('#')
+  return at < 0 ? { page: raw.trim(), subpath: '' } : { page: raw.slice(0, at).trim(), subpath: raw.slice(at + 1) }
+}
+
+/** La note visee par un lien rendu. */
+export function linkPageOf(href: string): string {
+  return linkTargetOf(href).page
 }
 
 export function createWikilinksPlugin(options: {
@@ -125,7 +132,7 @@ export function createWikilinksPlugin(options: {
         const linkAt = (e: MouseEvent): string | null => {
           if (e.button !== 0) return null
           const a = (e.target as Element | null)?.closest?.('a[href^="#"]')
-          if (!a || !a.closest('.cm-editor')) return null
+          if (!a || !(a.closest('.cm-editor') || a.closest('.link-preview'))) return null
           const page = linkPageOf(a.getAttribute('href') ?? '')
           return page ? resolveLinkPath(page, notePaths) ?? null : null
         }

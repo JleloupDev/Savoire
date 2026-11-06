@@ -33,6 +33,8 @@ export interface WorkspaceAPI {
   subscribeDocumentIndexed?(cb: (docId: string, path: string) => void): () => void
   /** Afficher l'extension des fichiers (preference de la personne) ? Absent : non. */
   showFileExtensions?(): boolean
+  /** Delai avant l'apercu d'un lien survole, en ms (preference de la personne). 0 : pas d'apercu. Absent : 800. */
+  linkPreviewDelay?(): number
   /** Une preference d'affichage a change (extension des fichiers...). */
   subscribeDisplayPreferences?(cb: () => void): () => void
   /** Affiche une notification breve (« 3 versets ajoutes »). Absent : rien ne s'affiche. */

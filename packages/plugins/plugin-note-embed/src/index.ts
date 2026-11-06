@@ -3,12 +3,14 @@
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { renderImageEmbed } from './image'
+import { installLinkPreview } from './hover'
 import { parseSubpath, describeSubpath, extractSubpath, stripBlockIds } from './section'
 import type { EmbedSubpath } from './section'
 
 export { parseImageEmbed, withImageWidth, applyImageSize, renderImageEmbed } from './image'
 export type { ImageEmbed } from './image'
 export { parseSubpath, extractSubpath, stripBlockIds } from './section'
+export { installLinkPreview, previewTargetOf, DEFAULT_PREVIEW_DELAY } from './hover'
 export type { EmbedSubpath } from './section'
 
 const FULL_EMBED_RE = /^\s*!\[\[([^\]]+)\]\]\s*$/
@@ -31,6 +33,33 @@ interface EmbedElements {
 function parseFrontmatter(source: string): { body: string } {
   const match = source.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/)
   return { body: match ? match[1] : source }
+}
+
+/**
+ * Rend dans `body` une note, ou le morceau demande (titre, bloc) : lecture,
+ * sans frontmatter, plugins de syntaxe (liens...), Markdown. Sert aux
+ * integrations ![[...]] et a l'apercu des liens survoles.
+ */
+export async function renderNotePart(
+  api: PluginAPI, body: HTMLElement, targetPath: string, subpath?: EmbedSubpath | null,
+): Promise<void> {
+  try {
+    const source = await api.vault.readDocumentByPath(targetPath)
+    // Fins de ligne Windows (notes venues d'Obsidian sous Windows).
+    const { body: whole } = parseFrontmatter(source.replace(/\r\n?/g, '\n'))
+    const mdBody = subpath ? extractSubpath(whole, subpath) : whole
+    if (mdBody === null) {
+      body.textContent = subpath?.kind === 'block'
+        ? `⚠ Bloc introuvable : ^${subpath.id} dans « ${targetPath} »`
+        : `⚠ Section introuvable : ${subpath ? describeSubpath(subpath) : ''} dans « ${targetPath} »`
+      return
+    }
+    const preprocessed = await api.hooks.runBeforeParse(mdBody)
+    // breaks : meme rendu des retours a la ligne que dans l'editeur.
+    body.innerHTML = String(marked.parse(preprocessed, { breaks: true }))
+  } catch {
+    body.textContent = `⚠ Could not load "${targetPath}"`
+  }
 }
 
 function parseEmbedTarget(raw: string): EmbedData {
@@ -63,6 +92,8 @@ function normalizeEmbedData(input: unknown): EmbedData {
   return { raw: '', targetPath: '' }
 }
 
+let removePreview: (() => void) | null = null
+
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-note-embed',
@@ -74,6 +105,10 @@ const plugin: VaultPlugin = {
   },
 
   async onload(api: PluginAPI) {
+    // Apercu d'un lien survole (hover.ts).
+    if (typeof document !== 'undefined' && !removePreview) {
+      removePreview = installLinkPreview(api, (body, path, subpath) => renderNotePart(api, body, path, subpath))
+    }
     // DECISION: WeakMap keyed on BlockContext (unique object per EditorCore instance).
     // PluginWidget.eq() in LivePreview returns true for same embed text, causing CodeMirror
     // to reuse the old DOM element and discard the new one produced by renderClient.
@@ -210,31 +245,16 @@ const plugin: VaultPlugin = {
         // Fresh fetch on every renderClient call — because the same container object
         // is returned regardless of whether eq() causes CodeMirror to reuse it,
         // the update is always visible in the DOM.
-        void (async () => {
-          try {
-            const source = await api.vault.readDocumentByPath(targetPath)
-            // Fins de ligne Windows (notes venues d'Obsidian sous Windows).
-            const { body: whole } = parseFrontmatter(source.replace(/\r\n?/g, '\n'))
-            const mdBody = subpath ? extractSubpath(whole, subpath) : whole
-            if (mdBody === null) {
-              body.textContent = subpath?.kind === 'block'
-                ? `⚠ Bloc introuvable : ^${subpath.id} dans « ${targetPath} »`
-                : `⚠ Section introuvable : ${subpath ? describeSubpath(subpath) : ''} dans « ${targetPath} »`
-              return
-            }
-            const preprocessed = await api.hooks.runBeforeParse(mdBody)
-            // breaks : meme rendu des retours a la ligne que dans l'editeur.
-            body.innerHTML = String(marked.parse(preprocessed, { breaks: true }))
-          } catch {
-            body.textContent = `⚠ Could not load "${targetPath}"`
-          }
-        })()
+        void renderNotePart(api, body, targetPath, subpath)
 
         return container
       },
     })
   },
 
-  async onunload() {},
+  async onunload() {
+    removePreview?.()
+    removePreview = null
+  },
 }
 export default plugin

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll } from 'vitest'
-import { createWikilinksPlugin, linkPageOf } from '@savoire/plugin-wikilinks'
+import { createWikilinksPlugin, linkPageOf, linkTargetOf } from '@savoire/plugin-wikilinks'
 const plugin = createWikilinksPlugin({ belowOf: 'plugin-inspector' })
 import type { PluginAPI } from '@savoire/plugin-api'
 
@@ -101,8 +101,10 @@ describe('plugin-wikilinks — embed exclusion', () => {
 describe('plugin-wikilinks : noms avec espaces', () => {
   it('le lien reste un lien Markdown (adresse entre chevrons)', () => {
     const md = run('Voir [[Genèse 8#^11]] et [[Luc 3]].')
-    expect(md).toBe('Voir [Genèse 8 > ^11](<#Genèse 8#11>) et [Luc 3](<#Luc 3>).')
-    expect(linkPageOf('#Gen%C3%A8se%208#11')).toBe('Genèse 8')
+    expect(md).toBe('Voir [Genèse 8 > ^11](<#Genèse 8#^11>) et [Luc 3](<#Luc 3>).')
+    expect(linkPageOf('#Gen%C3%A8se%208#%5E11')).toBe('Genèse 8')
     expect(linkPageOf('#Luc 3')).toBe('Luc 3')
+    expect(linkTargetOf('#Gen%C3%A8se%208#%5E11')).toEqual({ page: 'Genèse 8', subpath: '^11' })
+    expect(linkTargetOf('#Ps.%2023#Verset%20cl%C3%A9')).toEqual({ page: 'Ps. 23', subpath: 'Verset clé' })
   })
 })

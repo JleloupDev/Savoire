@@ -104,6 +104,8 @@ export const appEn = {
   'settings.triggers.col.plugin': 'Plugin',
   'settings.triggers.col.description': 'Description',
   'settings.themes.description': 'Select a theme. The preference is saved locally.',
+  'settings.links.previewDelay': 'Preview a hovered link after',
+  'settings.links.previewDelayUnit': 'seconds (0: never)',
   'settings.files.showExtensions': 'Show file extensions (“note.md” instead of “note”)',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
