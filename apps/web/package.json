@@ -40,6 +40,7 @@
     "@savoire/plugin-outline": "workspace:*",
     "@savoire/plugin-page": "workspace:*",
     "@savoire/plugin-wtf": "workspace:*",
+    "@savoire/plugin-quickref": "workspace:*",
     "@savoire/plugin-module": "workspace:*",
     "@savoire/plugin-note-embed": "workspace:*",
     "@savoire/plugin-plaintext": "workspace:*",

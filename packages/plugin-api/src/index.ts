@@ -39,6 +39,7 @@ export type {
   VaultAPI,
   ViewDocument,
   WorkspaceAPI,
+  NotificationType,
   BlockTrigger,
   SlashCommandItem,
   SlashRegistry,

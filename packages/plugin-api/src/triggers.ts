@@ -9,6 +9,9 @@ export interface TriggerItem {
   category?: string
   description?: string
   insert: string | ((query: string) => string)
+  /** Apres l'insertion, relire le texte : si un declencheur y est encore
+   *  actif, le menu reste ouvert (une reference completee pas a pas). */
+  keepOpen?: boolean
 }
 
 // ─── Input triggers (reserved character patterns) ─────────────────────────

@@ -218,6 +218,20 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-board')).default,
   },
   {
+    id: 'plugin-quickref', preinstalled: false,
+    manifest: {
+      id: 'plugin-quickref',
+      name: 'QuickRef',
+      version: '0.0.1',
+      description: 'Citer la Bible : « ! » puis un livre, un chapitre ou un mot insère les versets',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-quickref')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

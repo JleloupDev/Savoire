@@ -21,6 +21,7 @@ import type {
   IPluginWorkspaceAPI,
   IPropertyTypes,
   IQueryEngine,
+  NotificationType,
   SlashRegistry,
   ToolbarCommandRegistry,
   TrashEntry,
@@ -89,6 +90,9 @@ export class PluginWorkspaceAPIAdapter implements IPluginWorkspaceAPI {
   showFileExtensions(): boolean { return this.inner.showFileExtensions?.() ?? false }
   subscribeDisplayPreferences(cb: () => void): () => void {
     return this.inner.subscribeDisplayPreferences?.(cb) ?? (() => {})
+  }
+  notify(type: NotificationType, title: string, message?: string): void {
+    this.inner.notify?.(type, title, message)
   }
 }
 

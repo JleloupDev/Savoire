@@ -35,4 +35,8 @@ export interface WorkspaceAPI {
   showFileExtensions?(): boolean
   /** Une preference d'affichage a change (extension des fichiers...). */
   subscribeDisplayPreferences?(cb: () => void): () => void
+  /** Affiche une notification breve (« 3 versets ajoutes »). Absent : rien ne s'affiche. */
+  notify?(type: NotificationType, title: string, message?: string): void
 }
+
+export type NotificationType = 'success' | 'info' | 'warn' | 'danger'

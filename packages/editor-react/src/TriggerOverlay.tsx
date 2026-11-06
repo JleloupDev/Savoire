@@ -34,6 +34,7 @@ export function TriggerOverlay() {
   const [items, setItems] = useState<TriggerItem[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
+  const refreshRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!ctrl) return
@@ -55,6 +56,7 @@ export function TriggerOverlay() {
       }
     }
 
+    refreshRef.current = refresh
     const unsubDoc = ctrl.on('documentChanged', refresh)
     const unsubSel = ctrl.on('selectionChanged', () => {
       const act = ctrl.getActiveTrigger()
@@ -134,6 +136,8 @@ export function TriggerOverlay() {
     }
     setActivation(null)
     setItems([])
+    // Apres la fermeture ci-dessus : le menu se rouvre sur le texte insere.
+    if (item.keepOpen) setTimeout(() => refreshRef.current?.(), 0)
   }
 
   const menuWidth = 280

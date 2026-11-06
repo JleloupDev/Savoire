@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { WorkspaceAPI, ViewDocument, ViewSpec, ViewContext } from '@savoire/plugin-api'
+import type { NotificationType, WorkspaceAPI, ViewDocument, ViewSpec, ViewContext } from '@savoire/plugin-api'
 import type { WorkspacePaneState, WorkspacePort, WorkspaceLayout, PanelLocation } from './types'
 import { ViewRegistryImpl } from './ViewRegistryImpl'
 
@@ -91,6 +91,18 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
 
   subscribeDisplayPreferences(cb: () => void): () => void {
     return this.displayPreferences?.subscribe(cb) ?? (() => {})
+  }
+
+  // ── Notifications, affichees par l'application ────────────────────────────
+  private notifier?: (type: NotificationType, title: string, message?: string) => void
+
+  /** L'application branche ici l'affichage de ses notifications. */
+  setNotifier(notifier: (type: NotificationType, title: string, message?: string) => void): void {
+    this.notifier = notifier
+  }
+
+  notify(type: NotificationType, title: string, message?: string): void {
+    this.notifier?.(type, title, message)
   }
 
   subscribeActiveDocument(cb: (path: string) => void): () => void {
