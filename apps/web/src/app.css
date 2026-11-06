@@ -306,10 +306,11 @@ button:active { filter: brightness(0.84); }
   line-height: 1.8;
 }
 
+.cm-editor { --vault-line-height: 1.65; }
 .cm-line {
   padding: 0;
   color: var(--text);
-  line-height: 1.65;
+  line-height: var(--vault-line-height);
 }
 
 /* Gutters */
@@ -383,15 +384,12 @@ button:active { filter: brightness(0.84); }
 
 .vault-rendered-block {
   max-width: 680px;
-  margin: 1px auto;
-  padding: 2px 24px;
   font-family: var(--font-editor);
-  line-height: 1.8;
 }
 
 .vault-rendered-block h1,
 .vault-rendered-block h2,
-.vault-rendered-block h3 { color: var(--heading-color); margin: 0.05em 0; font-weight: 700; }
+.vault-rendered-block h3 { color: var(--heading-color); font-weight: 700; }
 .vault-rendered-block h1 { font-size: 1.35em; }
 .vault-rendered-block h2 { font-size: 1.2em; }
 .vault-rendered-block h3 { font-size: 1.05em; }

@@ -602,6 +602,38 @@ const blockNavigationKeymap = Prec.highest(keymap.of([
   { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1) },
 ]))
 
+/**
+ * Clic sur une ligne rendue : CodeMirror pose le curseur au debut du bloc,
+ * qui repasse en texte brut. La ligne garde sa hauteur (voir le theme) :
+ * au relachement, le curseur va la ou l'on a clique, dans le texte brut.
+ * Un double clic qui suit selectionne donc le mot vise. Pas pour les blocs
+ * dont le rendu ne ressemble pas au texte (tableau, code, integration...).
+ */
+const clickPlacesCursor = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.button !== 0 || event.detail !== 1 || event.shiftKey) return false
+    const target = event.target as Element | null
+    const block = target?.closest?.('.vault-rendered-block')
+    if (!block || !view.dom.contains(block)) return false
+    if (target?.closest?.('a, input, button, select, textarea, iframe')) return false
+    if (block.querySelector('table, pre, iframe, img, .note-embed, .base-q, .board-embed')) return false
+    const x = event.clientX
+    const y = event.clientY
+    const up = (e: MouseEvent) => {
+      window.removeEventListener('mouseup', up, true)
+      // Glisse : une selection, on n'y touche pas.
+      if (Math.abs(e.clientX - x) > 4 || Math.abs(e.clientY - y) > 4) return
+      requestAnimationFrame(() => {
+        if (!view.state.selection.main.empty) return
+        const pos = view.posAtCoords({ x, y })
+        if (pos !== null && pos !== view.state.selection.main.head) view.dispatch({ selection: { anchor: pos } })
+      })
+    }
+    window.addEventListener('mouseup', up, true)
+    return false
+  },
+})
+
 export function createLivePreviewExtension(
   registry?: BlockRegistry,
   hooks?: HookRegistry,
@@ -646,6 +678,7 @@ export function createLivePreviewExtension(
     blockquoteExitKeymap,
     blockNavigationKeymap,
     headingCursorFix,
+    clickPlacesCursor,
     EditorView.baseTheme({
       // Restore lineNumbers() base theme (removed when we replaced the extension).
       '.cm-lineNumbers .cm-gutterElement': {
@@ -655,8 +688,13 @@ export function createLivePreviewExtension(
         color: 'var(--cm-lineNumber-color, #6c7086)',
         whiteSpace: 'nowrap',
       },
+      // Meme boite qu'une ligne brute (.cm-line) : entrer dans une ligne ne
+      // change pas sa hauteur, le document ne saute pas. Seuls les blocs
+      // particuliers (tableau, code, integration...) gardent leur hauteur.
       '.vault-rendered-block': {
-        padding: '2px 4px',
+        padding: '0 2px 0 6px',
+        margin: '0',
+        lineHeight: 'var(--vault-line-height, 1.65)',
         cursor: 'text',
         whiteSpace: 'normal',
       },
@@ -669,15 +707,19 @@ export function createLivePreviewExtension(
       '.vault-h4-live': { lineHeight: '1.3' },
       '.vault-h5-live': { lineHeight: '1.3' },
       '.vault-h6-live': { lineHeight: '1.3' },
-      '.vault-rendered-block h1, .vault-rendered-block h2, .vault-rendered-block h3': {
-        margin: '0.25em 0',
+      // Titres rendus : memes taille et interligne que la ligne brute du titre.
+      '.vault-rendered-block h1, .vault-rendered-block h2, .vault-rendered-block h3, .vault-rendered-block h4, .vault-rendered-block h5, .vault-rendered-block h6': {
+        margin: '0',
       },
+      '.vault-rendered-block h1, .vault-rendered-block h2': { lineHeight: '1.5' },
+      '.vault-rendered-block h3': { lineHeight: '1.4' },
+      '.vault-rendered-block h4, .vault-rendered-block h5, .vault-rendered-block h6': { lineHeight: '1.3' },
       '.vault-rendered-block p': {
-        margin: '0.1em 0',
+        margin: '0',
       },
       // Ligne d'un paragraphe rendu ligne par ligne : meme hauteur qu'une ligne brute.
       '.vault-paragraph-line': {
-        padding: '0 4px',
+        padding: '0 2px 0 6px',
       },
       '.vault-paragraph-line p': {
         margin: '0',
@@ -713,8 +755,8 @@ export function createLivePreviewExtension(
       ...plumeColorTheme(),
       // Lignes de liste et de citation rendues une a une.
       '.vault-line-block': {
-        padding: '0 4px',
-        lineHeight: '1.5',
+        padding: '0 2px 0 6px',
+        lineHeight: 'var(--vault-line-height, 1.65)',
       },
       '.vault-list-line': {
         display: 'flex',
