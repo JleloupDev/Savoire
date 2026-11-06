@@ -7,6 +7,7 @@ import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, typ
 import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
 import { ConfirmDialog, TrashSection, type DialogChoice, type DialogRequest } from './TrashPanel'
 import { trashFolderRequest, trashSubPagesRequest } from './trashMessages'
+import { relinkAfterMoves, type Move } from './relink'
 
 // ─── FileTree component ───────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ function isDerivedDoc(path: string): boolean {
 
 /** Afficher les extensions (preference de la personne, api.workspace.showFileExtensions). */
 const ShowExtensionsContext = createContext(false)
+/** Apres un deplacement : les liens des notes suivent (relink.ts). */
+const RelinkContext = createContext<(moves: Move[]) => void>(() => {})
 
 function displayName(name: string, fileTypes: FileTypeSpec[], showExtension = false): string {
   if (showExtension) return name
@@ -80,6 +83,7 @@ function FileNodeRow({
   ask: (request: DialogRequest) => Promise<DialogChoice>
 }) {
   const showExt = useContext(ShowExtensionsContext)
+  const relink = useContext(RelinkContext)
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileNode[]>([])
   const [childTick, setChildTick] = useState(0)
@@ -147,7 +151,7 @@ function FileNodeRow({
     if (node.kind === 'folder') {
       const to = target.endsWith('/') ? target : target + '/'
       if (to === node.path) return
-      await moveFolder(vault, node.path, to)
+      relink(await moveFolder(vault, node.path, to))
       return
     }
     // Sans extension, on garde celle du fichier (une page reste une page).
@@ -155,7 +159,7 @@ function FileNodeRow({
     const normalized = fileExtensionOf(lastSegment(target)) ? target : `${target}.${extensionOf(node.path) || 'md'}`
     if (normalized === node.path) return
     // Fichier ou note de dossier : le dossier frere suit s'il existe.
-    await moveNote(vault, node.path, normalized)
+    relink(await moveNote(vault, node.path, normalized))
   }
 
   async function handleRename(e: React.MouseEvent) {
@@ -208,7 +212,7 @@ function FileNodeRow({
     const draggedFileName = fileNameOf(dragged)!
     try {
       // Une note de dossier emmene son dossier.
-      await moveNote(vault, dragged.path, folderPath + draggedFileName)
+      relink(await moveNote(vault, dragged.path, folderPath + draggedFileName))
       onRenamed()
     } catch (err) { alert(String(err)) }
   }
@@ -413,6 +417,11 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
   }, [])
 
   const [showExt, setShowExt] = useState(() => workspace.showFileExtensions?.() ?? false)
+  const relink = useCallback((moves: Move[]) => {
+    relinkAfterMoves(vault, moves)
+      .then(n => { if (n) workspace.notify?.('success', 'Liens mis à jour', `${n} note${n > 1 ? 's' : ''} modifiée${n > 1 ? 's' : ''}`) })
+      .catch(err => console.warn('[filetree] liens non mis a jour', err))
+  }, [vault, workspace])
   useEffect(() => workspace.subscribeDisplayPreferences?.(() => setShowExt(workspace.showFileExtensions?.() ?? false)), [workspace])
 
   useEffect(() => {
@@ -473,6 +482,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
   const canCreateFolder = !!vault.createFolder
 
   return (
+    <RelinkContext.Provider value={relink}>
     <ShowExtensionsContext.Provider value={showExt}>
     <div
       style={{ fontFamily: 'inherit', color: 'inherit', height: '100%', display: 'flex', flexDirection: 'column' }}
@@ -570,6 +580,7 @@ export function FileTree({ vault, onOpenFile, workspace, fileTypes: initialFileT
       )}
     </div>
     </ShowExtensionsContext.Provider>
+    </RelinkContext.Provider>
   )
 }
 

@@ -23,6 +23,22 @@ function toMarkdownLink(page: string, heading: string | undefined, alias: string
   return `[${label}](${dest})`
 }
 
+/**
+ * Chemin libre d'une sous-page de `notePath` : `A/Note.md` ->
+ * `A/Note/Nouvelle page.md`, puis `Nouvelle page 2.md`... null sans extension.
+ */
+export function newPagePath(notePath: string, existing: readonly string[], title = 'Nouvelle page'): string | null {
+  const slash = notePath.lastIndexOf('/')
+  const name = notePath.slice(slash + 1)
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return null
+  const folder = `${notePath.slice(0, slash + 1)}${name.slice(0, dot)}/`
+  const taken = new Set(existing.map(p => p.toLowerCase()))
+  let candidate = `${folder}${title}.md`
+  for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = `${folder}${title} ${n}.md`
+  return candidate
+}
+
 /** La note et le morceau vises par un lien rendu (`#Page`, `#Page#Titre`, `#Page#^bloc`). */
 export function linkTargetOf(href: string): { page: string; subpath: string } {
   let raw = href.replace(/^#/, '')
@@ -151,6 +167,28 @@ export function createWikilinksPlugin(options: {
           document.removeEventListener('click', onClick, true)
         }
       }
+
+      // « /page » : une note neuve rangee sous la note courante (dans son
+      // dossier, comme ses images : `A/Note.md` -> `A/Note/Nouvelle page.md`),
+      // et son lien a la place de la commande.
+      api.slash?.register({
+        id: 'wikilinks:new-page',
+        label: 'Page',
+        description: 'Nouvelle note rangée sous celle-ci, avec son lien',
+        icon: '📄',
+        category: 'Insérer',
+        insert: () => {
+          const current = api.workspace?.getActiveDocument?.()?.path
+          if (!current || typeof api.vault?.createFile !== 'function') return ''
+          const path = newPagePath(current, notePaths)
+          if (!path) return ''
+          notePaths = [...notePaths, path]
+          void api.vault.createFile(path)
+            .then(() => api.workspace?.notifyVaultChange?.())
+            .catch(err => console.warn('[wikilinks] page non creee', err))
+          return `[[${linkTargetFor(path, notePaths)}]]`
+        },
+      })
 
       api.hooks.beforeParse((source) => {
         return source.replace(

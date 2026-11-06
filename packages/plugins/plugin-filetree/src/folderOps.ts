@@ -10,6 +10,7 @@
  */
 import type { VaultAPI, FileTypeSpec } from '@savoire/plugin-api'
 import { extensionOf, folderOfNote, isInside, parentOf, rebasePath, uniqueChildPath } from './folderNotes'
+import type { Move } from './relink'
 
 export interface FolderContent {
   /** Fichiers, a toute profondeur. */
@@ -44,8 +45,8 @@ function requireId(vault: VaultAPI, path: string): string {
  * dossiers vides sont recrees a la nouvelle place ; l'ancienne entree de
  * dossier est retiree.
  */
-export async function moveFolder(vault: VaultAPI, from: string, to: string): Promise<void> {
-  if (from === to) return
+export async function moveFolder(vault: VaultAPI, from: string, to: string): Promise<Move[]> {
+  if (from === to) return []
   if (isInside(to, from)) throw new Error('Impossible de deplacer un dossier dans lui-meme.')
   if (!vault.renameFile) throw new Error('Renommage indisponible.')
   const { files, folders } = await collectFolder(vault, from)
@@ -55,8 +56,10 @@ export async function moveFolder(vault: VaultAPI, from: string, to: string): Pro
       throw new Error(`Un fichier existe deja : ${rebasePath(file, from, to)}`)
     }
   }
+  const moves: Move[] = []
   for (const file of files) {
     await vault.renameFile(requireId(vault, file), rebasePath(file, from, to))
+    moves.push({ from: file, to: rebasePath(file, from, to) })
   }
   // Un dossier sans document dessous n'existe que par son entree : on la recree.
   for (const folder of folders) {
@@ -64,14 +67,15 @@ export async function moveFolder(vault: VaultAPI, from: string, to: string): Pro
     if (!hasFile) await vault.createFolder?.(rebasePath(folder, from, to))
   }
   await vault.deleteFolder?.(from)
+  return moves
 }
 
 /**
  * Deplace (ou renomme) une note et son dossier ensemble. Si le dossier
  * n'existe pas, seul le fichier bouge.
  */
-export async function moveNote(vault: VaultAPI, filePath: string, newFilePath: string): Promise<void> {
-  if (filePath === newFilePath) return
+export async function moveNote(vault: VaultAPI, filePath: string, newFilePath: string): Promise<Move[]> {
+  if (filePath === newFilePath) return []
   if (!vault.renameFile) throw new Error('Renommage indisponible.')
   if (vault.resolveDocumentId(newFilePath)) {
     throw new Error('Un fichier avec ce nom existe deja.')
@@ -84,8 +88,9 @@ export async function moveNote(vault: VaultAPI, filePath: string, newFilePath: s
   const hasFolder = oldFolder !== '' && (await vault.list(parentOf(filePath))).includes(oldFolder)
   const id = requireId(vault, filePath)
   // Le dossier d'abord : moveFolder verifie les conflits avant tout changement.
-  if (hasFolder && newFolder) await moveFolder(vault, oldFolder, newFolder)
+  const moves = hasFolder && newFolder ? await moveFolder(vault, oldFolder, newFolder) : []
   await vault.renameFile(id, newFilePath)
+  return [...moves, { from: filePath, to: newFilePath }]
 }
 
 /** Met un dossier et tous ses documents a la corbeille (VaultAPI.deleteFile). */

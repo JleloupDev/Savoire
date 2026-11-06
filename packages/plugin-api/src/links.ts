@@ -130,3 +130,110 @@ export function linkTargetFor(path: string, paths: readonly string[]): string {
   })
   return sameName.length === 0 ? nameOf(shown) : shown
 }
+
+// ── Liens qui suivent un deplacement ──────────────────────────────────────
+//
+// Un fichier (image, note) change de chemin : les liens qui le visaient sont
+// recrits pour le viser encore, comme Obsidian. Un lien par nom qui le
+// trouve toujours reste tel quel ; sinon il prend le nom (s'il est unique)
+// ou le nouveau chemin. Les liens [[...]], ![[...]] et Markdown [..](..)
+// sont suivis ; le code (blocs ``` et `...`) n'est jamais touche.
+
+function folderOfPath(path: string): string {
+  const slash = path.lastIndexOf('/')
+  return slash < 0 ? '' : path.slice(0, slash)
+}
+
+/** `a/b` + `../c/d.png` -> `a/c/d.png`. */
+function joinRelative(folder: string, rel: string): string {
+  const parts = folder ? folder.split('/') : []
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return parts.join('/')
+}
+
+/** Chemin de `to` vu depuis le dossier `fromFolder` (« ../Images/x.png »). */
+function relativeTo(fromFolder: string, to: string): string {
+  const a = fromFolder ? fromFolder.split('/') : []
+  const b = to.split('/')
+  let i = 0
+  while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++
+  return [...a.slice(i).map(() => '..'), ...b.slice(i)].join('/')
+}
+
+const WIKI_LINK_RE = /(!?)\[\[([^[\]|#\n]*)(#[^[\]|\n]*)?(\|[^[\]\n]*)?\]\]/g
+const MD_LINK_RE = /(!?\[[^\]\n]*\]\()(<[^>\n]+>|[^)\s]+)(\))/g
+const FENCE_LINE_RE = /^ {0,3}(`{3,}|~{3,})/
+
+export interface LinkMoveContext {
+  /** Ancien chemin -> nouveau chemin, pour chaque fichier deplace. */
+  moves: ReadonlyMap<string, string>
+  /** Les fichiers du vault AVANT le deplacement (pour resoudre les liens tels qu'ecrits). */
+  before: LinkResolver
+  /** Les fichiers APRES : un lien qui trouve encore sa cible reste tel quel. */
+  after?: LinkResolver
+  /** Texte d'un lien [[...]] vers ce nouveau chemin (nom si unique, sinon chemin). */
+  targetFor(newPath: string): string
+}
+
+/**
+ * Le texte d'une note dont les liens suivent les deplacements, ou null si
+ * rien ne change. `oldSource` / `newSource` : chemin de la note avant et
+ * apres (elle a pu bouger aussi), pour les liens Markdown relatifs.
+ */
+export function rewriteMovedLinks(text: string, ctx: LinkMoveContext, oldSource: string, newSource = oldSource): string | null {
+  let changed = false
+  let fence: string | null = null
+  const out = text.split('\n').map(line => {
+    const f = line.match(FENCE_LINE_RE)
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null
+      return line
+    }
+    if (f) { fence = f[1]; return line }
+    // Le code en ligne garde son texte : on travaille entre les `...`.
+    const next = line.split(/(`[^`]*`)/).map(part => part.startsWith('`') && part.endsWith('`') && part.length > 1 ? part : rewritePart(part)).join('')
+    if (next !== line) changed = true
+    return next
+  })
+  return changed ? out.join('\n') : null
+
+  function rewritePart(part: string): string {
+    return part
+      .replace(WIKI_LINK_RE, (whole, bang: string, target: string, sub: string | undefined, alias: string | undefined) => {
+        const t = target.trim()
+        if (!t) return whole
+        const resolved = ctx.before.resolve(t)
+        const moved = resolved !== undefined ? ctx.moves.get(resolved) : undefined
+        if (moved === undefined) return whole
+        if (ctx.after?.resolve(t) === moved) return whole
+        let next = ctx.targetFor(moved)
+        if (/\.md$/i.test(t) && !/\.md$/i.test(next)) next = `${next}.md`
+        if (next === t) return whole
+        return `${bang}[[${next}${sub ?? ''}${alias ?? ''}]]`
+      })
+      .replace(MD_LINK_RE, (whole, head: string, rawUrl: string, tail: string) => {
+        const angled = rawUrl.startsWith('<')
+        const url = angled ? rawUrl.slice(1, -1) : rawUrl
+        if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('#')) return whole
+        const hash = url.indexOf('#')
+        const pathPart = hash < 0 ? url : url.slice(0, hash)
+        const anchor = hash < 0 ? '' : url.slice(hash)
+        let decoded = pathPart
+        try { decoded = decodeURI(pathPart) } catch { /* tel quel */ }
+        const fromRoot = decoded.startsWith('/')
+        const candidate = fromRoot ? decoded.replace(/^\/+/, '') : joinRelative(folderOfPath(oldSource), decoded)
+        const resolved = ctx.before.resolve(candidate) ?? ctx.before.resolve(decoded)
+        const moved = resolved !== undefined ? ctx.moves.get(resolved) : undefined
+        if (moved === undefined) return whole
+        const nextPath = fromRoot ? `/${moved}` : relativeTo(folderOfPath(newSource), moved)
+        const encoded = angled ? nextPath : encodeURI(nextPath)
+        const nextUrl = `${encoded}${anchor}`
+        if (nextUrl === url) return whole
+        return `${head}${angled ? `<${nextUrl}>` : nextUrl}${tail}`
+      })
+  }
+}
