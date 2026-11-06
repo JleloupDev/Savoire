@@ -55,6 +55,13 @@ type YDoc = any
 const FROM_DISK = 'fs:disk'       // lue dans `.savoire/` (autre session, reouverture)
 const FROM_EDITOR = 'fs:editor'   // frappe dans l'editeur ouvert
 const FROM_FILE = 'fs:file'       // modification du fichier visible faite ailleurs
+/**
+ * Attente avant d'ecrire taille, date et empreinte des fichiers modifies dans
+ * `.savoire/documents.json`. Ces valeurs ne servent qu'a reconnaitre un
+ * renommage fait ailleurs : rien ne presse, et le fichier pese lourd dans un
+ * gros vault (une entree par fichier). Ecrit aussi a la fermeture.
+ */
+const IDS_SAVE_MS = 10_000
 const FROM_SEED = 'fs:seed'       // premier etat tire d'un fichier sans etat (vault Obsidian)
 const FROM_MERGE = 'fs:merge'     // mergeDocumentState (copie d'un vault)
 
@@ -714,7 +721,12 @@ export class FileSystemVaultSession implements IVaultSyncSession {
         continue
       }
       if (!isVaultPath(path)) continue
-      if (change.kind !== 'modified') rescan = true
+      // Une ecriture atomique (fichier temporaire puis renommage) arrive en
+      // « cree » : pour un fichier deja connu, c'est une modification. Sans
+      // cela, chaque sauvegarde d'une note relisait tout le dossier (des
+      // milliers de fichiers dans un gros vault) pendant la frappe.
+      const known = change.kind === 'created' && !!this.directory.idAt(path)
+      if (change.kind !== 'modified' && !known) rescan = true
       if (change.kind !== 'deleted') this.onVisibleWrite(path)
     }
     if (rescan) this.scheduleScan()
@@ -1166,7 +1178,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     this.idsTimer = setTimeout(() => {
       this.idsTimer = null
       this.background(() => this.saveIds())
-    }, 1000)
+    }, IDS_SAVE_MS)
   }
 
   /** Relit `.savoire/documents.json` et y ajoute nos changements pas encore ecrits. */

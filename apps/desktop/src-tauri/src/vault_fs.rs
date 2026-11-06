@@ -9,6 +9,11 @@
 // autorisee (vaults.rs), le chemin ne peut pas en sortir (paths.rs).
 // Le contenu binaire passe en octets bruts (corps de la requete IPC et
 // reponse brute), pas en tableau JSON.
+//
+// Toutes les commandes sont asynchrones et font leurs acces disque sur un
+// fil a part (spawn_blocking) : une commande synchrone de Tauri tourne sur le
+// fil principal, celui de la fenetre. Dans un gros vault, lister le dossier
+// ou ecrire avec fsync gelait alors l'editeur a chaque sauvegarde.
 
 use crate::paths::{self, SAVOIRE_DIR, TMP_DIR};
 use crate::vaults::VaultRegistry;
@@ -20,6 +25,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::State;
+
+/// Fait `job` hors du fil principal.
+pub(crate) async fn blocking<T: Send + 'static>(job: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(job).await.map_err(|e| e.to_string())?
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,55 +120,6 @@ fn percent_decode(s: &str) -> Result<String, String> {
     String::from_utf8(out).map_err(|_| "encodage invalide".into())
 }
 
-#[tauri::command]
-pub fn vault_read_text(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<String, String> {
-    let (_, full) = target(&reg, &root, &path, false)?;
-    fs::read_to_string(full).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn vault_read_bytes(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<Response, String> {
-    let (_, full) = target(&reg, &root, &path, false)?;
-    fs::read(full).map(Response::new).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn vault_write_text(
-    reg: State<'_, VaultRegistry>,
-    root: String,
-    path: String,
-    content: String,
-) -> Result<(), String> {
-    let (root, full) = target(&reg, &root, &path, false)?;
-    write_atomic(&root, &full, content.as_bytes())
-}
-
-#[tauri::command]
-pub fn vault_write_bytes(reg: State<'_, VaultRegistry>, request: Request<'_>) -> Result<(), String> {
-    let root = header(&request, "x-vault-root")?;
-    let path = header(&request, "x-vault-path")?;
-    let InvokeBody::Raw(bytes) = request.body() else {
-        return Err("corps binaire attendu".into());
-    };
-    let (root, full) = target(&reg, &root, &path, false)?;
-    write_atomic(&root, &full, bytes)
-}
-
-#[tauri::command]
-pub fn vault_exists(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<bool, String> {
-    let (_, full) = target(&reg, &root, &path, true)?;
-    Ok(full.exists())
-}
-
-#[tauri::command]
-pub fn vault_stat(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<Option<FileEntry>, String> {
-    let (root, full) = target(&reg, &root, &path, false)?;
-    match fs::metadata(&full) {
-        Ok(meta) => Ok(entry(&root, &full, &meta)),
-        Err(_) => Ok(None),
-    }
-}
-
 fn walk(root: &Path, dir: &Path, recursive: bool, out: &mut Vec<FileEntry>) -> Result<(), String> {
     for item in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let item = item.map_err(|e| e.to_string())?;
@@ -185,52 +146,114 @@ fn walk(root: &Path, dir: &Path, recursive: bool, out: &mut Vec<FileEntry>) -> R
 }
 
 #[tauri::command]
-pub fn vault_list(
+pub async fn vault_read_text(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<String, String> {
+    let (_, full) = target(&reg, &root, &path, false)?;
+    blocking(move || fs::read_to_string(full).map_err(|e| e.to_string())).await
+}
+
+#[tauri::command]
+pub async fn vault_read_bytes(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<Response, String> {
+    let (_, full) = target(&reg, &root, &path, false)?;
+    blocking(move || fs::read(full).map(Response::new).map_err(|e| e.to_string())).await
+}
+
+#[tauri::command]
+pub async fn vault_write_text(
+    reg: State<'_, VaultRegistry>,
+    root: String,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    let (root, full) = target(&reg, &root, &path, false)?;
+    blocking(move || write_atomic(&root, &full, content.as_bytes())).await
+}
+
+#[tauri::command]
+pub async fn vault_write_bytes(reg: State<'_, VaultRegistry>, request: Request<'_>) -> Result<(), String> {
+    let root = header(&request, "x-vault-root")?;
+    let path = header(&request, "x-vault-path")?;
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("corps binaire attendu".into());
+    };
+    let bytes = bytes.clone();
+    let (root, full) = target(&reg, &root, &path, false)?;
+    blocking(move || write_atomic(&root, &full, &bytes)).await
+}
+
+#[tauri::command]
+pub async fn vault_exists(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<bool, String> {
+    let (_, full) = target(&reg, &root, &path, true)?;
+    blocking(move || Ok(full.exists())).await
+}
+
+#[tauri::command]
+pub async fn vault_stat(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<Option<FileEntry>, String> {
+    let (root, full) = target(&reg, &root, &path, false)?;
+    blocking(move || {
+        Ok(match fs::metadata(&full) {
+            Ok(meta) => entry(&root, &full, &meta),
+            Err(_) => None,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn vault_list(
     reg: State<'_, VaultRegistry>,
     root: String,
     dir: String,
     recursive: Option<bool>,
 ) -> Result<Vec<FileEntry>, String> {
     let (root, full) = target(&reg, &root, &dir, true)?;
-    let mut out = Vec::new();
-    walk(&root, &full, recursive.unwrap_or(false), &mut out)?;
-    out.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(out)
+    blocking(move || {
+        let mut out = Vec::new();
+        walk(&root, &full, recursive.unwrap_or(false), &mut out)?;
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(out)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn vault_mkdir(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<(), String> {
+pub async fn vault_mkdir(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<(), String> {
     let (_, full) = target(&reg, &root, &path, false)?;
-    fs::create_dir_all(full).map_err(|e| e.to_string())
+    blocking(move || fs::create_dir_all(full).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
-pub fn vault_rename(reg: State<'_, VaultRegistry>, root: String, from: String, to: String) -> Result<(), String> {
+pub async fn vault_rename(reg: State<'_, VaultRegistry>, root: String, from: String, to: String) -> Result<(), String> {
     let (_, src) = target(&reg, &root, &from, false)?;
     let (_, dst) = target(&reg, &root, &to, false)?;
-    if let Some(parent) = dst.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    fs::rename(src, dst).map_err(|e| e.to_string())
+    blocking(move || {
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::rename(src, dst).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn vault_remove(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<(), String> {
+pub async fn vault_remove(reg: State<'_, VaultRegistry>, root: String, path: String) -> Result<(), String> {
     // La racine elle-meme ne se supprime jamais (allow_root = false), ni
     // le dossier `.savoire` en entier par megarde depuis le front.
     if path == SAVOIRE_DIR {
         return Err("le dossier .savoire ne se supprime pas d'un bloc".into());
     }
     let (_, full) = target(&reg, &root, &path, false)?;
-    let meta = match fs::symlink_metadata(&full) {
-        Ok(m) => m,
-        Err(_) => return Ok(()),
-    };
-    if meta.is_dir() {
-        fs::remove_dir_all(full).map_err(|e| e.to_string())
-    } else {
-        fs::remove_file(full).map_err(|e| e.to_string())
-    }
+    blocking(move || {
+        let meta = match fs::symlink_metadata(&full) {
+            Ok(m) => m,
+            Err(_) => return Ok(()),
+        };
+        if meta.is_dir() {
+            fs::remove_dir_all(full).map_err(|e| e.to_string())
+        } else {
+            fs::remove_file(full).map_err(|e| e.to_string())
+        }
+    })
+    .await
 }
 
 #[cfg(test)]

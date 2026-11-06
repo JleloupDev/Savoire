@@ -36,6 +36,42 @@ describe('TauriVaultFileSystem', () => {
     ])
   })
 
+  it('les commandes passent une a une, dans l\'ordre des appels', async () => {
+    // Rust les fait hors du fil de la fenetre : sans file, une ecriture plus
+    // rapide doublerait la precedente sur le disque.
+    const done: string[] = []
+    const slow: (() => void)[] = []
+    const bridge = new FakeBridge()
+      .on('vault_write_text', (args) => new Promise<void>(resolve => {
+        const content = (args as { content: string }).content
+        slow.push(() => { done.push(content); resolve() })
+      }))
+      .on('vault_read_text', () => { done.push('lu'); return 'x' })
+    const fs = new TauriVaultFileSystem(bridge, ROOT)
+    const a = fs.writeText('n.md', 'v1')
+    const b = fs.writeText('n.md', 'v2')
+    const c = fs.readText('n.md')
+    await flush()
+    // Une seule commande partie : les autres attendent la fin de la premiere.
+    expect(bridge.commands()).toEqual(['vault_write_text'])
+    slow.shift()!(); await flush()
+    expect(bridge.commands()).toEqual(['vault_write_text', 'vault_write_text'])
+    slow.shift()!()
+    await Promise.all([a, b, c])
+    expect(done).toEqual(['v1', 'v2', 'lu'])
+  })
+
+  it('une commande en echec ne bloque pas les suivantes', async () => {
+    const bridge = new FakeBridge()
+      .on('vault_read_text', () => { throw new Error('absent') })
+      .on('vault_exists', () => true)
+    const fs = new TauriVaultFileSystem(bridge, ROOT)
+    const failed = fs.readText('x.md')
+    const next = fs.exists('a.md')
+    await expect(failed).rejects.toThrow('absent')
+    expect(await next).toBe(true)
+  })
+
   it('lit des octets bruts et les ecrit en corps binaire, en-tetes encodes', async () => {
     const bytes = new Uint8Array([1, 2, 3])
     const bridge = new FakeBridge().on('vault_read_bytes', () => bytes.buffer.slice(0))

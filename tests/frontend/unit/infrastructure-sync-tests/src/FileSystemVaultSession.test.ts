@@ -29,13 +29,19 @@ const OPTIONS: FileSystemVaultSessionOptions = { persistMs: 1, projectMs: 5, sca
 /** Enveloppe qui compte les ecritures, pour verifier qu'on ne reecrit rien pour rien. */
 class CountingFs implements IVaultFileSystem {
   readonly writes: string[] = []
+  /** Lectures de tout le dossier (list recursif). */
+  recursiveLists = 0
   readonly rootLabel: string
   readonly watch?: (cb: (changes: FileChange[]) => void) => () => void
+  private readonly listeners: ((changes: FileChange[]) => void)[] = []
 
   constructor(readonly inner: IVaultFileSystem) {
     this.rootLabel = inner.rootLabel
-    if (inner.watch) this.watch = cb => inner.watch!(cb)
+    if (inner.watch) this.watch = cb => { this.listeners.push(cb); return inner.watch!(cb) }
   }
+
+  /** Simule un evenement du disque. */
+  emit(changes: FileChange[]): void { for (const cb of this.listeners) cb(changes) }
 
   readText(p: string): Promise<string> { return this.inner.readText(p) }
   readBytes(p: string): Promise<Uint8Array> { return this.inner.readBytes(p) }
@@ -43,7 +49,10 @@ class CountingFs implements IVaultFileSystem {
   writeBytes(p: string, c: Uint8Array): Promise<void> { this.writes.push(p); return this.inner.writeBytes(p, c) }
   exists(p: string): Promise<boolean> { return this.inner.exists(p) }
   stat(p: string): ReturnType<IVaultFileSystem['stat']> { return this.inner.stat(p) }
-  list(d: string, o?: { recursive?: boolean }): ReturnType<IVaultFileSystem['list']> { return this.inner.list(d, o) }
+  list(d: string, o?: { recursive?: boolean }): ReturnType<IVaultFileSystem['list']> {
+    if (o?.recursive) this.recursiveLists++
+    return this.inner.list(d, o)
+  }
   mkdir(p: string): Promise<void> { this.writes.push(p); return this.inner.mkdir(p) }
   rename(f: string, t: string): Promise<void> { this.writes.push(f, t); return this.inner.rename(f, t) }
   remove(p: string): Promise<void> { this.writes.push(p); return this.inner.remove(p) }
@@ -239,6 +248,23 @@ for (const [diskName, makeDisk] of disks) {
         await until(async () => (await inner.readText('n.md')) === 'abc')
         await wait(60)
         expect(fs.visibleWrites().length - before).toBe(1)
+      })
+
+      it('une ecriture atomique d\'un fichier connu ne relit pas tout le dossier', async () => {
+        // Renommage du fichier temporaire : le disque le signale « cree ».
+        const fs = new CountingFs(makeDisk())
+        const s = await open(fs)
+        s.directory.add({ id: 'n1', path: 'n.md' })
+        s.openDocument('n1')
+        await s.flush()
+        await wait(30)
+        const before = fs.recursiveLists
+        fs.emit([{ path: 'n.md', kind: 'created' }])
+        await wait(40)
+        expect(fs.recursiveLists).toBe(before)
+        // Un fichier inconnu, lui, fait relire le dossier.
+        fs.emit([{ path: 'nouveau.md', kind: 'created' }])
+        await until(() => fs.recursiveLists > before)
       })
 
       it('un document CRDT non textuel ne reecrit jamais son fichier visible', async () => {

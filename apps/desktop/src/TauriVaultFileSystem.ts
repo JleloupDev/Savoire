@@ -5,6 +5,11 @@
 // commande Rust (src-tauri/src/vault_fs.rs). La racine est le chemin absolu
 // rendu par Rust a l'ouverture du dossier ; Rust refuse toute racine qui n'a
 // pas ete choisie par la personne, et tout chemin qui en sortirait.
+//
+// Les commandes Rust tournent hors du fil de la fenetre, donc en parallele :
+// deux ecritures du meme fichier pourraient arriver sur le disque dans le
+// desordre. Les appels passent donc un par un, dans l'ordre ou on les fait
+// (comme quand Rust les traitait sur le fil de la fenetre), sans la geler.
 
 import type { FileChange, FileEntry, IVaultFileSystem } from '@savoire/platform'
 import type { TauriBridge } from './bridge'
@@ -25,8 +30,18 @@ export class TauriVaultFileSystem implements IVaultFileSystem {
     readonly rootLabel: string = root,
   ) {}
 
+  /** Fin de la file des appels. */
+  private tail: Promise<unknown> = Promise.resolve()
+
+  /** Lance `run` apres les appels deja faits. */
+  private inOrder<T>(run: () => Promise<T>): Promise<T> {
+    const done = this.tail.then(run, run)
+    this.tail = done.catch(() => undefined)
+    return done
+  }
+
   private call<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
-    return this.bridge.invoke<T>(cmd, { root: this.root, ...args })
+    return this.inOrder(() => this.bridge.invoke<T>(cmd, { root: this.root, ...args }))
   }
 
   readText(path: string): Promise<string> {
@@ -45,12 +60,12 @@ export class TauriVaultFileSystem implements IVaultFileSystem {
   writeBytes(path: string, content: Uint8Array): Promise<void> {
     // Octets bruts dans le corps ; racine et chemin en en-tetes, encodes
     // (un en-tete HTTP ne porte que de l'ASCII).
-    return this.bridge.invoke('vault_write_bytes', content, {
+    return this.inOrder(() => this.bridge.invoke('vault_write_bytes', content, {
       headers: {
         'x-vault-root': encodeURIComponent(this.root),
         'x-vault-path': encodeURIComponent(path),
       },
-    })
+    }))
   }
 
   exists(path: string): Promise<boolean> {
@@ -94,7 +109,7 @@ export class TauriVaultFileSystem implements IVaultFileSystem {
           if (payload.watchId === watchId && payload.changes.length > 0) cb(payload.changes)
         })
         if (stopped) { unlisten(); return }
-        watchId = await this.call<number>('vault_watch', {})
+        watchId = await this.bridge.invoke<number>('vault_watch', { root: this.root })
         if (stopped) void this.bridge.invoke('vault_unwatch', { watchId })
       } catch (err) {
         console.error('[desktop] surveillance du disque impossible', err)
