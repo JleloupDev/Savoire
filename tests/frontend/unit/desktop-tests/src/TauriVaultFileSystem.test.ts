@@ -61,6 +61,18 @@ describe('TauriVaultFileSystem', () => {
     expect(done).toEqual(['v1', 'v2', 'lu'])
   })
 
+  it('withOwnQueue : une file a part, qui n\'attend pas les ecritures', async () => {
+    const pending: (() => void)[] = []
+    const bridge = new FakeBridge()
+      .on('vault_write_text', () => new Promise<void>(resolve => pending.push(resolve)))
+      .on('vault_read_text', () => 'x')
+    const fs = new TauriVaultFileSystem(bridge, ROOT)
+    const write = fs.writeText('a.md', 'lent')
+    expect(await fs.withOwnQueue().readText('b.md')).toBe('x')
+    pending.shift()!()
+    await write
+  })
+
   it('une commande en echec ne bloque pas les suivantes', async () => {
     const bridge = new FakeBridge()
       .on('vault_read_text', () => { throw new Error('absent') })

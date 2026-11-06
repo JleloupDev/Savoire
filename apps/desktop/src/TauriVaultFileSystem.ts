@@ -30,6 +30,15 @@ export class TauriVaultFileSystem implements IVaultFileSystem {
     readonly rootLabel: string = root,
   ) {}
 
+  /**
+   * Le meme dossier avec sa propre file : pour un travail de fond (index)
+   * qui ne doit pas retarder les sauvegardes de l'editeur. A reserver aux
+   * lectures : deux files ne garantissent aucun ordre entre elles.
+   */
+  withOwnQueue(): TauriVaultFileSystem {
+    return new TauriVaultFileSystem(this.bridge, this.root, this.rootLabel)
+  }
+
   /** Fin de la file des appels. */
   private tail: Promise<unknown> = Promise.resolve()
 

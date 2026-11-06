@@ -19,8 +19,13 @@ export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId:
   const [bridge, parts] = await Promise.all([loadTauriBridge(), loadDesktopProfile()])
   const fs = await parts.opened.fileSystemOf(vaultId)
   const index = await openDesktopIndex(bridge, root, path => fs.remove(path))
+  // L'index lit tout le vault : sa propre file, pour ne jamais passer devant
+  // (ni derriere) les sauvegardes de l'editeur.
+  const reads = 'withOwnQueue' in fs && typeof fs.withOwnQueue === 'function'
+    ? (fs.withOwnQueue as () => typeof fs).call(fs)
+    : fs
   const indexer = new DesktopVaultIndexer(index, {
-    fs,
+    fs: reads,
     directory: session.directory,
     readState: id => session.readDocumentState(id),
     stateDirOf: crdtDirOf,
