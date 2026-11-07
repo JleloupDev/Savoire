@@ -94,6 +94,8 @@ Variables d'environnement, vérifiées au démarrage (toutes les erreurs d'un co
 | `SAVOIRE_INDEXER_SLOW_CALL_MS` | `1000` | Appel journalise en avertissement au-dela de cette duree. |
 | `SAVOIRE_INDEXER_SHUTDOWN_TIMEOUT_MS` | `15000` | Arret propre (SIGTERM) : attente maximale des appels et ecritures en cours. |
 | `SAVOIRE_INDEXER_LOG_LEVEL` | `info` | Niveau du journal (JSON, une ligne par evenement). |
+| `SAVOIRE_INDEXER_ERROR_DSN` | `` | Suivi des erreurs : DSN d'un projet GlitchTip (ou Sentry). Chaque ligne de journal `error` y est aussi envoyee. Vide : rien n'est envoye. |
+| `SAVOIRE_INDEXER_ERROR_ENVIRONMENT` | `production` | Environnement annonce dans les rapports d'erreur. |
 
 ## Exploitation
 

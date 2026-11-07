@@ -71,6 +71,8 @@ export interface IndexerConfig {
   slowCallMs: number
   shutdownTimeoutMs: number
   logLevel: LogLevel
+  errorDsn: string
+  errorEnvironment: string
 }
 
 const defaultWorkers = () => String(Math.max(1, Math.min(4, availableParallelism() - 1)))
@@ -116,10 +118,12 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'slowCallMs', env: 'SAVOIRE_INDEXER_SLOW_CALL_MS', kind: 'duration', def: '1000', min: 0, max: 600000, doc: 'Appel journalise en avertissement au-dela de cette duree.' },
   { key: 'shutdownTimeoutMs', env: 'SAVOIRE_INDEXER_SHUTDOWN_TIMEOUT_MS', kind: 'duration', def: '15000', min: 100, max: 600000, doc: 'Arret propre (SIGTERM) : attente maximale des appels et ecritures en cours.' },
   { key: 'logLevel', env: 'SAVOIRE_INDEXER_LOG_LEVEL', kind: 'enum', def: 'info', values: ['debug', 'info', 'warn', 'error', 'silent'], doc: 'Niveau du journal (JSON, une ligne par evenement).' },
+  { key: 'errorDsn', env: 'SAVOIRE_INDEXER_ERROR_DSN', kind: 'string', def: '', doc: 'Suivi des erreurs : DSN d\'un projet GlitchTip (ou Sentry). Chaque ligne de journal `error` y est aussi envoyee. Vide : rien n\'est envoye.' },
+  { key: 'errorEnvironment', env: 'SAVOIRE_INDEXER_ERROR_ENVIRONMENT', kind: 'string', def: 'production', doc: 'Environnement annonce dans les rapports d\'erreur.' },
 ]
 
 /** Variables lues sans etre dans la table. */
-const EXTRA_ENV = new Set(['SAVOIRE_INDEXER_TOKEN_FILE', 'SAVOIRE_INDEXER_OIDC_FILE'])
+const EXTRA_ENV = new Set(['SAVOIRE_INDEXER_TOKEN_FILE', 'SAVOIRE_INDEXER_OIDC_FILE', 'SAVOIRE_INDEXER_ERROR_DSN_FILE'])
 
 const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/i
 const UNIT_MS: Record<string, number> = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 }
@@ -181,8 +185,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     }
   }
 
+  // DSN du suivi des erreurs ecrit par deploy/compose/glitchtip/bootstrap.py.
+  // Fichier absent ou illisible : pas de suivi, jamais une erreur.
+  let errorDsnFromFile: string | undefined
+  const errorDsnFile = env['SAVOIRE_INDEXER_ERROR_DSN_FILE']?.trim()
+  if (errorDsnFile) {
+    try { errorDsnFromFile = readFileSync(errorDsnFile, 'utf8').trim() || undefined } catch { /* rien */ }
+  }
+
   for (const s of SETTINGS) {
     let raw = env[s.env]
+    if (s.key === 'errorDsn' && (raw === undefined || raw === '') && errorDsnFromFile !== undefined) raw = errorDsnFromFile
     if (s.key === 'token' && (raw === undefined || raw === '') && tokenFromFile !== undefined) raw = tokenFromFile
     if (s.key === 'token' && (raw === undefined || raw === '') && oidcFile) { out.token = ''; continue }
     if (raw === undefined || raw.trim() === '') {
@@ -263,6 +276,7 @@ export function redacted(c: IndexerConfig): Record<string, unknown> {
   return {
     ...c,
     token: c.token ? `*** (${c.token.length} caracteres)` : '(aucun : fournisseur d\'identite)',
+    errorDsn: c.errorDsn ? '***' : '(aucun)',
     ...(c.oidc ? { oidc: { ...c.oidc, clientSecret: '***' } } : {}),
   }
 }

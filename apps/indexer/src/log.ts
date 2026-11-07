@@ -24,7 +24,7 @@ export interface Logger {
 
 export type LogSink = (line: string) => void
 
-const stdout: LogSink = line => { process.stdout.write(line + '\n') }
+export const stdout: LogSink = line => { process.stdout.write(line + '\n') }
 
 export function createLogger(level: LogLevel, base: LogFields = {}, sink: LogSink = stdout): Logger {
   const min = RANK[level]

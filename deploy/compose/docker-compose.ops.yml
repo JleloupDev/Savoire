@@ -1,0 +1,274 @@
+# Exploitation de Savoire en production, a ajouter a docker-compose.yml :
+# suivi des erreurs, metriques, journaux, alertes, copie des sauvegardes hors
+# de la machine. Voir SELF_HOSTING.md, section « Exploitation ».
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ops.yml --env-file .env up -d
+# (deploy/vps/configure.sh ecrit COMPOSE_FILE dans .env : « docker compose up -d » suffit.)
+#
+# Rien n'est expose sur Internet. Grafana, GlitchTip et Prometheus ecoutent
+# sur 127.0.0.1 ; depuis votre poste :
+#   ssh -L 3000:127.0.0.1:3000 -L 8100:127.0.0.1:8100 <utilisateur>@<serveur>
+# puis http://localhost:3000 (Grafana) et http://localhost:8100 (GlitchTip).
+#
+# Memoire : environ 2 a 3 Go de plus que Savoire seul.
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # ── Ce que la pile existante gagne ─────────────────────────────────────────
+  postgres:
+    environment:
+      GLITCHTIP_DB_PASSWORD: ${GLITCHTIP_DB_PASSWORD:?}
+    # GlitchTip partitionne ses tables : il lui faut plus de verrous.
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+
+  api:
+    environment:
+      # Journaux JSON (une ligne par evenement) : lus par Loki avec leur niveau.
+      Logging__Console__FormatterName: json
+      # Metriques (OpenTelemetry) vers Alloy, puis Prometheus.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_SERVICE_NAME: savoire-api
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
+      # Suivi des erreurs : ecrit par glitchtip-bootstrap.
+      Savoire__ErrorReportingConfigFile: /run/savoire/savoire-errors.json
+      ErrorReporting__Release: ${SAVOIRE_VERSION:-latest}
+    networks: [backend, indexer, ops]
+    depends_on:
+      glitchtip-bootstrap:
+        condition: service_completed_successfully
+
+  indexer:
+    environment:
+      SAVOIRE_INDEXER_ERROR_DSN_FILE: /run/savoire/indexer-error-dsn
+      # /metrics sans jeton : seul Prometheus le lit, sur le reseau interne.
+      SAVOIRE_INDEXER_METRICS_AUTH: none
+
+  backup:
+    volumes:
+      - ${METRICS_DIR:-./metrics}:/metrics
+
+  # ── Copie des sauvegardes hors de la machine (restic) ──────────────────────
+  offsite:
+    <<: *restart
+    image: restic/restic:${RESTIC_VERSION:-0.19.1}
+    entrypoint: ["/bin/sh", "/offsite.sh"]
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${RESTIC_S3_ACCESS_KEY:-}
+      AWS_SECRET_ACCESS_KEY: ${RESTIC_S3_SECRET_KEY:-}
+      AWS_DEFAULT_REGION: ${RESTIC_S3_REGION:-}
+      RESTIC_CACHE_DIR: /state/cache
+    volumes:
+      - ./offsite/offsite.sh:/offsite.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+      - savoire-data:/data:ro
+      - ./.env:/config/savoire.env:ro
+      - offsite-state:/state
+      - ${METRICS_DIR:-./metrics}:/metrics
+
+  # ── Suivi des erreurs : GlitchTip (compatible Sentry) ──────────────────────
+  # Tout-en-un (web et taches), sa base dans PostgreSQL, sans Valkey.
+  glitchtip:
+    <<: *restart
+    image: glitchtip/glitchtip:${GLITCHTIP_VERSION:-6.2.6}
+    command: ["./bin/run-all-in-one.sh"]
+    environment: &glitchtip-env
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@postgres:5432/glitchtip
+      VALKEY_URL: ""
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      GLITCHTIP_DOMAIN: http://localhost:${GLITCHTIP_PORT:-8100}
+      DEFAULT_FROM_EMAIL: ${SMTP_FROM_NAME:-Savoire} <${SMTP_FROM:?}>
+      EMAIL_HOST: ${SMTP_SERVER:?}
+      EMAIL_PORT: ${SMTP_PORT:-465}
+      EMAIL_HOST_USER: ${SMTP_USER:-}
+      EMAIL_HOST_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_USE_SSL: "true"
+      ENABLE_USER_REGISTRATION: "false"
+      ENABLE_ORGANIZATION_CREATION: "false"
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: "90"
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    ports:
+      - "127.0.0.1:${GLITCHTIP_PORT:-8100}:8000"
+    networks: [backend, indexer, ops]
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Administrateur, organisation, projets et DSN : ecrit savoire-errors.json
+  # et indexer-error-dsn dans savoire-config, puis s'arrete. Jamais bloquant.
+  glitchtip-bootstrap:
+    image: glitchtip/glitchtip:${GLITCHTIP_VERSION:-6.2.6}
+    restart: "no"
+    user: "0"
+    command: ["python", "manage.py", "shell", "--command", "exec(open('/bootstrap/bootstrap.py').read())"]
+    environment:
+      <<: *glitchtip-env
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?}
+      GLITCHTIP_ADMIN_PASSWORD: ${GLITCHTIP_ADMIN_PASSWORD:?}
+      SAVOIRE_DOMAIN: ${SAVOIRE_DOMAIN:?}
+      GLITCHTIP_INTERNAL_URL: http://glitchtip:8000
+      ERROR_ENVIRONMENT: ${ERROR_ENVIRONMENT:-production}
+      OUT_DIR: /out
+    volumes:
+      - ./glitchtip/bootstrap.py:/bootstrap/bootstrap.py:ro
+      - savoire-config:/out
+    networks: [backend]
+    depends_on:
+      glitchtip:
+        condition: service_started
+
+  # ── Metriques ──────────────────────────────────────────────────────────────
+  prometheus:
+    <<: *restart
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.15.1}
+    entrypoint: ["/bin/sh", "/render.sh", "/etc/prometheus/prometheus.yml.tmpl", "/tmp/prometheus.yml", "--"]
+    command:
+      - /bin/prometheus
+      - --config.file=/tmp/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${METRICS_RETENTION:-30d}
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+    environment:
+      SAVOIRE_DOMAIN: ${SAVOIRE_DOMAIN:?}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?}
+    volumes:
+      - ./ops/render.sh:/render.sh:ro
+      - ./ops/prometheus/prometheus.yml.tmpl:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./ops/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks: [ops, backend, indexer]
+
+  alertmanager:
+    <<: *restart
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.34.1}
+    entrypoint: ["/bin/sh", "/render.sh", "/etc/alertmanager/alertmanager.yml.tmpl", "/tmp/alertmanager.yml", "--"]
+    command: ["/bin/alertmanager", "--config.file=/tmp/alertmanager.yml", "--storage.path=/alertmanager"]
+    environment:
+      SMTP_HOST: ${SMTP_HOST:?}
+      SMTP_FROM: ${SMTP_FROM:?}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Savoire}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL: ${ALERT_EMAIL:?}
+    volumes:
+      - ./ops/render.sh:/render.sh:ro
+      - ./ops/alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - alertmanager-data:/alertmanager
+    networks: [ops]
+
+  # Sondes HTTP : chaque service, et le site vu d'Internet.
+  blackbox:
+    <<: *restart
+    image: prom/blackbox-exporter:${BLACKBOX_VERSION:-v0.29.0}
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./ops/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    networks: [ops, backend, indexer, default]
+
+  # La machine (et les metriques des sauvegardes, dossier METRICS_DIR).
+  node-exporter:
+    <<: *restart
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.12.1}
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/metrics
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ${METRICS_DIR:-./metrics}:/metrics:ro
+    networks: [ops]
+
+  # Chaque conteneur.
+  cadvisor:
+    <<: *restart
+    image: ghcr.io/google/cadvisor:${CADVISOR_VERSION:-v0.60.6}
+    command: ["--docker_only=true", "--housekeeping_interval=30s", "--store_container_labels=false"]
+    privileged: true
+    devices: ["/dev/kmsg"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [ops]
+
+  postgres-exporter:
+    <<: *restart
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.20.1}
+    environment:
+      DATA_SOURCE_URI: postgres:5432/postgres?sslmode=disable
+      DATA_SOURCE_USER: postgres
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?}
+    networks: [ops, backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Journaux ───────────────────────────────────────────────────────────────
+  loki:
+    <<: *restart
+    image: grafana/loki:${LOKI_VERSION:-3.7.9}
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./ops/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [ops]
+
+  # Le collecteur : journaux de Docker vers Loki, metriques de l'API vers Prometheus.
+  alloy:
+    <<: *restart
+    image: grafana/alloy:${ALLOY_VERSION:-v1.21.1}
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./ops/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    networks: [ops]
+
+  # ── Tableaux de bord ───────────────────────────────────────────────────────
+  grafana:
+    <<: *restart
+    image: grafana/grafana:${GRAFANA_VERSION:-13.2.4}
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DEFAULT_LOCALE: fr-FR
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/savoire-overview.json
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks: [ops]
+
+networks:
+  ops:
+
+volumes:
+  offsite-state:
+  glitchtip-uploads:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  alloy-data:
+  grafana-data:

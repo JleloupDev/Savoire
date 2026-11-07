@@ -13,7 +13,9 @@
 import { fileURLToPath } from 'node:url'
 import { isMainThread, parentPort, workerData } from 'node:worker_threads'
 import { ConfigError, loadConfig, redacted, settingsTable } from './config'
-import { createLogger } from './log'
+import { createLogger, stdout } from './log'
+import { withErrorReports } from './errorReport'
+import type { IndexerConfig } from './config'
 import { IndexerService } from './service'
 import { Shard } from './shard'
 import type { FromShard, ShardInit, ToShard } from './shard'
@@ -21,8 +23,15 @@ import type { FromShard, ShardInit, ToShard } from './shard'
 declare const __INDEXER_VERSION__: string
 const VERSION = typeof __INDEXER_VERSION__ === 'string' ? __INDEXER_VERSION__ : 'dev'
 
+/** Le journal, et les erreurs vers GlitchTip si SAVOIRE_INDEXER_ERROR_DSN est donne. */
+function sinkFor(config: IndexerConfig) {
+  return config.errorDsn
+    ? withErrorReports(stdout, { dsn: config.errorDsn, environment: config.errorEnvironment, release: VERSION, serverName: config.name })
+    : stdout
+}
+
 function runWorker(init: ShardInit): void {
-  const log = createLogger(init.config.logLevel, { svc: 'savoire-indexer', instance: init.config.name, shard: init.index })
+  const log = createLogger(init.config.logLevel, { svc: 'savoire-indexer', instance: init.config.name, shard: init.index }, sinkFor(init.config))
   const port = parentPort!
   const shard = new Shard(init, log, (msg: FromShard) => port.postMessage(msg))
   port.on('message', (msg: ToShard) => shard.handle(msg))
@@ -45,7 +54,7 @@ async function runMain(argv: string[]): Promise<void> {
     throw err
   }
   const { config, warnings } = loaded
-  const log = createLogger(config.logLevel, { svc: 'savoire-indexer', instance: config.name })
+  const log = createLogger(config.logLevel, { svc: 'savoire-indexer', instance: config.name }, sinkFor(config))
   for (const w of warnings) log.warn(w)
   if (argv.includes('--check')) {
     log.info('configuration valide', { config: redacted(config) })

@@ -88,3 +88,7 @@ packages/*/src/**/*.d.ts.map
 
 # Identites locales des POC EdgeSync (jamais dans le depot)
 .edgesync/
+
+# Exploitation (deploy/compose) : sauvegardes locales et metriques des scripts.
+deploy/compose/backups/
+deploy/compose/metrics/

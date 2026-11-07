@@ -23,13 +23,20 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Fournisseur d'identite (ADR-028) : deploy/compose/zitadel/bootstrap.mjs
 // ecrit Auth:Oidc et Indexer:Oidc dans un fichier JSON. Savoire:OidcConfigFile
 // (ou Savoire__OidcConfigFile) le designe ; relu s'il change.
-if (builder.Configuration["Savoire:OidcConfigFile"] is { Length: > 0 } oidcFile)
+// Meme mecanisme pour le suivi des erreurs : deploy/compose/glitchtip/bootstrap.py
+// ecrit ErrorReporting (Savoire:ErrorReportingConfigFile).
+foreach (string key in new[] { "Savoire:OidcConfigFile", "Savoire:ErrorReportingConfigFile" })
 {
-    string path = Path.IsPathRooted(oidcFile)
-        ? oidcFile
-        : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, oidcFile));
+    if (builder.Configuration[key] is not { Length: > 0 } file) continue;
+    string path = Path.IsPathRooted(file)
+        ? file
+        : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, file));
     builder.Configuration.AddJsonFile(path, optional: true, reloadOnChange: true);
 }
+
+// Exploitation : erreurs vers GlitchTip, metriques en OTLP (rien sans reglage).
+builder.AddTelemetry();
+builder.Services.AddHttpClient("errors", c => c.Timeout = TimeSpan.FromSeconds(10));
 
 // 1. Infrastructure (EF Core, Identity, JWT, repositories, content store)
 builder.Services.AddInfrastructure(builder.Configuration);

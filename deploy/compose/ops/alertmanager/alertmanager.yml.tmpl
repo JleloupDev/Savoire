@@ -1,0 +1,33 @@
+# Alertmanager (docker-compose.ops.yml) : les alertes de Prometheus partent
+# par courriel (Brevo, le meme compte que Zitadel). Modele : ${...} remplace
+# au demarrage par ops/render.sh.
+global:
+  smtp_smarthost: '${SMTP_HOST}'
+  smtp_from: '${SMTP_FROM_NAME} <${SMTP_FROM}>'
+  smtp_auth_username: '${SMTP_USER}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+route:
+  receiver: email
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Les alertes critiques reviennent plus souvent tant qu'elles durent.
+    - matchers: [severity="critical"]
+      receiver: email
+      repeat_interval: 1h
+
+receivers:
+  - name: email
+    email_configs:
+      - to: '${ALERT_EMAIL}'
+        send_resolved: true
+
+inhibit_rules:
+  # Machine injoignable : inutile d'envoyer aussi chaque service tombe.
+  - source_matchers: [alertname="SiteInjoignable"]
+    target_matchers: [alertname="ServiceArrete"]
+    equal: []

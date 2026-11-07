@@ -1,0 +1,10 @@
+# Tableaux de bord livres avec Savoire (ops/grafana/dashboards).
+apiVersion: 1
+providers:
+  - name: savoire
+    folder: Savoire
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

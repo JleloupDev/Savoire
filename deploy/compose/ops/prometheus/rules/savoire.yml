@@ -1,0 +1,137 @@
+# Alertes de Savoire (Prometheus -> Alertmanager -> courriel).
+# severity : critical (agir tout de suite) ou warning (regarder dans la journee).
+groups:
+  - name: disponibilite
+    rules:
+      - alert: SiteInjoignable
+        expr: probe_success{job="probe-public"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} ne repond plus depuis Internet"
+          description: "La sonde publique echoue depuis 3 minutes : DNS, certificat, Caddy ou la machine."
+      - alert: ServiceArrete
+        expr: probe_success{job="probe-internal"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "Service arrete : {{ $labels.instance }}"
+          description: "Le service ne repond plus a sa sonde de sante depuis 3 minutes."
+      - alert: CertificatBientotExpire
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Certificat HTTPS de {{ $labels.instance }} : moins de 14 jours"
+          description: "Caddy renouvelle normalement seul ; verifier ses journaux."
+      - alert: CollecteArretee
+        expr: up == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Prometheus ne lit plus {{ $labels.job }} ({{ $labels.instance }})"
+          description: "Les tableaux de bord de ce service sont vides tant que ca dure."
+
+  - name: serveur
+    rules:
+      - alert: ErreursServeur
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{job="savoire-api", http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count{job="savoire-api"}[5m])) > 0.05
+          and sum(rate(http_server_request_duration_seconds_count{job="savoire-api"}[5m])) > 0.1
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Plus de 5 % de reponses en erreur (5xx) sur l'API"
+          description: "Voir GlitchTip (projet api) et les journaux dans Grafana."
+      - alert: ServeurLent
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="savoire-api", http_route!~"/hubs/.*"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API lente : 5 % des requetes depassent 2 s"
+          description: "Regarder la base (connexions, disque) et la charge de la machine."
+      - alert: BaseInjoignable
+        expr: pg_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL ne repond plus"
+          description: "Savoire, Zitadel et GlitchTip en dependent."
+      - alert: IndexeurEnRetard
+        expr: savoire_indexer_feed_last_success_age_seconds > 120
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Le pair indexeur ne suit plus les modifications"
+          description: "Recherche et bases peuvent montrer des resultats anciens."
+      - alert: ConteneurInstable
+        expr: changes(container_start_time_seconds{name=~".+"}[15m]) > 2
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.name }} redemarre en boucle"
+          description: "Plus de deux redemarrages en 15 minutes : voir ses journaux."
+
+  - name: machine
+    rules:
+      - alert: DisquePresquePlein
+        expr: node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Disque : moins de 15 % libre"
+          description: "Sauvegardes locales, journaux et base grossissent."
+      - alert: DisquePlein
+        expr: node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Disque : moins de 5 % libre"
+          description: "PostgreSQL s'arretera s'il ne peut plus ecrire."
+      - alert: MemoireFaible
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Memoire : moins de 10 % disponible"
+          description: "Voir la memoire par conteneur dans Grafana."
+      - alert: ProcesseurSature
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Processeur occupe a plus de 90 % depuis 15 minutes"
+
+  - name: sauvegardes
+    rules:
+      - alert: SauvegardeManquee
+        expr: time() - savoire_backup_last_success_timestamp_seconds > 26 * 3600
+        labels: { severity: critical }
+        annotations:
+          summary: "Pas de sauvegarde locale depuis plus de 26 heures"
+          description: "Voir les journaux du service backup."
+      - alert: SauvegardeJamaisFaite
+        expr: absent(savoire_backup_last_success_timestamp_seconds)
+        for: 26h
+        labels: { severity: critical }
+        annotations:
+          summary: "Aucune sauvegarde locale depuis l'installation"
+      - alert: CopieHorsMachineManquee
+        expr: time() - savoire_offsite_last_success_timestamp_seconds > 30 * 3600
+        labels: { severity: critical }
+        annotations:
+          summary: "Pas de copie hors de la machine depuis plus de 30 heures"
+          description: "Voir les journaux du service offsite (restic)."
+      - alert: CopieHorsMachineJamaisFaite
+        expr: absent(savoire_offsite_last_success_timestamp_seconds)
+        for: 30h
+        labels: { severity: critical }
+        annotations:
+          summary: "Aucune copie hors de la machine depuis l'installation"
+      - alert: TestRestaurationManque
+        expr: time() - savoire_restore_test_last_success_timestamp_seconds > 8 * 86400
+        labels: { severity: warning }
+        annotations:
+          summary: "Le test de restauration hebdomadaire n'a pas reussi depuis 8 jours"
+          description: "deploy/vps/restore-test.sh (minuterie systemd savoire-restore-test)."

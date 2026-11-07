@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import './app.css'
 import { App } from './App'
 import { initProfile } from './profile'
+import { startErrorReporting } from './errorReporting'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
@@ -19,6 +20,8 @@ if (!root) throw new Error('Root element not found')
 // Le profil de synchronisation est resolu AVANT le premier rendu : une garde
 // de cles installee apres coup laisserait l'UI mentir entre les deux.
 // ?profile=edgesync pour le profil P2P, sinon profil serveur Savoire.
+// Suivi des erreurs : seulement si le serveur le demande (voir errorReporting.ts).
+void startErrorReporting()
 void initProfile().then(profile => {
   if (profile.error) console.warn('[profile]', profile.error)
   createRoot(root).render(<App />)

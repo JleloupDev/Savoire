@@ -1,0 +1,68 @@
+# Prometheus (docker-compose.ops.yml). Modele : ${...} remplace au demarrage
+# par ops/render.sh. Garde METRICS_RETENTION (30 jours par defaut).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    site: savoire
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs: [{ targets: ['localhost:9090'] }]
+  - job_name: alertmanager
+    static_configs: [{ targets: ['alertmanager:9093'] }]
+  # La machine : processeur, memoire, disques, reseau ; et les metriques des
+  # sauvegardes (collecteur textfile).
+  - job_name: node
+    static_configs: [{ targets: ['node-exporter:9100'] }]
+  # Chaque conteneur : memoire, processeur, redemarrages.
+  - job_name: cadvisor
+    static_configs: [{ targets: ['cadvisor:8080'] }]
+  - job_name: postgres
+    static_configs: [{ targets: ['postgres-exporter:9187'] }]
+  - job_name: zitadel
+    metrics_path: /debug/metrics
+    static_configs: [{ targets: ['zitadel:8080'] }]
+  - job_name: indexer
+    static_configs: [{ targets: ['indexer:7070'] }]
+  - job_name: alloy
+    static_configs: [{ targets: ['alloy:12345'] }]
+  - job_name: loki
+    static_configs: [{ targets: ['loki:3100'] }]
+
+  # Sondes : chaque service repond-il ? De l'interieur...
+  - job_name: probe-internal
+    metrics_path: /probe
+    params: { module: [http_2xx] }
+    static_configs:
+      - targets:
+          - http://api:8080/health/ready
+          - http://web:8080/
+          - http://zitadel:8080/debug/ready
+          - http://zitadel-login:3000/ui/v2/login/healthy
+          - http://glitchtip:8000/_health/
+          - http://indexer:7070/health/live
+    relabel_configs: &probe
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+  # ... et comme un visiteur, par Internet (HTTPS, certificats).
+  - job_name: probe-public
+    metrics_path: /probe
+    params: { module: [http_2xx] }
+    static_configs:
+      - targets:
+          - https://${SAVOIRE_DOMAIN}/
+          - https://${AUTH_DOMAIN}/ui/v2/login/healthy
+    relabel_configs: *probe

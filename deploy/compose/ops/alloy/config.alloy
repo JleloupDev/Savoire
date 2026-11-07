@@ -1,0 +1,71 @@
+// Alloy (docker-compose.ops.yml) : le collecteur.
+//  - Metriques de l'API (OpenTelemetry, OTLP) -> Prometheus.
+//  - Journaux de tous les conteneurs (Docker) -> Loki, etiquetes par service.
+
+otelcol.receiver.otlp "api" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+  }
+}
+
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.levels.receiver]
+}
+
+// Le niveau des lignes JSON (API, pair indexeur) devient une etiquette.
+loki.process "levels" {
+  stage.json {
+    expressions = { level = "level", loglevel = "LogLevel" }
+  }
+  stage.template {
+    source   = "level"
+    template = "{{ if .level }}{{ .level }}{{ else }}{{ .loglevel }}{{ end }}"
+  }
+  stage.labels {
+    values = { level = "" }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -14,6 +14,7 @@
 // l'acces aux reglages par installDesktopServers().
 
 import { normalizeServerAddress, setServerBaseUrl } from '@savoire/infrastructure-sync'
+import { startErrorReporting } from './errorReporting'
 import { parseAccounts, persistedAccounts, setAccountStorage } from './accountStorage'
 import type { AccountEntry } from './types'
 
@@ -115,6 +116,7 @@ export async function installDesktopServers(
   }
   const current = list.current ?? defaultServer
   setServerBaseUrl(current ?? '')
+  void startErrorReporting()
   await loadAccountsOf(current)
   publish({ configurable: true, servers: withDefault(list.servers), current })
   return choice
@@ -136,6 +138,7 @@ export async function chooseServer(input: string): Promise<string> {
   }
   const list = await settings.select(url)
   setServerBaseUrl(url)
+  void startErrorReporting()
   await loadAccountsOf(url)
   publish({ configurable: true, servers: withDefault(list.servers), current: url })
   return url
