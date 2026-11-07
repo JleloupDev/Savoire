@@ -103,6 +103,8 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-module', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-module')).default },
   { id: 'plugin-task-list', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-task-list')).default },
   { id: 'plugin-table', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-table')).default },
+  { id: 'plugin-templates', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-templates')).default },
+  { id: 'plugin-agenda', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-agenda')).createAgendaPlugin() },
 
   // ── Disponibles ────────────────────────────────────────────────────────────
   {

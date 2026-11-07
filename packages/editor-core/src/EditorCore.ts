@@ -583,11 +583,15 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       description: 'Palette de commandes',
       handler: {
         getItems: (query: string) => {
-          const all = slash.getAll()
-          const filtered = !query ? all : all.filter(item => {
-            const q = query.toLowerCase()
-            return item.label.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q)
+          const all = slash.getAll().flatMap(item => {
+            if (!item.expand) return [item]
+            try { return item.expand() } catch { return [] }
           })
+          // Sans accents ni casse : « /modele » trouve « Modèle ».
+          const fold = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+          const q = fold(query)
+          const filtered = !query ? all : all.filter(item =>
+            fold(item.label).includes(q) || (item.description ? fold(item.description).includes(q) : false))
           // Adapt SlashCommandItem to TriggerItem (normalize insert signature)
           return filtered.map(item => ({
             id: item.id,

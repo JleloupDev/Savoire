@@ -69,6 +69,12 @@ export interface SlashCommandItem {
   keepOpen?: boolean
   /** Place du curseur dans le texte insere (defaut : a la fin). */
   cursor?: number
+  /**
+   * Un item qui en donne plusieurs, lus a l'ouverture du menu (un par
+   * modele, par exemple) : il est remplace par eux. Enregistre une fois au
+   * chargement, il suit l'activation du plugin.
+   */
+  expand?(): SlashCommandItem[]
 }
 
 export interface SlashRegistry {

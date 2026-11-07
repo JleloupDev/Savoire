@@ -116,6 +116,8 @@ export { BLOCK_DESTROY_EVENT } from './blocks'
 export type { LinkResolver } from './links'
 export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName, rewriteMovedLinks } from './links'
 export type { LinkMoveContext } from './links'
+export { TEMPLATE_FOLDERS, formatDate, renderTemplate, noteTitleOf, templateFolderOf } from './templates'
+export type { TemplateContext } from './templates'
 export {
   QUERY_MAX_FORMULAS, QueryEvalError, FieldReader, foldText, isEmptyValue, isFormulaField, queryUsesFormula,
   splitFormulaFilter, compareScalar, matchesDoc, sortDocs, groupDocs, checkAggregates, aggregateDocs,

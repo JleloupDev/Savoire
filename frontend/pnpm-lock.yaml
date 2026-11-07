@@ -158,6 +158,9 @@ importers:
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@savoire/plugin-agenda':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-agenda
       '@savoire/plugin-agent-reviewer':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agent-reviewer
@@ -236,6 +239,9 @@ importers:
       '@savoire/plugin-task-list':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-task-list
+      '@savoire/plugin-templates':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-templates
       '@savoire/plugin-vault-browser':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-vault-browser
@@ -531,6 +537,22 @@ importers:
       vitest:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
+
+  ../packages/plugins/plugin-agenda:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
 
   ../packages/plugins/plugin-agent-reviewer:
     dependencies:
@@ -928,6 +950,22 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/plugins/plugin-templates:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/plugins/plugin-vault-browser:
     dependencies:
       '@savoire/plugin-api':
@@ -1233,6 +1271,9 @@ importers:
 
   ../tests/frontend/unit/plugin-core-tests:
     dependencies:
+      '@savoire/plugin-agenda':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-agenda
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../../../packages/plugin-api
@@ -1266,6 +1307,9 @@ importers:
       '@savoire/plugin-quickref':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-quickref
+      '@savoire/plugin-templates':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-templates
       '@savoire/plugin-wikilinks':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-wikilinks
