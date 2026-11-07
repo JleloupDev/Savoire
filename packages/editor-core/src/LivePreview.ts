@@ -33,7 +33,7 @@ import { lineColorOf } from './FormattingService'
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
 
-const BLOCK_NODES = new Set([
+export const BLOCK_NODES = new Set([
   'Paragraph',
   'ATXHeading1', 'ATXHeading2', 'ATXHeading3',
   'ATXHeading4', 'ATXHeading5', 'ATXHeading6',

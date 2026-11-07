@@ -4,6 +4,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { printNote } from './PdfExport'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
 import { resolveLinkPath } from '@savoire/plugin-api'
@@ -697,6 +698,27 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     for (const cmd of toolbarCmds) toolbar.register(cmd)
 
     for (const cmd of plumeCommands()) this.pluginAPI.commands.register(cmd)
+
+    // Export PDF : la note entiere rendue puis imprimee (PdfExport.ts).
+    const exportPdf = (view: EditorView | null | undefined) => {
+      const v = view ?? this.view
+      const path = this.pluginAPI.workspace?.getActiveDocument?.()?.path ?? this.activeFile ?? ''
+      const title = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+      void printNote(v.state.doc.toString(), {
+        title,
+        registry: this.pluginAPI.blocks,
+        hooks: this.pluginAPI.hooks,
+        activeIds: new Set(this.activationMap.keys()),
+      }).catch(err => console.error('[export PDF]', err))
+    }
+    toolbar.register({ id: 'tb-export-pdf', label: 'Exporter en PDF', icon: 'PDF', group: 'export', commandId: 'editor:export-pdf', run: ctx => exportPdf(viewOf(ctx)) })
+    this.pluginAPI.commands.register({
+      id: 'editor:export-pdf',
+      label: 'Exporter en PDF',
+      hotkeys: [{ modifiers: ['Mod'], key: 'p' }],
+      editor: true,
+      run: ctx => exportPdf(viewOf(ctx)),
+    })
   }
 
 
