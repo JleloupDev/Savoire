@@ -12,6 +12,8 @@ export interface TriggerItem {
   /** Apres l'insertion, relire le texte : si un declencheur y est encore
    *  actif, le menu reste ouvert (une reference completee pas a pas). */
   keepOpen?: boolean
+  /** Place du curseur dans le texte insere (defaut : a la fin). */
+  cursor?: number
 }
 
 // ─── Input triggers (reserved character patterns) ─────────────────────────
@@ -63,6 +65,10 @@ export interface SlashCommandItem {
   category?: string
   /** Markdown/text to insert, or a function that returns it given the current query. */
   insert: string | ((ctx: { query: string }) => string)
+  /** Apres l'insertion, ouvrir le menu d'un declencheur insere (« [[ »). */
+  keepOpen?: boolean
+  /** Place du curseur dans le texte insere (defaut : a la fin). */
+  cursor?: number
 }
 
 export interface SlashRegistry {

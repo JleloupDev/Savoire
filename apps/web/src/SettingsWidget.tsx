@@ -162,8 +162,10 @@ function PluginStore({ service }: { service: PluginSettingsService }) {
     run(action)
   }
 
-  const installed = plugins.filter(p => p.installed)
-  const available = plugins.filter(p => !p.installed)
+  // Comme Obsidian : les plugins core (livres avec Savoire), puis ceux de la communaute.
+  const core = plugins.filter(p => p.core)
+  const installed = plugins.filter(p => !p.core && p.installed)
+  const available = plugins.filter(p => !p.core && !p.installed)
 
   const button = (primary: boolean, enabled: boolean): React.CSSProperties => ({
     fontSize: '0.72rem', padding: '3px 10px', borderRadius: 6, cursor: enabled ? 'pointer' : 'not-allowed',
@@ -209,7 +211,7 @@ function PluginStore({ service }: { service: PluginSettingsService }) {
                 {t('app', p.enabled ? 'settings.plugins.disable' : 'settings.plugins.enable')}
               </button>
             )}
-            {p.installed && !p.essential && (
+            {p.installed && !p.essential && !p.core && (
               <button data-testid="plugin-uninstall" disabled={!changeable} title={hint} style={button(false, changeable)}
                 onClick={() => guarded(p, 'uninstall', () => service.uninstall(p.id))}>
                 {t('app', 'settings.plugins.uninstall')}
@@ -245,7 +247,10 @@ function PluginStore({ service }: { service: PluginSettingsService }) {
     <div data-testid="plugin-store" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.intro')}</div>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
-      <div style={section}>{t('app', 'settings.plugins.section.installed')}</div>
+      {core.length > 0 && <div data-testid="plugin-section-core" style={section}>{t('app', 'settings.plugins.section.core')}</div>}
+      {core.map(p => <Row key={p.id} p={p} />)}
+      <div data-testid="plugin-section-community" style={section}>{t('app', 'settings.plugins.section.installed')}</div>
+      {installed.length === 0 && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.section.noCommunity')}</div>}
       {installed.map(p => <Row key={p.id} p={p} />)}
       {available.length > 0 && <div style={section}>{t('app', 'settings.plugins.section.available')}</div>}
       {available.map(p => <Row key={p.id} p={p} />)}

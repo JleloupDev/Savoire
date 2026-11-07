@@ -132,7 +132,7 @@ export function TriggerOverlay() {
     if (handler?.onCommit) {
       handler.onCommit(activation, item)
     } else {
-      ctrl.commitTriggerInsert(activation.from, activation.character.length, activation.query, insert)
+      ctrl.commitTriggerInsert(activation.from, activation.character.length, activation.query, insert, item.cursor)
     }
     setActivation(null)
     setItems([])

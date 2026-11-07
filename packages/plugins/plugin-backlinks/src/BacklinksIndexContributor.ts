@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { IndexContributor, SharedIndexEntry } from '@savoire/plugin-api'
+import { createLinkResolver } from '@savoire/plugin-api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,8 @@ export interface BacklinkEntry {
 // ─── Wikilink extraction ──────────────────────────────────────────────────────
 
 // see ADR-017
-const WIKILINK_RE = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g
+// Groupe 1 : la page visee, sans #titre ni |alias. Pas les integrations ![[...]].
+const WIKILINK_RE = /(?<!!)\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g
 
 function extractWikilinks(content: string): string[] {
   const targets: string[] = []
@@ -65,7 +67,21 @@ export class BacklinksIndexContributor implements IndexContributor {
     }
   }
 
-  getBacklinks(targetPath: string): BacklinkEntry[] {
+  /**
+   * Notes qui pointent vers `targetPath`. Avec `paths` (tous les fichiers du
+   * vault), chaque lien est resolu comme Obsidian : un nom porte par deux
+   * notes ne vise que l'une d'elles. Sans, comparaison par nom.
+   */
+  getBacklinks(targetPath: string, paths?: readonly string[]): BacklinkEntry[] {
+    if (paths) {
+      const resolver = createLinkResolver(paths)
+      const found = new Map<string, BacklinkEntry>()
+      for (const [target, inner] of this.index) {
+        if (target !== targetPath && resolver.resolve(target) !== targetPath) continue
+        for (const [id, entry] of inner) found.set(id, entry)
+      }
+      return [...found.values()]
+    }
     // Cherche par chemin exact en premier
     const exact = this.index.get(targetPath)
     if (exact) return [...exact.values()]

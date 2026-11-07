@@ -3,11 +3,11 @@
 //
 // Catalogue des plugins : lesquels sont installes, lesquels sont actifs.
 //
-// Deux sortes d'entrees dans le catalogue :
-//  - preinstallees : livrees et installees d'office (le coeur de Savoire) ;
-//  - du store      : a installer.
-// Toutes, sauf les indispensables, se desinstallent et reviennent alors dans
-// le store, d'ou on peut les reinstaller.
+// Deux familles, comme dans Obsidian :
+//  - plugins core       : livres avec Savoire, toujours installes ; on les
+//                         active ou desactive, on ne les desinstalle pas ;
+//  - de la communaute   : a installer depuis le store ; preinstalles ou non,
+//                         ils se desinstallent et y reviennent.
 //
 // Chaque plugin declare sa portee :
 //  - 'vault'    : installation et activation vivent dans le vault (reglages
@@ -23,6 +23,8 @@ export interface PluginCatalogEntry {
   manifest: PluginManifest
   /** Installe par defaut. Sinon : disponible dans le store, a installer. */
   preinstalled: boolean
+  /** Plugin core : livre avec Savoire, toujours installe, desactivable. */
+  core?: boolean
 }
 
 export interface PluginInfo {
@@ -33,6 +35,8 @@ export interface PluginInfo {
   author?: string
   scope: PluginScope
   essential: boolean
+  /** Plugin core : s'active ou se desactive, ne se desinstalle pas. */
+  core: boolean
   preinstalled: boolean
   installed: boolean
   enabled: boolean
@@ -96,7 +100,7 @@ export class PluginSettingsService {
   }
 
   list(): PluginInfo[] {
-    return this.getCatalog().map(({ manifest: m, preinstalled }) => ({
+    return this.getCatalog().map(({ manifest: m, preinstalled, core }) => ({
       id: m.id,
       name: m.name,
       description: m.description,
@@ -104,6 +108,7 @@ export class PluginSettingsService {
       author: m.author,
       scope: scopeOf(m),
       essential: !!m.essential,
+      core: !!core,
       preinstalled,
       installed: this.isInstalled(m.id),
       enabled: this.isEnabled(m.id),
@@ -124,6 +129,8 @@ export class PluginSettingsService {
 
   install(id: string): void {
     const entry = this.require(id)
+    // Un plugin core est toujours installe : l'installer, c'est l'activer.
+    if (entry.core) { if (!entry.manifest.essential) this.setEnabled(id, true); return }
     if (scopeOf(entry.manifest) === 'vault') {
       this.writeVault(id, { installed: true, enabled: true })
     } else {
@@ -144,6 +151,7 @@ export class PluginSettingsService {
   uninstall(id: string): void {
     const entry = this.require(id)
     if (entry.manifest.essential) throw new Error(`${entry.manifest.name} est indispensable et ne peut pas etre desinstalle`)
+    if (entry.core) throw new Error(`${entry.manifest.name} est un plugin core : il se desactive, il ne se desinstalle pas`)
     if (scopeOf(entry.manifest) === 'vault') {
       this.writeVault(id, { installed: false })
     } else {
@@ -166,6 +174,7 @@ export class PluginSettingsService {
     } else {
       this.writePersonal({
         ...this.personalState,
+        removed: enabled && entry.core ? this.personalState.removed.filter(x => x !== id) : this.personalState.removed,
         disabled: enabled
           ? this.personalState.disabled.filter(x => x !== id)
           : union(this.personalState.disabled, id),
@@ -215,7 +224,7 @@ export class PluginSettingsService {
   private isInstalled(id: string): boolean {
     const entry = this.entry(id)
     if (!entry) return false
-    if (entry.manifest.essential) return true
+    if (entry.manifest.essential || entry.core) return true
     if (scopeOf(entry.manifest) === 'personal') {
       return entry.preinstalled
         ? !this.personalState.removed.includes(id)
@@ -229,8 +238,14 @@ export class PluginSettingsService {
     const entry = this.entry(id)
     if (!entry || !this.isInstalled(id)) return false
     if (entry.manifest.essential) return true
-    if (scopeOf(entry.manifest) === 'personal') return !this.personalState.disabled.includes(id)
-    return this.vaultSetting(id)?.enabled !== false
+    if (scopeOf(entry.manifest) === 'personal') {
+      // Un plugin core desinstalle avant qu'il ne soit core reste coupe.
+      if (entry.core && this.personalState.removed.includes(id)) return false
+      return !this.personalState.disabled.includes(id)
+    }
+    const setting = this.vaultSetting(id)
+    if (entry.core && setting?.installed === false) return false
+    return setting?.enabled !== false
   }
 
   private apply(): void {

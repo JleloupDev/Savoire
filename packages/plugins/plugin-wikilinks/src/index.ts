@@ -4,7 +4,6 @@ import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { linkTargetFor, noteName, resolveLinkPath } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
 import { HeadingIndexContributor } from './HeadingIndexContributor'
-import { BacklinksWidget } from './BacklinksWidget'
 import { allFilePaths } from './vaultFiles'
 
 // [[Page]], [[Page#Heading]], [[Page|Alias]], [[Page#Heading|Alias]]
@@ -39,6 +38,50 @@ export function newPagePath(notePath: string, existing: readonly string[], title
   return candidate
 }
 
+/**
+ * Chemin de la note a creer pour un lien `[[page]]` sans cible : sous la
+ * note courante (newPagePath), ou au chemin ecrit s'il contient un dossier.
+ * null : nom vide, ou pas de note courante.
+ */
+export function pagePathFor(page: string, notePath: string | null, existing: readonly string[]): string | null {
+  const clean = page.replace(/[\\:*?"<>|]/g, '').replace(/\.md$/i, '').trim()
+  if (!clean || clean.split('/').some(part => !part.trim() || part === '.' || part === '..')) return null
+  if (clean.includes('/')) return `${clean}.md`
+  return notePath ? newPagePath(notePath, existing, clean) : `${clean}.md`
+}
+
+/**
+ * Le lien [[...]] ecrit en texte brut sous ce point de l'ecran (une ligne en
+ * cours d'edition), ou null.
+ */
+export function rawLinkAt(x: number, y: number): string | null {
+  const doc = document as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }
+  let node: Node | null = null
+  let offset = 0
+  if (typeof doc.caretPositionFromPoint === 'function') {
+    const pos = doc.caretPositionFromPoint(x, y)
+    if (pos) { node = pos.offsetNode; offset = pos.offset }
+  } else if (typeof document.caretRangeFromPoint === 'function') {
+    const range = document.caretRangeFromPoint(x, y)
+    if (range) { node = range.startContainer; offset = range.startOffset }
+  }
+  const line = (node instanceof Element ? node : node?.parentElement)?.closest('.cm-line')
+  if (!node || !line) return null
+  const before = document.createRange()
+  before.setStart(line, 0)
+  before.setEnd(node, offset)
+  return wikilinkAtOffset(line.textContent ?? '', before.toString().length)
+}
+
+/** La page du lien [[...]] qui couvre cette position du texte, ou null. */
+export function wikilinkAtOffset(text: string, at: number): string | null {
+  for (const m of text.matchAll(/(?<!!)\[\[([^\]#|]*?)(?:#[^\]|]*?)?(?:\|[^\]]*)?\]\]/g)) {
+    const start = m.index ?? 0
+    if (at >= start && at <= start + m[0].length) return m[1].trim() || null
+  }
+  return null
+}
+
 /** La note et le morceau vises par un lien rendu (`#Page`, `#Page#Titre`, `#Page#^bloc`). */
 export function linkTargetOf(href: string): { page: string; subpath: string } {
   let raw = href.replace(/^#/, '')
@@ -52,12 +95,8 @@ export function linkPageOf(href: string): string {
   return linkTargetOf(href).page
 }
 
-export function createWikilinksPlugin(options: {
-  groupId?: string
-  tabOf?: string
-  belowOf?: string
-  initialSize?: number
-} = {}): VaultPlugin {
+/** Les reglages du panneau des retroliens sont passes a plugin-backlinks : ignores ici. */
+export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: string; belowOf?: string; initialSize?: number } = {}): VaultPlugin {
   let removeListeners: (() => void) | null = null
   return {
     manifest: {
@@ -142,22 +181,49 @@ export function createWikilinksPlugin(options: {
         },
       })
 
+      // Ouvrir la note visee par un lien, ou la creer si elle n'existe pas
+      // encore (comme Obsidian) : rangee sous la note courante, dans son
+      // dossier (`A/Note.md` -> `A/Note/Nom.md`), comme ses images.
+      const openOrCreate = async (page: string): Promise<void> => {
+        const found = resolveLinkPath(page, notePaths)
+        if (found) { await api.workspace?.openFile(found); return }
+        const path = pagePathFor(page, api.workspace?.getActiveDocument?.()?.path ?? null, notePaths)
+        if (!path || typeof api.vault?.createFile !== 'function') return
+        try {
+          await api.vault.createFile(path)
+        } catch (err) {
+          console.warn('[wikilinks] page non creee', err)
+          return
+        }
+        notePaths = [...notePaths, path]
+        api.workspace?.notifyVaultChange?.()
+        await api.workspace?.openFile(path)
+      }
+
       // Clic sur un lien rendu dans une note : ouvrir la note visee (comme
-      // Obsidian). Avant l'editeur, qui passerait la ligne en edition.
+      // Obsidian) ; Ctrl+clic sur un lien sans note la cree. Ctrl+clic (Cmd sur Mac) sur un lien en cours
+      // d'ecriture ([[Nom]] en texte brut) fait de meme. Avant l'editeur, qui
+      // passerait la ligne en edition.
       if (typeof document !== 'undefined') {
         const linkAt = (e: MouseEvent): string | null => {
           if (e.button !== 0) return null
-          const a = (e.target as Element | null)?.closest?.('a[href^="#"]')
-          if (!a || !(a.closest('.cm-editor') || a.closest('.link-preview'))) return null
-          const page = linkPageOf(a.getAttribute('href') ?? '')
-          return page ? resolveLinkPath(page, notePaths) ?? null : null
+          const target = e.target as Element | null
+          const a = target?.closest?.('a[href^="#"]')
+          if (a && (a.closest('.cm-editor') || a.closest('.link-preview'))) {
+            const page = linkPageOf(a.getAttribute('href') ?? '')
+            // Une note absente ne se cree qu'au Ctrl+clic : pas par megarde.
+            if (!page || (!resolveLinkPath(page, notePaths) && !(e.ctrlKey || e.metaKey))) return null
+            return page
+          }
+          if (!(e.ctrlKey || e.metaKey) || !target?.closest?.('.cm-editor')) return null
+          return rawLinkAt(e.clientX, e.clientY)
         }
         const onDown = (e: MouseEvent) => {
-          const path = linkAt(e)
-          if (!path) return
+          const page = linkAt(e)
+          if (!page) return
           e.preventDefault()
           e.stopPropagation()
-          void api.workspace?.openFile(path)
+          void openOrCreate(page)
         }
         const onClick = (e: MouseEvent) => { if (linkAt(e)) e.preventDefault() }
         document.addEventListener('mousedown', onDown, true)
@@ -168,26 +234,17 @@ export function createWikilinksPlugin(options: {
         }
       }
 
-      // « /page » : une note neuve rangee sous la note courante (dans son
-      // dossier, comme ses images : `A/Note.md` -> `A/Note/Nouvelle page.md`),
-      // et son lien a la place de la commande.
+      // « /page » : des crochets [[ ]] ou taper le nom de la page ; Ctrl+clic
+      // sur le lien la cree, rangee sous la note courante.
       api.slash?.register({
         id: 'wikilinks:new-page',
         label: 'Page',
-        description: 'Nouvelle note rangée sous celle-ci, avec son lien',
+        description: 'Lien vers une nouvelle note : tapez son nom, Ctrl+clic la crée',
         icon: '📄',
         category: 'Insérer',
-        insert: () => {
-          const current = api.workspace?.getActiveDocument?.()?.path
-          if (!current || typeof api.vault?.createFile !== 'function') return ''
-          const path = newPagePath(current, notePaths)
-          if (!path) return ''
-          notePaths = [...notePaths, path]
-          void api.vault.createFile(path)
-            .then(() => api.workspace?.notifyVaultChange?.())
-            .catch(err => console.warn('[wikilinks] page non creee', err))
-          return `[[${linkTargetFor(path, notePaths)}]]`
-        },
+        insert: '[[]]',
+        cursor: 2,
+        keepOpen: true,
       })
 
       api.hooks.beforeParse((source) => {
@@ -202,21 +259,6 @@ export function createWikilinksPlugin(options: {
       api.index?.registerFactory(() => wikilinkContributor)
       api.index?.registerFactory(() => new HeadingIndexContributor())
 
-      api.views.register({
-        id: 'backlinks',
-        title: 'Backlinks',
-        icon: 'link',
-        groupId: options.groupId,
-        container: 'right',
-        tabOf: options.tabOf,
-        belowOf: options.belowOf,
-        initialSize: options.initialSize ?? 280,
-        closable: true,
-        createView(ctx) {
-          // Avec un index de tout le vault (api.indexer), les notes jamais ouvertes comptent aussi.
-          return new BacklinksWidget(ctx, wikilinkContributor, api.indexer)
-        },
-      })
     },
 
     async onunload() {
@@ -228,4 +270,3 @@ export function createWikilinksPlugin(options: {
 
 export { WikilinkIndexContributor } from './WikilinkIndexContributor'
 export { HeadingIndexContributor } from './HeadingIndexContributor'
-export { BacklinksWidget } from './BacklinksWidget'

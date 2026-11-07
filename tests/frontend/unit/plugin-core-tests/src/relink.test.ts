@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { createLinkResolver, linkTargetFor, rewriteMovedLinks } from '@savoire/plugin-api'
 import { relinkAfterMoves } from '../../../../../packages/plugins/plugin-filetree/src/relink'
-import { newPagePath } from '@savoire/plugin-wikilinks'
+import { newPagePath, pagePathFor, wikilinkAtOffset } from '@savoire/plugin-wikilinks'
 
 function ctxFor(before: string[], moves: [string, string][]) {
   const map = new Map(moves)
@@ -134,5 +134,21 @@ describe('/page', () => {
     expect(newPagePath('A/Note.md', [])).toBe('A/Note/Nouvelle page.md')
     expect(newPagePath('Note.md', ['Note/Nouvelle page.md', 'note/nouvelle page 2.md'])).toBe('Note/Nouvelle page 3.md')
     expect(newPagePath('Sans extension', [])).toBeNull()
+  })
+
+  it('le nom tape dans les crochets donne la note a creer', () => {
+    expect(pagePathFor('Idées', 'A/Note.md', [])).toBe('A/Note/Idées.md')
+    expect(pagePathFor('Projets/Plan', 'A/Note.md', [])).toBe('Projets/Plan.md')
+    expect(pagePathFor('Seule', null, [])).toBe('Seule.md')
+    expect(pagePathFor('  ', 'A/Note.md', [])).toBeNull()
+    expect(pagePathFor('../hors', 'A/Note.md', [])).toBeNull()
+  })
+
+  it('Ctrl+clic : le lien brut sous le curseur', () => {
+    const line = 'Voir [[Plan de route#Etape|ici]] et ![[image.png]]'
+    expect(wikilinkAtOffset(line, 10)).toBe('Plan de route')
+    expect(wikilinkAtOffset(line, 2)).toBeNull()
+    expect(wikilinkAtOffset(line, line.length - 3)).toBeNull()
+    expect(wikilinkAtOffset('[[]]', 2)).toBeNull()
   })
 })

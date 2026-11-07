@@ -521,7 +521,7 @@ export function AppShell() {
       .map(m => [m.id, m]))
     return STORE_CATALOG.flatMap(e => {
       const manifest = loaded.get(e.id) ?? e.manifest
-      return manifest ? [{ manifest, preinstalled: e.preinstalled }] : []
+      return manifest ? [{ manifest, preinstalled: e.preinstalled, core: e.core }] : []
     })
   }
   const pluginSettingsRef = useRef<PluginSettingsService | null>(null)
@@ -1214,7 +1214,7 @@ export function AppShell() {
     await switchToVault(vault, token)
   }
 
-  // Bureau : « Ouvrir un dossier… » (onglet « Sur cet ordinateur »).
+  // Bureau : « Ouvrir un dossier… » (section « Sur cet ordinateur »).
   async function handleDesktopOpenFolder() {
     const desktop = activeProfile.desktop
     if (!desktop) return
@@ -1241,7 +1241,7 @@ export function AppShell() {
     if (userId) clearVaultKey(userId)
   }
 
-  // Bureau : un onglet par source dans la liste des vaults.
+  // Bureau : une section par source dans la liste des vaults, l'une sous l'autre.
   if (activeProfile.desktop) {
     const connected = serverState.state === 'connected'
     vaultSourcesRef.current = [

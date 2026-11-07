@@ -595,6 +595,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
             icon: item.icon,
             category: item.category,
             description: item.description,
+            cursor: item.cursor,
+            keepOpen: item.keepOpen,
             insert: typeof item.insert === 'function'
               ? (q: string) => (item.insert as (ctx: { query: string }) => string)({ query: q })
               : item.insert,
@@ -803,11 +805,15 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     return null
   }
 
-  commitTriggerInsert(from: number, triggerCharLen: number, query: string, insert: string): void {
-    const to = from + triggerCharLen + query.length
+  commitTriggerInsert(from: number, triggerCharLen: number, query: string, insert: string, cursor?: number): void {
+    let to = from + triggerCharLen + query.length
+    // Un lien complet tape dans des crochets deja fermes (« /page » puis
+    // [[nom]]) : les crochets fermants en place ne se doublent pas.
+    if (insert.endsWith(']]') && this.view.state.sliceDoc(to, to + 2) === ']]') to += 2
+    const at = cursor !== undefined && cursor >= 0 && cursor <= insert.length ? cursor : insert.length
     this.view.dispatch({
       changes: { from, to, insert },
-      selection: { anchor: from + insert.length },
+      selection: { anchor: from + at },
     })
     this.view.focus()
   }

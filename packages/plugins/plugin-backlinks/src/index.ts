@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+//
+// Plugin core « Rétroliens » : le panneau des notes qui pointent vers la note
+// ouverte. Il lit l'index de tout le vault quand il existe (pair indexeur,
+// index local du bureau), sinon son propre index partage ('backlinks') des
+// notes deja indexees. Le desactiver retire le panneau, pas les liens.
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
+import { BacklinksWidget } from './BacklinksWidget'
 import { BacklinksIndexContributor } from './BacklinksIndexContributor'
 
-// DECISION: view moved to plugin-wikilinks — backlinks panel is now provided by
-// the wikilinks plugin which owns the contributor. This package keeps the contributor
-// for backward compatibility with existing snapshots that reference namespace 'backlinks'.
-export function createBacklinksPlugin(_options: {
+export function createBacklinksPlugin(options: {
+  groupId?: string
   tabOf?: string
   belowOf?: string
   initialSize?: number
@@ -15,14 +19,30 @@ export function createBacklinksPlugin(_options: {
     manifest: {
       id: 'plugin-backlinks',
       scope: 'vault',
-      name: 'Backlinks',
-      version: '0.0.1',
-      description: 'Indexe les backlinks (vue fournie par plugin-wikilinks).',
+      name: 'Rétroliens',
+      version: '0.0.2',
+      description: 'Les notes qui pointent vers la note ouverte',
       permissions: ['vault:read'],
+      defaultActive: true,
     },
 
     async onload(api: PluginAPI) {
-      api.index?.registerFactory(() => new BacklinksIndexContributor())
+      const links = new BacklinksIndexContributor()
+      api.index?.registerFactory(() => links)
+      api.views.register({
+        id: 'backlinks',
+        title: 'Backlinks',
+        icon: 'link',
+        groupId: options.groupId,
+        container: 'right',
+        tabOf: options.tabOf,
+        belowOf: options.belowOf,
+        initialSize: options.initialSize ?? 280,
+        closable: true,
+        createView(ctx) {
+          return new BacklinksWidget(ctx, links, api.indexer)
+        },
+      })
     },
 
     async onunload() {},
@@ -30,3 +50,5 @@ export function createBacklinksPlugin(_options: {
 }
 
 export { BacklinksIndexContributor } from './BacklinksIndexContributor'
+export { BacklinksWidget, type BacklinkSource } from './BacklinksWidget'
+export type { BacklinkEntry } from './BacklinksIndexContributor'

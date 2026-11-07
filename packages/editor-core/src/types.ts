@@ -54,7 +54,7 @@ export interface EditorController {
   /** Returns the active trigger activation if cursor is right after a trigger character, else null. */
   getActiveTrigger(): TriggerActivation | null
   /** Replace trigger+query at `from` with `insert` and focus the editor. */
-  commitTriggerInsert(from: number, triggerCharLen: number, query: string, insert: string): void
+  commitTriggerInsert(from: number, triggerCharLen: number, query: string, insert: string, cursor?: number): void
   /** Returns all toolbar commands registered by plugins and built-ins. */
   getToolbarCommands(): ToolbarCommand[]
   /** Run a toolbar command by id (ctx is created internally — React never sees it). */

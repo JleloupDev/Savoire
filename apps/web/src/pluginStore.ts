@@ -4,9 +4,12 @@
 // Store officiel : TOUS les plugins du projet. Ecrit en dur pour l'instant ;
 // demain, un index publie par un store externe.
 //
-//  - preinstalled : installe par defaut, charge au demarrage (le coeur) ;
+//  - core         : plugin core, livre avec Savoire (comme les plugins core
+//                   d'Obsidian) : toujours installe et charge au demarrage,
+//                   il s'active ou se desactive, il ne se desinstalle pas ;
+//  - preinstalled : plugin de la communaute installe par defaut ;
 //  - sinon        : disponible, son code n'est importe qu'a l'installation.
-// Tout plugin non indispensable se desinstalle et revient ici.
+// Un plugin de la communaute se desinstalle et revient ici.
 //
 // L'ordre compte : c'est l'ordre de chargement au demarrage (l'explorateur se
 // place sous la liste des vaults, par exemple).
@@ -29,6 +32,8 @@ export interface PluginLoadContext {
 export interface StoreEntry {
   id: string
   preinstalled: boolean
+  /** Plugin core (toujours preinstalle) : desactivable, pas desinstallable. */
+  core?: boolean
   /** Plugin d'edition actif par defaut dans toutes les notes (ADR-012). */
   editorDefault?: boolean
   /** Manifeste recopie, pour afficher le plugin sans charger son code. */
@@ -41,35 +46,40 @@ export interface StoreEntry {
 export const STORE_CATALOG: StoreEntry[] = [
   // ── Coeur : workspace ──────────────────────────────────────────────────────
   {
-    id: 'plugin-vault-browser', preinstalled: true,
+    id: 'plugin-vault-browser', preinstalled: true, core: true,
     load: async (ctx) => (await import('@savoire/plugin-vault-browser')).createVaultBrowserPlugin({
       refs: ctx.vaultBrowserRefs, groupId: 'explorer', closable: false,
     }),
   },
   {
-    id: 'plugin-filetree', preinstalled: true,
+    id: 'plugin-filetree', preinstalled: true, core: true,
     load: async () => (await import('@savoire/plugin-filetree')).createFileTreePlugin({
       groupId: 'explorer', belowOf: 'vault-browser', closable: false,
     }),
   },
   {
-    id: 'plugin-wikilinks', preinstalled: true,
-    load: async () => (await import('@savoire/plugin-wikilinks')).createWikilinksPlugin({ groupId: 'notes-tools' }),
+    id: 'plugin-wikilinks', preinstalled: true, core: true,
+    load: async () => (await import('@savoire/plugin-wikilinks')).createWikilinksPlugin(),
   },
   {
-    id: 'plugin-hashtags', preinstalled: true,
+    // Apres plugin-wikilinks : le panneau lit son index des liens.
+    id: 'plugin-backlinks', preinstalled: true, core: true,
+    load: async () => (await import('@savoire/plugin-backlinks')).createBacklinksPlugin({ groupId: 'notes-tools' }),
+  },
+  {
+    id: 'plugin-hashtags', preinstalled: true, core: true,
     load: async () => (await import('@savoire/plugin-hashtags')).createHashtagsPlugin({
       container: 'left', ribbon: true, icon: 'tag',
     }),
   },
   {
-    id: 'plugin-metadata', preinstalled: true,
+    id: 'plugin-metadata', preinstalled: true, core: true,
     load: async () => (await import('@savoire/plugin-metadata')).createMetadataPlugin({ groupId: 'notes-tools' }),
   },
   {
     // Pas de groupId : le graphe s'ouvre comme vue principale (onglet a cote
     // de l'editeur), depuis la barre d'icones de gauche.
-    id: 'plugin-graph', preinstalled: true,
+    id: 'plugin-graph', preinstalled: true, core: true,
     load: async (ctx) => {
       const { plugin, getContributor } = (await import('@savoire/plugin-graph')).createGraphPlugin()
       ctx.setGraphContributor(getContributor)
@@ -77,22 +87,22 @@ export const STORE_CATALOG: StoreEntry[] = [
     },
   },
   {
-    id: 'plugin-search', preinstalled: true,
+    id: 'plugin-search', preinstalled: true, core: true,
     load: async () => (await import('@savoire/plugin-search')).createSearchPlugin({ container: 'left', ribbon: true }).plugin,
   },
 
   // ── Coeur : types de fichiers ──────────────────────────────────────────────
-  { id: 'plugin-excalidraw', preinstalled: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
-  { id: 'plugin-mindmap', preinstalled: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
+  { id: 'plugin-excalidraw', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
+  { id: 'plugin-mindmap', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
 
   // ── Coeur : edition (blocs, actifs dans toutes les notes) ──────────────────
-  { id: 'plugin-mermaid', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
-  { id: 'plugin-callout', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-callout')).default },
-  { id: 'plugin-code-block', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-code-block')).default },
-  { id: 'plugin-note-embed', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-note-embed')).default },
-  { id: 'plugin-module', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-module')).default },
-  { id: 'plugin-task-list', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-task-list')).default },
-  { id: 'plugin-table', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-table')).default },
+  { id: 'plugin-mermaid', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
+  { id: 'plugin-callout', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-callout')).default },
+  { id: 'plugin-code-block', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-code-block')).default },
+  { id: 'plugin-note-embed', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-note-embed')).default },
+  { id: 'plugin-module', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-module')).default },
+  { id: 'plugin-task-list', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-task-list')).default },
+  { id: 'plugin-table', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-table')).default },
 
   // ── Disponibles ────────────────────────────────────────────────────────────
   {
@@ -136,19 +146,6 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-plaintext')).default,
   },
   {
-    id: 'plugin-backlinks', preinstalled: false,
-    manifest: {
-      id: 'plugin-backlinks',
-      scope: 'vault',
-      name: 'Backlinks',
-      version: '0.0.1',
-      description: 'Indexe les backlinks (vue fournie par plugin-wikilinks).',
-      permissions: ['vault:read'],
-    },
-    extensions: [],
-    load: async () => (await import('@savoire/plugin-backlinks')).createBacklinksPlugin(),
-  },
-  {
     id: 'plugin-chat', preinstalled: false,
     manifest: {
       id: 'plugin-chat',
@@ -189,7 +186,7 @@ export const STORE_CATALOG: StoreEntry[] = [
   },
   {
     // editorDefault : ses blocs (requete ```base, ![[x.base]]) vivent dans les notes.
-    id: 'plugin-base', preinstalled: true, editorDefault: true,
+    id: 'plugin-base', preinstalled: true, core: true, editorDefault: true,
     manifest: {
       id: 'plugin-base',
       name: 'Bases',
@@ -204,7 +201,7 @@ export const STORE_CATALOG: StoreEntry[] = [
   },
   {
     // editorDefault : ![[x.board]] s'affiche dans les notes.
-    id: 'plugin-board', preinstalled: true, editorDefault: true,
+    id: 'plugin-board', preinstalled: true, core: true, editorDefault: true,
     manifest: {
       id: 'plugin-board',
       name: 'Boards',
