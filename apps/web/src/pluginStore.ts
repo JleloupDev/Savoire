@@ -91,12 +91,14 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-search')).createSearchPlugin({ container: 'left', ribbon: true }).plugin,
   },
 
-  // ── Coeur : types de fichiers ──────────────────────────────────────────────
-  { id: 'plugin-excalidraw', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
-  { id: 'plugin-mindmap', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
+  // ── Communaute, installes par defaut : types de fichiers ───────────────────
+  { id: 'plugin-excalidraw', preinstalled: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
+  { id: 'plugin-mindmap', preinstalled: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
+
+  // Communaute, installe par defaut : diagrammes dans les notes.
+  { id: 'plugin-mermaid', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
 
   // ── Coeur : edition (blocs, actifs dans toutes les notes) ──────────────────
-  { id: 'plugin-mermaid', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
   { id: 'plugin-callout', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-callout')).default },
   { id: 'plugin-code-block', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-code-block')).default },
   { id: 'plugin-note-embed', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-note-embed')).default },
