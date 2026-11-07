@@ -196,6 +196,57 @@ if (language) {
   }
 }
 
+// ── Marque des pages de connexion ─────────────────────────────────────────
+// Couleurs reprises du theme d'Obsidian (violet d'accent, fonds neutres),
+// logo de Savoire, sans le filigrane ni le suffixe de domaine du nom.
+const BRANDING = {
+  primaryColor: '#7f6df2',
+  backgroundColor: '#ffffff',
+  warnColor: '#e93147',
+  fontColor: '#222222',
+  primaryColorDark: '#8a7cf7',
+  backgroundColorDark: '#1e1e1e',
+  warnColorDark: '#fb464c',
+  fontColorDark: '#dadada',
+  hideLoginNameSuffix: true,
+  disableWatermark: true,
+}
+const BRANDING_DIR = env('BRANDING_DIR', join(dirname(new URL(import.meta.url).pathname), 'branding'))
+
+async function uploadAsset(path, file) {
+  const full = join(BRANDING_DIR, file)
+  if (!existsSync(full)) return
+  const form = new FormData()
+  form.append('file', new Blob([readFileSync(full)], { type: 'image/svg+xml' }), file)
+  const res = await fetch(ZITADEL_URL + path, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${pat}`, 'x-zitadel-instance-host': ZITADEL_HOST },
+    body: form,
+  })
+  if (!res.ok) throw new Error(`POST ${path} : ${res.status} ${await res.text()}`)
+}
+
+async function ensureBranding() {
+  try {
+    await api('PUT', '/admin/v1/policies/label', BRANDING)
+  } catch (err) {
+    if (!isNoChange(err)) throw err
+  }
+  await uploadAsset('/assets/v1/instance/policy/label/logo', 'logo.svg')
+  await uploadAsset('/assets/v1/instance/policy/label/logo/dark', 'logo-dark.svg')
+  await uploadAsset('/assets/v1/instance/policy/label/icon', 'icon.svg')
+  await uploadAsset('/assets/v1/instance/policy/label/icon/dark', 'icon-dark.svg')
+  // Les changements de marque restent en brouillon tant qu'on ne les active pas.
+  await api('POST', '/admin/v1/policies/label/_activate', {})
+}
+
+try {
+  await ensureBranding()
+} catch (err) {
+  // Une marque refusee ne doit pas empecher la connexion de marcher.
+  console.error(`bootstrap : marque des pages de connexion non appliquee (${err.message}).`)
+}
+
 const webClientId = await ensureOidcApp(projectId, WEB_APP, {
   ...common,
   appType: 'OIDC_APP_TYPE_USER_AGENT',

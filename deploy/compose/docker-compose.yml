@@ -161,6 +161,7 @@ services:
       INDEXER_FILE_OWNER: "1000:1000"
     volumes:
       - ./zitadel/bootstrap.mjs:/bootstrap/bootstrap.mjs:ro
+      - ./zitadel/branding:/bootstrap/branding:ro
       - zitadel-bootstrap:/zitadel/bootstrap:ro
       - savoire-config:/out
     networks: [backend]
