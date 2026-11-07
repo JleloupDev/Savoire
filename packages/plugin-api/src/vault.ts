@@ -84,6 +84,8 @@ export interface VaultAPI {
    * Absent si le profil ne sait pas les ouvrir.
    */
   sharedData?(documentId: string): import('./sharedMap').DocumentSharedData
+  /** La personne connectee (auteur des versions, des messages). null : aucune session. */
+  getCurrentUser?(): { id: string; name: string } | null
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */

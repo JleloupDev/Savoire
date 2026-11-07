@@ -325,6 +325,10 @@ export function usePluginBootstrap({
         return session.openTree(documentId)
       }
       vaultProxy.closeTree = documentId => { vaultSessionRef.current?.closeDocument(documentId) }
+      vaultProxy.getCurrentUser = () => {
+        const account = editorAreaRefs.activeAccount.current
+        return account ? { id: account.userId, name: account.displayName || account.userId } : null
+      }
       vaultProxy.sharedData = documentId => {
         const session = vaultSessionRef.current
         if (!session) throw new Error('Aucun vault ouvert')

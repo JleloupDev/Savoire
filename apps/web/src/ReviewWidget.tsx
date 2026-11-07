@@ -97,7 +97,16 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
   return (
     <Shell>
-      <div style={{ fontWeight: 600, marginBottom: 10, color: 'var(--text)' }}>{path}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{path}</div>
+        {/* Historique des versions (plugin core) : son panneau, a cote. */}
+        {manager.views.getAll().some(v => v.id === 'history') && (
+          <button data-testid="review-open-history" onClick={() => manager.toggleView('history')}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 12, flexShrink: 0 }}>
+            Versions
+          </button>
+        )}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {threads.length === 0 && <Muted>Aucun commentaire.</Muted>}

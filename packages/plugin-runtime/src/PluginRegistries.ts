@@ -160,7 +160,7 @@ export class BlockRegistryImpl implements BlockRegistry {
 type StrHook = (s: string) => string | Promise<string>
 type UnknownHook = (v: unknown) => unknown | Promise<unknown>
 type VoidHook<T> = (v: T) => void
-type StabilizedHook = (docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion) => void
+type StabilizedHook = (docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion, info?: import('@savoire/plugin-api').StabilizedInfo) => void
 
 export class HookRegistryImpl implements HookRegistry {
   private beforeParseHooks: Owned<StrHook>[] = []
@@ -221,8 +221,8 @@ export class HookRegistryImpl implements HookRegistry {
     this.live(this.documentSaveHooks).forEach(h => h(content))
   }
 
-  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion): void {
-    this.live(this.documentStabilizedHooks).forEach(h => h(docId, path, content, crdtVersion))
+  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion, info?: import('@savoire/plugin-api').StabilizedInfo): void {
+    this.live(this.documentStabilizedHooks).forEach(h => h(docId, path, content, crdtVersion, info))
   }
 }
 

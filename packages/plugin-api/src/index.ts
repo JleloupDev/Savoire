@@ -27,6 +27,7 @@ export type {
   HotkeyHost,
   HookStage,
   HookRegistry,
+  StabilizedInfo,
   BlockWidget,
   BlockContext,
   BlockSpec,

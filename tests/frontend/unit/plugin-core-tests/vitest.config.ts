@@ -26,6 +26,7 @@ export default defineConfig({
       '@savoire/plugin-quickref': src('plugin-quickref'),
       '@savoire/plugin-templates': src('plugin-templates'),
       '@savoire/plugin-agenda': src('plugin-agenda'),
+      '@savoire/plugin-history': src('plugin-history'),
       '@savoire/plugin-chat': src('plugin-chat'),
       '@savoire/plugin-plaintext': src('plugin-plaintext'),
       '@savoire/plugin-backlinks': src('plugin-backlinks'),

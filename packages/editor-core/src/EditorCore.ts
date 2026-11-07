@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { EditorView, keymap } from '@codemirror/view'
-import { EditorState, Prec } from '@codemirror/state'
+import { EditorState, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { printNote } from './PdfExport'
@@ -256,6 +256,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   private scopeDebounceTimer: ReturnType<typeof setTimeout> | null = null
   // see ADR-006
   private stabilizeDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  /** Une frappe locale attend la prochaine stabilisation. */
+  private localEditPending = false
   private unsubPropertyTypes: (() => void) | null = null
 
   readonly commands = new CommandRegistry()
@@ -378,6 +380,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               this.recheckScope(update.state.doc.toString())
             }, 1000)
 
+            // Frappe de la personne (pas un changement venu d'un pair) :
+            // l'historique des versions l'attribue a son auteur.
+            if (update.transactions.some(tr => tr.annotation(Transaction.userEvent) !== undefined)) this.localEditPending = true
+
             // see ADR-015
             if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)
             this.stabilizeDebounceTimer = setTimeout(() => {
@@ -386,7 +392,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               const docId = this.options.docId ?? ''
               const path  = this.activeFile ?? ''
               const clock = this.options.crdt?.getVersion().clock ?? 0
-              this.pluginAPI.hooks.runDocumentStabilized(docId, path, content, { clock })
+              const local = this.localEditPending
+              this.localEditPending = false
+              this.pluginAPI.hooks.runDocumentStabilized(docId, path, content, { clock }, { local })
             }, 2000)
           }
           if (update.selectionSet) {

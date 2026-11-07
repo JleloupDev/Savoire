@@ -23,7 +23,8 @@
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-board": "workspace:*",
     "@savoire/plugin-templates": "workspace:*",
-    "@savoire/plugin-agenda": "workspace:*"
+    "@savoire/plugin-agenda": "workspace:*",
+    "@savoire/plugin-history": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

@@ -166,7 +166,7 @@ export class PluginHooksAPIAdapter implements IPluginHooksAPI {
   onDocumentStabilized(hook: Parameters<HookRegistry['onDocumentStabilized']>[0]): void { this.inner.onDocumentStabilized(hook) }
   runDocumentOpen(path: string): void { this.inner.runDocumentOpen(path) }
   runDocumentSave(content: string): void { this.inner.runDocumentSave(content) }
-  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion): void { this.inner.runDocumentStabilized(docId, path, content, crdtVersion) }
+  runDocumentStabilized(docId: string, path: string, content: string, crdtVersion?: import('@savoire/domain-index').CrdtVersion, info?: import('@savoire/plugin-api').StabilizedInfo): void { this.inner.runDocumentStabilized(docId, path, content, crdtVersion, info) }
 }
 
 export interface PluginAPIAdapterDeps {
