@@ -43,6 +43,8 @@ export interface DocumentIdEntry {
   mtimeMs?: number
   /** Empreinte du contenu, quand on l'a lu (textes) : meme usage. */
   hash?: string
+  /** Nature du document (crdt ou snapshot), enregistree avec lui. Absente pour le Markdown. */
+  kind?: 'crdt' | 'snapshot'
 }
 
 export interface DocumentsFile {

@@ -15,6 +15,13 @@ import type { DocumentRoomPresence } from '@savoire/plugin-api'
 export interface IDocumentMeta {
   id: string
   path: string
+  /**
+   * Nature du document, enregistree avec lui. Posee pour les CRDT autres que
+   * le Markdown : un lecteur sans le plugin du type le relit quand meme depuis
+   * son CRDT. Absente : la nature se deduit du type declare par son plugin
+   * (le Markdown est toujours un CRDT, le reste un instantane par defaut).
+   */
+  kind?: DocumentSyncKind
 }
 
 // ── Document fetcher port ──────────────────────────────────────────────────────
@@ -54,6 +61,8 @@ export interface IVaultDirectory {
   add(doc: IDocumentMeta): void
   remove(id: string): void
   rename(id: string, newPath: string): void
+  /** Enregistre la nature d'un document (garde son chemin). Sans effet si l'id est inconnu. */
+  setKind?(id: string, kind: DocumentSyncKind): void
   /** Dossiers explicites (potentiellement vides) - état CRDT, comme les documents. */
   addFolder(path: string): void
   removeFolder(path: string): void
@@ -91,6 +100,17 @@ export type DocumentSyncKind = 'crdt' | 'snapshot'
  */
 export function documentSyncKind(path: string): DocumentSyncKind {
   return path.endsWith('.md') ? 'crdt' : 'snapshot'
+}
+
+/**
+ * Nature d'un document : celle enregistree avec lui, sinon celle que donne
+ * son chemin (`byPath` : le type declare par son plugin, ou le defaut).
+ */
+export function syncKindOfMeta(
+  meta: IDocumentMeta,
+  byPath: (path: string) => DocumentSyncKind = documentSyncKind,
+): DocumentSyncKind {
+  return meta.kind ?? byPath(meta.path)
 }
 
 /** Document « sans CRDT » : un texte complet, en dernier-ecrivain-gagne. */

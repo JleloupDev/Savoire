@@ -14,7 +14,7 @@
 // Les changements venus du disque (relecture du dossier) passent par
 // applyFromDisk() : ils ne redeclenchent aucune operation sur le disque.
 import * as Y from 'yjs'
-import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
+import type { DocumentSyncKind, IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Y_ = Y as Record<string, any>
@@ -22,7 +22,12 @@ const Y_ = Y as Record<string, any>
 const FROM_DISK = 'disk'
 const REMOTE = 'remote'
 
-type VaultEntry = { path: string }
+// `kind` : nature du document, enregistree avec lui (absente pour le Markdown).
+type VaultEntry = { path: string; kind?: DocumentSyncKind }
+
+function metaOf(id: string, entry: VaultEntry): IDocumentMeta {
+  return entry.kind ? { id, path: entry.path, kind: entry.kind } : { id, path: entry.path }
+}
 
 /** Ce que le repertoire demande au disque. */
 export interface DirectoryDiskOps {
@@ -31,6 +36,8 @@ export interface DirectoryDiskOps {
   removed(id: string, path: string): void
   folderAdded(path: string): void
   folderRemoved(path: string): void
+  /** Nature d'un document enregistree par l'application (a garder sur le disque). */
+  kindChanged?(id: string, kind: DocumentSyncKind): void
 }
 
 interface MapEvent {
@@ -63,19 +70,19 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
   getAll(): readonly IDocumentMeta[] {
     if (this.disposed) return []
     const result: IDocumentMeta[] = []
-    this.map.forEach((entry: VaultEntry, id: string) => result.push({ id, path: entry.path }))
+    this.map.forEach((entry: VaultEntry, id: string) => result.push(metaOf(id, entry)))
     return result
   }
 
   getById(id: string): IDocumentMeta | undefined {
     if (this.disposed) return undefined
     const entry: VaultEntry | undefined = this.map.get(id)
-    return entry ? { id, path: entry.path } : undefined
+    return entry ? metaOf(id, entry) : undefined
   }
 
   add(doc: IDocumentMeta): void {
     if (this.disposed) return
-    this.map.set(doc.id, { path: doc.path })
+    this.map.set(doc.id, doc.kind ? { path: doc.path, kind: doc.kind } : { path: doc.path })
   }
 
   remove(id: string): void {
@@ -84,8 +91,15 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
   }
 
   rename(id: string, newPath: string): void {
-    if (this.disposed || !this.map.has(id)) return
-    this.map.set(id, { path: newPath })
+    const entry: VaultEntry | undefined = this.disposed ? undefined : this.map.get(id)
+    if (!entry) return
+    this.map.set(id, { ...entry, path: newPath })
+  }
+
+  setKind(id: string, kind: DocumentSyncKind): void {
+    const entry: VaultEntry | undefined = this.disposed ? undefined : this.map.get(id)
+    if (!entry || entry.kind === kind) return
+    this.map.set(id, { ...entry, kind })
   }
 
   addFolder(path: string): void {
@@ -152,12 +166,18 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
    * Remplace le contenu par ce que montre le disque, en une transaction :
    * documents (id -> chemin) et dossiers. Rien n'est renvoye au disque.
    */
-  applyFromDisk(docs: ReadonlyMap<string, string>, folders: ReadonlySet<string>): void {
+  applyFromDisk(
+    docs: ReadonlyMap<string, string>,
+    folders: ReadonlySet<string>,
+    kinds: ReadonlyMap<string, DocumentSyncKind> = new Map(),
+  ): void {
     if (this.disposed) return
     this.doc.transact(() => {
       this.map.forEach((_e: VaultEntry, id: string) => { if (!docs.has(id)) this.map.delete(id) })
       for (const [id, path] of docs) {
-        if ((this.map.get(id) as VaultEntry | undefined)?.path !== path) this.map.set(id, { path })
+        const old = this.map.get(id) as VaultEntry | undefined
+        const kind = kinds.get(id) ?? old?.kind
+        if (old?.path !== path || old?.kind !== kind) this.map.set(id, kind ? { path, kind } : { path })
       }
       this.folderMap.forEach((_v: unknown, f: string) => { if (!folders.has(f)) this.folderMap.delete(f) })
       for (const f of folders) if (!this.folderMap.has(f)) this.folderMap.set(f, 1)
@@ -167,7 +187,8 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
   /** Change un chemin sans operation sur le disque (le disque a deja bouge). */
   setPathFromDisk(id: string, path: string): void {
     if (this.disposed) return
-    this.doc.transact(() => this.map.set(id, { path }), FROM_DISK)
+    const old = this.map.get(id) as VaultEntry | undefined
+    this.doc.transact(() => this.map.set(id, old?.kind ? { path, kind: old.kind } : { path }), FROM_DISK)
   }
 
   // ── Interne ──────────────────────────────────────────────────────────────
@@ -175,8 +196,11 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
   private onDocsChanged(event: MapEvent): void {
     if (event.transaction.origin === FROM_DISK) return
     for (const [id, change] of event.changes.keys) {
-      const old = (change.oldValue as VaultEntry | undefined)?.path
-      const now = (this.map.get(id) as VaultEntry | undefined)?.path
+      const before = change.oldValue as VaultEntry | undefined
+      const after = this.map.get(id) as VaultEntry | undefined
+      const old = before?.path
+      const now = after?.path
+      if (after?.kind && after.kind !== before?.kind) this.disk.kindChanged?.(id, after.kind)
       if (change.action === 'add' && now !== undefined) this.disk.added(id, now)
       else if (change.action === 'update' && now !== undefined && old !== undefined && old !== now) this.disk.renamed(id, old, now)
       else if (change.action === 'delete' && old !== undefined) this.disk.removed(id, old)

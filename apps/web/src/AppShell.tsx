@@ -12,7 +12,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
-import { isKeyManagedSession, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
+import { isKeyManagedSession, watchDocumentKinds, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
@@ -451,6 +451,8 @@ export function AppShell() {
   const onDeleteVaultRef = useRef<(vault: VaultSummary) => Promise<void>>(async () => {})
   const onRefreshRef = useRef<() => void>(() => {})
   const isReadOnlyRef = useRef(false)
+  // Arret du suivi des natures de documents (vault precedent).
+  const documentKindsStopRef = useRef<(() => void) | null>(null)
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
   const onOpenSharedNoteRef = useRef<(note: SharedNote) => void>(() => {})
   const docEventUnsubRef = useRef<(() => void) | null>(null)
@@ -690,6 +692,16 @@ export function AppShell() {
       vaultSessionRef.current = active.session ? withDocumentRefCount(active.session) : undefined
       pluginSettingsRef.current?.attachVault(active.session)
       onChanged()
+      // La nature des documents anciens est recopiee depuis leur type, quand
+      // son plugin est la : un membre sans ce plugin les relira correctement.
+      documentKindsStopRef.current?.()
+      documentKindsStopRef.current = active.session
+        ? watchDocumentKinds(active.session.directory, (path) => {
+          const ext = path.split('.').pop()?.toLowerCase() ?? ''
+          const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
+          return spec ? (spec.collaborationMode === 'crdt' ? 'crdt' : 'snapshot') : undefined
+        }, () => !isReadOnlyRef.current)
+        : null
 
       // Les index partages ouvrent un canal CRDT par namespace sur la session
       // du vault ; le serveur n'y est qu'un passe-plat de trames opaques.
@@ -901,7 +913,9 @@ export function AppShell() {
     if (session) {
       const ext = doc.path.split('.').pop()?.toLowerCase() ?? ''
       const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
-      const kind = spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
+      // Nature enregistree avec le document, sinon celle de son type.
+      const stored = session.directory.getById(doc.id)?.kind
+      const kind = stored ?? (spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot')
       opened = await session.readDocument(doc.id, kind)
     } else {
       if (activeDoc) application.documentSession.close(vault.id, activeDoc.id)

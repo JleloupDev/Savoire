@@ -18,7 +18,7 @@
  */
 import type { AttachmentUploadOptions, TrashEntry, VaultAPI } from '@savoire/plugin-api'
 import { withNoteExtension } from '@savoire/plugin-api'
-import { documentSyncKind, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
+import { documentSyncKind, syncKindOfMeta, type DocumentSyncKind, type IDocumentMeta, type IVaultContentSession, type IVaultDirectory, type IVaultStorage } from './ports'
 import {
   ATTACHMENTS_DIR, attachmentFolderFor, folderNoteOf, isAttachmentPath, linkTargetFor, resolveLinkPath, uniqueAttachmentPath,
 } from './attachments'
@@ -95,7 +95,7 @@ export class VaultClient implements VaultAPI {
 
   async read(documentId: string): Promise<string> {
     const meta = this.directory.getById(documentId)
-    if (this.session && meta) return this.session.readDocument(documentId, this.syncKindOf(meta.path))
+    if (this.session && meta) return this.session.readDocument(documentId, this.kindOf(meta))
     return this.documentStore.readContent(this.vaultId, documentId, this.token, meta)
   }
 
@@ -107,7 +107,7 @@ export class VaultClient implements VaultAPI {
         const files = this.session.files
         return this.withAttachment(path, key => files.read(key))
       }
-      return this.session.readDocument(doc.id, this.syncKindOf(doc.path))
+      return this.session.readDocument(doc.id, this.kindOf(doc))
     }
     if (doc) {
       // Le chemin du document, pas celui du lien (« Genese 2 » vise « .../Genese 2.md »).
@@ -122,7 +122,7 @@ export class VaultClient implements VaultAPI {
   async write(documentId: string, content: string): Promise<void> {
     const meta = this.directory.getById(documentId)
     if (!meta) throw new Error(`Document not found: ${documentId}`)
-    if (this.session && this.syncKindOf(meta.path) === 'snapshot') {
+    if (this.session && this.kindOf(meta) === 'snapshot') {
       // Ouverture courte : si une vue tient deja le document, on partage sa
       // synchro ; sinon on l'ouvre le temps d'ecrire.
       const doc = this.session.openSnapshot(documentId)
@@ -188,7 +188,17 @@ export class VaultClient implements VaultAPI {
     // serveur, un document inconnu du registre serait refuse.
     const id = crypto.randomUUID()
     await this.session?.registerDocuments([id])
-    this.addDocument({ id, path: normalizedPath })
+    // Un document CRDT d'un autre type que le Markdown porte sa nature : un
+    // lecteur sans son plugin le relit quand meme depuis son CRDT. Sans elle,
+    // il serait lu comme un instantane, donc vide. Un instantane n'a rien a
+    // enregistrer : c'est deja la lecture par defaut.
+    const crdt = !normalizedPath.endsWith('.md') && this.syncKindOf(normalizedPath) === 'crdt'
+    this.addDocument({ id, path: normalizedPath, ...(crdt ? { kind: 'crdt' as const } : {}) })
+  }
+
+  /** Nature d'un document : enregistree avec lui, sinon d'apres son type. */
+  kindOf(meta: IDocumentMeta): DocumentSyncKind {
+    return syncKindOfMeta(meta, this.syncKindOf)
   }
 
   async createFolder(path: string): Promise<void> {

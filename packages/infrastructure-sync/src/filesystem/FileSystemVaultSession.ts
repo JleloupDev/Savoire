@@ -223,6 +223,11 @@ export class FileSystemVaultSession implements IVaultSyncSession {
       removed: (id, path) => this.localOp(() => this.diskRemove(id, path)),
       folderAdded: path => this.localOp(() => this.diskAddFolder(path)),
       folderRemoved: path => this.localOp(() => this.diskRemoveFolder(path)),
+      // La nature d'un document se garde dans .savoire/documents.json.
+      kindChanged: (id, kind) => {
+        const old = this.ids.get(id)
+        if (old && old.kind !== kind) this.setId(id, { ...old, kind }, false)
+      },
     })
     this.unsubDirectoryChange = this.directory.onChange(params.onChanged)
     this.snapshots = new SnapshotDocuments(docId => this.snapshotChannel(docId))
@@ -674,7 +679,9 @@ export class FileSystemVaultSession implements IVaultSyncSession {
       // d'une autre session dont le fichier n'est pas encore ecrit.
       if (initial || currentIds.has(id)) this.deleteId(id)
     }
-    this.directory.applyFromDisk(assigned, folders)
+    const kinds = new Map<string, DocumentSyncKind>()
+    for (const id of assigned.keys()) { const k = this.ids.get(id)?.kind; if (k) kinds.set(id, k) }
+    this.directory.applyFromDisk(assigned, folders, kinds)
     if (this.dirtyIds.size > 0 || this.deletedIds.size > 0) await this.saveIds()
   }
 
@@ -1149,7 +1156,9 @@ export class FileSystemVaultSession implements IVaultSyncSession {
   // ── Ids stables (`.savoire/documents.json`) ────────────────────────────────
 
   private setId(id: string, entry: DocumentIdEntry, structural: boolean): void {
-    this.ids.set(id, entry)
+    // La nature enregistree suit le document (renommage, nouvelle taille...).
+    const kind = entry.kind ?? this.ids.get(id)?.kind ?? this.directory?.getById(id)?.kind
+    this.ids.set(id, kind ? { ...entry, kind } : entry)
     this.deletedIds.delete(id)
     this.dirtyIds.add(id)
     if (!structural) this.scheduleIdsSave()

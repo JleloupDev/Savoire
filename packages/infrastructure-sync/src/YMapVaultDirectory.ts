@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import * as Y from 'yjs'
-import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
+import type { DocumentSyncKind, IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain. Cast once; runtime behaviour is validated by tests.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Y_ = Y as Record<string, any>
 
-type VaultEntry = { path: string }
+// `kind` : nature du document, enregistree avec lui (absente pour le Markdown).
+type VaultEntry = { path: string; kind?: DocumentSyncKind }
+
+function metaOf(id: string, entry: VaultEntry): IDocumentMeta {
+  return entry.kind ? { id, path: entry.path, kind: entry.kind } : { id, path: entry.path }
+}
 
 // Satisfait structurellement le port ICrdt d'edgesync-protocol (applyUpdate /
 // encodeFullState / onLocalUpdate) sans l'importer : le connecteur EdgeSync
@@ -35,17 +40,17 @@ export class YMapVaultDirectory implements IVaultDirectory {
   getAll(): readonly IDocumentMeta[] {
     if (this.disposed) return []
     const result: IDocumentMeta[] = []
-    this.map.forEach((entry: VaultEntry, id: string) => result.push({ id, path: entry.path }))
+    this.map.forEach((entry: VaultEntry, id: string) => result.push(metaOf(id, entry)))
     return result
   }
 
   getById(id: string): IDocumentMeta | undefined {
     const entry: VaultEntry | undefined = this.map.get(id)
-    return entry ? { id, path: entry.path } : undefined
+    return entry ? metaOf(id, entry) : undefined
   }
 
   add(doc: IDocumentMeta): void {
-    this.map.set(doc.id, { path: doc.path })
+    this.map.set(doc.id, doc.kind ? { path: doc.path, kind: doc.kind } : { path: doc.path })
   }
 
   remove(id: string): void {
@@ -53,8 +58,16 @@ export class YMapVaultDirectory implements IVaultDirectory {
   }
 
   rename(id: string, newPath: string): void {
-    if (!this.map.has(id)) return
-    this.map.set(id, { path: newPath })
+    const entry: VaultEntry | undefined = this.map.get(id)
+    if (!entry) return
+    // La nature suit le document.
+    this.map.set(id, { ...entry, path: newPath })
+  }
+
+  setKind(id: string, kind: DocumentSyncKind): void {
+    const entry: VaultEntry | undefined = this.map.get(id)
+    if (!entry || entry.kind === kind) return
+    this.map.set(id, { ...entry, kind })
   }
 
   addFolder(path: string): void {

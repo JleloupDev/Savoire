@@ -5,7 +5,7 @@ export type {
   DocumentSyncKind, ISnapshotDocument, IVaultFiles, IVaultContentSession,
   FileUploadOptions, AttachmentPlacement,
 } from './ports'
-export { documentSyncKind } from './ports'
+export { documentSyncKind, syncKindOfMeta } from './ports'
 export type { OpenDocument } from './DocumentStore'
 export { DocumentStore } from './DocumentStore'
 export { VaultClient } from './VaultClient'
