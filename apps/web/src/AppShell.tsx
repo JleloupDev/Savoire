@@ -22,7 +22,7 @@ import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { useShowFileExtensions } from './displayPreferences'
+import { setShowEditorToolbar, showEditorToolbar, useShowFileExtensions } from './displayPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
 import { PluginLoader } from '@savoire/plugin-runtime'
@@ -482,6 +482,7 @@ export function AppShell() {
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
     { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
+    { id: 'app:toggle-editor-toolbar', label: 'Afficher ou masquer la barre d\'édition', run: () => setShowEditorToolbar(!showEditorToolbar()) },
   ], [])
 
   const {

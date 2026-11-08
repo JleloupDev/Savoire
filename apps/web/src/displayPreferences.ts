@@ -76,3 +76,29 @@ export function displayFileName(path: string, show = current): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
   return show ? name : name.replace(/\.md$/i, '')
 }
+
+// ── Barre d'edition ──────────────────────────────────────────────────────────
+
+const TOOLBAR_KEY = 'savoire-show-editor-toolbar'
+
+function readToolbar(): boolean {
+  try { return localStorage.getItem(TOOLBAR_KEY) !== '0' } catch { return true }
+}
+
+let editorToolbar = readToolbar()
+
+/** Barre d'edition au-dessus des notes (oui par defaut). La bulle reste. */
+export function showEditorToolbar(): boolean {
+  return editorToolbar
+}
+
+export function setShowEditorToolbar(show: boolean): void {
+  if (show === editorToolbar) return
+  editorToolbar = show
+  try { localStorage.setItem(TOOLBAR_KEY, show ? '1' : '0') } catch { /* navigation privee */ }
+  for (const cb of [...listeners]) cb()
+}
+
+export function useShowEditorToolbar(): boolean {
+  return useSyncExternalStore(subscribeDisplayPreferences, showEditorToolbar)
+}

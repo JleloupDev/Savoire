@@ -7,7 +7,7 @@
 // sans ancrage. Un agent se lance sur la note active, dans un mode qui
 // debloque des droits (lecture, relecture, redaction), toujours bornes par
 // ceux de la personne qui le lance. Ce qu'il fait porte « agent, pour Jean ».
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
@@ -24,6 +24,20 @@ function reviewFor(session: IVaultSyncSession): ReviewService {
   return service
 }
 
+// Brouillon demande depuis l'editeur (« Commenter » sur une selection) :
+// garde ici si le panneau n'est pas encore monte.
+let pendingDraft: string | null = null
+const draftListeners = new Set<(text: string) => void>()
+
+/** Ouvre un brouillon de commentaire qui cite le passage selectionne. */
+export function startCommentDraft(selection: string): void {
+  const quote = selection.trim()
+    ? selection.trim().split('\n').slice(0, 6).map(l => `> ${l}`).join('\n') + '\n\n'
+    : ''
+  if (draftListeners.size === 0) { pendingDraft = quote; return }
+  for (const cb of draftListeners) cb(quote)
+}
+
 const BUTTON: React.CSSProperties = {
   fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--accent)', color: 'white', fontWeight: 600, cursor: 'pointer',
@@ -37,6 +51,19 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const [run, setRun] = useState<AgentRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    const take = (quote: string) => {
+      setDraft(quote)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      })
+    }
+    if (pendingDraft !== null) { take(pendingDraft); pendingDraft = null }
+    draftListeners.add(take)
+    return () => { draftListeners.delete(take) }
+  }, [])
   useEffect(() => manager.subscribeActiveDocument(p => { setPath(p); setRun(null) }), [manager])
   // Changement de vault : nouvelle session, donc nouveau service.
   useEffect(() => manager.subscribeVaultChange(() => setTick(t => t + 1)), [manager])
@@ -123,6 +150,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
       <textarea
         data-testid="review-input"
+        ref={inputRef}
         value={draft}
         onChange={e => setDraft(e.target.value)}
         disabled={!canWrite}

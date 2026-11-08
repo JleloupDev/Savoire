@@ -33,7 +33,7 @@ import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
-import { ReviewWidget } from './ReviewWidget'
+import { ReviewWidget, startCommentDraft } from './ReviewWidget'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -348,6 +348,17 @@ export function usePluginBootstrap({
       // Commandes de l'editeur : connues des le depart, meme sans note
       // ouverte (pour leur choisir un raccourci).
       for (const cmd of plumeCommands()) pluginApi.commands.register(cmd)
+      // « Commenter » (bulle de selection, menu ⋯) : ouvre la Revision avec
+      // le passage selectionne cite dans le brouillon.
+      pluginApi.toolbar.register({
+        id: 'tb-comment', label: 'Commenter', icon: 'message-square-plus', group: 'review', menu: 'more', bubble: true,
+        run: ctx => {
+          const view = ctx.view as { state?: { selection: { main: { from: number; to: number } }; sliceDoc(from: number, to: number): string } } | undefined
+          const sel = view?.state?.selection.main
+          startCommentDraft(sel && view?.state ? view.state.sliceDoc(sel.from, sel.to) : '')
+          if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'review') manager.toggleView('review')
+        },
+      })
 
       // ContentIndexingService: wires hooks → contributors → storage.
       contentIndexingServiceRef.current = new ContentIndexingService(

@@ -20,8 +20,23 @@ export interface EditorCommandContext {
 export interface ToolbarCommand {
   id: string
   label: string
+  /** Nom d'une icone Lucide (« bold », « table », lucide.dev/icons). Un
+   *  texte court (emoji, « H1 ») reste accepte et s'affiche tel quel. */
   icon: string
   group?: string              // 'format' | 'insert' | 'action'
+  /** Range la commande dans un menu de la barre au lieu d'un bouton :
+   *  « Insérer » (tableau, diagramme...) ou « ⋯ » (export, reglages). */
+  menu?: 'insert' | 'more'
+  /** Aussi dans la bulle qui apparait sur une selection. A reserver a ce
+   *  qui s'applique a un bout de texte (gras, lien, commentaire...). */
+  bubble?: boolean
+  /** Bouton a menu : texte affiche a la place de l'icone, selon la position
+   *  du curseur (« Titre 1 », « Texte »). */
+  currentLabel?(ctx: EditorCommandContext): string | null
+  /** Sous-commande : couleur montree en pastille (menu en palette). */
+  swatch?: string
+  /** Sous-commandes en grille de pastilles plutot qu'en liste. */
+  itemsLayout?: 'list' | 'palette'
   requiresSelection?: boolean
   hotkeys?: Array<{ modifiers: string[]; key: string }>
   /** Commande (registre des commandes) que ce bouton declenche aussi au

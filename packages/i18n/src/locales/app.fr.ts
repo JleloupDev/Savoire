@@ -109,6 +109,7 @@ export const appFr = {
   'settings.links.previewDelay': 'Aperçu d\'un lien survolé après',
   'settings.links.previewDelayUnit': 'secondes (0 : jamais)',
   'settings.files.showExtensions': 'Afficher l\'extension des fichiers (« note.md » au lieu de « note »)',
+  'settings.editor.showToolbar': 'Afficher la barre d\'édition au-dessus des notes (la bulle de sélection reste)',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.sepia': 'Sépia',

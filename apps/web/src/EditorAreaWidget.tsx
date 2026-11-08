@@ -11,7 +11,7 @@ import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { displayFileName, useShowFileExtensions } from './displayPreferences'
+import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -305,6 +305,7 @@ function DocumentPanelHost({
   // met en forme sans connaitre la syntaxe Markdown. Le mode source reste
   // volontairement nu — du texte, rien autour.
   const showRichChrome = isMarkdown && refs.markdownEditorMode.current === 'rich' && !!controller
+  const showToolbar = useShowEditorToolbar()
 
   // Le menu de triggers (« / », « [[ ») reste dans LES DEUX modes : c'est de
   // l'assistance a la frappe, pas de la mise en forme, et il ne s'affiche que
@@ -383,7 +384,7 @@ function DocumentPanelHost({
             </button>
           </div>
         )}
-        {showRichChrome && !lockedByOther && <Toolbar />}
+        {showRichChrome && !lockedByOther && showToolbar && <Toolbar onHide={() => setShowEditorToolbar(false)} />}
         <div
           data-testid="editor-panel"
           data-doc-id={doc.id}

@@ -109,6 +109,7 @@ export const appEn = {
   'settings.links.previewDelay': 'Preview a hovered link after',
   'settings.links.previewDelayUnit': 'seconds (0: never)',
   'settings.files.showExtensions': 'Show file extensions (“note.md” instead of “note”)',
+  'settings.editor.showToolbar': 'Show the formatting toolbar above notes (the selection bubble stays)',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.sepia': 'Sepia',

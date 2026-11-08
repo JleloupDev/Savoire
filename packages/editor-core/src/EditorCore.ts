@@ -13,7 +13,8 @@ import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScop
 import { resolveActivePlugins } from './PluginActivationResolver'
 import type { ActivationEntry } from './PluginActivationResolver'
 import { toggleMarkdownFormat, toggleHighlight, setLineColor, toggleChecklistStatus, clearInlineFormatting, wrapSelection, insertCallout } from './FormattingService'
-import { PLUME_COLORS } from './PlumeMarkdown'
+import { PLUME_COLORS, PLUME_COLOR_VALUES } from './PlumeMarkdown'
+import { BLOCK_LABELS, formatStateAt, type BlockStyle, type InlineStyle, type ListStyle } from './FormatState'
 import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
@@ -620,16 +621,16 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     })
 
     const builtins = [
-      { id: 'builtin-h1',         label: 'Titre 1',         description: 'Grand titre (# )',         icon: 'H1',  category: 'Titres',  insert: '# '   },
-      { id: 'builtin-h2',         label: 'Titre 2',         description: 'Titre moyen (## )',         icon: 'H2',  category: 'Titres',  insert: '## '  },
-      { id: 'builtin-h3',         label: 'Titre 3',         description: 'Petit titre (### )',        icon: 'H3',  category: 'Titres',  insert: '### ' },
-      { id: 'builtin-ul',         label: 'Liste à puces',   description: 'Liste non ordonnée (- )',   icon: '•',   category: 'Listes',  insert: '- '   },
-      { id: 'builtin-ol',         label: 'Liste numérotée', description: 'Liste ordonnée (1. )',      icon: '1.',  category: 'Listes',  insert: '1. '  },
-      { id: 'builtin-todo',       label: 'Case à cocher',   description: 'Liste de tâches (- [ ] )', icon: '☐',   category: 'Listes',  insert: '- [ ] ' },
-      { id: 'builtin-blockquote', label: 'Citation',        description: 'Bloc de citation (> )',     icon: '"',   category: 'Blocs',   insert: '> '   },
-      { id: 'builtin-code',       label: 'Bloc de code',    description: 'Bloc de code (```)',        icon: '</>',  category: 'Blocs',  insert: '```\n\n```' },
-      { id: 'builtin-table',      label: 'Tableau',         description: 'Tableau Markdown',          icon: '⊞',   category: 'Blocs',   insert: '| Col 1 | Col 2 |\n| --- | --- |\n| | |' },
-      { id: 'builtin-hr',         label: 'Séparateur',      description: 'Ligne horizontale (---)',   icon: '—',   category: 'Blocs',   insert: '---'  },
+      { id: 'builtin-h1',         label: 'Titre 1',         description: 'Grand titre (# )',         icon: 'heading-1', category: 'Titres',  insert: '# '   },
+      { id: 'builtin-h2',         label: 'Titre 2',         description: 'Titre moyen (## )',         icon: 'heading-2', category: 'Titres',  insert: '## '  },
+      { id: 'builtin-h3',         label: 'Titre 3',         description: 'Petit titre (### )',        icon: 'heading-3', category: 'Titres',  insert: '### ' },
+      { id: 'builtin-ul',         label: 'Liste à puces',   description: 'Liste non ordonnée (- )',   icon: 'list',         category: 'Listes',  insert: '- '   },
+      { id: 'builtin-ol',         label: 'Liste numérotée', description: 'Liste ordonnée (1. )',      icon: 'list-ordered', category: 'Listes',  insert: '1. '  },
+      { id: 'builtin-todo',       label: 'Case à cocher',   description: 'Liste de tâches (- [ ] )', icon: 'list-checks',  category: 'Listes',  insert: '- [ ] ' },
+      { id: 'builtin-blockquote', label: 'Citation',        description: 'Bloc de citation (> )',     icon: 'text-quote',  category: 'Blocs',   insert: '> '   },
+      { id: 'builtin-code',       label: 'Bloc de code',    description: 'Bloc de code (```)',        icon: 'square-code', category: 'Blocs',  insert: '```\n\n```' },
+      { id: 'builtin-table',      label: 'Tableau',         description: 'Tableau Markdown',          icon: 'table',       category: 'Blocs',   insert: '| Col 1 | Col 2 |\n| --- | --- |\n| | |' },
+      { id: 'builtin-hr',         label: 'Séparateur',      description: 'Ligne horizontale (---)',   icon: 'minus',       category: 'Blocs',   insert: '---'  },
     ] as const
     for (const item of builtins) slash.register(item)
 
@@ -646,62 +647,74 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       toggleHighlight(viewOf(ctx) ?? this.view, color)
     const colorIn = (color: (typeof PLUME_COLORS)[number]['color'] | null) => (ctx: EditorCommandContext) =>
       setLineColor(viewOf(ctx) ?? this.view, color)
+    // Etat sous le curseur : boutons allumes, style du paragraphe.
+    const stateOf = (ctx: EditorCommandContext) => formatStateAt((viewOf(ctx) ?? this.view).state)
+    const isInline = (f: InlineStyle) => (ctx: EditorCommandContext) => stateOf(ctx).inline.has(f)
+    const isBlock = (b: BlockStyle) => (ctx: EditorCommandContext) => stateOf(ctx).block === b
+    const isList = (l: ListStyle) => (ctx: EditorCommandContext) => stateOf(ctx).list === l
+    const heading = (level: 1 | 2 | 3 | 4 | 5 | 6): ToolbarCommand => ({
+      id: `tb-h${level}`, label: `Titre ${level}`, icon: `heading-${level}`,
+      commandId: `editor:set-heading-${level}`, run: F(`h${level}`), isActive: isBlock(`h${level}`),
+    })
     const toolbarCmds: ToolbarCommand[] = [
-      // Menu deroulant : les six niveaux de titre existent dans
-      // FormattingService, les etaler en boutons rendait la barre illisible.
+      // Le style du paragraphe : le bouton montre celui du curseur.
       {
-        id: 'tb-heading', label: 'Style de bloc', icon: 'H▾', group: 'bloc',
+        id: 'tb-heading', label: 'Style du paragraphe', icon: 'heading', group: 'bloc', bubble: true,
+        currentLabel: ctx => BLOCK_LABELS[stateOf(ctx).block],
         run: F('paragraph'),
         items: [
-          { id: 'tb-paragraph', label: 'Texte normal', icon: '¶',  run: F('paragraph') },
-          { id: 'tb-h1', label: 'Titre 1', icon: 'H1', run: F('h1') },
-          { id: 'tb-h2', label: 'Titre 2', icon: 'H2', run: F('h2') },
-          { id: 'tb-h3', label: 'Titre 3', icon: 'H3', run: F('h3') },
-          { id: 'tb-h4', label: 'Titre 4', icon: 'H4', run: F('h4') },
-          { id: 'tb-h5', label: 'Titre 5', icon: 'H5', run: F('h5') },
-          { id: 'tb-h6', label: 'Titre 6', icon: 'H6', run: F('h6') },
+          { id: 'tb-paragraph', label: 'Texte', icon: 'pilcrow', run: F('paragraph'), isActive: isBlock('paragraph') },
+          heading(1), heading(2), heading(3), heading(4), heading(5), heading(6),
+          { id: 'tb-block-quote', label: 'Citation', icon: 'text-quote', commandId: 'editor:toggle-blockquote', run: F('blockquote'), isActive: isBlock('blockquote') },
+          { id: 'tb-block-code', label: 'Bloc de code', icon: 'square-code', commandId: 'editor:insert-codeblock', run: F('codeblock'), isActive: isBlock('codeblock') },
         ],
       },
 
-      { id: 'tb-bold',      label: 'Gras',           icon: 'B',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-bold', run: F('bold') },
-      { id: 'tb-italic',    label: 'Italique',       icon: 'I',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-italics', run: F('italic') },
-      { id: 'tb-strike',    label: 'Barré',          icon: 'S',   group: 'format', requiresSelection: false, commandId: 'editor:toggle-strikethrough', run: F('strike') },
-      { id: 'tb-code',      label: 'Code inline',    icon: '`c`', group: 'format', requiresSelection: false, commandId: 'editor:toggle-code', run: F('code') },
+      { id: 'tb-bold',   label: 'Gras',     icon: 'bold',          group: 'format', bubble: true, commandId: 'editor:toggle-bold', run: F('bold'), isActive: isInline('bold') },
+      { id: 'tb-italic', label: 'Italique', icon: 'italic',        group: 'format', bubble: true, commandId: 'editor:toggle-italics', run: F('italic'), isActive: isInline('italic') },
+      { id: 'tb-strike', label: 'Barré',    icon: 'strikethrough', group: 'format', bubble: true, commandId: 'editor:toggle-strikethrough', run: F('strike'), isActive: isInline('strike') },
+      { id: 'tb-code',   label: 'Code',     icon: 'code',          group: 'format', bubble: true, commandId: 'editor:toggle-code', run: F('code'), isActive: isInline('code') },
       // Surlignage : couleur du theme, ou l'une des six couleurs d'Obsidian.
       {
-        id: 'tb-highlight', label: 'Surligner', icon: '🖍', group: 'format', requiresSelection: false,
-        commandId: 'editor:toggle-highlight', run: highlightIn(),
+        id: 'tb-highlight', label: 'Surligner', icon: 'highlighter', group: 'format', bubble: true,
+        commandId: 'editor:toggle-highlight', run: highlightIn(), isActive: isInline('highlight'),
+        itemsLayout: 'palette',
         items: [
-          { id: 'tb-hl-default', label: 'Surligner', icon: '🖍', commandId: 'editor:toggle-highlight', run: highlightIn() },
+          { id: 'tb-hl-default', label: 'Surligner (couleur du thème)', icon: 'highlighter', swatch: 'var(--text-highlight-bg, rgba(255, 208, 0, 0.4))', commandId: 'editor:toggle-highlight', run: highlightIn() },
           ...PLUME_COLORS.map(c => ({
-            id: `tb-hl-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`, icon: c.emoji,
+            id: `tb-hl-${c.color}`, label: `Surligner en ${c.label.toLowerCase()}`, icon: 'highlighter',
+            swatch: PLUME_COLOR_VALUES[c.color].highlight,
             commandId: `editor:highlight-${c.color}`, run: highlightIn(c.color),
           })),
         ],
       },
       // Couleur du texte : toute la ligne, marquee par `🔴` en debut de ligne.
       {
-        id: 'tb-text-color', label: 'Couleur du texte', icon: '🎨', group: 'format', requiresSelection: false,
-        run: colorIn(null),
+        id: 'tb-text-color', label: 'Couleur du texte', icon: 'baseline', group: 'format', bubble: true,
+        run: colorIn(null), itemsLayout: 'palette',
         items: [
+          { id: 'tb-color-none', label: 'Couleur par défaut', icon: 'ban', commandId: 'editor:text-color-none', run: colorIn(null) },
           ...PLUME_COLORS.map(c => ({
-            id: `tb-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`, icon: c.emoji,
+            id: `tb-color-${c.color}`, label: `Texte ${c.label.toLowerCase()}`, icon: 'baseline',
+            swatch: PLUME_COLOR_VALUES[c.color].text,
             commandId: `editor:text-color-${c.color}`, run: colorIn(c.color),
           })),
-          { id: 'tb-color-none', label: 'Couleur par défaut', icon: '⊘', commandId: 'editor:text-color-none', run: colorIn(null) },
         ],
       },
 
-      { id: 'tb-ul',        label: 'Liste à puces',  icon: '•',   group: 'liste',  commandId: 'editor:toggle-bullet-list', run: F('ul') },
-      { id: 'tb-ol',        label: 'Liste numérotée', icon: '1.', group: 'liste',  commandId: 'editor:toggle-numbered-list', run: F('ol') },
-      { id: 'tb-task',      label: 'Liste de tâches', icon: '☑',  group: 'liste',  commandId: 'editor:toggle-checklist', run: F('tasklist') },
+      { id: 'tb-ul',   label: 'Liste à puces',   icon: 'list',         group: 'liste', commandId: 'editor:toggle-bullet-list', run: F('ul'), isActive: isList('ul') },
+      { id: 'tb-ol',   label: 'Liste numérotée', icon: 'list-ordered', group: 'liste', commandId: 'editor:toggle-numbered-list', run: F('ol'), isActive: isList('ol') },
+      { id: 'tb-task', label: 'Liste de tâches', icon: 'list-checks',  group: 'liste', commandId: 'editor:toggle-checklist', run: F('tasklist'), isActive: isList('tasklist') },
 
-      { id: 'tb-quote',     label: 'Citation',       icon: '❝',   group: 'insert', commandId: 'editor:toggle-blockquote', run: F('blockquote') },
-      { id: 'tb-codeblock', label: 'Bloc de code',   icon: '</>', group: 'insert', commandId: 'editor:insert-codeblock', run: F('codeblock') },
-      { id: 'tb-table',     label: 'Tableau',        icon: '⊞',   group: 'insert', commandId: 'editor:insert-table', run: F('table') },
-      { id: 'tb-link',      label: 'Lien',           icon: '🔗',  group: 'insert', commandId: 'editor:insert-link', run: F('link') },
-      { id: 'tb-image',     label: 'Image',          icon: '🖼',  group: 'insert', run: F('image') },
-      { id: 'tb-hr',        label: 'Séparateur',     icon: '—',   group: 'insert', run: F('hr') },
+      { id: 'tb-link',  label: 'Lien',  icon: 'link',  group: 'insert', bubble: true, commandId: 'editor:insert-link', run: F('link') },
+      { id: 'tb-image', label: 'Image', icon: 'image', group: 'insert', run: F('image') },
+
+      // Menu « Insérer » : ce qu'on pose une fois, pas ce qu'on bascule.
+      { id: 'tb-table',     label: 'Tableau',      icon: 'table',       menu: 'insert', commandId: 'editor:insert-table', run: F('table') },
+      { id: 'tb-codeblock', label: 'Bloc de code', icon: 'square-code', menu: 'insert', commandId: 'editor:insert-codeblock', run: F('codeblock') },
+      { id: 'tb-quote',     label: 'Citation',     icon: 'text-quote',  menu: 'insert', commandId: 'editor:toggle-blockquote', run: F('blockquote') },
+      { id: 'tb-callout',   label: 'Encadré',      icon: 'info',        menu: 'insert', run: ctx => insertCallout(viewOf(ctx) ?? this.view) },
+      { id: 'tb-hr',        label: 'Séparateur',   icon: 'minus',       menu: 'insert', run: F('hr') },
     ]
     for (const cmd of toolbarCmds) toolbar.register(cmd)
 
@@ -719,7 +732,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         activeIds: new Set(this.activationMap.keys()),
       }).catch(err => console.error('[export PDF]', err))
     }
-    toolbar.register({ id: 'tb-export-pdf', label: 'Exporter en PDF', icon: 'PDF', group: 'export', commandId: 'editor:export-pdf', run: ctx => exportPdf(viewOf(ctx)) })
+    toolbar.register({ id: 'tb-export-pdf', label: 'Exporter en PDF', icon: 'file-down', menu: 'more', commandId: 'editor:export-pdf', run: ctx => exportPdf(viewOf(ctx)) })
     this.pluginAPI.commands.register({
       id: 'editor:export-pdf',
       label: 'Exporter en PDF',
@@ -777,9 +790,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     const startCoords = this.view.coordsAtPos(from)
     const endCoords   = this.view.coordsAtPos(to)
     if (!startCoords || !endCoords) return null
+    // Selection sur plusieurs lignes : centree sur le debut, pas a cheval.
+    const sameLine = Math.abs(startCoords.top - endCoords.top) < 4
     return {
-      x: (startCoords.left + endCoords.right) / 2,
+      x: sameLine ? (startCoords.left + endCoords.right) / 2 : startCoords.left + 60,
       y: startCoords.top,
+      bottom: endCoords.bottom,
     }
   }
 
@@ -868,6 +884,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
   getToolbarCommands(): ToolbarCommand[] {
     return this.pluginAPI.toolbar.getAll()
+  }
+
+  getCommandContext(): EditorCommandContext {
+    return { view: this.view }
   }
 
   runToolbarCommand(id: string): void {

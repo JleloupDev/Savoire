@@ -12,7 +12,7 @@ import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
-import { setLinkPreviewDelay, setShowFileExtensions, useLinkPreviewDelay, useShowFileExtensions } from './displayPreferences'
+import { setLinkPreviewDelay, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -520,6 +520,7 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
         })}
       </div>
       <ShowExtensionsOption />
+      <ShowToolbarOption />
       <LinkPreviewOption />
     </div>
   )
@@ -536,6 +537,21 @@ function ShowExtensionsOption() {
         onChange={e => setShowFileExtensions(e.target.checked)}
       />
       {t('app', 'settings.files.showExtensions')}
+    </label>
+  )
+}
+
+function ShowToolbarOption() {
+  const show = useShowEditorToolbar()
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        data-testid="settings-show-toolbar"
+        checked={show}
+        onChange={e => setShowEditorToolbar(e.target.checked)}
+      />
+      {t('app', 'settings.editor.showToolbar')}
     </label>
   )
 }

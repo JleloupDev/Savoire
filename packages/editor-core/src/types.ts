@@ -24,6 +24,8 @@ export type MarkdownFormat =
 export interface SelectionCoords {
   x: number
   y: number
+  /** Bas de la fin de la selection (pour se placer dessous). */
+  bottom?: number
 }
 
 // Re-export for consumers that import from editor-core
@@ -59,6 +61,8 @@ export interface EditorController {
   getToolbarCommands(): ToolbarCommand[]
   /** Run a toolbar command by id (ctx is created internally — React never sees it). */
   runToolbarCommand(id: string): void
+  /** Contexte a passer aux commandes de la barre (run, isActive, currentLabel). */
+  getCommandContext?(): import('@savoire/plugin-api').EditorCommandContext
   /** Insert text at the current cursor position and focus the editor. */
   insertText(text: string): void
   /** Envoie des images au vault et insere leurs liens `![[...]]` au curseur. */

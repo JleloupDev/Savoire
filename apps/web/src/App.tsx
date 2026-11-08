@@ -13,6 +13,11 @@ import { ToastContainer } from './ToastContainer'
 import { getServerChoice } from './serverConnection'
 import { CALLBACK_PATH, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
 import { isAndroidRuntime, isTauriRuntime } from './tauriRuntime'
+import { IconContext, type IconRenderer } from '@savoire/editor-react'
+import { Icon } from '@savoire/ui-components'
+
+// Icones de l'editeur (barre, bulle, menu « / ») : Lucide.
+const renderIcon: IconRenderer = (name, { size }) => <Icon name={name} size={size} />
 
 const { authApi, adminApi, sharingApi, setTokenRenewer } = createWebServices()
 
@@ -24,27 +29,29 @@ const loginDriver = isTauriRuntime() && !isAndroidRuntime()
 
 export function App() {
   return (
-    // Version bureau (serveur au choix) : un seul compte a la fois.
-    <AuthProvider authApi={authApi} loginDriver={loginDriver} singleAccount={getServerChoice().configurable} setTokenRenewer={setTokenRenewer}>
-      <VaultKeyProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
-            <Route path={CALLBACK_PATH} element={<LoginPage />} />
-            <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
-            <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} />} />
-            <Route path="/view" element={<ViewGrantPage />} />
-            <Route path="/" element={<AppShell />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-        {/* Rendered once here, never inside a route/gate's conditionally-returned
-            tree — a toast fired right as e.g. AppShell swaps to VaultKeyGate
-            (WrongVaultKeyError) must survive that same-commit unmount, or it's
-            never actually seen (see AppShell's switchToVault error handling). */}
-        <ToastContainer />
-      </VaultKeyProvider>
-    </AuthProvider>
+    <IconContext.Provider value={renderIcon}>
+      {/* Version bureau (serveur au choix) : un seul compte a la fois. */}
+      <AuthProvider authApi={authApi} loginDriver={loginDriver} singleAccount={getServerChoice().configurable} setTokenRenewer={setTokenRenewer}>
+        <VaultKeyProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
+              <Route path={CALLBACK_PATH} element={<LoginPage />} />
+              <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
+              <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} />} />
+              <Route path="/view" element={<ViewGrantPage />} />
+              <Route path="/" element={<AppShell />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+          {/* Rendered once here, never inside a route/gate's conditionally-returned
+              tree — a toast fired right as e.g. AppShell swaps to VaultKeyGate
+              (WrongVaultKeyError) must survive that same-commit unmount, or it's
+              never actually seen (see AppShell's switchToVault error handling). */}
+          <ToastContainer />
+        </VaultKeyProvider>
+      </AuthProvider>
+    </IconContext.Provider>
   )
 }

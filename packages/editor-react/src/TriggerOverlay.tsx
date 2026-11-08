@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorContext } from './EditorContext'
+import { EditorIcon } from './IconContext'
 import type { TriggerItem, TriggerActivation } from '@savoire/plugin-api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -188,8 +189,8 @@ export function TriggerOverlay() {
                   borderRadius: 4, margin: '0 4px',
                 }}
               >
-                <span style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-surface, #252535)', borderRadius: 5, fontSize: '0.72rem', fontWeight: 700, flexShrink: 0, color: 'var(--text-muted, #aaa)' }}>
-                  {item.icon ?? item.label[0]}
+                <span style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-surface, #252535)', border: '1px solid var(--border, #444)', borderRadius: 6, fontSize: '0.72rem', fontWeight: 700, flexShrink: 0, color: active ? 'var(--accent, #8b5cf6)' : 'var(--text-muted, #aaa)', boxSizing: 'border-box' }}>
+                  <EditorIcon name={item.icon ?? item.label[0]} size={16} />
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

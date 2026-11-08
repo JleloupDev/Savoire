@@ -1,162 +1,81 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Toolbar — Markdown toolbar, mounted above the CodeMirror editor.
-
-import { useState } from 'react'
-import { useEditorContext } from './EditorContext'
-import type { ToolbarCommand } from '@savoire/plugin-api'
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const barStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  gap: 2,
-  padding: '4px 8px',
-  borderBottom: '1px solid var(--border, #2f3745)',
-  background: 'var(--bg-surface, #1b2130)',
-  flexShrink: 0,
-  userSelect: 'none',
-  color: 'var(--text, #e6ebf4)',
-  boxSizing: 'border-box',
-}
-
-const sepStyle: React.CSSProperties = {
-  width: 1,
-  height: 18,
-  background: 'var(--border, #2f3745)',
-  margin: '0 4px',
-  flexShrink: 0,
-}
-
-function btnStyle(active = false): React.CSSProperties {
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 26,
-    height: 26,
-    padding: '0 5px',
-    border: 'none',
-    borderRadius: 4,
-    background: active ? 'var(--accent-dim, rgba(70,120,240,0.2))' : 'transparent',
-    color: active ? 'var(--accent, #7ea2ff)' : 'var(--text-muted, #b2bfd6)',
-    fontSize: '0.78rem',
-    fontWeight: 600,
-    cursor: 'pointer',
-    lineHeight: 1,
-    transition: 'background 0.1s, color 0.1s',
-  }
-}
-
-// ── Bouton ────────────────────────────────────────────────────────────────────
-
-/** Libelle d'infobulle : avec le raccourci clavier en vigueur, s'il y en a un. */
-export function useCommandTitle(): (cmd: ToolbarCommand) => string {
-  const ctrl = useEditorContext()
-  return (cmd) => {
-    const hint = cmd.commandId ? ctrl?.describeHotkey?.(cmd.commandId) : null
-    return hint ? `${cmd.label} (${hint})` : cmd.label
-  }
-}
-
-function Btn({ cmd }: { cmd: ToolbarCommand }) {
-  const ctrl = useEditorContext()
-  const titleOf = useCommandTitle()
-  const [open, setOpen] = useState(false)
-
-  function exec(target: ToolbarCommand) {
-    const core = ctrl as unknown as { view?: unknown } | null
-    target.run({ view: core?.view } as never)
-  }
-
-  function handleMouseDown(e: React.MouseEvent) {
-    // Empeche l'editeur de perdre le focus.
-    e.preventDefault()
-    if (cmd.items?.length) { setOpen(o => !o); return }
-    exec(cmd)
-  }
-
-  if (cmd.items?.length) {
-    return (
-      <span style={{ position: 'relative', display: 'inline-flex' }}>
-        <button
-          title={titleOf(cmd)}
-          data-testid="toolbar-command"
-          data-command-id={cmd.id}
-          onMouseDown={handleMouseDown}
-          style={btnStyle(open)}
-        >
-          {cmd.icon}
-        </button>
-        {open && (
-          <span
-            style={{
-              position: 'absolute', top: '100%', left: 0, zIndex: 40, minWidth: 150,
-              display: 'flex', flexDirection: 'column', padding: 4, gap: 1,
-              background: 'var(--bg-elevated, #273147)',
-              border: '1px solid var(--border, #2f3745)',
-              borderRadius: 6, boxShadow: 'var(--shadow, 0 6px 20px rgba(0,0,0,0.35))',
-            }}
-            onMouseDown={e => e.preventDefault()}
-          >
-            {cmd.items.map(sub => (
-              <button
-                key={sub.id}
-                data-testid="toolbar-command"
-                data-command-id={sub.id}
-                title={titleOf(sub)}
-                onMouseDown={() => { exec(sub); setOpen(false) }}
-                style={{ ...btnStyle(), justifyContent: 'flex-start', gap: 8, width: '100%', height: 24 }}
-              >
-                <span style={{ minWidth: 22, opacity: 0.75 }}>{sub.icon}</span>
-                <span style={{ fontWeight: 500 }}>{sub.label}</span>
-              </button>
-            ))}
-          </span>
-        )}
-      </span>
-    )
-  }
-
-  return (
-    <button
-      title={titleOf(cmd)}
-      data-testid="toolbar-command"
-      data-command-id={cmd.id}
-      onMouseDown={handleMouseDown}
-      style={btnStyle()}
-      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated, #273147)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text, #e6ebf4)' }}
-      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted, #b2bfd6)' }}
-    >
-      {cmd.icon}
-    </button>
-  )
-}
-
-function Sep() {
-  return <span style={sepStyle} />
-}
-
-// ── Barre ─────────────────────────────────────────────────────────────────────
 //
-// Rendue depuis le REGISTRE de commandes, plus en dur. Un plugin qui appelle
-// api.toolbar.register() voit son bouton apparaitre ici, dans son groupe.
-// Auparavant le registre existait, EditorCore y enregistrait sept commandes,
-// et ce composant les ignorait au profit d'une liste figee : le point
-// d'extension n'etait branche nulle part.
+// Barre d'edition, au-dessus du document. Rendue depuis le REGISTRE des
+// commandes (api.toolbar) : un plugin y ajoute ses boutons, dans son groupe,
+// ou dans les menus « Insérer » et « ⋯ » (champ `menu`).
+//
+//  - Le premier bouton montre le style du paragraphe sous le curseur.
+//  - Les boutons a bascule s'allument (gras, liste...).
+//  - Bouton a menu (surlignage, couleur) : un clic applique la derniere
+//    couleur choisie, la fleche ouvre la palette.
+//  - Barre etroite : les derniers groupes passent dans « ⋯ ».
 
-/** Ordre d'affichage des groupes. Les groupes inconnus (plugins) suivent. */
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { EditorCommandContext, ToolbarCommand } from '@savoire/plugin-api'
+import { useEditorContext } from './EditorContext'
+import { EditorIcon } from './IconContext'
+import { ensureToolbarStyles } from './toolbarStyles'
+import {
+  CommandButton, CommandItems, ICON_SIZE, MenuButton, MenuItem, commandContext, isActive, runCommand,
+  useCommandTitle, useEditorTick, useMenuState,
+} from './ToolbarParts'
+
+export { useCommandTitle } from './ToolbarParts'
+
+/** Ordre des groupes. Les groupes inconnus (plugins) suivent. */
 const GROUP_ORDER = ['bloc', 'format', 'liste', 'insert']
+/** Groupes jamais replies : style du paragraphe et mise en forme. */
+const KEPT = 2
 
-export function Toolbar() {
+// Largeurs (px) pour decider du repli, sans mesurer chaque bouton.
+const W_BUTTON = 32
+const W_SPLIT = 47
+const W_BLOCK = 116
+const W_SEP = 13
+const W_INSERT = 104
+const W_MORE = 34
+const PADDING = 24
+
+function widthOf(cmd: ToolbarCommand): number {
+  if (!cmd.items?.length) return W_BUTTON
+  return cmd.currentLabel ? W_BLOCK : W_SPLIT
+}
+
+export interface ToolbarProps {
+  /** Ajoute « Masquer la barre » au menu ⋯. */
+  onHide?: () => void
+}
+
+export function Toolbar({ onHide }: ToolbarProps = {}) {
+  ensureToolbarStyles()
   const ctrl = useEditorContext()
-  const commands = ctrl?.getToolbarCommands?.() ?? []
-  if (commands.length === 0) return <div style={barStyle} />
+  useEditorTick(ctrl)
+  const ctx = commandContext(ctrl)
+  const menus = useMenuState()
+  const barRef = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY)
+  // Derniere couleur choisie, par bouton a palette.
+  const [lastUsed, setLastUsed] = useState<Record<string, string>>({})
 
+  useLayoutEffect(() => {
+    const el = barRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => setWidth(entries[0]?.contentRect.width ?? el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  // Le menu ouvert se ferme quand on change de note.
+  useEffect(() => { menus.setOpen(null) }, [ctrl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commands = ctrl?.getToolbarCommands?.() ?? []
+  if (commands.length === 0) return <div className="sv-tb" ref={barRef} />
+
+  const insertCmds = commands.filter(c => c.menu === 'insert')
+  const moreCmds = commands.filter(c => c.menu === 'more')
   const groups = new Map<string, ToolbarCommand[]>()
   for (const cmd of commands) {
+    if (cmd.menu) continue
     const g = cmd.group ?? 'autre'
     if (!groups.has(g)) groups.set(g, [])
     groups.get(g)!.push(cmd)
@@ -166,14 +85,159 @@ export function Toolbar() {
     ...[...groups.keys()].filter(g => !GROUP_ORDER.includes(g)),
   ]
 
+  // Repli : on garde les groupes tant qu'ils tiennent, le reste va dans ⋯.
+  const insertInline = insertCmds.length > 0 && width >= 560
+  let budget = width - PADDING - W_MORE - (insertInline ? W_INSERT : 0)
+  const visible: string[] = []
+  const folded: string[] = []
+  for (const [i, g] of ordered.entries()) {
+    const w = groups.get(g)!.reduce((sum, c) => sum + widthOf(c), 0) + (i > 0 ? W_SEP : 0)
+    if (folded.length === 0 && (i < KEPT || w <= budget)) { visible.push(g); budget -= w } else folded.push(g)
+  }
+  const foldedCmds = folded.flatMap(g => groups.get(g)!)
+  const showMore = moreCmds.length > 0 || foldedCmds.length > 0 || !insertInline && insertCmds.length > 0 || !!onHide
+
+  const close = () => menus.setOpen(null)
+  const runSub = (parent: ToolbarCommand, sub: ToolbarCommand) => {
+    runCommand(sub, ctx)
+    if (parent.itemsLayout === 'palette') setLastUsed(m => ({ ...m, [parent.id]: sub.id }))
+    close()
+  }
+
   return (
-    <div style={barStyle} data-testid="editor-toolbar">
-      {ordered.map((g, i) => (
-        <span key={g} style={{ display: 'contents' }}>
-          {i > 0 && <Sep />}
-          {groups.get(g)!.map(cmd => <Btn key={cmd.id} cmd={cmd} />)}
-        </span>
-      ))}
+    <div className="sv-tb" ref={barRef} role="toolbar" aria-label="Mise en forme" data-testid="editor-toolbar">
+      <div ref={menus.rootRef} style={{ display: 'contents' }}>
+        {visible.map((g, i) => (
+          <span key={g} style={{ display: 'contents' }}>
+            {i > 0 && <span className="sv-tb-sep" />}
+            {groups.get(g)!.map(cmd => cmd.items?.length
+              ? <Dropdown key={cmd.id} cmd={cmd} ctx={ctx} menus={menus} lastUsed={lastUsed[cmd.id]} onRunSub={runSub} />
+              : <CommandButton key={cmd.id} cmd={cmd} ctx={ctx} testId="toolbar-command" />)}
+          </span>
+        ))}
+        {insertInline && (
+          <>
+            <span className="sv-tb-sep" />
+            <MenuButton
+              id="__insert" title="Insérer" icon="plus" text="Insérer" className="sv-tb-labelled"
+              testId="toolbar-insert" open={menus.open === '__insert'} onToggle={menus.toggle}
+            >
+              <CommandItems items={insertCmds} ctx={ctx} testId="toolbar-command" onDone={close} />
+            </MenuButton>
+          </>
+        )}
+        <span className="sv-tb-spacer" />
+        {showMore && (
+          <MenuButton
+            id="__more" title="Plus d'options" icon="ellipsis" testId="toolbar-more" align="right" chevron={false}
+            open={menus.open === '__more'} onToggle={menus.toggle}
+          >
+            {foldedCmds.map(cmd => cmd.items?.length
+              ? (
+                <div key={cmd.id}>
+                  <div className="sv-tb-title">{cmd.label}</div>
+                  <CommandItems items={cmd.items} layout={cmd.itemsLayout} ctx={ctx} testId="toolbar-command" onDone={close} />
+                </div>
+              )
+              : <MenuItem key={cmd.id} cmd={cmd} ctx={ctx} testId="toolbar-command" onRun={() => { runCommand(cmd, ctx); close() }} />)}
+            {!insertInline && insertCmds.length > 0 && (
+              <>
+                {foldedCmds.length > 0 && <div className="sv-tb-rule" />}
+                <div className="sv-tb-title">Insérer</div>
+                <CommandItems items={insertCmds} ctx={ctx} testId="toolbar-command" onDone={close} />
+              </>
+            )}
+            {(foldedCmds.length > 0 || (!insertInline && insertCmds.length > 0)) && moreCmds.length > 0 && <div className="sv-tb-rule" />}
+            <CommandItems items={moreCmds} ctx={ctx} testId="toolbar-command" onDone={close} />
+            {onHide && (
+              <>
+                <div className="sv-tb-rule" />
+                <button type="button" role="menuitem" className="sv-tb-item" data-testid="toolbar-hide"
+                  onMouseDown={e => { e.preventDefault(); close(); onHide() }}>
+                  <EditorIcon name="eye-off" size={16} />
+                  <span>Masquer la barre</span>
+                </button>
+              </>
+            )}
+          </MenuButton>
+        )}
+      </div>
     </div>
+  )
+}
+
+type Menus = ReturnType<typeof useMenuState>
+
+/**
+ * Bouton a menu. Style du paragraphe : tout le bouton ouvre le menu et
+ * montre le style en cours. Sinon (surlignage, couleur, menus de plugins) :
+ * l'icone applique, la fleche ouvre.
+ */
+export function Dropdown({ cmd, ctx, menus, lastUsed, onRunSub, compact }: {
+  cmd: ToolbarCommand
+  ctx: EditorCommandContext
+  menus: Menus
+  lastUsed?: string
+  onRunSub: (parent: ToolbarCommand, sub: ToolbarCommand) => void
+  /** Dans la bulle : boutons plus serres. */
+  compact?: boolean
+}) {
+  const titleOf = useCommandTitle()
+  const open = menus.open === cmd.id
+  const items = cmd.items ?? []
+  const testId = compact ? 'bubble-command' : 'toolbar-command'
+  const menu = (
+    <div role="menu" className="sv-tb-menu" onMouseDown={e => e.preventDefault()}>
+      {cmd.itemsLayout === 'palette' && <div className="sv-tb-title">{cmd.label}</div>}
+      <CommandItems
+        items={items} layout={cmd.itemsLayout} ctx={ctx} testId={testId}
+        onDone={() => menus.setOpen(null)} onRun={sub => onRunSub(cmd, sub)}
+      />
+    </div>
+  )
+
+  if (cmd.currentLabel) {
+    const label = (() => { try { return cmd.currentLabel!(ctx) } catch { return null } })() ?? cmd.label
+    return (
+      <span className="sv-tb-wrap">
+        <button
+          type="button" className="sv-tb-btn sv-tb-block" title={cmd.label} aria-label={`${cmd.label} : ${label}`}
+          aria-haspopup="menu" aria-expanded={open} data-testid={testId} data-command-id={cmd.id}
+          onMouseDown={e => { e.preventDefault(); menus.toggle(cmd.id) }}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); menus.toggle(cmd.id) } }}
+        >
+          <span>{label}</span>
+          <span className="sv-tb-chev" style={{ display: 'inline-flex' }}><EditorIcon name="chevron-down" size={13} /></span>
+        </button>
+        {open && menu}
+      </span>
+    )
+  }
+
+  const last = items.find(i => i.id === lastUsed)
+  const swatch = last?.swatch
+  return (
+    <span className="sv-tb-wrap">
+      <button
+        type="button" className="sv-tb-btn" title={titleOf(last ?? cmd)} aria-label={last?.label ?? cmd.label}
+        aria-pressed={cmd.isActive ? isActive(cmd, ctx) : undefined}
+        data-testid={testId} data-command-id={cmd.id}
+        style={{ paddingRight: 2, borderTopRightRadius: 0, borderBottomRightRadius: 0, minWidth: compact ? 26 : 28 }}
+        onMouseDown={e => { e.preventDefault(); if (last) onRunSub(cmd, last); else runCommand(cmd, ctx) }}
+      >
+        <EditorIcon name={cmd.icon} size={ICON_SIZE} />
+        {swatch && <span aria-hidden style={{ position: 'absolute', left: 7, right: 5, bottom: 4, height: 3, borderRadius: 2, background: swatch }} />}
+      </button>
+      <button
+        type="button" className="sv-tb-btn" title={`${cmd.label} : choisir`} aria-label={`${cmd.label} : choisir`}
+        aria-haspopup="menu" aria-expanded={open} data-testid={`${testId}-menu`} data-command-id={cmd.id}
+        style={{ minWidth: 16, width: 16, padding: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
+        onMouseDown={e => { e.preventDefault(); menus.toggle(cmd.id) }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); menus.toggle(cmd.id) } }}
+      >
+        <span className="sv-tb-chev" style={{ display: 'inline-flex' }}><EditorIcon name="chevron-down" size={13} /></span>
+      </button>
+      {open && menu}
+    </span>
   )
 }
