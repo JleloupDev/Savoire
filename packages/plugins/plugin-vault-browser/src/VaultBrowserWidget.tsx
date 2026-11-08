@@ -79,6 +79,8 @@ export interface VaultMenuAction<TVault extends VaultSummaryLike = VaultSummaryL
 export interface VaultTransferActions<TVault extends VaultSummaryLike = VaultSummaryLike> {
   download?: VaultMenuAction<TVault>
   upload?: VaultMenuAction<TVault>
+  /** Importer un vault depuis une archive (export Notion...) : un nouveau vault. */
+  importArchive?: { label: string; run(): void }
 }
 
 export interface VaultBrowserWorkspaceLike {
@@ -389,6 +391,16 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
             <button data-testid="vault-create-open" onClick={() => startCreate('')} style={{ ...S.btn('var(--text)'), flex: 1 }}>
               <Icon name="plus" size={14} />Nouveau vault
             </button>
+            )}
+            {refs.vaultTransfer?.current?.importArchive && (
+              <button
+                data-testid="vault-import"
+                onClick={() => refs.vaultTransfer?.current?.importArchive?.run()}
+                title={refs.vaultTransfer.current.importArchive.label}
+                style={{ ...S.btn('var(--text-muted)'), flex: hasSources ? 1 : 'none', padding: '3px 8px' }}
+              >
+                <Icon name="file-input" size={13} />{hasSources ? 'Importer' : ''}
+              </button>
             )}
             {refs.onRefresh && (
               <button

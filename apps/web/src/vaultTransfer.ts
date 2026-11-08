@@ -8,7 +8,7 @@
 // choisir un dossier, l'ouvrir en session. Sans hote (navigateur), le
 // telechargement devient un export .zip, fait dans un dossier en memoire.
 import {
-  VaultTransferService,
+  VaultTransferService, convertNotionExport, readZip,
   type DiskVaultSessionOpener, type IVaultSyncSession, type RemoteVaultAccess, type VaultTransferJob,
   type VaultTransferResult,
 } from '@savoire/application'
@@ -80,6 +80,71 @@ export interface VaultTransferContext {
  *   - vaults du serveur + navigateur  : « Exporter en .zip ».
  */
 export function vaultTransferActions<TVault extends VaultSummaryLike>(ctx: VaultTransferContext): VaultTransferActions<TVault> | null {
+  const actions = baseTransferActions<TVault>(ctx)
+  const importArchive = notionImportAction(ctx)
+  if (!importArchive) return actions
+  return { ...(actions ?? {}), importArchive }
+}
+
+/**
+ * « Importer depuis Notion… » : l'export Notion (Markdown & CSV, .zip)
+ * devient un NOUVEAU vault. Version bureau : un dossier du poste ; sinon un
+ * vault du serveur, rempli par le meme envoi qu'un vault du poste.
+ */
+function notionImportAction(ctx: VaultTransferContext): VaultTransferActions['importArchive'] | null {
+  const host = folderHost
+  const memorySession = ctx.memoryDiskSession ?? host?.openDiskSession
+  const memoryFolder = ctx.memoryFolder
+  const toDisk = ctx.profile === 'desktop' && !!host
+  if (!toDisk && (!memorySession || !memoryFolder)) return null
+  return {
+    label: 'Importer depuis Notion (export .zip)…',
+    run: () => void pickFile('.zip,application/zip').then(async (file) => {
+      if (!file) return
+      const name = vaultNameOf(file.name)
+      const { files, report } = convertNotionExport(await readZip(new Uint8Array(await file.arrayBuffer())))
+      if (files.length === 0) throw new Error('Aucune page dans cette archive : est-ce bien un export Notion « Markdown & CSV » ?')
+      const counts = `${report.pages} page(s), ${report.databases} base(s), ${report.rows} ligne(s), ${report.files} fichier(s)`
+      if (toDisk) {
+        const fs = await host!.createDownloadFolder(name)
+        if (!fs) return
+        for (const f of files) await fs.writeBytes(f.path, f.bytes)
+        ctx.refreshVaults()
+        notify('success', `Import Notion : « ${name} »`, `${counts}. ${report.warnings.join(' ')}`.trim())
+        return
+      }
+      const fs = memoryFolder!(name)
+      for (const f of files) await fs.writeBytes(f.path, f.bytes)
+      const service = new VaultTransferService({ remote: ctx.appRemote, openDiskSession: memorySession!, transferOptions: () => ({ syncKindOf: ctx.syncKindOf }) })
+      const job = service.uploadVault(fs, name)
+      void job.result.then(() => ctx.refreshVaults(), () => {})
+      const run: VaultTransferRun = { title: `Import Notion « ${name} »`, job, doneLabel: () => `${counts}. ${report.warnings.join(' ')}`.trim() }
+      announceTransfer(run)
+      ctx.show(run)
+    }).catch(err => ctx.onError(`Import Notion impossible : ${errorText(err)}`)),
+  }
+}
+
+/** « Export-1234….zip » -> « Import Notion » ; sinon le nom du fichier. */
+function vaultNameOf(fileName: string): string {
+  const stem = fileName.replace(/\.zip$/i, '').trim()
+  return !stem || /^Export[-_ ]/i.test(stem) ? 'Import Notion' : stem
+}
+
+function pickFile(accept: string): Promise<File | null> {
+  return new Promise(resolve => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = accept
+    input.style.display = 'none'
+    input.addEventListener('change', () => { resolve(input.files?.[0] ?? null); input.remove() }, { once: true })
+    input.addEventListener('cancel', () => { resolve(null); input.remove() }, { once: true })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
+function baseTransferActions<TVault extends VaultSummaryLike>(ctx: VaultTransferContext): VaultTransferActions<TVault> | null {
   const host = folderHost
   const transferOptions = () => ({ syncKindOf: ctx.syncKindOf })
   const start = (run: VaultTransferRun): void => {
