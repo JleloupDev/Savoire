@@ -21,12 +21,20 @@ interface TableEditorProps {
   initialData: TableData
   /** Called on every committed edit, debounced by the caller. */
   onChange: (data: TableData) => void
-  /** Height of the grid in px. Default: 300. */
+  /**
+   * Hauteur de la grille en px. Sans valeur : elle suit le nombre de lignes,
+   * jusqu'a `maxHeight` (puis defilement).
+   */
   height?: number
+  /** Hauteur maximale quand la grille suit ses lignes. Defaut : 560. */
+  maxHeight?: number
   readOnly?: boolean
 }
 
-export function TableEditor({ initialData, onChange, height = 300, readOnly = false }: TableEditorProps) {
+/** Hauteurs par defaut de react-data-grid (en-tete et lignes). */
+const ROW_PX = 35
+
+export function TableEditor({ initialData, onChange, height, maxHeight = 560, readOnly = false }: TableEditorProps) {
   const [headers, setHeaders] = useState<string[]>(initialData.headers)
   const [rawData, setRawData]  = useState<string[][]>(
     // Ensure every row has the right number of columns
@@ -174,21 +182,55 @@ export function TableEditor({ initialData, onChange, height = 300, readOnly = fa
     commit(newRaw, headers)
   }
 
+  // Tout le tableau visible tant qu'il tient : on voit vraiment ses lignes.
+  const gridHeight = height ?? Math.min(maxHeight, ROW_PX * (rawData.length + 1) + 2)
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <DataGrid
-        columns={columns}
-        rows={sortedRows}
-        onRowsChange={handleRowsChange}
-        sortColumns={sortColumns}
-        onSortColumnsChange={setSortColumns}
-        style={{ height, blockSize: height, colorScheme: 'dark' }}
-        className="rdg-dark"
-      />
+      <div>
+        <DataGrid
+          columns={columns}
+          rows={sortedRows}
+          onRowsChange={handleRowsChange}
+          sortColumns={sortColumns}
+          onSortColumnsChange={setSortColumns}
+          onCellKeyDown={(args, event) => {
+            // Fleche bas sur la derniere ligne, ou Tab sur sa derniere case :
+            // une nouvelle ligne, comme dans Notion.
+            if (readOnly || args.mode !== 'SELECT') return
+            const lastRow = args.rowIdx === sortedRows.length - 1
+            const lastCol = args.column.idx === columns.length - 1
+            if (lastRow && (event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey && lastCol))) {
+              event.preventGridDefault()
+              event.preventDefault()
+              addRow()
+              // La nouvelle ligne est selectionnee, prete a etre remplie.
+              const idx = event.key === 'Tab' ? 0 : args.column.idx
+              setTimeout(() => args.selectCell({ rowIdx: args.rowIdx + 1, idx }), 0)
+            }
+          }}
+          style={{ height: gridHeight, blockSize: gridHeight, colorScheme: 'dark' }}
+          className="rdg-dark"
+        />
+        {!readOnly && (
+          <button
+            type="button"
+            data-testid="table-add-row-bottom"
+            onClick={addRow}
+            style={{
+              display: 'block', width: '100%', height: 30, padding: '0 10px', textAlign: 'left',
+              fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+              background: 'transparent', color: 'var(--text-faint,#6c7086)',
+              border: '1px solid var(--border,#3d3d5c)', borderTop: 'none', borderRadius: '0 0 4px 4px',
+            }}
+          >
+            + Nouvelle ligne
+          </button>
+        )}
+      </div>
       {!readOnly && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <TableBtn onClick={addRow}>+ Ligne</TableBtn>
           <TableBtn onClick={addColumn}>+ Colonne</TableBtn>
           <TableBtn onClick={removeLastRow} disabled={rawData.length === 0}>− Ligne</TableBtn>
           {hasFormulas && (

@@ -58,7 +58,7 @@ function createTableView(
           currentData = newData
           scheduleSave(newData)
         }}
-        height={embedHeight ?? 360}
+        {...(embedHeight !== undefined ? { maxHeight: embedHeight } : {})}
       />
     )
   }
@@ -147,7 +147,8 @@ const plugin: VaultPlugin = {
         const container = document.createElement('div')
         container.style.cssText = 'min-height:200px;padding:4px 0'
 
-        const view = createTableView(path, ctx, api.sync, 260)
+        // Integre : toute la hauteur de ses lignes, jusqu'a 560 px.
+        const view = createTableView(path, ctx, api.sync, 560)
         view.mount(container)
 
         ;(container as HTMLElement & { __destroy?: () => void }).__destroy = () => view.destroy()
@@ -204,7 +205,6 @@ const plugin: VaultPlugin = {
               }
               currentRaw = newRaw
             }}
-            height={220}
           />
         )
 

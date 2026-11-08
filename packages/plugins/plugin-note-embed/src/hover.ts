@@ -17,8 +17,9 @@ import { parseSubpath, type EmbedSubpath } from './section'
 export const DEFAULT_PREVIEW_DELAY = 800
 /** Grace laissee pour passer du lien a la fenetre (ms). */
 const LEAVE_GRACE_MS = 300
-const WIDTH = 460
-const MAX_HEIGHT = 360
+// Assez large pour un tableau ou un board, sans depasser l'ecran.
+const MAX_WIDTH = 720
+const MAX_HEIGHT = 520
 
 /** Cible d'une adresse de lien rendu. null : pas un lien de note. */
 export function previewTargetOf(href: string): { page: string; subpath: EmbedSubpath | null } | null {
@@ -63,6 +64,7 @@ export function installLinkPreview(api: PluginAPI, render: RenderPart): () => vo
     box.className = 'link-preview'
     box.dataset.testid = 'link-preview'
     const r = a.getBoundingClientRect()
+    const WIDTH = Math.max(280, Math.min(MAX_WIDTH, window.innerWidth - 16))
     const below = window.innerHeight - r.bottom > MAX_HEIGHT + 16 || r.top < MAX_HEIGHT + 16
     const left = Math.max(8, Math.min(r.left, window.innerWidth - WIDTH - 8))
     box.style.cssText = [

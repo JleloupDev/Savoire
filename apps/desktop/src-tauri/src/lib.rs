@@ -10,6 +10,8 @@
 // Savoire et de leurs sessions existent.
 
 #[cfg(desktop)]
+mod board_frame;
+#[cfg(desktop)]
 mod folders;
 // Public : le pont de test examples/index_stdio.rs s'en sert.
 #[cfg(desktop)]
@@ -34,6 +36,8 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Cadre des boards, avec sa propre CSP (board_frame.rs).
+        .register_uri_scheme_protocol("savoire-board", |_ctx, request| board_frame::respond(request))
         .setup(|app| {
             // ~/.config/<identifiant>/recent-vaults.json sous Linux.
             let file = app.path().app_config_dir()?.join("recent-vaults.json");

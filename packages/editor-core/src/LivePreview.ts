@@ -29,6 +29,7 @@ import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savo
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
+import { appendTableRow } from './TableRows'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
@@ -149,6 +150,37 @@ class MarkdownWidget extends WidgetType {
 
   ignoreEvent(e: Event): boolean {
     return e.type !== 'click' && e.type !== 'mousedown'
+  }
+}
+
+/**
+ * Tableau Markdown rendu, avec « + Nouvelle ligne » dessous (comme Notion).
+ * Le bouton retrouve le tableau par sa position dans l'editeur au moment du
+ * clic : le widget n'a pas a connaitre ses bornes.
+ */
+class TableWidget extends MarkdownWidget {
+  eq(other: MarkdownWidget): boolean {
+    return other instanceof TableWidget && super.eq(other)
+  }
+
+  toDOM(view?: EditorView): HTMLElement {
+    const div = super.toDOM()
+    if (!view || view.state.readOnly) return div
+    const add = document.createElement('button')
+    add.type = 'button'
+    add.className = 'vault-table-add'
+    add.dataset.testid = 'table-add-row'
+    add.textContent = '+ Nouvelle ligne'
+    add.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      let pos: number
+      try { pos = view.posAtDOM(div) } catch { return }
+      const tr = appendTableRow(view.state, pos)
+      if (tr) { view.dispatch(tr); view.focus() }
+    })
+    div.appendChild(add)
+    return div
   }
 }
 
@@ -494,7 +526,7 @@ function buildDecorations(
         const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(
           Decoration.replace({
-            widget: new MarkdownWidget(html),
+            widget: node.type.name === 'Table' ? new TableWidget(html) : new MarkdownWidget(html),
             block: true,
           }).range(node.from, node.to),
         )

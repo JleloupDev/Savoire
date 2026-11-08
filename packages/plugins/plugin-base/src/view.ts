@@ -240,6 +240,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     onResult: r => onResult(r),
     totals: () => totalTexts,
     totalMenu: (key, anchor) => openTotalMenu(key, anchor),
+    addRow: () => void addPage(),
   }) : null
 
   // ── Totaux des colonnes ──────────────────────────────────────────────────

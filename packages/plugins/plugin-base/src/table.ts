@@ -52,6 +52,8 @@ export interface TableHost {
   totals?(): Map<string, string>
   /** Choisir le total d'une colonne. */
   totalMenu?(key: string, anchor: HTMLElement): void
+  /** « + Nouvelle page » sous la derniere ligne, comme dans Notion ; absent : pas de bouton. */
+  addRow?(): void
 }
 
 export class BaseTable {
@@ -59,6 +61,7 @@ export class BaseTable {
   private readonly head: HTMLElement
   private readonly body: HTMLElement
   private readonly foot: HTMLElement
+  private readonly adder: HTMLElement
   private query: Query | null = null
   private stopWatch: (() => void) | null = null
   private pages = new Map<number, QueryRow[]>()
@@ -75,7 +78,10 @@ export class BaseTable {
     this.head = h('div', { class: 'base-thead', 'data-testid': 'base-thead' })
     this.body = h('div', { class: 'base-tbody', 'data-testid': 'base-tbody' })
     this.foot = h('div', { class: 'base-tfoot', 'data-testid': 'base-tfoot' })
-    this.el = h('div', { class: 'base-table', 'data-testid': 'base-table' }, this.head, this.body, this.foot)
+    // Ajouter une ligne en etant a la fin du tableau, sans remonter a la barre.
+    this.adder = h('button', { class: 'base-tadd', type: 'button', 'data-testid': 'base-add-row-bottom' }, '+ Nouvelle page')
+    this.adder.addEventListener('click', () => this.host.addRow?.())
+    this.el = h('div', { class: 'base-table', 'data-testid': 'base-table' }, this.head, this.body, this.adder, this.foot)
     this.el.addEventListener('scroll', () => this.schedule())
   }
 
@@ -101,6 +107,8 @@ export class BaseTable {
 
   /** Pied du tableau : le total de chaque colonne, ou « Calculer » au survol. */
   renderFoot(): void {
+    this.adder.hidden = !this.host.addRow || this.host.readOnly()
+    this.adder.style.width = `${this.width()}px`
     const totals = this.host.totals?.()
     const ro = this.host.readOnly()
     if (!totals || (ro && totals.size === 0)) { this.foot.hidden = true; return }

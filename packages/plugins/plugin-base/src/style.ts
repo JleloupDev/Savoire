@@ -37,6 +37,8 @@ const CSS = `
 .base-th-grip { position:absolute; right:-3px; top:0; bottom:0; width:6px; cursor:col-resize; z-index:3; }
 .base-th-add { flex:0 0 40px; border:none; background:transparent; color:var(--text-faint,#6c7086); cursor:pointer; font-size:16px; }
 .base-tbody { position:relative; }
+.base-tadd { display:block; box-sizing:border-box; min-width:100%; height:32px; padding:0 10px; border:none; border-bottom:1px solid color-mix(in srgb, var(--border,#313244) 60%, transparent); background:transparent; color:var(--text-faint,#6c7086); font:inherit; text-align:left; cursor:pointer; }
+.base-tadd:hover { background:var(--bg-hover,rgba(127,127,127,.08)); color:var(--text-muted,#a6adc8); }
 .base-tfoot { position:sticky; bottom:0; z-index:2; display:flex; background:var(--bg-base,#1e1e2e); border-top:1px solid var(--border,#313244); }
 .base-tf { flex:0 0 auto; box-sizing:border-box; height:30px; padding:0 8px; border:none; background:transparent; color:transparent; font-size:12px; text-align:right; cursor:pointer; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-family:inherit; }
 .base-tfoot:hover .base-tf:not(.base-tf-set):not([disabled]) { color:var(--text-faint,#6c7086); }

@@ -18,6 +18,7 @@
 // son code : son entree recopie alors son manifeste, et un test verifie que la
 // copie reste fidele. Un plugin preinstalle est charge au demarrage ; le store
 // lit son manifeste directement.
+import { boardFrameUrl } from './tauriRuntime'
 import type { PluginManifest, VaultPlugin } from '@savoire/plugin-api'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -217,7 +218,12 @@ export const STORE_CATALOG: StoreEntry[] = [
       defaultActive: true,
     },
     extensions: ['board'],
-    load: async () => (await import('@savoire/plugin-board')).default,
+    load: async () => {
+      const mod = await import('@savoire/plugin-board')
+      // Bureau : le cadre du board a sa propre CSP (celle de la fenetre bloque le JS en ligne).
+      mod.setBoardFrameUrl(boardFrameUrl())
+      return mod.default
+    },
   },
   {
     id: 'plugin-quickref', preinstalled: false,

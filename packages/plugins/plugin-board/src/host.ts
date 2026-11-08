@@ -23,7 +23,7 @@ import type { ISharedTree, PluginAPI, PropertyValue, Query, QueryResult, QuerySo
 import {
   LightRows, ManifestStore, createPageRow, folderOfBase, readManifest, resolveBase, toWhere, writeNoteProperty,
 } from '@savoire/plugin-base'
-import { MAX_MESSAGE, buildSrcdoc, randomChannel } from './frame'
+import { FRAME_BOOT, FRAME_READY, MAX_MESSAGE, boardFrameUrl, buildSrcdoc, randomChannel } from './frame'
 
 /** Ecritures au plus, par minute et par board. */
 export const MAX_WRITES_PER_MINUTE = 60
@@ -70,6 +70,9 @@ export class BoardHost {
   private readonly onMessage = (e: MessageEvent) => this.handle(e)
   private writes: number[] = []
   private disposed = false
+  /** Document a envoyer a la page cadre quand elle sera prete (version bureau). */
+  private pendingHtml: string | null = null
+  private loads = 0
   /** Base de chaque ligne legere vue dans un resultat. */
   private readonly rowBase = new Map<string, string>()
   /** Lots ouverts pour ecrire, par base. */
@@ -88,7 +91,13 @@ export class BoardHost {
   /** (Re)charge le code du board : les requetes suivies de l'ancien s'arretent. */
   load(source: string): void {
     this.stopWatches()
-    this.frame.srcdoc = buildSrcdoc(source, { channel: this.channel, readOnly: this.opts.readOnly })
+    const html = buildSrcdoc(source, { channel: this.channel, readOnly: this.opts.readOnly })
+    const url = boardFrameUrl()
+    if (!url) { this.frame.srcdoc = html; return }
+    // Page cadre (bureau) : on la recharge, elle dit qu'elle est prete, puis
+    // recoit le document.
+    this.pendingHtml = html
+    this.frame.src = `${url}${url.includes('?') ? '&' : '?'}n=${++this.loads}`
   }
 
   dispose(): void {
@@ -96,7 +105,9 @@ export class BoardHost {
     this.disposed = true
     window.removeEventListener('message', this.onMessage)
     this.stopWatches()
-    this.frame.srcdoc = ''
+    this.pendingHtml = null
+    if (boardFrameUrl()) this.frame.removeAttribute('src')
+    else this.frame.srcdoc = ''
     for (const [baseId, p] of this.lightRows) {
       void p.then(({ tree, rows }) => { rows.close(); if (tree) this.api?.vault.closeTree?.(baseId) }, () => {})
     }
@@ -130,6 +141,12 @@ export class BoardHost {
   private handle(e: MessageEvent): void {
     if (this.disposed || e.source !== this.frame.contentWindow) return
     const m = e.data as { ch?: unknown; t?: unknown; id?: unknown; fn?: unknown; args?: unknown; q?: unknown; h?: unknown; m?: unknown } | null
+    if (m && typeof m === 'object' && m.t === FRAME_READY) {
+      const html = this.pendingHtml
+      this.pendingHtml = null
+      if (html !== null) this.frame.contentWindow?.postMessage({ t: FRAME_BOOT, html }, '*')
+      return
+    }
     if (!m || typeof m !== 'object' || m.ch !== this.channel) return
     let size = 0
     try { size = JSON.stringify(m).length } catch { return }

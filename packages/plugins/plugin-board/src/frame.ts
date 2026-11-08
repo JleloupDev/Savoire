@@ -85,6 +85,26 @@ export function buildSrcdoc(source: string, opts: { channel: string; readOnly: b
   return head + source + '</body></html>'
 }
 
+/**
+ * Adresse d'une page « cadre » servie avec sa propre CSP (version bureau :
+ * protocole savoire-board). Une iframe srcdoc herite de la CSP de la page qui
+ * la contient ; celle de la fenetre Tauri interdit le JavaScript en ligne.
+ * Null (navigateur) : srcdoc, comme avant.
+ */
+let frameUrl: string | null = null
+
+export function setBoardFrameUrl(url: string | null): void {
+  frameUrl = url
+}
+
+export function boardFrameUrl(): string | null {
+  return frameUrl
+}
+
+/** Messages echanges avec la page cadre (avant le document du board). */
+export const FRAME_READY = 'savoire-board-ready'
+export const FRAME_BOOT = 'savoire-board-boot'
+
 export function randomChannel(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)

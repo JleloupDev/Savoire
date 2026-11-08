@@ -13,7 +13,7 @@ import { createBoardView } from './view'
 
 export { BoardHost, resetBoardGrants, MAX_WRITES_PER_MINUTE, MAX_WATCHES } from './host'
 export type { BoardHostOptions } from './host'
-export { buildSrcdoc, BOARD_CSP, themeCss } from './frame'
+export { buildSrcdoc, BOARD_CSP, themeCss, setBoardFrameUrl, boardFrameUrl, FRAME_READY, FRAME_BOOT } from './frame'
 export { parseBoardEmbed, renderBoardEmbed, BOARD_EMBED_RE } from './embed'
 export { createBoardView } from './view'
 export { BOARD_TEMPLATE } from './template'

@@ -24,3 +24,13 @@ export function isTauriRuntime(scope: unknown = globalThis): boolean {
 export function isAndroidRuntime(userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): boolean {
   return /\bAndroid\b/.test(userAgent)
 }
+
+/**
+ * Adresse du cadre des boards, servi par la coquille bureau (protocole
+ * savoire-board, avec sa propre CSP). Windows sert les protocoles maison en
+ * http://<nom>.localhost, Linux et macOS en <nom>://localhost. Null hors bureau.
+ */
+export function boardFrameUrl(scope: unknown = globalThis, userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): string | null {
+  if (!isTauriRuntime(scope) || isAndroidRuntime(userAgent)) return null
+  return /\bWindows\b/.test(userAgent) ? 'http://savoire-board.localhost/' : 'savoire-board://localhost/'
+}
