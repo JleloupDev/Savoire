@@ -24,7 +24,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'wtf',
       label: 'Note WTF',
-      icon: '🤪',
+      icon: 'smile',
       // Le texte EST un CRDT, comme une note Markdown : edition simultanee.
       collaborationMode: 'crdt',
       create: async () => '',

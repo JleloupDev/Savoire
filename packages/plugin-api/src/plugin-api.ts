@@ -25,6 +25,7 @@ import type { IQueryEngine } from './query'
 import type { ISearchEngine } from './search'
 import type { IIndexerAPI } from './indexer'
 import type { IPropertyTypes } from './properties'
+import type { IconAPI } from './icons'
 
 export interface IPluginVaultAPI extends VaultAPI {}
 export interface IPluginWorkspaceAPI extends WorkspaceAPI {}
@@ -69,6 +70,9 @@ export interface IPluginAPI {
   /** Pouvoirs de l'index de tout le vault (liens, tags, etat). Voir indexer.ts.
    *  Permission 'vault:read'. available() faux : garder le comportement local. */
   indexer?: IIndexerAPI
+  /** Icones de l'appli (Lucide), a inserer dans le DOM. Voir icons.ts.
+   *  Aucune permission. Absent sur un hote sans icones : voir createIcon(). */
+  icons?: IconAPI
 }
 
 export interface PluginAPI extends IPluginAPI {}

@@ -25,6 +25,7 @@
 //  - sort   : expressions, « asc » (defaut) ou « desc » ;
 //  - limit  : nombre de lignes (ou de groupes) montrees (50 par defaut).
 // Le bloc suit la base en direct.
+import { createIcon } from '@savoire/plugin-api'
 import { BLOCK_DESTROY_EVENT, QUERY_MAX_LIMIT, aggregateKey, tryCompileFormula } from '@savoire/plugin-api'
 import type {
   CompiledFormula, FormulaAggregateCall, FormulaRow, IQueryEngine, ISharedTree, PluginAPI, PropertyValue, Query, QueryAggregate,
@@ -501,7 +502,7 @@ export function renderBaseQueryBlock(source: string, api: PluginAPI | undefined)
   })
 
   const draw = (r: BaseQueryResult, basePath: string) => {
-    const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${basePath}` }, `🗃️ ${basePath.split('/').pop()}`)
+    const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${basePath}` }, createIcon(api.icons, 'database', { size: 13 }), ` ${basePath.split('/').pop()}`)
     open.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(basePath) })
     const foot = h('div', { class: 'base-q-foot' }, open,
       h('span', {}, r.groups !== undefined

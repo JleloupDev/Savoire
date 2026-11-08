@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { createIcon } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { renderImageEmbed } from './image'
@@ -120,7 +121,7 @@ const plugin: VaultPlugin = {
       api.files.register({
         extension: ext,
         label: 'Image',
-        icon: '🖼',
+        icon: 'image',
         creatable: false,
         create: async () => { throw new Error('Cannot create image files') },
         open: (path) => {
@@ -159,7 +160,7 @@ const plugin: VaultPlugin = {
         id: 'note-embed',
         label: 'Intégrer une note',
         description: 'Embed lecture seule ![[...]]',
-        icon: '📄',
+        icon: 'file-input',
         category: 'Embeds',
         insert: '![[chemin/fichier.md]]',
       },
@@ -220,7 +221,7 @@ const plugin: VaultPlugin = {
             'font-size:11px;color:#aaa;margin-bottom:6px;display:flex;align-items:center;gap:6px'
           const rawSpan = document.createElement('span') as HTMLSpanElement
           rawSpan.textContent = raw
-          header.appendChild(document.createElement('span')).textContent = '📄'
+          header.appendChild(createIcon(api.icons, 'file-text', { size: 13 }))
           header.appendChild(rawSpan)
           container.appendChild(header)
 

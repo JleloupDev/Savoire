@@ -155,7 +155,7 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
               id: `wikilink:${path}`,
               label: stem,
               description: path,
-              icon: '[[',
+              icon: 'link-2',
               category: 'Notes',
               // commitTriggerInsert() remplace « [[ » ET la requete saisie :
               // l'insertion doit donc porter le lien complet. Le nom seul
@@ -171,7 +171,7 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
                 id: `wikilink:new:${raw}`,
                 label: raw,
                 description: 'Nouvelle note (le lien pointera vers une note a creer)',
-                icon: '[[',
+                icon: 'link-2',
                 category: 'Nouveau',
                 insert: `[[${raw}]]`,
               })
@@ -240,7 +240,7 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
         id: 'wikilinks:new-page',
         label: 'Page',
         description: 'Lien vers une nouvelle note : tapez son nom, Ctrl+clic la crée',
-        icon: '📄',
+        icon: 'file',
         category: 'Insérer',
         insert: '[[]]',
         cursor: 2,

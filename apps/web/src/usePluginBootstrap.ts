@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { createIconElement } from '@savoire/ui-components'
 import { useRef, useCallback, useEffect } from 'react'
 import type { MutableRefObject } from 'react'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -309,6 +310,7 @@ export function usePluginBootstrap({
       pluginApi.search = indexerServicesRef.current!.search
       pluginApi.indexer = indexerServicesRef.current!.powers
       pluginApi.properties = propertyTypesRef.current!
+      pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
         onEdited: (docId, text) => {
@@ -376,7 +378,7 @@ export function usePluginBootstrap({
       fileTypeRegistry.register({
         extension: 'md',
         label: 'Note Markdown',
-        icon: '📝',
+        icon: 'file-text',
         // Le texte des notes EST un CRDT (Y.Text) : edition simultanee, aucune
         // perte. C'est le seul type qui peut l'affirmer aujourd'hui.
         collaborationMode: 'crdt',

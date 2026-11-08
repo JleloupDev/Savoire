@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { Icon } from '@savoire/ui-components'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
@@ -198,10 +199,10 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
                     {desktopMenu.server.account ? 'Changer de serveur ou de compte…' : 'Se connecter à un serveur…'}
                   </button>
                   {desktopMenu.server.state === 'connected' && (
-                    <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ ...menuBtn, color: 'var(--color-info)' }}>⚙ Administration</button>
+                    <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ ...menuBtn, color: 'var(--color-info)', display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="settings" size={14} />Administration</button>
                   )}
                   {desktopMenu.server.account && (
-                    <button data-testid="account-menu-disconnect" onClick={() => { desktopMenu.onDisconnect(); setAvatarOpen(false) }} style={{ ...menuBtn, color: 'var(--color-danger)' }}>✕ Se déconnecter du serveur</button>
+                    <button data-testid="account-menu-disconnect" onClick={() => { desktopMenu.onDisconnect(); setAvatarOpen(false) }} style={{ ...menuBtn, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="log-out" size={14} />Se déconnecter du serveur</button>
                   )}
                 </> : <>
                 {accounts.map(acc => (
@@ -218,8 +219,8 @@ function IconRail({ ribbonItems, activeViewId, onRibbonClick, onSettingsClick, o
                   <button onClick={() => { onManageKey(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>🔑 Ma clé de chiffrement</button>
                 )}
                 {serverAccount && <>
-                <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer' }}>⚙ Administration</button>
-                <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}>✕ Déconnexion</button>
+                <button onClick={() => { onAdmin(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-info)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="settings" size={14} />Administration</button>
+                <button onClick={() => { onLogout(); setAvatarOpen(false) }} style={{ textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="log-out" size={14} />Déconnexion</button>
                 </>}
                 </>}
               </div>
@@ -1549,7 +1550,7 @@ export function AppShell() {
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
-            <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
+            <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>
           </div>
         </div>
       )}
@@ -1562,7 +1563,7 @@ export function AppShell() {
         <div data-testid="key-modal" onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
             <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} />
-            <button onClick={() => setKeyModalRequest(null)} style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer', zIndex: 1 }}>✕</button>
+            <button onClick={() => setKeyModalRequest(null)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>
           </div>
         </div>
       )}

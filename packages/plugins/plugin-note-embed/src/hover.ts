@@ -9,6 +9,7 @@
 //
 // Les liens rendus portent leur cible dans l'adresse : `#Page`, `#Page#Titre`,
 // `#Page#^bloc` (plugin-wikilinks).
+import { createIcon } from '@savoire/plugin-api'
 import type { PluginAPI } from '@savoire/plugin-api'
 import { parseSubpath, type EmbedSubpath } from './section'
 
@@ -73,8 +74,9 @@ export function installLinkPreview(api: PluginAPI, render: RenderPart): () => vo
       'border:1px solid var(--border,#ddd)', 'box-shadow:0 8px 28px rgba(0,0,0,0.25)',
     ].join(';')
     const head = document.createElement('div')
-    head.style.cssText = 'font-size:11px;color:var(--text-faint,#999);margin-bottom:6px'
-    head.textContent = `📄 ${target.page}${target.subpath ? ` › ${target.subpath.kind === 'block' ? `^${target.subpath.id}` : target.subpath.headings.join(' › ')}` : ''}`
+    head.style.cssText = 'font-size:11px;color:var(--text-faint,#999);margin-bottom:6px;display:flex;align-items:center;gap:6px'
+    head.append(createIcon(api.icons, 'file-text', { size: 13 }))
+    head.append(`${target.page}${target.subpath ? ` › ${target.subpath.kind === 'block' ? `^${target.subpath.id}` : target.subpath.headings.join(' › ')}` : ''}`)
     const body = document.createElement('div')
     body.className = 'link-preview-body'
     body.textContent = '…'

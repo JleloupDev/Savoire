@@ -3,6 +3,7 @@
 //
 // Board integre dans une note : ![[Tableau de bord.board]]. Meme iframe
 // isolee et meme API que dans son fichier ; sa hauteur suit son contenu.
+import { createIcon } from '@savoire/plugin-api'
 import { BLOCK_DESTROY_EVENT } from '@savoire/plugin-api'
 import type { PluginAPI } from '@savoire/plugin-api'
 import { confirmIn } from './confirm'
@@ -56,12 +57,13 @@ export function renderBoardEmbed(name: string, api: PluginAPI | undefined): HTML
     status.dataset.testid = 'board-embed-status'
     const open = document.createElement('a')
     open.href = '#'
-    open.textContent = `🧩 ${board.path.split('/').pop()}`
+    open.style.cssText = 'display:inline-flex;align-items:center;gap:5px'
+    open.append(createIcon(api.icons, 'layout-dashboard', { size: 13 }), board.path.split('/').pop() ?? '')
     open.title = `Ouvrir ${board.path}`
     open.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(board.path) })
     const again = document.createElement('a')
     again.href = '#'
-    again.textContent = '↻'
+    again.append(createIcon(api.icons, 'refresh-cw', { size: 13 }))
     again.title = 'Relire et relancer le board'
     const foot = document.createElement('div')
     foot.className = 'board-embed-foot'

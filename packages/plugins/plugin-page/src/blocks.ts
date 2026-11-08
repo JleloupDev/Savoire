@@ -6,7 +6,10 @@ import type { Editor } from '@tiptap/core'
 export interface BlockItem {
   id: string
   label: string
+  /** Texte montre sans icones de l'hote. */
   icon: string
+  /** Icone Lucide (api.icons). */
+  lucide?: string
   /** Mots qui le trouvent aussi dans le filtre. */
   keywords: string[]
   /** Absent pour la sous-page : la vue demande d'abord son nom. */
@@ -14,17 +17,17 @@ export interface BlockItem {
 }
 
 export const BLOCK_ITEMS: BlockItem[] = [
-  { id: 'text', label: 'Texte', icon: '¶', keywords: ['paragraphe', 'text'], apply: e => { e.chain().focus().setParagraph().run() } },
-  { id: 'h1', label: 'Titre 1', icon: 'H1', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 1 }).run() } },
-  { id: 'h2', label: 'Titre 2', icon: 'H2', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 2 }).run() } },
-  { id: 'h3', label: 'Titre 3', icon: 'H3', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 3 }).run() } },
-  { id: 'bullet', label: 'Liste à puces', icon: '•', keywords: ['liste', 'bullet', 'puces'], apply: e => { e.chain().focus().toggleBulletList().run() } },
-  { id: 'ordered', label: 'Liste numérotée', icon: '1.', keywords: ['liste', 'numero', 'ordered'], apply: e => { e.chain().focus().toggleOrderedList().run() } },
-  { id: 'task', label: 'Liste de tâches', icon: '☐', keywords: ['tache', 'todo', 'case', 'checkbox'], apply: e => { e.chain().focus().toggleTaskList().run() } },
-  { id: 'quote', label: 'Citation', icon: '❝', keywords: ['quote', 'citation'], apply: e => { e.chain().focus().toggleBlockquote().run() } },
-  { id: 'code', label: 'Code', icon: '</>', keywords: ['code', 'bloc'], apply: e => { e.chain().focus().toggleCodeBlock().run() } },
-  { id: 'divider', label: 'Séparateur', icon: '—', keywords: ['separateur', 'ligne', 'hr', 'divider'], apply: e => { e.chain().focus().setHorizontalRule().run() } },
-  { id: 'subpage', label: 'Sous-page', icon: '📄', keywords: ['page', 'sous-page', 'lien'] },
+  { id: 'text', label: 'Texte', icon: '¶', lucide: 'pilcrow', keywords: ['paragraphe', 'text'], apply: e => { e.chain().focus().setParagraph().run() } },
+  { id: 'h1', label: 'Titre 1', icon: 'H1', lucide: 'heading-1', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 1 }).run() } },
+  { id: 'h2', label: 'Titre 2', icon: 'H2', lucide: 'heading-2', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 2 }).run() } },
+  { id: 'h3', label: 'Titre 3', icon: 'H3', lucide: 'heading-3', keywords: ['heading', 'titre'], apply: e => { e.chain().focus().setHeading({ level: 3 }).run() } },
+  { id: 'bullet', label: 'Liste à puces', icon: '•', lucide: 'list', keywords: ['liste', 'bullet', 'puces'], apply: e => { e.chain().focus().toggleBulletList().run() } },
+  { id: 'ordered', label: 'Liste numérotée', icon: '1.', lucide: 'list-ordered', keywords: ['liste', 'numero', 'ordered'], apply: e => { e.chain().focus().toggleOrderedList().run() } },
+  { id: 'task', label: 'Liste de tâches', icon: '☐', lucide: 'list-checks', keywords: ['tache', 'todo', 'case', 'checkbox'], apply: e => { e.chain().focus().toggleTaskList().run() } },
+  { id: 'quote', label: 'Citation', icon: '❝', lucide: 'text-quote', keywords: ['quote', 'citation'], apply: e => { e.chain().focus().toggleBlockquote().run() } },
+  { id: 'code', label: 'Code', icon: '</>', lucide: 'square-code', keywords: ['code', 'bloc'], apply: e => { e.chain().focus().toggleCodeBlock().run() } },
+  { id: 'divider', label: 'Séparateur', icon: '—', lucide: 'minus', keywords: ['separateur', 'ligne', 'hr', 'divider'], apply: e => { e.chain().focus().setHorizontalRule().run() } },
+  { id: 'subpage', label: 'Sous-page', icon: '📄', lucide: 'file-plus', keywords: ['page', 'sous-page', 'lien'] },
 ]
 
 /** Sans accents ni casse, pour le filtre. */

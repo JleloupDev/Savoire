@@ -6,6 +6,7 @@
 // La corbeille est un dossier `.trash/` du vault (voir VaultAPI.deleteFile) :
 // elle n'apparait pas dans l'arborescence, seulement ici, en bas de
 // l'explorateur. Pas de nettoyage automatique.
+import { Icon } from './Icon'
 import { useEffect, useState } from 'react'
 import type { TrashEntry, VaultAPI } from '@savoire/plugin-api'
 import { emptyTrashRequest } from './trashMessages'
@@ -130,20 +131,21 @@ export function TrashSection({
   }
 
   const smallBtn: React.CSSProperties = {
-    background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: '0 4px', flexShrink: 0,
+    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', flexShrink: 0, display: 'inline-flex',
     color: 'var(--text-muted, #bbb)',
   }
 
   return (
-    <div data-testid="trash-section" style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
+    <div data-testid="trash-section" style={{ flexShrink: 0, borderTop: '1px solid var(--border, rgba(255,255,255,0.08))', fontSize: 12 }}>
       <div
         data-testid="trash-toggle"
         onClick={() => setOpen(o => !o)}
         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', cursor: 'pointer', userSelect: 'none' }}
         title="Documents mis a la corbeille"
       >
-        <span style={{ width: 10 }}>{open ? '▾' : '▸'}</span>
-        <span style={{ flex: 1 }}>🗑 Corbeille</span>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} style={{ color: 'var(--text-faint, #94a3b8)' }} />
+        <Icon name="trash-2" size={14} style={{ color: 'var(--text-muted, #64748b)' }} />
+        <span style={{ flex: 1 }}>Corbeille</span>
         <span data-testid="trash-count" style={{ color: 'var(--text-muted, #999)' }}>{entries.length}</span>
       </div>
       {open && (
@@ -164,11 +166,11 @@ export function TrashSection({
               </span>
               {vault.restoreFromTrash && (
                 <button data-testid="trash-restore" style={smallBtn} title="Restaurer"
-                  onClick={() => void run(() => vault.restoreFromTrash!(entry.documentId))}>↺</button>
+                  onClick={() => void run(() => vault.restoreFromTrash!(entry.documentId))}><Icon name="rotate-ccw" size={13} /></button>
               )}
               {vault.deleteFilePermanently && (
                 <button data-testid="trash-purge" style={{ ...smallBtn, color: 'var(--color-danger, #f66)' }}
-                  title="Supprimer definitivement" onClick={() => void purge(entry)}>✕</button>
+                  title="Supprimer définitivement" onClick={() => void purge(entry)}><Icon name="x" size={13} /></button>
               )}
             </div>
           ))}

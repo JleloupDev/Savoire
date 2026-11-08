@@ -315,6 +315,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         return (r?.groups ?? []).map(g => g.key).filter((k): k is string => typeof k === 'string')
       },
       members: async () => (await api().properties?.members?.()) ?? [],
+      icons: () => api().icons,
       openLink: (target: string) => {
         // Les notes du vault qui portent ce nom (moteur de requetes), sinon l'index connu.
         const name = target.slice(target.lastIndexOf('/') + 1)

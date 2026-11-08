@@ -42,13 +42,13 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'page',
       label: 'Page',
-      icon: '📄',
+      icon: 'notebook-text',
       // Le contenu est un arbre CRDT : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
       creatable: true,
       // Page vide : pas de titre dans le contenu, c'est le nom du fichier.
       create: async () => '',
-      open: (path: string, ctx: FileContext) => createPageView(path, ctx, { workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys }),
+      open: (path: string, ctx: FileContext) => createPageView(path, ctx, { workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys, icons: api.icons }),
       contentExtractor: { toShadowDocument: pageFileToMarkdown },
     })
     const commands = pageCommands()

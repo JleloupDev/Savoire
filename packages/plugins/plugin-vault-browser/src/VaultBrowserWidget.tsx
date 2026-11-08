@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { Icon, IconsContext } from './Icon'
 import { useState, useEffect, useRef } from 'react'
-import type { Widget } from '@savoire/plugin-api'
+import type { Widget, IconAPI } from '@savoire/plugin-api'
 
 export interface VaultSummaryLike {
   id: string
@@ -92,9 +93,10 @@ const S = {
     boxSizing: 'border-box',
   } as React.CSSProperties,
   btn: (color: string): React.CSSProperties => ({
-    flex: 1, padding: '3px 6px', background: 'rgba(255,255,255,0.05)',
-    color, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4,
-    fontSize: 11, cursor: 'pointer',
+    flex: 1, padding: '5px 8px', background: 'transparent',
+    color, border: '1px solid var(--border, rgba(255,255,255,0.12))', borderRadius: 6,
+    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
   }),
   label: {
     fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-faint)',
@@ -128,7 +130,7 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
     <div style={{ background: 'var(--bg-elevated, rgba(255,255,255,0.04))', borderRadius: 6, padding: '10px 10px 8px', margin: '0 4px 4px', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>{vault.name}</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', padding: 0 }}>✕</button>
+        <button onClick={onClose} title="Fermer" style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><Icon name="x" size={14} /></button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
@@ -144,8 +146,8 @@ function VaultSettings<TVault extends VaultSummaryLike>({ vault, onRename, onDel
 
       <div style={{ display: 'flex', gap: 4 }}>
         <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && void handleRename()} style={{ ...S.inp, flex: 1 }} />
-        <button onClick={() => void handleRename()} disabled={!name.trim() || name.trim() === vault.name} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 'none', padding: '3px 10px' }}>
-          ↩
+        <button onClick={() => void handleRename()} disabled={!name.trim() || name.trim() === vault.name} title="Renommer" style={{ ...S.btn('var(--text)'), flex: 'none', padding: '3px 8px' }}>
+          <Icon name="check" size={14} />
         </button>
       </div>
 
@@ -281,7 +283,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
           style={{ flex: 1, textAlign: 'left', padding: '5px 12px', border: 'none', background: 'transparent', color: v.locked ? 'var(--text-faint)' : v.id === selectedId ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', minWidth: 0 }}
         >
           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
-            {v.locked && <span title="Clé requise pour ouvrir ce vault" style={{ fontSize: 10, flexShrink: 0 }}>🔒</span>}
+            {v.locked && <span title="Clé requise pour ouvrir ce vault" style={{ display: 'inline-flex', flexShrink: 0 }}><Icon name="lock" size={12} /></span>}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -291,9 +293,9 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
         <button
           className="cfg-btn"
           onClick={() => setSettingsFor(prev => prev === v.id ? null : v.id)}
-          style={{ opacity: 0, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', padding: '0 8px', fontSize: 13, transition: 'opacity 0.1s' }}
+          style={{ opacity: 0, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', padding: '0 8px', display: 'inline-flex', alignItems: 'center', transition: 'opacity 0.1s' }}
           title="Paramètres"
-        >⚙</button>
+        ><Icon name="settings" size={14} /></button>
       </div>
 
       {settingsFor === v.id && (
@@ -384,8 +386,8 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
         {!hasSources && creating ? createForm : (
           <div style={{ display: 'flex', gap: 4 }}>
             {!hasSources && (
-            <button data-testid="vault-create-open" onClick={() => startCreate('')} style={{ ...S.btn('var(--color-success, #4caf50)'), flex: 1, textAlign: 'left' }}>
-              + Nouveau vault
+            <button data-testid="vault-create-open" onClick={() => startCreate('')} style={{ ...S.btn('var(--text)'), flex: 1 }}>
+              <Icon name="plus" size={14} />Nouveau vault
             </button>
             )}
             {refs.onRefresh && (
@@ -394,7 +396,7 @@ function VaultBrowserPanel<TVault extends VaultSummaryLike>({
                 title="Actualiser"
                 style={{ ...S.btn('var(--text-muted)'), flex: hasSources ? 1 : 'none', padding: '3px 8px' }}
               >
-                ↺{hasSources ? ' Actualiser' : ''}
+                <Icon name="refresh-cw" size={13} />{hasSources ? 'Actualiser' : ''}
               </button>
             )}
           </div>
@@ -409,10 +411,15 @@ export class VaultBrowserWidget<TVault extends VaultSummaryLike = VaultSummaryLi
   constructor(
     private readonly workspace: VaultBrowserWorkspaceLike,
     private readonly refs: VaultBrowserRefs<TVault>,
+    private readonly icons?: IconAPI,
   ) {}
 
   render() {
-    return <VaultBrowserPanel workspace={this.workspace} refs={this.refs} />
+    return (
+      <IconsContext.Provider value={this.icons}>
+        <VaultBrowserPanel workspace={this.workspace} refs={this.refs} />
+      </IconsContext.Provider>
+    )
   }
 
   dispose() {}

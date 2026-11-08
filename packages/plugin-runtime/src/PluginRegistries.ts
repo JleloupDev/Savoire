@@ -19,6 +19,7 @@ import type {
   AnyIndexContributor,
   InputTrigger,
   IIndexerAPI,
+  IconAPI,
   IPropertyTypes,
   IQueryEngine,
   ISearchEngine,
@@ -437,6 +438,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public search?: ISearchEngine
   /** Pouvoirs de l'index de tout le vault (liens, tags), poses par l'application. */
   public indexer?: IIndexerAPI
+  public icons?: IconAPI
 
   constructor(
     public readonly blocks: BlockRegistryImpl,

@@ -10,6 +10,7 @@
 // Pas de verrou (mode 'none') : le lien change rarement, et l'edition se fait
 // ailleurs.
 
+import { createIcon } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, VaultAPI } from '@savoire/plugin-api'
 import { describeLink, normalizeUrl, parseOfficeLink, serializeOfficeLink, type OfficeLink } from './state'
 
@@ -19,12 +20,12 @@ export type { OfficeLink, LinkDescription } from './state'
 // Une famille d'icones par usage, quel que soit l'editeur : bleu = texte,
 // vert = tableur, orange = presentation (le code couleur des suites bureautiques).
 export const OFFICE_TYPES = [
-  { extension: 'docx', label: 'Document Word', icon: '📘' },
-  { extension: 'xlsx', label: 'Classeur Excel', icon: '📗' },
-  { extension: 'pptx', label: 'Présentation PowerPoint', icon: '📙' },
-  { extension: 'odt', label: 'Texte OpenDocument', icon: '📘' },
-  { extension: 'ods', label: 'Classeur OpenDocument', icon: '📗' },
-  { extension: 'odp', label: 'Présentation OpenDocument', icon: '📙' },
+  { extension: 'docx', label: 'Document Word', icon: 'file-text' },
+  { extension: 'xlsx', label: 'Classeur Excel', icon: 'file-spreadsheet' },
+  { extension: 'pptx', label: 'Présentation PowerPoint', icon: 'presentation' },
+  { extension: 'odt', label: 'Texte OpenDocument', icon: 'file-text' },
+  { extension: 'ods', label: 'Classeur OpenDocument', icon: 'file-spreadsheet' },
+  { extension: 'odp', label: 'Présentation OpenDocument', icon: 'presentation' },
 ] as const
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ function createOfficeView(
   type: (typeof OFFICE_TYPES)[number],
   ctx: FileContext,
   sync: PluginAPI['sync'],
+  icons?: PluginAPI['icons'],
 ): FileView {
   const vault: VaultAPI | undefined = ctx.vault
   const docName = path.split('/').at(-1) ?? path
@@ -75,8 +77,8 @@ function createOfficeView(
     card.dataset.testid = 'office-card'
 
     const title = document.createElement('div')
-    title.style.cssText = 'font-size:16px;font-weight:600'
-    title.textContent = `${type.icon} ${docName}`
+    title.style.cssText = 'font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px'
+    title.append(createIcon(icons, type.icon, { size: 18 }), docName)
     card.appendChild(title)
 
     if (link && !editing) {
@@ -260,7 +262,7 @@ const plugin: VaultPlugin = {
         collaborationMode: 'none',
         // Document vide : le lien se colle depuis la fiche.
         create: async () => '',
-        open: (path: string, ctx: FileContext) => createOfficeView(path, type, ctx, api.sync),
+        open: (path: string, ctx: FileContext) => createOfficeView(path, type, ctx, api.sync, api.icons),
       })
     }
   },

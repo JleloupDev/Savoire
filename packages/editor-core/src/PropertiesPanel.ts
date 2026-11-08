@@ -14,11 +14,12 @@ import { EditorView, WidgetType, Decoration } from '@codemirror/view'
 import { Facet, StateEffect, StateField } from '@codemirror/state'
 import type { EditorState, Range } from '@codemirror/state'
 import {
+  createIcon,
   PROPERTY_TYPES, PROPERTY_TYPE_INFO, coercePropertyValue, findFrontmatter, frontmatterKeys,
   minimalTextChange, parseFrontmatter, propertyTypeOf, removeFrontmatterKey,
   renameFrontmatterKey, setFrontmatterValue,
 } from '@savoire/plugin-api'
-import type { IPropertyTypes, PropertyMember, PropertyType, PropertyValue } from '@savoire/plugin-api'
+import type { IconAPI, IPropertyTypes, PropertyMember, PropertyType, PropertyValue } from '@savoire/plugin-api'
 
 /** Ce que le panneau demande a son editeur. */
 export interface PropertiesHost {
@@ -31,6 +32,8 @@ export interface PropertiesHost {
   members?(): Promise<PropertyMember[]>
   /** Ouvre la note visee par un lien `[[...]]`. */
   openLink?(target: string): void
+  /** Icones de l'hote (Lucide). Absentes : le nom s'affiche en texte. */
+  icons?(): IconAPI | undefined
 }
 
 export const propertiesHost = Facet.define<PropertiesHost, PropertiesHost | null>({
@@ -108,7 +111,7 @@ class BackToPanelWidget extends WidgetType {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.dataset.testid = 'properties-panel-back'
-    btn.textContent = '☰ Afficher le panneau des propriétés'
+    btn.textContent = 'Afficher le panneau des propriétés'
     btn.addEventListener('mousedown', e => {
       e.preventDefault()
       view.dispatch({ effects: showYamlSource.of(false) })
@@ -235,7 +238,8 @@ export class PropertiesPanel {
     row.dataset.type = type
     row.dataset.testid = 'property-row'
 
-    const icon = el('button', 'plume-prop-icon', PROPERTY_TYPE_INFO[type].icon)
+    const icon = el('button', 'plume-prop-icon')
+    icon.appendChild(createIcon(this.host.icons?.(), PROPERTY_TYPE_INFO[type].icon, { size: 15 }))
     icon.type = 'button'
     icon.title = `${PROPERTY_TYPE_INFO[type].label}${types?.get(key) ? '' : ' (deviné)'} : changer le type`
     icon.dataset.testid = 'property-type'
@@ -356,7 +360,8 @@ export class PropertiesPanel {
           a.href = '#'
           a.dataset.testid = 'property-link'
           a.addEventListener('click', e => { e.preventDefault(); this.host.openLink?.(linkTarget(s)) })
-          const edit = el('button', 'plume-prop-edit', '✎')
+          const edit = el('button', 'plume-prop-edit')
+          edit.appendChild(createIcon(this.host.icons?.(), 'pencil', { size: 13 }))
           edit.type = 'button'
           edit.title = 'Modifier le lien'
           edit.addEventListener('click', () => {
@@ -457,7 +462,7 @@ export class PropertiesPanel {
     const type = el('select', 'plume-prop-newtype')
     type.dataset.testid = 'property-new-type'
     for (const t of PROPERTY_TYPES) {
-      const o = el('option', undefined, `${PROPERTY_TYPE_INFO[t].icon} ${PROPERTY_TYPE_INFO[t].label}`)
+      const o = el('option', undefined, PROPERTY_TYPE_INFO[t].label)
       o.value = t
       type.appendChild(o)
     }
@@ -499,7 +504,8 @@ export class PropertiesPanel {
     const menu = el('div', 'plume-props-menu')
     menu.dataset.testid = 'property-type-menu'
     for (const t of PROPERTY_TYPES) {
-      const item = el('button', 'plume-props-menu-item', `${PROPERTY_TYPE_INFO[t].icon}  ${PROPERTY_TYPE_INFO[t].label}`)
+      const item = el('button', 'plume-props-menu-item')
+      item.append(createIcon(this.host.icons?.(), PROPERTY_TYPE_INFO[t].icon, { size: 15 }), PROPERTY_TYPE_INFO[t].label)
       item.type = 'button'
       item.dataset.type = t
       if (t === current) item.classList.add('plume-props-menu-current')
@@ -581,6 +587,7 @@ export function propertiesPanelExtension(host: PropertiesHost) {
       '.plume-prop': { display: 'flex', alignItems: 'center', gap: '6px', minHeight: '28px', position: 'relative' },
       '.plume-prop-icon': {
         width: '24px', height: '24px', border: 'none', background: 'transparent', cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0',
         color: 'var(--text-muted, #a6adc8)', borderRadius: '4px', flex: '0 0 auto',
       },
       '.plume-prop-icon:hover:not(:disabled)': { background: 'var(--bg-hover, rgba(255,255,255,0.06))' },
@@ -604,7 +611,7 @@ export function propertiesPanelExtension(host: PropertiesHost) {
       },
       '.plume-pill-x': { border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: '0 0 0 2px', opacity: '0.7' },
       '.plume-prop-link': { color: 'var(--accent, #7c3aed)', textDecoration: 'underline', cursor: 'pointer' },
-      '.plume-prop-edit': { border: 'none', background: 'transparent', color: 'var(--text-faint, #6c7086)', cursor: 'pointer' },
+      '.plume-prop-edit': { border: 'none', background: 'transparent', color: 'var(--text-faint, #6c7086)', cursor: 'pointer', display: 'inline-flex', padding: '2px' },
       '.plume-prop-remove': {
         border: 'none', background: 'transparent', color: 'var(--text-faint, #6c7086)', cursor: 'pointer',
         visibility: 'hidden', fontSize: '15px',
@@ -626,7 +633,8 @@ export function propertiesPanelExtension(host: PropertiesHost) {
       },
       '.plume-props-menu-item': {
         textAlign: 'left', border: 'none', background: 'transparent', color: 'var(--text, #cdd6f4)',
-        padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', font: 'inherit',
+        padding: '5px 8px', borderRadius: '5px', cursor: 'pointer', font: 'inherit',
+        display: 'flex', alignItems: 'center', gap: '8px',
       },
       '.plume-props-menu-item:hover, .plume-props-menu-current': { background: 'var(--bg-hover, rgba(255,255,255,0.08))' },
     }),

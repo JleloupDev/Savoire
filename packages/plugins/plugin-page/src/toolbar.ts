@@ -11,13 +11,18 @@
 // selection reste dans la page. Rien en lecture seule.
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
-import type { HotkeyAPI } from '@savoire/plugin-api'
+import type { HotkeyAPI, IconAPI } from '@savoire/plugin-api'
 import { pageCommandLabel, runPageCommand } from './commands'
-import { PAGE_COLORS } from './highlight'
+import { PAGE_COLORS, PAGE_HIGHLIGHT_VALUES } from './highlight'
 
 interface MenuItem {
   command: string
+  /** Texte montre sans icones de l'hote. */
   icon: string
+  /** Icone Lucide (api.icons). */
+  lucide?: string
+  /** Couleur montree en pastille (surlignage). */
+  swatch?: string
   /** Bouton actif (marque ou bloc deja applique). */
   active?: (e: Editor) => boolean
 }
@@ -25,6 +30,7 @@ interface MenuItem {
 interface ToolbarButton {
   key: string
   icon: string
+  lucide?: string
   /** Commande lancee au clic ; sinon le bouton ouvre son menu. */
   command?: string
   /** Infobulle d'un bouton a menu. */
@@ -36,34 +42,34 @@ interface ToolbarButton {
 }
 
 const BLOCKS: (MenuItem & { name: string })[] = [
-  { command: 'page:set-paragraph', icon: '¶', name: 'Texte' },
-  { command: 'page:heading-1', icon: 'H1', name: 'Titre 1', active: e => e.isActive('heading', { level: 1 }) },
-  { command: 'page:heading-2', icon: 'H2', name: 'Titre 2', active: e => e.isActive('heading', { level: 2 }) },
-  { command: 'page:heading-3', icon: 'H3', name: 'Titre 3', active: e => e.isActive('heading', { level: 3 }) },
-  { command: 'page:toggle-bullet-list', icon: '•', name: 'Liste', active: e => e.isActive('bulletList') },
-  { command: 'page:toggle-numbered-list', icon: '1.', name: 'Liste numérotée', active: e => e.isActive('orderedList') },
-  { command: 'page:toggle-checklist', icon: '☐', name: 'Case à cocher', active: e => e.isActive('taskList') },
-  { command: 'page:toggle-quote', icon: '❝', name: 'Citation', active: e => e.isActive('blockquote') },
+  { command: 'page:set-paragraph', icon: '¶', lucide: 'pilcrow', name: 'Texte' },
+  { command: 'page:heading-1', icon: 'H1', lucide: 'heading-1', name: 'Titre 1', active: e => e.isActive('heading', { level: 1 }) },
+  { command: 'page:heading-2', icon: 'H2', lucide: 'heading-2', name: 'Titre 2', active: e => e.isActive('heading', { level: 2 }) },
+  { command: 'page:heading-3', icon: 'H3', lucide: 'heading-3', name: 'Titre 3', active: e => e.isActive('heading', { level: 3 }) },
+  { command: 'page:toggle-bullet-list', icon: '•', lucide: 'list', name: 'Liste', active: e => e.isActive('bulletList') },
+  { command: 'page:toggle-numbered-list', icon: '1.', lucide: 'list-ordered', name: 'Liste numérotée', active: e => e.isActive('orderedList') },
+  { command: 'page:toggle-checklist', icon: '☐', lucide: 'list-checks', name: 'Case à cocher', active: e => e.isActive('taskList') },
+  { command: 'page:toggle-quote', icon: '❝', lucide: 'text-quote', name: 'Citation', active: e => e.isActive('blockquote') },
 ]
 // Texte : actif quand aucun autre ne l'est.
 BLOCKS[0].active = e => !BLOCKS.slice(1).some(b => b.active!(e))
 
 const BUTTONS: ToolbarButton[] = [
   { key: 'block', icon: 'Texte', label: 'Transformer le bloc', items: BLOCKS, showsActive: true },
-  { key: 'bold', icon: 'B', command: 'page:toggle-bold', active: e => e.isActive('bold') },
-  { key: 'italic', icon: 'I', command: 'page:toggle-italics', active: e => e.isActive('italic') },
-  { key: 'strike', icon: 'S', command: 'page:toggle-strikethrough', active: e => e.isActive('strike') },
-  { key: 'code', icon: '</>', command: 'page:toggle-code', active: e => e.isActive('code') },
-  { key: 'link', icon: '🔗', command: 'page:insert-link', active: e => e.isActive('link') },
+  { key: 'bold', icon: 'B', lucide: 'bold', command: 'page:toggle-bold', active: e => e.isActive('bold') },
+  { key: 'italic', icon: 'I', lucide: 'italic', command: 'page:toggle-italics', active: e => e.isActive('italic') },
+  { key: 'strike', icon: 'S', lucide: 'strikethrough', command: 'page:toggle-strikethrough', active: e => e.isActive('strike') },
+  { key: 'code', icon: '</>', lucide: 'code', command: 'page:toggle-code', active: e => e.isActive('code') },
+  { key: 'link', icon: '🔗', lucide: 'link', command: 'page:insert-link', active: e => e.isActive('link') },
   {
-    key: 'highlight', icon: '🖍', label: 'Surligner', active: e => e.isActive('highlight'),
+    key: 'highlight', icon: '🖍', lucide: 'highlighter', label: 'Surligner', active: e => e.isActive('highlight'),
     items: [
-      { command: 'page:toggle-highlight', icon: '🖍', active: e => e.isActive('highlight', { color: null }) },
+      { command: 'page:toggle-highlight', icon: '🖍', lucide: 'highlighter', active: e => e.isActive('highlight', { color: null }) },
       ...PAGE_COLORS.map(c => ({
-        command: `page:highlight-${c.color}`, icon: c.emoji,
+        command: `page:highlight-${c.color}`, icon: c.emoji, swatch: PAGE_HIGHLIGHT_VALUES[c.color],
         active: (e: Editor) => e.isActive('highlight', { color: c.color }),
       })),
-      { command: 'page:remove-highlight', icon: '✕' },
+      { command: 'page:remove-highlight', icon: '✕', lucide: 'ban' },
     ],
   },
 ]
@@ -90,7 +96,22 @@ export function createSelectionToolbar(
   editor: Editor,
   host: HTMLElement,
   hotkeys?: Partial<Pick<HotkeyAPI, 'get' | 'format'>>,
+  icons?: IconAPI,
 ): SelectionToolbar {
+  /** Icone Lucide si l'hote en fournit, sinon le texte d'origine. */
+  function glyph(lucide: string | undefined, text: string, size = 16): Node {
+    return icons && lucide ? icons.create(lucide, { size }) : document.createTextNode(text)
+  }
+  function itemGlyph(item: MenuItem): Node {
+    if (icons && item.swatch) {
+      const dot = document.createElement('span')
+      dot.className = 'page-toolbar-swatch'
+      dot.style.background = item.swatch
+      return dot
+    }
+    return glyph(item.lucide, item.icon)
+  }
+
   const bar = document.createElement('div')
   bar.className = 'page-toolbar'
   bar.dataset.testid = 'page-toolbar'
@@ -126,7 +147,7 @@ export function createSelectionToolbar(
     btn.dataset.testid = 'page-toolbar-button'
     btn.dataset.key = b.key
     if (b.command) btn.dataset.commandId = b.command
-    btn.textContent = b.icon
+    btn.replaceChildren(glyph(b.lucide, b.icon))
     btn.addEventListener('mousedown', (e) => {
       e.preventDefault()
       if (b.command) { run(b.command); return }
@@ -153,7 +174,7 @@ export function createSelectionToolbar(
         row.setAttribute('role', 'menuitem')
         const icon = document.createElement('span')
         icon.className = 'page-toolbar-item-icon'
-        icon.textContent = item.icon
+        icon.append(itemGlyph(item))
         const name = document.createElement('span')
         name.textContent = itemLabel(item)
         row.append(icon, name)
@@ -179,7 +200,9 @@ export function createSelectionToolbar(
       btn.title = b.command ? title(b.command) : (b.label ?? '')
       if (b.showsActive && b.items) {
         const current = b.items.find(i => i.active?.(editor))
-        btn.textContent = `${current ? itemLabel(current) : b.icon} ▾`
+        const label = current ? itemLabel(current) : b.icon
+        if (icons) btn.replaceChildren(label, icons.create('chevron-down', { size: 13, className: 'page-toolbar-chev' }))
+        else btn.textContent = `${label} ▾`
       }
       if (menu) {
         menu.hidden = openMenu !== b.key

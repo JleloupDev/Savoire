@@ -44,7 +44,7 @@ function verseItem(label: string, preview: string[], targets: VerseTarget[], lin
     id: `quickref:${targets.map(t => `${t.info.path}#${t.verse}`).join(',')}`,
     label,
     description: clip(preview.join(' ')),
-    icon: '📖',
+    icon: 'book-open',
     category: 'Versets',
     insert: targets.map(t => embedOf(t, linkTarget)).join('\n'),
   }
@@ -86,7 +86,7 @@ export function suggest(
       id: `quickref:chapter:${info.path}`,
       label: info.name,
       description: clip(info.verses.get(1) ?? ''),
-      icon: '📖',
+      icon: 'book-open',
       category: 'Chapitres',
       // Un chapitre a versets : on complete la reference et le menu reste
       // ouvert pour le verset. Sans versets : un lien vers la note.

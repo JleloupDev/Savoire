@@ -8,6 +8,7 @@
 // verrou : chacun ecrit quand il veut. Les messages ecrits avant, dans une
 // carte du vault a cote du document (ctx.shared), restent lisibles.
 
+import { createIcon } from '@savoire/plugin-api'
 import type { FileContext, FileView, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { mergedMessageMap, postMessage, readMessages, treeMessageMap, type ChatMessage } from './messages'
 
@@ -15,7 +16,7 @@ export { postMessage, readMessages, treeMessageMap, mergedMessageMap, type ChatM
 
 const MUTED = 'font-size:12px;color:var(--text-muted,#a6adc8)'
 
-function createChatView(path: string, ctx: FileContext): FileView {
+function createChatView(path: string, ctx: FileContext, icons?: PluginAPI['icons']): FileView {
   let container: HTMLElement | null = null
   let unsub: (() => void) | null = null
   let readOnly = !!ctx.readOnly
@@ -67,8 +68,8 @@ function createChatView(path: string, ctx: FileContext): FileView {
         return
       }
       const title = document.createElement('div')
-      title.style.cssText = 'padding:10px 16px;font-weight:600;border-bottom:1px solid var(--border,#313244);color:var(--text,#cdd6f4)'
-      title.textContent = `💬 ${path.split('/').at(-1)?.replace(/\.chat$/, '') ?? path}`
+      title.style.cssText = 'padding:10px 16px;font-weight:600;border-bottom:1px solid var(--border,#313244);color:var(--text,#cdd6f4);display:flex;align-items:center;gap:8px'
+      title.append(createIcon(icons, 'messages-square', { size: 16 }), path.split('/').at(-1)?.replace(/\.chat$/, '') ?? path)
       const list = document.createElement('div')
       list.dataset.testid = 'chat-messages'
       list.style.cssText = 'flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px'
@@ -123,11 +124,11 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'chat',
       label: 'Discussion',
-      icon: '💬',
+      icon: 'messages-square',
       // Les messages vivent dans le CRDT du document : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
       create: async () => '',
-      open: (path: string, ctx: FileContext) => createChatView(path, ctx),
+      open: (path: string, ctx: FileContext) => createChatView(path, ctx, api.icons),
     })
   },
 

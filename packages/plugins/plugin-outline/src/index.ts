@@ -162,7 +162,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'outline',
       label: 'Plan',
-      icon: '☰',
+      icon: 'list-tree',
       // Le texte est un CRDT : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
       creatable: true,

@@ -44,7 +44,7 @@ export function createFileTreePlugin(options: FileTreePluginOptions = {}): Vault
         closable: options.closable,
         initialSize: options.initialSize,
         createView(ctx) {
-          return new FileTreeWidget(ctx, api.indexer)
+          return new FileTreeWidget(ctx, api.indexer, api.icons)
         },
       })
     },

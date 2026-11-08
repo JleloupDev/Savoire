@@ -131,7 +131,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'table',
       label: 'Tableau',
-      icon: '📊',
+      icon: 'sheet',
 
       // Default content for a new .table file
       async create() {
@@ -215,7 +215,7 @@ const plugin: VaultPlugin = {
         id: 'table:inline',
         label: 'Tableau interactif',
         description: 'Tableau éditable avec formules (HyperFormula)',
-        icon: '📊',
+        icon: 'sheet',
         category: 'Blocs',
         insert: '```table\n| Col A | Col B | Total |\n| ----- | ----- | ----- |\n|       |       |       |\n```',
       },
@@ -226,7 +226,7 @@ const plugin: VaultPlugin = {
       id: 'table:new',
       label: 'Nouveau tableau (.table)',
       description: "Crée un fichier .table et l'insère comme module",
-      icon: '📊',
+      icon: 'sheet',
       category: 'Modules',
       insert: () => '@[[nouveau-tableau.table]]',
     })

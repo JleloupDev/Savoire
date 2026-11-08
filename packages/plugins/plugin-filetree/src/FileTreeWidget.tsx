@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { createContext, useCallback, useContext, useEffect, useState, useRef } from 'react'
-import type { ViewContext, VaultAPI, FileTypeSpec, IIndexerAPI } from '@savoire/plugin-api'
+import type { ViewContext, VaultAPI, FileTypeSpec, IIndexerAPI, IconAPI } from '@savoire/plugin-api'
 import { fileExtensionOf } from '@savoire/plugin-api'
 import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
 import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
 import { ConfirmDialog, TrashSection, type DialogChoice, type DialogRequest } from './TrashPanel'
+import { Icon, IconsContext } from './Icon'
 import { trashFolderRequest, trashSubPagesRequest } from './trashMessages'
 import { relinkAfterMoves, type Move } from './relink'
 
@@ -228,10 +229,10 @@ function FileNodeRow({
     borderRadius: 3,
   }
 
-  const fileIcon = fileName ? (fileTypes.find(s => fileName.endsWith('.' + s.extension))?.icon ?? '·') : ''
+  const fileIcon = fileName ? (fileTypes.find(s => fileName.endsWith('.' + s.extension))?.icon ?? 'file') : ''
   const hoverBtn: React.CSSProperties = {
     opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
-    cursor: 'pointer', fontSize: 10, padding: '0 3px', flexShrink: 0,
+    cursor: 'pointer', padding: 2, borderRadius: 4, flexShrink: 0, display: 'inline-flex',
     transition: 'opacity 0.1s',
   }
 
@@ -258,7 +259,7 @@ function FileNodeRow({
         onDragLeave={folderPath ? () => setIsDragOver(false) : undefined}
         onDrop={folderPath ? (e) => void handleDrop(e) : undefined}
         onMouseEnter={e => {
-          ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'
+          ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover, rgba(255,255,255,0.06))'
           const buttons = (e.currentTarget as HTMLElement).querySelectorAll('.del-btn, .ren-btn, .add-btn')
           buttons.forEach((btn) => { (btn as HTMLElement).style.opacity = '1' })
         }}
@@ -274,14 +275,14 @@ function FileNodeRow({
             <span
               data-testid="tree-toggle"
               onClick={e => { e.stopPropagation(); setExpanded(prev => !prev) }}
-              style={{ width: 10, flexShrink: 0 }}
+              style={{ width: 14, flexShrink: 0, display: 'inline-flex', color: 'var(--text-faint, #94a3b8)' }}
               title={expanded ? 'Replier' : 'Deplier'}
-            >{expanded ? '▾' : '▸'}</span>
+            ><Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} /></span>
           ) : (
             // La place du chevron, gardee partout : les noms restent alignes.
-            <span style={{ width: 10, flexShrink: 0 }}>{isPlainFolder ? (expanded ? '▾' : '▸') : ''}</span>
+            <span style={{ width: 14, flexShrink: 0, display: 'inline-flex', color: 'var(--text-faint, #94a3b8)' }}>{isPlainFolder && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} />}</span>
           )}
-          {!isPlainFolder && fileIcon}
+          {!isPlainFolder && <Icon name={fileIcon} size={15} style={{ color: 'var(--text-muted, #64748b)' }} />}
           {isEditing ? (
             <input
               ref={editInputRef}
@@ -320,13 +321,13 @@ function FileNodeRow({
               onClick={e => { e.stopPropagation(); onCreateInside('file', node.path) }}
               style={hoverBtn}
               title="Nouvelle note dans ce dossier"
-            >+note</button>
+            ><Icon name="file-plus" size={14} /></button>
             <button
               className="add-btn"
               onClick={e => { e.stopPropagation(); onCreateInside('folder', node.path) }}
               style={hoverBtn}
               title="Nouveau dossier dans ce dossier"
-            >+dir</button>
+            ><Icon name="folder-plus" size={14} /></button>
           </>
         )}
         {!isPlainFolder && vault.createFile && stemOf(node.path) && (
@@ -336,33 +337,25 @@ function FileNodeRow({
             onClick={e => void handleNewSubPage(e)}
             style={hoverBtn}
             title="Nouvelle sous-page"
-          >+sous</button>
+          ><Icon name="plus" size={14} /></button>
         )}
         {(vault.deleteFile ?? vault.deleteFolder) && (
           <button
             className="del-btn"
             data-testid="tree-delete"
             onClick={handleDelete}
-            style={{
-              opacity: 0, background: 'none', border: 'none', color: 'var(--color-danger, #f66)',
-              cursor: 'pointer', fontSize: 11, padding: '0 4px', flexShrink: 0,
-              transition: 'opacity 0.1s',
-            }}
-            title="Mettre a la corbeille"
-          >✕</button>
+            style={{ ...hoverBtn, color: 'var(--text-muted, #ccc)' }}
+            title="Mettre à la corbeille"
+          ><Icon name="trash-2" size={14} /></button>
         )}
         {vault.renameFile && (
           <button
             className="ren-btn"
             data-testid="tree-rename"
             onClick={handleRename}
-            style={{
-              opacity: 0, background: 'none', border: 'none', color: 'var(--text-muted, #ccc)',
-              cursor: 'pointer', fontSize: 11, padding: '0 4px', flexShrink: 0,
-              transition: 'opacity 0.1s',
-            }}
+            style={hoverBtn}
             title="Renommer"
-          >✎</button>
+          ><Icon name="pencil" size={14} /></button>
         )}
       </div>
       {folderPath && expanded && (
@@ -523,7 +516,7 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
       {/* Footer: create controls */}
       {(canCreateFile || canCreateFolder) && (
         <div style={{
-          flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.08)',
+          flexShrink: 0, borderTop: '1px solid var(--border, rgba(255,255,255,0.08))',
           padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 4,
         }}>
           {creating ? (
@@ -551,13 +544,14 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
                       onClick={() => setSelectedExtension(spec.extension)}
                       title={spec.label}
                       style={{
-                        padding: '2px 6px', fontSize: 11, cursor: 'pointer', borderRadius: 3,
+                        padding: '2px 6px', fontSize: 11, cursor: 'pointer', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
                         border: `1px solid ${selectedExtension === spec.extension ? 'var(--accent, #7c3aed)' : 'rgba(255,255,255,0.15)'}`,
                         background: selectedExtension === spec.extension ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
                         color: 'inherit',
                       }}
                     >
-                      {spec.icon} {spec.label}
+                      <Icon name={spec.icon} size={13} /> {spec.label}
                     </button>
                   ))}
                 </div>
@@ -568,14 +562,14 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
                 </div>
               )}
               <div style={{ display: 'flex', gap: 4 }}>
-                <button data-testid="tree-create-confirm" onClick={() => void handleCreate()} disabled={!newPath.trim()} style={btnStyle('#4caf50')}>OK</button>
-                <button onClick={cancelCreate} style={btnStyle('#f66')}>Ann.</button>
+                <button data-testid="tree-create-confirm" onClick={() => void handleCreate()} disabled={!newPath.trim()} style={{ ...btnStyle('var(--accent-text, #fff)'), background: 'var(--accent, #0d9488)', borderColor: 'var(--accent, #0d9488)' }}>Créer</button>
+                <button onClick={cancelCreate} style={btnStyle('var(--text-muted, #64748b)')}>Annuler</button>
               </div>
             </>
           ) : (
             <div style={{ display: 'flex', gap: 4 }}>
-              {canCreateFile && <button data-testid="tree-new-file" onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('#4caf50')}>+ Note</button>}
-              {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text-muted, #bbb)')}>+ Dossier</button>}
+              {canCreateFile && <button data-testid="tree-new-file" onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="file-plus" size={14} />Note</button>}
+              {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="folder-plus" size={14} />Dossier</button>}
             </div>
           )}
         </div>
@@ -588,18 +582,20 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
 
 function btnStyle(color: string): React.CSSProperties {
   return {
-    flex: 1, padding: '3px 6px', background: 'rgba(255,255,255,0.05)',
-    color, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+    flex: 1, padding: '5px 8px', background: 'transparent',
+    color, border: '1px solid var(--border, rgba(255,255,255,0.12))', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
   }
 }
 
 // ─── FileTreeWidget — implements Widget ──────────────────────────────────
 
 export class FileTreeWidget {
-  constructor(private readonly ctx: ViewContext, private readonly indexer?: IIndexerAPI) {}
+  constructor(private readonly ctx: ViewContext, private readonly indexer?: IIndexerAPI, private readonly icons?: IconAPI) {}
 
   render() {
     return (
+      <IconsContext.Provider value={this.icons}>
       <FileTree
         vault={this.ctx.vault}
         workspace={this.ctx.workspace}
@@ -608,6 +604,7 @@ export class FileTreeWidget {
         readFileTypes={() => this.ctx.fileTypes.getAll()}
         onOpenFile={(path) => void this.ctx.workspace.openFile(path)}
       />
+      </IconsContext.Provider>
     )
   }
 

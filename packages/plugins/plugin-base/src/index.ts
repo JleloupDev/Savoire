@@ -50,7 +50,7 @@ export function createBasePlugin(): VaultPlugin {
       pluginApi.files.register({
         extension: 'base',
         label: 'Base',
-        icon: '🗃️',
+        icon: 'database',
         // Le manifeste est un arbre partage : edition simultanee, sans verrou.
         collaborationMode: 'crdt',
         creatable: true,
@@ -66,7 +66,7 @@ export function createBasePlugin(): VaultPlugin {
           id: 'base-query',
           label: 'Requête sur une base',
           description: 'Bloc from / where / select (sum, count…)',
-          icon: '🗃️',
+          icon: 'database',
           category: 'Bases',
           insert: '```base\nfrom Projets.base\nwhere prop("Statut") == "Fait"\nselect sum(prop("Prix")) as "Total", count()\n```',
         },

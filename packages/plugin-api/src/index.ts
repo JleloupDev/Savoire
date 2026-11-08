@@ -100,6 +100,8 @@ export type * from './properties'
 export type * from './query'
 export type * from './search'
 export type * from './indexer'
+export type { IconAPI, IconOptions } from './icons'
+export { createIcon } from './icons'
 export {
   QUERY_DEFAULT_LIMIT, QUERY_MAX_LIMIT, QUERY_MAX_AGGREGATES,
   BASE_ROW_PREFIX, BASE_ROW_TITLE, BASE_LOT_COUNT, baseLotName, baseLotOf,

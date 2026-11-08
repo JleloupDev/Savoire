@@ -30,6 +30,7 @@ import {
   ArrowDown, ArrowLeft, ArrowRight, RotateCcw, Undo2, Redo2, LogOut, LogIn,
   Share2, Globe, Cloud, CloudOff, WifiOff, CircleAlert, CircleX, Maximize2,
   Minimize2, GripVertical, Move, Filter, SlidersHorizontal, Type, Quote,
+  Square, Zap, NotebookText, LayoutDashboard, FileCode, MessagesSquare, FileInput, CircleCheckBig, BookOpenText, ImagePlus,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -161,6 +162,16 @@ export const ICONS: Readonly<Record<string, LucideIcon>> = {
   'sliders-horizontal': SlidersHorizontal,
   'type': Type,
   'quote': Quote,
+  'square': Square,
+  'zap': Zap,
+  'notebook-text': NotebookText,
+  'layout-dashboard': LayoutDashboard,
+  'file-code': FileCode,
+  'messages-square': MessagesSquare,
+  'file-input': FileInput,
+  'circle-check-big': CircleCheckBig,
+  'book-open-text': BookOpenText,
+  'image-plus': ImagePlus,
 }
 
 /** Anciens noms internes, remplaces par leur nom Lucide. */
@@ -237,4 +248,64 @@ export function Icon({ name, size = 16, strokeWidth = 1.75, className, style, la
       {name}
     </span>
   )
+}
+
+// ── Hors React : un element DOM (plugins en DOM, api.icons) ─────────────────
+
+type IconNode = Array<[string, Record<string, string | number>]>
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** Dessin d'une icone : lu sur le composant (forwardRef) sans le rendre. */
+function nodeOf(Comp: LucideIcon): IconNode | null {
+  try {
+    const render = (Comp as unknown as { render?: (props: object, ref: null) => { props?: { icon?: { node?: IconNode } } } }).render
+    return render?.({}, null)?.props?.icon?.node ?? null
+  } catch { return null }
+}
+
+function drawInto(span: HTMLElement, Comp: LucideIcon, name: string, size: number, strokeWidth: number): boolean {
+  const node = nodeOf(Comp)
+  if (!node) return false
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  const attrs: Record<string, string> = {
+    xmlns: SVG_NS, width: String(size), height: String(size), viewBox: '0 0 24 24',
+    fill: 'none', stroke: 'currentColor', 'stroke-width': String(strokeWidth),
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: `lucide lucide-${name}`,
+    'aria-hidden': 'true',
+  }
+  for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v)
+  for (const [tag, a] of node) {
+    const child = document.createElementNS(SVG_NS, tag)
+    for (const [k, v] of Object.entries(a)) if (k !== 'key') child.setAttribute(k, String(v))
+    svg.appendChild(child)
+  }
+  span.replaceChildren(svg)
+  return true
+}
+
+/**
+ * Icone en element DOM : un <span> qui contient le SVG. Nom inconnu du
+ * bundle : le span garde sa place et se remplit quand le jeu complet arrive.
+ * Texte (emoji) : affiche tel quel.
+ */
+export function createIconElement(name: string, options: { size?: number; className?: string; label?: string; strokeWidth?: number } = {}): HTMLElement {
+  const { size = 16, className, label, strokeWidth = 1.75 } = options
+  const span = document.createElement('span')
+  span.className = className ? `sv-icon ${className}` : 'sv-icon'
+  span.style.cssText = `display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-width:${size}px;height:${size}px;line-height:1`
+  if (label) { span.setAttribute('role', 'img'); span.setAttribute('aria-label', label) } else span.setAttribute('aria-hidden', 'true')
+  if (!isIconName(name)) {
+    span.textContent = name
+    span.style.fontSize = `${Math.round(size * 0.8)}px`
+    return span
+  }
+  const known = resolve(name)
+  if (known && drawInto(span, known, ALIASES[name] ?? name, size, strokeWidth)) return span
+  if (!all) {
+    void loadAll().then(() => {
+      const late = resolve(name)
+      if (late) drawInto(span, late, ALIASES[name] ?? name, size, strokeWidth)
+    }, () => { /* hors ligne : la place reste vide */ })
+  }
+  return span
 }

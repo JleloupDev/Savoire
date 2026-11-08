@@ -14,7 +14,7 @@ import { Editor, Extension } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import * as Y from 'yjs'
 import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror'
-import type { FileContext, FileView, HotkeyAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
+import type { FileContext, FileView, HotkeyAPI, IconAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
 import { PAGE_EDITOR_OPTIONS, pageExtensions, PageLink, pageLinkLabel } from './schema'
 import { filterBlocks, matchSlash, type BlockItem } from './blocks'
 import { trackPageEditor, type PageController } from './commands'
@@ -35,6 +35,8 @@ export interface PageViewDeps {
    * aucune action clavier (seule la frappe ordinaire marche).
    */
   hotkeys?: Pick<HotkeyAPI, 'handleKeyEvent'> & Partial<Pick<HotkeyAPI, 'get' | 'format'>>
+  /** Icones de l'hote (Lucide). Sans elles, les symboles texte d'origine. */
+  icons?: IconAPI
 }
 
 /** Editeur d'une vue montee, par conteneur (tests, outils). */
@@ -116,7 +118,9 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
         dom.dataset.testid = 'page-link-card'
         dom.dataset.target = String(node.attrs.target)
         dom.contentEditable = 'false'
-        dom.append(el('span', 'page-link-icon', '📄'), el('span', 'page-link-label', pageLinkLabel(String(node.attrs.target))))
+        const icon = el('span', 'page-link-icon')
+        icon.append(deps.icons ? deps.icons.create('file-text', { size: 16 }) : document.createTextNode('📄'))
+        dom.append(icon, el('span', 'page-link-label', pageLinkLabel(String(node.attrs.target))))
         dom.addEventListener('click', (e) => {
           e.preventDefault()
           openTarget(String(node.attrs.target))
@@ -169,7 +173,9 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       const row = el('div', 'page-menu-item')
       row.dataset.testid = `page-slash-${item.id}`
       if (i === menu.index) row.classList.add('is-active')
-      row.append(el('span', 'page-menu-icon', item.icon), el('span', '', item.label))
+      const icon = el('span', 'page-menu-icon')
+      icon.append(deps.icons && item.lucide ? deps.icons.create(item.lucide, { size: 16 }) : document.createTextNode(item.icon))
+      row.append(icon, el('span', '', item.label))
       row.addEventListener('mousedown', (e) => {
         e.preventDefault()
         choose(item)
@@ -419,7 +425,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       cleanups.push(trackPageEditor(editor, controller))
       editorsByContainer.set(container, editor)
       cleanups.push(() => editorsByContainer.delete(container))
-      toolbar = createSelectionToolbar(editor, body, deps.hotkeys)
+      toolbar = createSelectionToolbar(editor, body, deps.hotkeys, deps.icons)
       const bar = toolbar
       cleanups.push(() => bar.destroy())
       editor.on('transaction', () => updateMenu())

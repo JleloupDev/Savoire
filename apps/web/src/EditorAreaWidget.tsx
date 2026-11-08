@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { Icon } from '@savoire/ui-components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
@@ -82,9 +83,9 @@ function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
       <span className="dv-default-tab-content">{showExt && doc ? displayFileName(doc.path, true) : props.api.title}</span>
       <span
         onClick={(e) => { e.stopPropagation(); props.api.close() }}
-        style={{ cursor: 'pointer', opacity: 0.6, fontSize: 12 }}
+        style={{ cursor: 'pointer', opacity: 0.6, display: 'inline-flex' }}
         title="Fermer"
-      >✕</span>
+      ><Icon name="x" size={13} /></span>
     </div>
   )
 }
@@ -332,8 +333,8 @@ function DocumentPanelHost({
           >
             <span>
               {lock
-                ? <>🔒 <strong>{lock.holderDisplayName}</strong> a la main sur ce document. Vous le voyez en lecture seule.</>
-                : <>🔓 Personne n'a la main sur ce document. Vous le voyez en lecture seule.</>}
+                ? <><Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} /><strong>{lock.holderDisplayName}</strong> a la main sur ce document. Vous le voyez en lecture seule.</>
+                : <><Icon name="lock-open" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Personne n'a la main sur ce document. Vous le voyez en lecture seule.</>}
             </span>
             <button
               data-testid="lock-request"

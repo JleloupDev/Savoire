@@ -90,6 +90,10 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.properties
   }
 
+  get icons() {
+    return this.inner.icons
+  }
+
   get indexer() {
     this.require('vault:read')
     return this.inner.indexer

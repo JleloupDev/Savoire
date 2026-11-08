@@ -75,14 +75,14 @@ export const PROPERTY_TYPES: readonly PropertyType[] = [
 
 /** Libelle et icone de chaque type, les memes partout. */
 export const PROPERTY_TYPE_INFO: Readonly<Record<PropertyType, { label: string; icon: string }>> = {
-  text: { label: 'Texte', icon: '≡' },
-  number: { label: 'Nombre', icon: '#' },
-  date: { label: 'Date', icon: '📅' },
-  checkbox: { label: 'Case à cocher', icon: '☑' },
-  select: { label: 'Choix', icon: '◉' },
-  multiselect: { label: 'Choix multiple', icon: '☰' },
-  link: { label: 'Lien', icon: '🔗' },
-  person: { label: 'Personne', icon: '👤' },
+  text: { label: 'Texte', icon: 'text' },
+  number: { label: 'Nombre', icon: 'hash' },
+  date: { label: 'Date', icon: 'calendar' },
+  checkbox: { label: 'Case à cocher', icon: 'square-check' },
+  select: { label: 'Choix', icon: 'circle-dot' },
+  multiselect: { label: 'Choix multiple', icon: 'list' },
+  link: { label: 'Lien', icon: 'link' },
+  person: { label: 'Personne', icon: 'user' },
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/

@@ -437,7 +437,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'excalidraw',
       label: 'Dessin Excalidraw',
-      icon: '✏️',
+      icon: 'pen-tool',
       // La scene est un CRDT (un element par cle de l'arbre partage) :
       // edition simultanee, sans verrou.
       collaborationMode: 'crdt',

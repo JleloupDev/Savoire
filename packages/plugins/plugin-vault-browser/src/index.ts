@@ -48,7 +48,7 @@ export function createVaultBrowserPlugin<TVault extends VaultSummaryLike = Vault
         ribbon: options.ribbon,
         icon: options.icon,
         createView(ctx) {
-          return new VaultBrowserWidget(ctx.workspace, options.refs)
+          return new VaultBrowserWidget(ctx.workspace, options.refs, api.icons)
         },
       })
     },

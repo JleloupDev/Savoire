@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { Icon } from '@savoire/ui-components'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import type { LoginPrompt } from '@savoire/application'
 import { useNavigate } from 'react-router-dom'
@@ -11,10 +12,10 @@ import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 import { describeAuthError } from './loginFlow'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
-  { icon: '📝', key: 'login.feature.markdown' },
-  { icon: '🔗', key: 'login.feature.wikilinks' },
-  { icon: '⚡', key: 'login.feature.collab' },
-  { icon: '🧩', key: 'login.feature.plugins' },
+  { icon: 'file-text', key: 'login.feature.markdown' },
+  { icon: 'link', key: 'login.feature.wikilinks' },
+  { icon: 'zap', key: 'login.feature.collab' },
+  { icon: 'puzzle', key: 'login.feature.plugins' },
 ]
 
 function InputField({
@@ -141,7 +142,7 @@ export function LoginPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {FEATURES.map((f, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--on-accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'white', fontFamily: 'var(--font-code)', fontWeight: 600, flexShrink: 0 }}>{f.icon}</div>
+                <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--on-accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}><Icon name={f.icon} size={15} /></div>
                 <span style={{ fontSize: 13.5, color: 'var(--on-accent)' }}>{t('app', f.key)}</span>
               </div>
             ))}

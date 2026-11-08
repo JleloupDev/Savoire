@@ -237,12 +237,12 @@ export function createQuickRefPlugin(settings: QuickRefSettings = DEFAULT_SETTIN
       api.toolbar?.register({
         id: 'quickref',
         label: 'Versets bibliques',
-        icon: '📖',
+        icon: 'book-open',
         group: 'insert',
         run: (ctx) => fromSelection(asView(ctx.view)),
         items: [
-          { id: 'quickref-selection', label: 'Versets de la sélection', icon: '📖', commandId: SELECTION_COMMAND, run: (ctx) => fromSelection(asView(ctx.view)) },
-          { id: 'quickref-document', label: 'Versets de tout le document', icon: '📖', commandId: DOCUMENT_COMMAND, run: (ctx) => inDocument(asView(ctx.view)) },
+          { id: 'quickref-selection', label: 'Versets de la sélection', icon: 'book-open', commandId: SELECTION_COMMAND, run: (ctx) => fromSelection(asView(ctx.view)) },
+          { id: 'quickref-document', label: 'Versets de tout le document', icon: 'book-open', commandId: DOCUMENT_COMMAND, run: (ctx) => inDocument(asView(ctx.view)) },
         ],
       })
     },

@@ -6,6 +6,7 @@
 //   - renderEmbed() : aperçu read-only en majuscules (marqueur visuel du POC)
 //
 
+import { createIcon } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI, FileContext, FileView } from '@savoire/plugin-api'
 
 const SAVE_DEBOUNCE_MS = 1500
@@ -125,7 +126,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'txt',
       label: 'Texte brut',
-      icon: '📄',
+      icon: 'file',
 
       create: async () => '',
 
@@ -145,8 +146,8 @@ const plugin: VaultPlugin = {
         ].join(';')
 
         const headerEl = document.createElement('div')
-        headerEl.style.cssText = 'font-size:10px;color:var(--text-faint,#6c7086);margin-bottom:6px'
-        headerEl.textContent = `📄 ${path.split('/').at(-1) ?? path}  (texte brut)`
+        headerEl.style.cssText = 'font-size:10px;color:var(--text-faint,#6c7086);margin-bottom:6px;display:flex;align-items:center;gap:5px'
+        headerEl.append(createIcon(api.icons, 'file', { size: 12 }), `${path.split('/').at(-1) ?? path}  (texte brut)`)
         wrapper.appendChild(headerEl)
 
         const contentEl = document.createElement('pre')

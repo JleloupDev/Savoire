@@ -4,6 +4,7 @@
 // Tabs: Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
+import { Icon } from '@savoire/ui-components'
 import { useState, useEffect } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } from '@savoire/plugin-api'
@@ -273,8 +274,8 @@ function PluginsTab({ plugins }: { plugins: PluginEntry[] }) {
             key={entry.id}
             style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}
           >
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', flexShrink: 0 }}>
-              🧩
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', flexShrink: 0 }}>
+              <Icon name="puzzle" size={18} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, color: 'var(--text)' }}>{manifest?.name ?? entry.id}</div>
@@ -410,7 +411,7 @@ function HotkeysTab({ hotkeys, commands }: { hotkeys: HotkeyAPI; commands: { get
                             data-testid="hotkey-remove"
                             style={iconBtn}
                             onClick={() => hotkeys.setCustom(cmd.id, keys.filter((_, j) => j !== i))}
-                          >✕</button>
+                          ><Icon name="x" size={12} /></button>
                         </span>
                       ))}
                       {recording === cmd.id && (
@@ -420,7 +421,7 @@ function HotkeysTab({ hotkeys, commands }: { hotkeys: HotkeyAPI; commands: { get
                       )}
                     </span>
                     {isCustom && (
-                      <button title={t('app', 'settings.hotkeys.reset')} data-testid="hotkey-reset" style={iconBtn} onClick={() => { hotkeys.setCustom(cmd.id, null); setConflict(null) }}>↺</button>
+                      <button title={t('app', 'settings.hotkeys.reset')} data-testid="hotkey-reset" style={iconBtn} onClick={() => { hotkeys.setCustom(cmd.id, null); setConflict(null) }}><Icon name="rotate-ccw" size={13} /></button>
                     )}
                     <button
                       title={t('app', 'settings.hotkeys.add')}

@@ -8,6 +8,7 @@
 //
 // Memes colonnes, filtres, tris et formules que la vue de la base, suivis en
 // direct. On ne modifie rien ici : un clic sur le nom ouvre la base.
+import { createIcon } from '@savoire/plugin-api'
 import { BLOCK_DESTROY_EVENT, guessPropertyType, tryCompileFormula } from '@savoire/plugin-api'
 import type { ISharedTree, PluginAPI, PropertyType, Query, QueryResult, QueryRow } from '@savoire/plugin-api'
 import { h, renderValue, valueText, type CellContext } from './cells'
@@ -138,7 +139,7 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
         a.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(row.path) })
         return a
       }
-      const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${base.path}` }, `🗃️ ${base.path.split('/').pop()} · ${view.name}`)
+      const open = h('a', { class: 'base-q-source', href: '#', title: `Ouvrir ${base.path}` }, createIcon(api.icons, 'database', { size: 13 }), ` ${base.path.split('/').pop()} · ${view.name}`)
       open.addEventListener('click', e => { e.preventDefault(); void api.workspace.openFile(base.path) })
       let more: HTMLElement | null = null
       if (r.total > r.rows.length && shown < EMBED_MAX_ROWS) {

@@ -36,7 +36,7 @@ export function createBoardPlugin(): VaultPlugin {
       pluginApi.files.register({
         extension: 'board',
         label: 'Board',
-        icon: '🧩',
+        icon: 'layout-dashboard',
         // Le code est un texte partage : edition a plusieurs, sans verrou.
         collaborationMode: 'crdt',
         creatable: true,

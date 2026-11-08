@@ -76,7 +76,7 @@ const plugin: VaultPlugin = {
         id: `templates:${path}`,
         label: `Modèle : ${noteTitleOf(path)}`,
         description: path,
-        icon: '📋',
+        icon: 'layout-template',
         category: 'Modèles',
         insert: () => {
           const current = api.workspace?.getActiveDocument?.()?.path

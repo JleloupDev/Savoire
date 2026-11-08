@@ -6,6 +6,7 @@
 // kanban. Les lignes viennent d'api.query (lignes-pages du dossier de la
 // base + lignes legeres de ses lots), le manifeste du document (ctx.tree).
 import {
+  createIcon,
   BASE_ROW_TITLE, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
 } from '@savoire/plugin-api'
 import type {
@@ -512,7 +513,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
           const remove = h('button', { class: 'base-btn', type: 'button', title: 'Retirer de la base' }, '×')
           remove.addEventListener('click', () => store.removeColumn(c.key))
           for (const b of [up, down, remove]) (b as HTMLButtonElement).disabled = !editable
-          content.append(h('div', { class: 'base-pop-row' }, visible, h('span', { class: 'base-pop-icon' }, isFormulaKey(c.key) ? 'ƒ' : PROPERTY_TYPE_INFO[c.type].icon), h('span', { class: 'base-pop-label' }, c.label), up, down, remove))
+          content.append(h('div', { class: 'base-pop-row' }, visible, h('span', { class: 'base-pop-icon' }, isFormulaKey(c.key) ? 'ƒ' : createIcon(api?.icons, PROPERTY_TYPE_INFO[c.type].icon, { size: 14 })), h('span', { class: 'base-pop-label' }, c.label), up, down, remove))
         })
         break
       }
@@ -540,7 +541,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const name = h('input', { class: 'base-input', placeholder: 'Propriété', 'data-testid': 'base-new-column-name', list: 'base-props-list' })
     const list = h('datalist', { id: 'base-props-list' }, ...propertyChoices(false).map(k => h('option', { value: k })))
     const type = h('select', { class: 'base-input', 'data-testid': 'base-new-column-type' },
-      ...PROPERTY_TYPES.map(t => h('option', { value: t }, `${PROPERTY_TYPE_INFO[t].icon} ${PROPERTY_TYPE_INFO[t].label}`)),
+      ...PROPERTY_TYPES.map(t => h('option', { value: t }, PROPERTY_TYPE_INFO[t].label)),
       h('option', { value: 'formula' }, 'ƒ Formule'))
     name.addEventListener('input', () => { if (type.value !== 'formula') type.value = typeOf(name.value.trim()) })
     type.addEventListener('change', () => {
@@ -695,7 +696,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       key !== TITLE_COLUMN ? item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] }), editable) : null,
       key !== TITLE_COLUMN && v.type === 'table' ? item('Grouper par (kanban)', 'base-col-group', () => store.setView(v.id, { type: 'kanban', groupBy: key }), editable) : null,
       key !== TITLE_COLUMN && types ? h('div', { class: 'base-menu-sub' }, 'Type (tout le vault)') : null,
-      ...(key !== TITLE_COLUMN && types ? PROPERTY_TYPES.map(t => item(`${PROPERTY_TYPE_INFO[t].icon} ${PROPERTY_TYPE_INFO[t].label}${typeOf(key) === t ? ' ✓' : ''}`, `base-col-type-${t}`, () => {
+      ...(key !== TITLE_COLUMN && types ? PROPERTY_TYPES.map(t => item(`${PROPERTY_TYPE_INFO[t].label}${typeOf(key) === t ? ' ✓' : ''}`, `base-col-type-${t}`, () => {
         types.set({ ...(types.get(key) ?? { key }), key, type: t })
       }, !readOnly)) : []),
       key !== TITLE_COLUMN ? item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key), editable) : null,

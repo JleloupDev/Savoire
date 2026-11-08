@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
+import { createIcon } from '@savoire/plugin-api'
 
 // plugin-callout: renders > [!NOTE] callout blocks.
 const plugin: VaultPlugin = {
@@ -19,16 +20,16 @@ const plugin: VaultPlugin = {
     api.blocks.register({
       type: 'callout',
       trigger: [
-        { id: 'callout-note',     label: 'Callout Note',     description: '> [!NOTE] bloc info',         icon: 'ℹ',  category: 'Callouts', insert: '> [!NOTE]\n> '     },
-        { id: 'callout-info',     label: 'Callout Info',     description: '> [!INFO] information',       icon: 'ℹ',  category: 'Callouts', insert: '> [!INFO]\n> '     },
-        { id: 'callout-tip',      label: 'Callout Tip',      description: '> [!TIP] conseil',            icon: '💡', category: 'Callouts', insert: '> [!TIP]\n> '      },
-        { id: 'callout-success',  label: 'Callout Success',  description: '> [!SUCCESS] succès',         icon: '✔',  category: 'Callouts', insert: '> [!SUCCESS]\n> '  },
-        { id: 'callout-warning',  label: 'Callout Warning',  description: '> [!WARNING] avertissement',  icon: '⚠',  category: 'Callouts', insert: '> [!WARNING]\n> '  },
-        { id: 'callout-caution',  label: 'Callout Caution',  description: '> [!CAUTION] attention',      icon: '⚠',  category: 'Callouts', insert: '> [!CAUTION]\n> '  },
-        { id: 'callout-danger',   label: 'Callout Danger',   description: '> [!DANGER] danger',          icon: '🔥', category: 'Callouts', insert: '> [!DANGER]\n> '   },
-        { id: 'callout-bug',      label: 'Callout Bug',      description: '> [!BUG] bug',                icon: '🐛', category: 'Callouts', insert: '> [!BUG]\n> '      },
-        { id: 'callout-todo',     label: 'Callout Todo',     description: '> [!TODO] à faire',           icon: '✅', category: 'Callouts', insert: '> [!TODO]\n> '     },
-        { id: 'callout-question', label: 'Callout Question', description: '> [!QUESTION] question',      icon: '❓', category: 'Callouts', insert: '> [!QUESTION]\n> ' },
+        { id: 'callout-note',     label: 'Callout Note',     description: '> [!NOTE] bloc info',         icon: 'pencil', category: 'Callouts', insert: '> [!NOTE]\n> '     },
+        { id: 'callout-info',     label: 'Callout Info',     description: '> [!INFO] information',       icon: 'info', category: 'Callouts', insert: '> [!INFO]\n> '     },
+        { id: 'callout-tip',      label: 'Callout Tip',      description: '> [!TIP] conseil',            icon: 'flame', category: 'Callouts', insert: '> [!TIP]\n> '      },
+        { id: 'callout-success',  label: 'Callout Success',  description: '> [!SUCCESS] succès',         icon: 'check', category: 'Callouts', insert: '> [!SUCCESS]\n> '  },
+        { id: 'callout-warning',  label: 'Callout Warning',  description: '> [!WARNING] avertissement',  icon: 'triangle-alert', category: 'Callouts', insert: '> [!WARNING]\n> '  },
+        { id: 'callout-caution',  label: 'Callout Caution',  description: '> [!CAUTION] attention',      icon: 'triangle-alert', category: 'Callouts', insert: '> [!CAUTION]\n> '  },
+        { id: 'callout-danger',   label: 'Callout Danger',   description: '> [!DANGER] danger',          icon: 'zap', category: 'Callouts', insert: '> [!DANGER]\n> '   },
+        { id: 'callout-bug',      label: 'Callout Bug',      description: '> [!BUG] bug',                icon: 'bug', category: 'Callouts', insert: '> [!BUG]\n> '      },
+        { id: 'callout-todo',     label: 'Callout Todo',     description: '> [!TODO] à faire',           icon: 'circle-check', category: 'Callouts', insert: '> [!TODO]\n> '     },
+        { id: 'callout-question', label: 'Callout Question', description: '> [!QUESTION] question',      icon: 'circle-help', category: 'Callouts', insert: '> [!QUESTION]\n> ' },
       ],
       detect: /^>\s*\[!\w+\]/,
       serialize: (data) => {
@@ -54,18 +55,18 @@ const plugin: VaultPlugin = {
         const d = data as { type: string; content: string }
 
         const COLORS: Record<string, { border: string; bg: string; icon: string }> = {
-          NOTE:    { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: 'ℹ' },
-          INFO:    { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: 'ℹ' },
-          TIP:     { border: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: '💡' },
-          SUCCESS: { border: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: '✔' },
-          WARNING: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  icon: '⚠' },
-          CAUTION: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  icon: '⚠' },
-          DANGER:  { border: '#ef4444', bg: 'rgba(239,68,68,0.08)',   icon: '🔥' },
-          BUG:     { border: '#ef4444', bg: 'rgba(239,68,68,0.08)',   icon: '🐛' },
-          TODO:    { border: '#a855f7', bg: 'rgba(168,85,247,0.08)',  icon: '✅' },
-          QUESTION:{ border: '#06b6d4', bg: 'rgba(6,182,212,0.08)',   icon: '❓' },
+          NOTE:    { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: 'pencil' },
+          INFO:    { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: 'info' },
+          TIP:     { border: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: 'flame' },
+          SUCCESS: { border: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: 'check' },
+          WARNING: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  icon: 'triangle-alert' },
+          CAUTION: { border: '#f59e0b', bg: 'rgba(245,158,11,0.08)',  icon: 'triangle-alert' },
+          DANGER:  { border: '#ef4444', bg: 'rgba(239,68,68,0.08)',   icon: 'zap' },
+          BUG:     { border: '#ef4444', bg: 'rgba(239,68,68,0.08)',   icon: 'bug' },
+          TODO:    { border: '#a855f7', bg: 'rgba(168,85,247,0.08)',  icon: 'circle-check' },
+          QUESTION:{ border: '#06b6d4', bg: 'rgba(6,182,212,0.08)',   icon: 'circle-help' },
         }
-        const DEFAULT = { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)', icon: 'ℹ' }
+        const DEFAULT = { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)', icon: 'pencil' }
         const style = COLORS[d.type] ?? DEFAULT
 
         const el = document.createElement('div')
@@ -74,8 +75,8 @@ const plugin: VaultPlugin = {
 
         const title = document.createElement('div')
         title.className = 'callout-title'
-        title.style.cssText = `font-weight:600;color:${style.border};margin-bottom:4px`
-        title.textContent = `${style.icon} ${d.type.charAt(0) + d.type.slice(1).toLowerCase()}`
+        title.style.cssText = `font-weight:600;color:${style.border};margin-bottom:4px;display:flex;align-items:center;gap:6px`
+        title.append(createIcon(api.icons, style.icon, { size: 16 }), d.type.charAt(0) + d.type.slice(1).toLowerCase())
 
         const body = document.createElement('div')
         body.className = 'callout-body'

@@ -77,7 +77,7 @@ const plugin: VaultPlugin = {
     api.files.register({
       extension: 'mm',
       label: 'Mind Map',
-      icon: '🧠',
+      icon: 'network',
       // L'arbre du document est un CRDT : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
 
