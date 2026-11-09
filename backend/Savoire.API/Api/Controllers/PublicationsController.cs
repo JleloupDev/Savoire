@@ -46,11 +46,15 @@ public class PublicationsController(IMediator mediator) : AppControllerBase(medi
     /// </summary>
     [AllowAnonymous]
     [HttpGet("p/{slug}")]
-    public async Task<IActionResult> Page(string slug, CancellationToken ct)
+    public async Task<IActionResult> Page(string slug, [FromQuery] string? embed, CancellationToken ct)
     {
         Publication? p = await Mediator.Send(new GetPublicPageQuery(slug), ct);
+        // Integree (module en lecture seule sur un autre site) : tout site peut l'afficher.
+        bool embedded = embed == "1";
         Response.Headers["Content-Security-Policy"] =
-            "default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; sandbox allow-popups allow-popups-to-escape-sandbox";
+            "default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; "
+            + (embedded ? "frame-ancestors *; " : "frame-ancestors 'self'; ")
+            + "base-uri 'none'; form-action 'none'; sandbox allow-popups allow-popups-to-escape-sandbox";
         Response.Headers["X-Content-Type-Options"] = "nosniff";
         Response.Headers["Referrer-Policy"] = "no-referrer";
         if (p is null)
@@ -62,6 +66,6 @@ public class PublicationsController(IMediator mediator) : AppControllerBase(medi
         Response.Headers["Cache-Control"] = "public, max-age=30";
         Response.Headers["Last-Modified"] = p.UpdatedAt.ToString("R");
         string url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/p/{p.Slug}";
-        return new ContentResult { StatusCode = 200, ContentType = "text/html; charset=utf-8", Content = PublicPage.Render(p, url) };
+        return new ContentResult { StatusCode = 200, ContentType = "text/html; charset=utf-8", Content = PublicPage.Render(p, url, embedded) };
     }
 }

@@ -14,7 +14,7 @@ const BTN: React.CSSProperties = {
   padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent',
   color: 'var(--text)', font: 'inherit', fontSize: 12, cursor: 'pointer',
 }
-const PRIMARY: React.CSSProperties = { ...BTN, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff', fontWeight: 600 }
+const PRIMARY: React.CSSProperties = { ...BTN, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff', fontWeight: 600 }
 
 interface Draft { id?: string; providerId: string; name: string; baseUrl: string; apiKey: string; model: string }
 

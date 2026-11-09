@@ -35,6 +35,7 @@ import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import { extractorRegistry } from './extractors'
+import { requestModuleShare } from './moduleShare'
 import { publications } from './publication'
 import { aiService } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
@@ -224,6 +225,8 @@ export function usePluginBootstrap({
 
   const onBeforeReady = useCallback(async (manager: WorkspaceManagerImpl) => {
     manager.setDisplayPreferences({ showFileExtensions, linkPreviewDelay, subscribe: subscribeDisplayPreferences })
+    // Partager un module : la fenetre de partage de l'application.
+    ;(manager as { shareModule?: (path: string) => void }).shareModule = requestModuleShare
     manager.setNotifier(notify)
     const editorAreaRefs = editorAreaRefsHolder.current
     if (!editorAreaRefs) {

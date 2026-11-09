@@ -12,6 +12,8 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
+import { ModuleShareDialog } from './ModuleShareDialog'
+import { onModuleShareRequest } from './moduleShare'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
@@ -454,6 +456,9 @@ export function AppShell() {
   const onDeleteVaultRef = useRef<(vault: VaultSummary) => Promise<void>>(async () => {})
   const onRefreshRef = useRef<() => void>(() => {})
   const isReadOnlyRef = useRef(false)
+  // Module dont on ouvre les options de partage (plugin Modules).
+  const [moduleSharePath, setModuleSharePath] = useState<string | null>(null)
+  useEffect(() => onModuleShareRequest(setModuleSharePath), [])
   // Arret du suivi des natures de documents (vault precedent).
   const documentKindsStopRef = useRef<(() => void) | null>(null)
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
@@ -1598,6 +1603,17 @@ export function AppShell() {
 
       {transferRun && <VaultTransferDialog run={transferRun} onClose={() => setTransferRun(null)} />}
 
+      {moduleSharePath && vaultSharing && vaultAPIRef.current?.resolveDocumentId(moduleSharePath) && (
+        <ModuleShareDialog
+          docId={vaultAPIRef.current.resolveDocumentId(moduleSharePath)!}
+          path={moduleSharePath}
+          publications={publications}
+          sharing={vaultSharing}
+          token={tokenRef.current ?? ''}
+          canWrite={!isReadOnlyRef.current}
+          onClose={() => setModuleSharePath(null)}
+        />
+      )}
       {sharingOpen && tokenRef.current && selectedVault && vaultSharing && (
         <SharingPanel
           publications={publications}

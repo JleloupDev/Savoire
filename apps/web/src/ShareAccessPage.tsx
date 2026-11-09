@@ -12,23 +12,10 @@ import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
-import excalidrawPlugin from '@savoire/plugin-excalidraw'
-import mindmapPlugin from '@savoire/plugin-mindmap'
-import calloutPlugin from '@savoire/plugin-callout'
-import codeBlockPlugin from '@savoire/plugin-code-block'
-import taskListPlugin from '@savoire/plugin-task-list'
-import noteEmbedPlugin from '@savoire/plugin-note-embed'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
-import modulePlugin from '@savoire/plugin-module'
-import mermaidPlugin from '@savoire/plugin-mermaid'
-import tablePlugin from '@savoire/plugin-table'
+import { loadModulePlugins } from './pluginStore'
 
-const SHARE_FILE_TYPE_PLUGINS: VaultPlugin[] = [excalidrawPlugin, mindmapPlugin]
-
-const SHARE_DEFAULT_PLUGINS: VaultPlugin[] = [
-  mermaidPlugin, calloutPlugin, codeBlockPlugin, createWikilinksPlugin(),
-  noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin,
-]
+// Les plugins du document partage : ceux du module (voir modulePluginEntries).
 
 function createShareVault(handle: SharedDocumentHandle): VaultAPI {
   return {
@@ -64,8 +51,10 @@ function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
     const start = async () => {
       const pluginApi = PluginAPIImpl.create(vault, handle.sync)
       loader = new PluginLoader()
-      for (const p of SHARE_FILE_TYPE_PLUGINS) await loader.loadInternal(p, pluginApi)
-      for (const p of SHARE_DEFAULT_PLUGINS) await loader.loadInternal(p, pluginApi)
+      const plugins = await loadModulePlugins(handle.path)
+      const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
+      for (const p of plugins.fileTypes) await loader.loadInternal(p, pluginApi)
+      for (const p of defaultPlugins) await loader.loadInternal(p, pluginApi)
       if (cancelled) { await loader.unloadAll(); return }
       view = new DocumentView({
         path: handle.path,
@@ -79,7 +68,7 @@ function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
         crdt: handle.crdt,
         getTransportState: () => handle.transport.getState(),
         pluginAPI: pluginApi,
-        defaultPlugins: SHARE_DEFAULT_PLUGINS,
+        defaultPlugins,
         pluginRegistry,
       })
       view.mount()
@@ -140,6 +129,17 @@ export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
   if (!handle) return null
 
   const ro = handle.permission === 'read'
+  // Integre dans un autre site (module) : le document seul, sans en-tete.
+  const embedded = new URLSearchParams(window.location.search).get('embed') === '1'
+  if (embedded) {
+    return (
+      <FullPage>
+        <div data-testid="share-embed" style={{ flex: 1, overflow: 'hidden' }}>
+          <ShareDocumentEditor handle={handle} />
+        </div>
+      </FullPage>
+    )
+  }
 
   return (
     <FullPage>

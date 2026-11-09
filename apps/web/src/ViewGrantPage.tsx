@@ -6,17 +6,9 @@ import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import { YjsCrdtAdapter, SignalRTransport, DocumentRoomClient, LocalKeyProvider, serverUrl } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
-import excalidrawPlugin from '@savoire/plugin-excalidraw'
-import mindmapPlugin from '@savoire/plugin-mindmap'
-import mermaidPlugin from '@savoire/plugin-mermaid'
-import calloutPlugin from '@savoire/plugin-callout'
-import codeBlockPlugin from '@savoire/plugin-code-block'
-import taskListPlugin from '@savoire/plugin-task-list'
-import noteEmbedPlugin from '@savoire/plugin-note-embed'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
-import modulePlugin from '@savoire/plugin-module'
-import tablePlugin from '@savoire/plugin-table'
 import { pluginRegistry } from './pluginRegistry'
+import { loadModulePlugins } from './pluginStore'
 
 interface ViewAccessDto {
   accessToken: string
@@ -28,21 +20,8 @@ interface ViewAccessDto {
   userId?: string
 }
 
-const defaultPlugins: VaultPlugin[] = [
-  mermaidPlugin,
-  calloutPlugin,
-  codeBlockPlugin,
-  createWikilinksPlugin(),
-  noteEmbedPlugin,
-  modulePlugin,
-  taskListPlugin,
-  tablePlugin,
-]
-
-const fileTypePlugins: VaultPlugin[] = [
-  excalidrawPlugin,
-  mindmapPlugin,
-]
+// Les plugins du module : ceux du document (blocs des notes, type du
+// fichier), pas l'environnement de travail. Voir modulePluginEntries.
 
 async function redeemGrant(grantToken: string): Promise<ViewAccessDto> {
   const res = await fetch(serverUrl('/api/v1/view/grants/redeem'), {
@@ -116,7 +95,9 @@ export function ViewGrantPage() {
       const vault = createViewVault(access)
       const pluginApi = PluginAPIImpl.create(vault, sync)
       loader = new PluginLoader()
-      for (const plugin of fileTypePlugins) await loader.loadInternal(plugin, pluginApi)
+      const plugins = await loadModulePlugins(access.path)
+      const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
+      for (const plugin of plugins.fileTypes) await loader.loadInternal(plugin, pluginApi)
       for (const plugin of defaultPlugins) await loader.loadInternal(plugin, pluginApi)
 
       if (cancelled) { await loader.unloadAll(); return }

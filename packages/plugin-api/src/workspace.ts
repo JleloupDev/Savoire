@@ -39,6 +39,8 @@ export interface WorkspaceAPI {
   subscribeDisplayPreferences?(cb: () => void): () => void
   /** Affiche une notification breve (« 3 versets ajoutes »). Absent : rien ne s'affiche. */
   notify?(type: NotificationType, title: string, message?: string): void
+  /** Ouvre les options de partage d'un module (lecture seule sur le web, ou ecriture). */
+  shareModule?(path: string): void
 }
 
 export type NotificationType = 'success' | 'info' | 'warn' | 'danger'

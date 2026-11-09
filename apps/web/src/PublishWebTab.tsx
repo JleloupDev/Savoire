@@ -10,7 +10,7 @@ const BTN: React.CSSProperties = {
   padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent',
   color: 'var(--text)', fontSize: '0.8rem', cursor: 'pointer',
 }
-const PRIMARY: React.CSSProperties = { ...BTN, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff', fontWeight: 600 }
+const PRIMARY: React.CSSProperties = { ...BTN, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff', fontWeight: 600 }
 
 export function PublishWebTab({ service, docId, path, canWrite }: { service: PublicationService; docId: string; path: string; canWrite: boolean }) {
   const [info, setInfo] = useState<PublicationInfo | null | undefined>(undefined)

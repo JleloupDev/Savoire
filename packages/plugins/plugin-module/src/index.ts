@@ -191,7 +191,14 @@ const plugin: VaultPlugin = {
         btnSource.textContent = 'Source'
         btnAuto.textContent = 'Auto'
 
-        header.append(icon, label, btnAuto, btnModule, btnSource)
+        const btnShare = document.createElement('button')
+        btnShare.textContent = 'Partager'
+        btnShare.title = 'Partager ce module : lecture seule sur un site web, ou écriture'
+        btnShare.dataset.testid = 'module-share-open'
+        btnShare.style.cssText = CHROME.modeBtn(false)
+        btnShare.addEventListener('click', e => { e.stopPropagation(); api.workspace?.shareModule?.(path) })
+        if (api.workspace?.shareModule) header.append(icon, label, btnShare, btnAuto, btnModule, btnSource)
+        else header.append(icon, label, btnAuto, btnModule, btnSource)
         container.appendChild(header)
 
         const content = document.createElement('div')
@@ -235,31 +242,6 @@ const plugin: VaultPlugin = {
           currentIframe = iframe
 
           void (async () => {
-            async function refreshAccessTokenFromSession(): Promise<string | null> {
-              try {
-                const raw = sessionStorage.getItem('vault_accounts')
-                if (!raw) return null
-                const accounts = JSON.parse(raw) as Array<{ userId: string; refreshToken: string; isActive: boolean }>
-                const active = accounts.find(a => a.isActive)
-                if (!active?.refreshToken) return null
-
-                const res = await fetch('/api/v1/auth/refresh', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ refreshToken: active.refreshToken }),
-                })
-                if (!res.ok) return null
-                const dto = await res.json() as { accessToken: string; refreshToken: string }
-                const updated = accounts.map(a =>
-                  a.userId === active.userId ? { ...a, refreshToken: dto.refreshToken } : a,
-                )
-                sessionStorage.setItem('vault_accounts', JSON.stringify(updated))
-                return dto.accessToken
-              } catch {
-                return null
-              }
-            }
-
             const shareTokenFromUrl = (() => {
               const match = window.location.pathname.match(/^\/share\/([^/?#]+)/)
               return match?.[1] ? decodeURIComponent(match[1]) : ''
@@ -289,15 +271,9 @@ const plugin: VaultPlugin = {
             }
 
             try {
-              let bearer = token
+              // Jeton de la session de l'application (renouvele par elle).
+              const bearer = api.vault.getToken?.() ?? token
               let res = await requestGrant('write', bearer)
-              if (res.status === 401) {
-                const refreshed = await refreshAccessTokenFromSession()
-                if (refreshed) {
-                  bearer = refreshed
-                  res = await requestGrant('write', bearer)
-                }
-              }
               if (res.status === 403) res = await requestGrant('read', bearer)
               if (!res.ok) throw new Error(`view grant failed (${res.status})`)
               const dto = await res.json() as { grantToken: string; permission: string }

@@ -27,7 +27,7 @@ public static class PublicPage
         footer a { color:inherit; }
         """;
 
-    public static string Render(Publication p, string url) => $"""
+    public static string Render(Publication p, string url, bool embedded = false) => $"""
         <!doctype html>
         <html lang="fr">
         <head>
@@ -42,17 +42,21 @@ public static class PublicPage
         <meta property="og:url" content="{E(url)}">
         <meta name="twitter:card" content="summary">
         <meta name="generator" content="Savoire">
-        {(p.Indexable ? "" : "<meta name=\"robots\" content=\"noindex, nofollow\">")}
-        <style>{Style}</style>
+        {(p.Indexable && !embedded ? "" : "<meta name=\"robots\" content=\"noindex, nofollow\">")}
+        {(embedded ? "<meta http-equiv=\"refresh\" content=\"60\">" : "")}
+        <style>{Style}{(embedded ? EmbedStyle : "")}</style>
         </head>
         <body>
         <main>
         {p.Html}
         </main>
-        <footer>Mis à jour le {p.UpdatedAt:dd/MM/yyyy à HH:mm} UTC · Publié avec Savoire</footer>
+        {(embedded ? "" : $"<footer>Mis à jour le {p.UpdatedAt:dd/MM/yyyy à HH:mm} UTC · Publié avec Savoire</footer>")}
         </body>
         </html>
         """;
+
+    /// <summary>Integree ailleurs : sans marges ni pied, fond transparent. Rechargee chaque minute (en direct, sans script).</summary>
+    private const string EmbedStyle = "body { background: transparent; } main { max-width: none; padding: 8px 12px; }";
 
     public static string NotFound() => $"""
         <!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Page introuvable</title><style>{Style}</style></head>

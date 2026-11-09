@@ -93,8 +93,8 @@ export const STORE_CATALOG: StoreEntry[] = [
   },
 
   // ── Communaute, installes par defaut : types de fichiers ───────────────────
-  { id: 'plugin-excalidraw', preinstalled: true, load: async () => (await import('@savoire/plugin-excalidraw')).default },
-  { id: 'plugin-mindmap', preinstalled: true, load: async () => (await import('@savoire/plugin-mindmap')).default },
+  { id: 'plugin-excalidraw', preinstalled: true, extensions: ['excalidraw'], load: async () => (await import('@savoire/plugin-excalidraw')).default },
+  { id: 'plugin-mindmap', preinstalled: true, extensions: ['mm'], load: async () => (await import('@savoire/plugin-mindmap')).default },
 
   // Communaute, installe par defaut : diagrammes dans les notes.
   { id: 'plugin-mermaid', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
@@ -110,7 +110,7 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-agenda', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-agenda')).createAgendaPlugin() },
   { id: 'plugin-history', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-history')).createHistoryPlugin() },
   // Documents existants (Word, Excel, PDF, pages web, images...) : recherche et apercu.
-  { id: 'plugin-documents', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-documents')).default },
+  { id: 'plugin-documents', preinstalled: true, core: true, extensions: ['pdf', 'html', 'htm', 'csv'], load: async () => (await import('@savoire/plugin-documents')).default },
 
   // ── Disponibles ────────────────────────────────────────────────────────────
   {
@@ -299,3 +299,26 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-wtf')).default,
   },
 ]
+
+/**
+ * Les plugins d'un module (une note affichee seule : integree dans une autre
+ * note, sur un site, dans un lien de partage). Seulement ceux du document :
+ * les plugins d'edition (blocs des notes) et celui qui ouvre son type de
+ * fichier. Pas l'environnement de travail (explorateur, recherche, panneaux).
+ */
+export function modulePluginEntries(path: string): StoreEntry[] {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return STORE_CATALOG.filter(e => e.editorDefault || (e.extensions?.includes(ext) ?? false))
+}
+
+/** Charge les plugins d'un module (ceux qui ne demandent aucun contexte du poste de travail). */
+export async function loadModulePlugins(path: string): Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }> {
+  const noContext = { vaultBrowserRefs: null as never, setGraphContributor: () => {} } as PluginLoadContext
+  const entries = modulePluginEntries(path)
+  const loaded = await Promise.all(entries.map(async e => ({ e, plugin: await e.load(noContext).catch(() => null) })))
+  const ok = loaded.filter((x): x is { e: StoreEntry; plugin: VaultPlugin } => !!x.plugin)
+  return {
+    editor: ok.filter(x => x.e.editorDefault).map(x => x.plugin),
+    fileTypes: ok.filter(x => !x.e.editorDefault).map(x => x.plugin),
+  }
+}
