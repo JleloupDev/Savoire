@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 export { EditorCore, plumeCommands } from './EditorCore'
-export { printNote, renderNoteForPrint } from './PdfExport'
-export type { NoteRenderOptions } from './PdfExport'
+export { printNote, renderNoteForPrint, renderNoteForWeb } from './PdfExport'
+export type { NoteRenderOptions, PublishedHtml } from './PdfExport'
 export { resolveActivePlugins } from './PluginActivationResolver'
 export type { ActivationEntry, ActivationContext, ActivationSource } from './PluginActivationResolver'
 export { EventBus, globalEventBus } from './EventBus'

@@ -31,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<IndexerChangeEntity>       IndexerChanges        => Set<IndexerChangeEntity>();
     public DbSet<IndexerFeedStateEntity>    IndexerFeedState      => Set<IndexerFeedStateEntity>();
     public DbSet<VaultIndexerSettingEntity> VaultIndexerSettings  => Set<VaultIndexerSettingEntity>();
+    public DbSet<PublicationEntity>         Publications          => Set<PublicationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -261,6 +262,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .OnDelete(DeleteBehavior.Restrict);
         });
 
+
+        modelBuilder.Entity<PublicationEntity>(e =>
+        {
+            e.ToTable("publications");
+            e.HasKey(x => x.Slug);
+            e.Property(x => x.Slug).HasColumnName("slug").HasMaxLength(120);
+            e.Property(x => x.VaultId).HasColumnName("vault_id").IsRequired();
+            e.Property(x => x.DocumentId).HasColumnName("document_id").IsRequired();
+            e.Property(x => x.Title).HasColumnName("title").IsRequired();
+            e.Property(x => x.Description).HasColumnName("description").IsRequired();
+            e.Property(x => x.Html).HasColumnName("html").IsRequired();
+            e.Property(x => x.Indexable).HasColumnName("indexable");
+            e.Property(x => x.CreatedBy).HasColumnName("created_by").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            // Une note a au plus une publication.
+            e.HasIndex(x => x.DocumentId).IsUnique();
+            e.HasIndex(x => x.VaultId);
+        });
 
         modelBuilder.Entity<ShareLinkEntity>(e =>
         {

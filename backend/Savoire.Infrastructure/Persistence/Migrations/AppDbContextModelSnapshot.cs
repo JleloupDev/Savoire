@@ -389,6 +389,65 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("operations_log", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.PublicationEntity", b =>
+                {
+                    b.Property<string>("Slug")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("slug");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("document_id");
+
+                    b.Property<string>("Html")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("html");
+
+                    b.Property<bool>("Indexable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("indexable");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("VaultId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("vault_id");
+
+                    b.HasKey("Slug");
+
+                    b.HasIndex("DocumentId")
+                        .IsUnique();
+
+                    b.HasIndex("VaultId");
+
+                    b.ToTable("publications", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.RefPermissionEntity", b =>
                 {
                     b.Property<string>("Value")

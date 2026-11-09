@@ -182,3 +182,82 @@ export async function printNote(text: string, opts: NoteRenderOptions = {}): Pro
     setTimeout(() => frame.remove(), 1000)
   }
 }
+
+// ── Publication sur le web ──────────────────────────────────────────────────
+
+/** Taille maximale d'une image integree a une page publiee (octets). */
+const MAX_PUBLISHED_IMAGE = 3 * 1024 * 1024
+
+export interface PublishedHtml {
+  html: string
+  /** Premier paragraphe, pour les moteurs de recherche et les apercus de lien. */
+  description: string
+}
+
+async function toDataUrl(src: string): Promise<string | null> {
+  try {
+    const res = await fetch(src)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    if (blob.size > MAX_PUBLISHED_IMAGE) return null
+    return await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * La note rendue pour une page publique : meme rendu que l'export PDF, puis
+ * nettoyee pour etre servie a tous. Pas de script, pas de cadre, pas de
+ * bouton ; les images deviennent des donnees integrees (elles ne dependent
+ * plus de la session) ; un lien vers une autre note devient du texte (elle
+ * n'est pas forcement publiee).
+ */
+export async function renderNoteForWeb(text: string, opts: NoteRenderOptions = {}): Promise<PublishedHtml> {
+  const host = document.createElement('div')
+  host.setAttribute('aria-hidden', 'true')
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;visibility:hidden;pointer-events:none'
+  document.body.appendChild(host)
+  try {
+    const content = renderNoteForPrint(text, opts)
+    host.appendChild(content)
+    await settle(document, 4000)
+    for (const el of Array.from(content.querySelectorAll('script, iframe, object, embed, button, select, textarea, form, style, link, [contenteditable]'))) {
+      if (el.matches('[contenteditable]') && !el.matches('script, iframe, object, embed, button, select, textarea, form, style, link')) el.removeAttribute('contenteditable')
+      else el.remove()
+    }
+    for (const input of Array.from(content.querySelectorAll('input'))) {
+      if (input.type === 'checkbox') input.setAttribute('disabled', '')
+      else input.remove()
+    }
+    for (const a of Array.from(content.querySelectorAll('a'))) {
+      const href = a.getAttribute('href') ?? ''
+      if (/^(https?:|mailto:)/i.test(href)) { a.setAttribute('rel', 'noopener noreferrer'); a.setAttribute('target', '_blank'); continue }
+      const span = document.createElement('span')
+      span.append(...Array.from(a.childNodes))
+      a.replaceWith(span)
+    }
+    await Promise.all(Array.from(content.querySelectorAll('img')).map(async img => {
+      const src = img.getAttribute('src') ?? ''
+      if (src.startsWith('data:')) return
+      const data = await toDataUrl(img.src)
+      if (data) img.setAttribute('src', data)
+      else img.remove()
+    }))
+    // Les attributs d'evenement n'ont rien a faire sur une page publique.
+    for (const el of Array.from(content.querySelectorAll('*'))) {
+      for (const attr of Array.from(el.attributes)) {
+        if (/^on/i.test(attr.name) || /^data-testid$/i.test(attr.name) || /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name)
+      }
+    }
+    const first = Array.from(content.querySelectorAll('p')).map(p => p.textContent?.trim() ?? '').find(t => t.length > 0) ?? ''
+    return { html: content.outerHTML, description: first.length > 200 ? `${first.slice(0, 197)}…` : first }
+  } finally {
+    host.remove()
+  }
+}

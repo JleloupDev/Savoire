@@ -35,6 +35,7 @@ import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import { extractorRegistry } from './extractors'
+import { publications } from './publication'
 import { aiService } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
@@ -388,6 +389,8 @@ export function usePluginBootstrap({
       )
       // Le texte complet d'une note stabilisee nourrit l'index SQLite local.
       pluginApi.hooks.onDocumentStabilized((docId, path, content) => localIndexRef.current?.noteText(docId, path, content))
+      // Une note publiee sur le web : sa page suit ses modifications.
+      pluginApi.hooks.onDocumentStabilized((docId, path) => publications.noteChanged(docId, path))
 
       // TEMPORARY: register Markdown as a native file type so the file tree and
       // creation picker are aware of it before any plugin loads. A better solution

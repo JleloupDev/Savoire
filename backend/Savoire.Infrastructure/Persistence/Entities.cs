@@ -193,3 +193,17 @@ public class ShareLinkEntity
             Permission.ParsePermission(),
             CreatedBy, CreatedAt, ExpiresAt, RevokedAt);
 }
+
+public class PublicationEntity
+{
+    public string   Slug        { get; set; } = null!;
+    public string   VaultId     { get; set; } = null!;
+    public string   DocumentId  { get; set; } = null!;
+    public string   Title       { get; set; } = null!;
+    public string   Description { get; set; } = null!;
+    public string   Html        { get; set; } = null!;
+    public bool     Indexable   { get; set; }
+    public string   CreatedBy   { get; set; } = null!;
+    public DateTime CreatedAt   { get; set; }
+    public DateTime UpdatedAt   { get; set; }
+}

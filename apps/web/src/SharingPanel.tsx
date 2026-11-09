@@ -3,6 +3,8 @@
 // SharingPanel — modal pour gérer les permissions et les liens de partage
 // d'un vault ou d'un document.
 
+import { PublishWebTab } from './PublishWebTab'
+import type { PublicationService } from './publication'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
 import type { VaultSummary, DocumentDto } from './types'
@@ -126,12 +128,14 @@ interface Props {
   document: DocumentDto | null
   sharingApi: IVaultSharing
   onClose: () => void
+  /** Publication sur le web (onglet « Web », pour une note). */
+  publications?: PublicationService
 }
 
-export function SharingPanel({ token, vault, document: doc, sharingApi, onClose }: Props) {
+export function SharingPanel({ token, vault, document: doc, sharingApi, onClose, publications }: Props) {
   // Which resource to manage: vault or document
   const [target, setTarget] = useState<'vault' | 'document'>(doc ? 'document' : 'vault')
-  const [tab, setTab] = useState<'permissions' | 'links'>('permissions')
+  const [tab, setTab] = useState<'permissions' | 'links' | 'web'>('permissions')
   const [sharing, setSharing] = useState<AppResourceSharing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -259,6 +263,11 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose 
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {publications && target === 'document' && doc && (
+            <button data-testid="sharing-tab-web" onClick={() => setTab('web')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === 'web' ? '2px solid var(--accent)' : '2px solid transparent', color: tab === 'web' ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === 'web' ? 600 : 400, order: 3 }}>
+              Web
+            </button>
+          )}
           {(['permissions', 'links'] as const).map(tabKey => (
             <button key={tabKey} onClick={() => setTab(tabKey)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === tabKey ? '2px solid var(--accent)' : '2px solid transparent', color: tab === tabKey ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === tabKey ? 600 : 400 }}>
               {tabKey === 'permissions'
@@ -272,6 +281,10 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose 
         <div style={body}>
           {error && <div style={{ color: 'var(--color-danger)', fontSize: '0.78rem' }}>{error}</div>}
           {loading && <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.loading')}</div>}
+
+          {tab === 'web' && publications && doc && target === 'document' && (
+            <PublishWebTab service={publications} docId={doc.id} path={doc.path} canWrite={vault?.role !== 'viewer'} />
+          )}
 
           {tab === 'permissions' && (
             <>

@@ -65,6 +65,8 @@ export default defineConfig({
     fs: { allow: [searchForWorkspaceRoot(process.cwd()), sqliteWasmDir] },
     proxy: {
       '/api': 'http://localhost:5000',
+      // Pages publiees sur le web : rendues par l'API.
+      '/p/': 'http://localhost:5000',
       '/hubs': {
         target: 'http://localhost:5000',
         ws: true,

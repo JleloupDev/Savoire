@@ -37,6 +37,15 @@ server {
     }
 
     # SPA fallback
+    # Pages publiees sur le web (/p/<nom>) : servies par l'API, en HTML.
+    location /p/ {
+        proxy_pass ${API_URL}/p/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_ssl_server_name on;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

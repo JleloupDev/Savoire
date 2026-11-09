@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
         // Sharing repositories
         services.AddScoped<IResourcePermissionRepository, EfResourcePermissionRepository>();
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
+        services.AddScoped<IPublicationRepository,         EfPublicationRepository>();
 
         // Index repositories
 

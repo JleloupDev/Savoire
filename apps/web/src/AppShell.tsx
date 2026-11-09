@@ -12,6 +12,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
+import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
@@ -458,6 +459,14 @@ export function AppShell() {
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
   // L'IA est celle de la personne connectee : ses connexions, ses cles.
   setAIAccount(activeAccountRef.current?.userId)
+  // Publication sur le web : jeton, vault, lecture et rendu de la note.
+  publications.configure({
+    token: () => tokenRef.current ?? '',
+    vaultId: () => selectedVaultRef.current?.id,
+    read: docId => vaultAPIRef.current ? vaultAPIRef.current.read(docId) : Promise.reject(new Error('Aucun vault ouvert.')),
+    renderOptions: () => ({ registry: pluginAPIRef.current?.blocks ?? null, hooks: pluginAPIRef.current?.hooks ?? null }),
+    canWrite: () => !isReadOnlyRef.current,
+  })
   const onOpenSharedNoteRef = useRef<(note: SharedNote) => void>(() => {})
   const docEventUnsubRef = useRef<(() => void) | null>(null)
   // Copie d'un vault vers le poste et retour (menu d'un vault), et sa fenetre de progression.
@@ -698,6 +707,7 @@ export function AppShell() {
       onChanged()
       // La nature des documents anciens est recopiee depuis leur type, quand
       // son plugin est la : un membre sans ce plugin les relira correctement.
+      publications.reset()
       documentKindsStopRef.current?.()
       documentKindsStopRef.current = active.session
         ? watchDocumentKinds(active.session.directory, (path) => {
@@ -1590,6 +1600,7 @@ export function AppShell() {
 
       {sharingOpen && tokenRef.current && selectedVault && vaultSharing && (
         <SharingPanel
+          publications={publications}
           token={tokenRef.current}
           vault={selectedVault}
           document={activeDoc}
