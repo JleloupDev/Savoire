@@ -7,7 +7,8 @@
 // Un agent ne recoit jamais l'application entiere. Il recoit un contexte qui
 // ne contient que ce que ses droits autorisent, et chaque appel est verifie.
 // Ses droits effectifs sont l'INTERSECTION de deux choses :
-//   - le mode dans lequel on le lance (lecture, relecture, redaction) ;
+//   - le mode dans lequel on le lance (lecture, relecture, suggestion,
+//     redaction) ;
 //   - les droits de la personne qui le lance.
 // Un agent lance par un lecteur du vault ne peut donc jamais ecrire, quel que
 // soit son mode.
@@ -22,12 +23,13 @@ import type {
 } from '@savoire/plugin-api'
 import { describeActor, type AgentActor } from './Actor'
 import type { IVaultSyncSession } from './contracts'
-import type { ReviewEntry, ReviewService } from './ReviewService'
+import { ReviewService, type ReviewEntry } from './ReviewService'
+import type { ICRDT } from '@savoire/plugin-api'
 
 export type { AgentCapability, AgentSpec } from '@savoire/plugin-api'
 
 export interface AgentMode {
-  id: 'read' | 'review' | 'write'
+  id: 'read' | 'review' | 'suggest' | 'write'
   label: string
   description: string
   capabilities: AgentCapability[]
@@ -47,17 +49,23 @@ export const AGENT_MODES: AgentMode[] = [
     capabilities: ['documents.read', 'index.query', 'review.read', 'review.write'],
   },
   {
+    id: 'suggest',
+    label: 'Suggestion',
+    description: 'Lit, commente et propose des modifications. Vous les acceptez ou les refusez.',
+    capabilities: ['documents.read', 'index.query', 'review.read', 'review.write', 'review.suggest'],
+  },
+  {
     id: 'write',
     label: 'Rédaction',
-    description: 'Lit, commente, et écrit dans les notes.',
-    capabilities: ['documents.read', 'index.query', 'review.read', 'review.write', 'documents.write'],
+    description: 'Lit, commente, propose, et écrit directement dans les notes.',
+    capabilities: ['documents.read', 'index.query', 'review.read', 'review.write', 'review.suggest', 'documents.write'],
   },
 ]
 
 /** Droits d'une personne dans le vault, vus comme des capacites d'agent. */
 export function userCapabilities(user: { canWrite: boolean }): AgentCapability[] {
   const base: AgentCapability[] = ['documents.read', 'index.query', 'review.read']
-  return user.canWrite ? [...base, 'review.write', 'documents.write'] : base
+  return user.canWrite ? [...base, 'review.write', 'review.suggest', 'documents.write'] : base
 }
 
 /** Ce que l'agent demande ∩ mode ∩ droits de la personne. */
@@ -155,6 +163,25 @@ export class AgentContext implements AgentRunContext {
     reply: (rootId: string, text: string): ReviewEntry => {
       this.require('review.write')
       return this.deps.review.reply(rootId, text, this.deps.actor)
+    },
+    suggest: (docId: string, find: string, replacement: string, note = '', occurrence = 0): boolean => {
+      this.require('review.suggest')
+      if (!find) return false
+      const crdt = this.deps.session.openDocument(docId) as ICRDT
+      try {
+        const text = crdt.collaborativeText?.()
+        if (!text) return false
+        const content = text.toString()
+        let at = -1
+        for (let i = 0; i <= occurrence; i++) {
+          at = content.indexOf(find, at + 1)
+          if (at < 0) return false
+        }
+        this.deps.review.suggest(docId, ReviewService.anchor(text, at, at + find.length), replacement, this.deps.actor, note)
+        return true
+      } finally {
+        this.deps.session.closeDocument(docId)
+      }
     },
   }
 

@@ -7,7 +7,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { DocumentStore, VaultClient, type IVaultStorage } from '@savoire/platform'
 import {
-  AGENT_MODES, AgentContext, AgentPermissionError, ReviewService, describeActor, runAgent, type IVaultSyncSession,
+  AGENT_MODES, AgentContext, AgentPermissionError, ReviewService, describeActor, runAgent, withDocumentRefCount, type IVaultSyncSession,
 } from '@savoire/application'
 import type { AgentSpec } from '@savoire/plugin-api'
 import { reviewText, reviewerAgent } from '@savoire/plugin-agent-reviewer'
@@ -142,5 +142,35 @@ describe('agents', () => {
       client: alice.client, session: alice.session, review: alice.review,
     })
     expect(() => ctx.documents.append(docId, 'pirate')).toThrow(AgentPermissionError)
+  })
+})
+
+describe('agents : mode suggestion', () => {
+  const sessions: IVaultSyncSession[] = []
+  afterEach(async () => { for (const s of sessions.splice(0)) await s.dispose() })
+
+  it('l agent propose des modifications ; la note ne change que si la personne accepte', async () => {
+    const factory = new LocalPeerVaultSessionFactory(new InProcessPeerBus(), { settleMs: 5 })
+    const raw = await factory.open({ vaultId: 'v1', token: '', userId: 'alice', onChanged: () => {} })
+    sessions.push(raw)
+    // Comme l'app : ouvertures comptees (l'agent ne ferme pas la note de l'editeur).
+    const session = withDocumentRefCount(raw)
+    const client = new VaultClient('v1', '', noStorage, noStore, session.directory, () => undefined, session)
+    await client.createFile('n.md')
+    const docId = client.resolveDocumentId('n.md')!
+    const doc = session.openDocument(docId) as YjsCrdtAdapter
+    doc.sharedText().insert(0, 'Un  deux trois  quatre')
+    const review = new ReviewService(session)
+    const result = await runAgent({
+      agent: reviewerAgent, mode: mode('suggest'), user: { userId: 'alice', displayName: 'Alice', canWrite: true },
+      target: { docId, path: 'n.md' }, client, session, review,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.capabilities).toContain('review.suggest')
+    expect(result.capabilities).not.toContain('documents.write')
+    const suggestions = review.threads(docId).filter(t => t.root.kind === 'suggestion')
+    expect(suggestions.map(t => t.root.replacement).sort()).toEqual(['Un deux', 'trois quatre'])
+    expect(doc.sharedText().toString()).toBe('Un  deux trois  quatre')
+    expect(suggestions[0].root.author).toMatchObject({ kind: 'agent', onBehalfOf: { userId: 'alice' } })
   })
 })

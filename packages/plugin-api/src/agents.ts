@@ -25,6 +25,8 @@ export type AgentCapability =
   | 'index.query'
   | 'review.read'
   | 'review.write'
+  /** Proposer des modifications (suggestions), que la personne accepte ou refuse. */
+  | 'review.suggest'
 
 export interface AgentTarget {
   docId: string
@@ -75,6 +77,13 @@ export interface AgentRunContext {
     threads(docId: string): AgentReviewThread[]
     comment(docId: string, text: string): void
     reply(rootId: string, text: string): void
+    /**
+     * Propose de remplacer un passage de la note : la premiere occurrence de
+     * `find` (ou la `occurrence`-ieme, a partir de 0) devient `replacement`.
+     * Rien ne change dans la note tant que la personne n'accepte pas.
+     * Rend false si le passage est introuvable.
+     */
+    suggest?(docId: string, find: string, replacement: string, note?: string, occurrence?: number): boolean
   }
 }
 

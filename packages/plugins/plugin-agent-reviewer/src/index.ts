@@ -6,11 +6,15 @@
 // (@savoire/plugin-api). Il lit la note, compte les mots, releve les TODO et
 // verifie chaque lien [[...]] par l'index. Ensuite, selon ses droits :
 //   - relecture : il poste ses remarques en commentaire ;
+//   - suggestion : il propose aussi de corriger les espaces en double (la
+//     personne accepte ou refuse chaque suggestion) ;
 //   - redaction : il ajoute aussi une ligne de synthese a la fin de la note.
 // Ses droits reels sont ceux qu'il demande, bornes par le mode choisi et par
 // la personne qui le lance : c'est l'application qui en decide.
 
 import type { AgentRunContext, AgentSpec, AgentTarget, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
+
+const MAX_SUGGESTIONS = 5
 
 export interface ReviewFindings {
   words: number
@@ -49,7 +53,7 @@ export const reviewerAgent: AgentSpec = {
   id: 'agent-reviewer',
   name: 'Relecteur',
   description: 'Compte les mots, relève les TODO et vérifie les liens de la note.',
-  requires: ['documents.read', 'index.query', 'review.read', 'review.write', 'documents.write'],
+  requires: ['documents.read', 'index.query', 'review.read', 'review.write', 'review.suggest', 'documents.write'],
 
   async run(ctx: AgentRunContext, target: AgentTarget) {
     const text = await ctx.documents.read(target.docId)
@@ -64,6 +68,15 @@ export const reviewerAgent: AgentSpec = {
       ctx.note('Pas le droit de commenter dans ce mode : résultat gardé ici.')
     }
 
+    if (ctx.can('review.suggest') && ctx.review.suggest) {
+      // Au plus 5 suggestions : des mots separes par deux espaces ou plus.
+      let n = 0
+      for (const m of text.matchAll(/(\S+) {2,}(\S+)/g)) {
+        if (n >= MAX_SUGGESTIONS) break
+        if (ctx.review.suggest(target.docId, m[0], `${m[1]} ${m[2]}`, 'Espace en double')) n++
+      }
+      if (n) ctx.note(`${n} suggestion(s) : espaces en double.`)
+    }
     if (ctx.can('documents.write')) {
       ctx.documents.append(target.docId, `\n\n> ${summary}\n`)
       ctx.note('Synthèse ajoutée à la fin de la note.')
