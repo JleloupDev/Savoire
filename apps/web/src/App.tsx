@@ -9,6 +9,7 @@ import { AppShell } from './AppShell'
 import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
+import { loadModulePlugins } from './pluginStore'
 import { ToastContainer } from './ToastContainer'
 import { getServerChoice } from './serverConnection'
 import { CALLBACK_PATH, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
@@ -39,7 +40,7 @@ export function App() {
               {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
               <Route path={CALLBACK_PATH} element={<LoginPage />} />
               <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
-              <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} />} />
+              <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} loadPlugins={loadModulePlugins} />} />
               <Route path="/view" element={<ViewGrantPage />} />
               <Route path="/" element={<AppShell />} />
               <Route path="*" element={<Navigate to="/" replace />} />

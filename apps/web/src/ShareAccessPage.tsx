@@ -13,9 +13,24 @@ import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
-import { loadModulePlugins } from './pluginStore'
+import excalidrawPlugin from '@savoire/plugin-excalidraw'
+import mindmapPlugin from '@savoire/plugin-mindmap'
+import calloutPlugin from '@savoire/plugin-callout'
+import codeBlockPlugin from '@savoire/plugin-code-block'
+import taskListPlugin from '@savoire/plugin-task-list'
+import noteEmbedPlugin from '@savoire/plugin-note-embed'
+import modulePlugin from '@savoire/plugin-module'
+import mermaidPlugin from '@savoire/plugin-mermaid'
+import tablePlugin from '@savoire/plugin-table'
 
-// Les plugins du document partage : ceux du module (voir modulePluginEntries).
+/** Les plugins d'un document partage, d'apres son chemin (l'application : ceux du module). */
+export type SharePluginLoader = (path: string) => Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }>
+
+/** Sans chargeur fourni : les plugins de base. */
+const basePlugins: SharePluginLoader = async () => ({
+  editor: [mermaidPlugin, calloutPlugin, codeBlockPlugin, noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin],
+  fileTypes: [excalidrawPlugin, mindmapPlugin],
+})
 
 function createShareVault(handle: SharedDocumentHandle): VaultAPI {
   return {
@@ -35,7 +50,7 @@ function createShareVault(handle: SharedDocumentHandle): VaultAPI {
 
 // ── ShareDocumentEditor ───────────────────────────────────────────────────────
 
-function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
+function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ro = handle.permission === 'read'
 
@@ -51,7 +66,7 @@ function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
     const start = async () => {
       const pluginApi = PluginAPIImpl.create(vault, handle.sync)
       loader = new PluginLoader()
-      const plugins = await loadModulePlugins(handle.path)
+      const plugins = await loadPlugins(handle.path)
       const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
       for (const p of plugins.fileTypes) await loader.loadInternal(p, pluginApi)
       for (const p of defaultPlugins) await loader.loadInternal(p, pluginApi)
@@ -81,7 +96,7 @@ function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
       view?.destroy()
       if (loader) void loader.unloadAll()
     }
-  }, [handle, ro])
+  }, [handle, ro, loadPlugins])
 
   return (
     <div
@@ -99,7 +114,7 @@ function ShareDocumentEditor({ handle }: { handle: SharedDocumentHandle }) {
 
 // ── Page shell ────────────────────────────────────────────────────────────────
 
-export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
+export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sharingApi: ISharingAPI; loadPlugins?: SharePluginLoader }) {
   const { token } = useParams<{ token: string }>()
   const [handle, setHandle] = useState<SharedDocumentHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -135,7 +150,7 @@ export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
     return (
       <FullPage>
         <div data-testid="share-embed" style={{ flex: 1, overflow: 'hidden' }}>
-          <ShareDocumentEditor handle={handle} />
+          <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} />
         </div>
       </FullPage>
     )
@@ -154,7 +169,7 @@ export function ShareAccessPage({ sharingApi }: { sharingApi: ISharingAPI }) {
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        <ShareDocumentEditor handle={handle} />
+        <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} />
       </div>
     </FullPage>
   )
