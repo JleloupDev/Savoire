@@ -60,7 +60,49 @@ export function createLatexView(path: string, ctx: FileContext, api: PluginAPI |
       print.dataset.testid = 'latex-print'
       print.append(createIcon(api?.icons, 'printer', { size: 13 }), 'Imprimer / PDF')
       print.addEventListener('click', () => printPreview(preview.innerHTML, path))
-      bar.append(...buttons, spacer, status, print)
+      // Vrai PDF, compile par TeX Live sur le poste (moteur charge au premier clic).
+      const compile = document.createElement('button')
+      compile.type = 'button'
+      compile.dataset.testid = 'latex-compile'
+      compile.title = 'Compiler avec TeX Live (sur ce poste). La première fois, le moteur se télécharge (environ 30 Mo).'
+      compile.append(createIcon(api?.icons, 'file-down', { size: 13 }), 'Compiler en PDF')
+      compile.addEventListener('click', () => void (async () => {
+        if (!view) return
+        compile.disabled = true
+        status.textContent = 'Compilation… (premier lancement : téléchargement du moteur)'
+        try {
+          const { compileLatex } = await import('./compile')
+          const r = await compileLatex(view.state.doc.toString())
+          if (!r.ok || !r.pdf) {
+            status.textContent = `Erreur LaTeX : ${r.error ?? ''}`
+            status.title = r.log ?? ''
+            return
+          }
+          status.textContent = 'PDF compilé.'
+          showPdf(r.pdf)
+        } catch (err) {
+          status.textContent = `Compilation impossible : ${err instanceof Error ? err.message : String(err)}`
+        } finally {
+          compile.disabled = false
+        }
+      })())
+      bar.append(...buttons, spacer, status, compile, print)
+
+      /** Le PDF compile, dans le volet d'apercu (lecteur du navigateur), avec un retour a l'apercu. */
+      const showPdf = (bytes: Uint8Array) => {
+        const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }))
+        const back = document.createElement('button')
+        back.type = 'button'
+        back.textContent = '← Aperçu rapide'
+        back.style.cssText = 'margin:8px;font:12px var(--font-ui,sans-serif);padding:3px 10px;border-radius:6px;border:1px solid var(--border,#e2e8f0);background:transparent;cursor:pointer;color:inherit'
+        const frame = document.createElement('iframe')
+        frame.dataset.testid = 'latex-pdf'
+        frame.src = url
+        frame.style.cssText = 'width:100%;height:calc(100% - 44px);border:0'
+        back.addEventListener('click', () => { URL.revokeObjectURL(url); preview.replaceChildren(page) })
+        preview.replaceChildren(back, frame)
+        if (lastMode === 'source') setMode('split')
+      }
 
       const panes = document.createElement('div')
       panes.className = 'tex-panes'

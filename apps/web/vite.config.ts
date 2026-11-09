@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { fileURLToPath } from 'node:url'
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve, join } from 'path'
@@ -52,7 +53,8 @@ export default defineConfig({
   // new URL(..., import.meta.url) : ni pre-bundle en dev (le chemin casserait),
   // et le .wasm est copie tel quel au build.
   optimizeDeps: {
-    exclude: ['@sqlite.org/sqlite-wasm'],
+    // Le moteur LaTeX (plugin-latex) charge aussi son worker par adresse.
+    exclude: ['@sqlite.org/sqlite-wasm', '@siglum/engine'],
   },
   worker: {
     format: 'es',
@@ -76,5 +78,10 @@ export default defineConfig({
   resolve: {
     // Prefer TypeScript source of workspace packages — avoids needing a build step in dev
     conditions: ['source', 'import', 'module', 'browser', 'default'],
+    alias: {
+      // Moteur LaTeX (plugin-latex) : acceleration optionnelle non constructible, desactivee.
+      'blake3-wasm/browser.js': fileURLToPath(new URL('./src/blake3-disabled.js', import.meta.url)),
+    },
   },
+
 })

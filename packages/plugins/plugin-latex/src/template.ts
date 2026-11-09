@@ -5,7 +5,9 @@
 // l'apercu sait afficher.
 
 export const LATEX_TEMPLATE = String.raw`\documentclass{article}
-\usepackage[french]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
 \title{Nouveau document}
 \author{}
 \date{\today}
