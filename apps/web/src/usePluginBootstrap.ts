@@ -34,7 +34,7 @@ import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
-import { ReviewWidget, startCommentDraft } from './ReviewWidget'
+import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -199,6 +199,8 @@ export function usePluginBootstrap({
   // Reassigned each render so it always closes over fresh refs.
   const onControllerReadyRef = useRef<(ctrl: EditorController | null) => void>(() => {})
   onControllerReadyRef.current = (ctrl: EditorController | null) => {
+    // La revision surligne ses passages dans l'editeur actif.
+    setReviewEditor(ctrl)
     if (!managerRef.current) return
     const activeEditorPlugins: Array<{ id: string; source: 'default' | 'extension' | 'frontmatter' }> =
       ctrl?.getActivePlugins?.() ?? []
@@ -350,16 +352,24 @@ export function usePluginBootstrap({
       // Commandes de l'editeur : connues des le depart, meme sans note
       // ouverte (pour leur choisir un raccourci).
       for (const cmd of plumeCommands()) pluginApi.commands.register(cmd)
-      // « Commenter » (bulle de selection, menu ⋯) : ouvre la Revision avec
-      // le passage selectionne cite dans le brouillon.
+      // « Commenter » et « Suggérer » (bulle de selection, menu ⋯) : ouvrent
+      // la Revision avec le passage selectionne, ancre dans la note.
+      const reviewDraft = (kind: 'comment' | 'suggestion') => (ctx: { view?: unknown }) => {
+        const view = ctx.view as { state?: { selection: { main: { from: number; to: number } } } } | undefined
+        const sel = view?.state?.selection.main
+        const session = vaultSessionRef.current
+        const path = manager.getActiveDocument()?.path
+        const docId = path ? session?.directory.getAll().find(d => d.path === path || d.path === `${path}.md`)?.id : undefined
+        startReviewDraft(kind, session, docId, sel?.from ?? 0, sel?.to ?? 0)
+        if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'review') manager.toggleView('review')
+      }
       pluginApi.toolbar.register({
         id: 'tb-comment', label: 'Commenter', icon: 'message-square-plus', group: 'review', menu: 'more', bubble: true,
-        run: ctx => {
-          const view = ctx.view as { state?: { selection: { main: { from: number; to: number } }; sliceDoc(from: number, to: number): string } } | undefined
-          const sel = view?.state?.selection.main
-          startCommentDraft(sel && view?.state ? view.state.sliceDoc(sel.from, sel.to) : '')
-          if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'review') manager.toggleView('review')
-        },
+        run: reviewDraft('comment'),
+      })
+      pluginApi.toolbar.register({
+        id: 'tb-suggest', label: 'Suggérer une modification', icon: 'pencil-line', group: 'review', menu: 'more', bubble: true,
+        run: reviewDraft('suggestion'),
       })
 
       // ContentIndexingService: wires hooks → contributors → storage.

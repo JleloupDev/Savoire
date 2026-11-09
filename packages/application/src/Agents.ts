@@ -74,6 +74,8 @@ export function effectiveCapabilities(
 function forAgent(e: ReviewEntry): AgentReviewEntry {
   return {
     id: e.id, kind: e.kind, text: e.text, createdAt: e.createdAt, status: e.status,
+    ...(e.anchor ? { quote: e.anchor.quote } : {}),
+    ...(e.replacement !== undefined ? { replacement: e.replacement } : {}),
     author: describeActor(e.author), authorIsAgent: e.author.kind === 'agent',
   }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
@@ -356,6 +357,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         ...(uploadImage ? [imageInsertExtension(uploadImage)] : []),
         // Une longue ligne passe a la ligne, en edition comme une fois rendue.
         EditorView.lineWrapping,
+        // Passages surlignes par l'application (revision).
+        highlightsExtension(),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
@@ -812,6 +815,26 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   getSelectionText(): string {
     const { from, to } = this.view.state.selection.main
     return this.view.state.doc.sliceString(from, to)
+  }
+
+  /** Selection courante, en positions du texte. */
+  getSelectionRange(): { from: number; to: number } {
+    const { from, to } = this.view.state.selection.main
+    return { from, to }
+  }
+
+  /** Selectionne un passage et le fait defiler a l'ecran. */
+  selectRange(from: number, to: number): void {
+    const len = this.view.state.doc.length
+    const a = Math.max(0, Math.min(from, len))
+    const b = Math.max(a, Math.min(to, len))
+    this.view.dispatch({ selection: { anchor: a, head: b }, scrollIntoView: true })
+    this.view.focus()
+  }
+
+  /** Remplace les passages surlignes par l'application. */
+  setHighlights(ranges: readonly EditorHighlight[]): void {
+    applyHighlights(this.view, ranges)
   }
 
   // ── Generic trigger system ────────────────────────────────────────────────

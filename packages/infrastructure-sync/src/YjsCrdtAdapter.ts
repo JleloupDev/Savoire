@@ -65,6 +65,11 @@ export class YjsCrdtAdapter implements ICRDT {
     return this.text
   }
 
+  /** Le texte avec des positions relatives (ancres qui suivent les modifications). */
+  collaborativeText(): YjsCollaborativeText {
+    return new YjsCollaborativeText(this.ytext, this.ydoc)
+  }
+
   /**
    * Le document vu comme un arbre JSON (contrat ISharedTree des plugins).
    * Meme Y.Doc, racine separee du texte. Cree au premier appel, puis le meme.

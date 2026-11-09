@@ -17,5 +17,14 @@ export interface ICRDT {
 
   getVersion(): CrdtVersion
 
+  /**
+   * Le texte du document avec des positions qui suivent les modifications
+   * (ancres de la revision). Absent : pas de texte (document non textuel).
+   */
+  collaborativeText?(): ICollaborativeText
+
+  /** Le texte du document, modifiable (contrat ISharedText). */
+  sharedText?(): import('./sharedText').ISharedText
+
   dispose(): void
 }

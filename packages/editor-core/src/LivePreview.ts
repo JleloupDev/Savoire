@@ -30,6 +30,7 @@ import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdo
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
 import { appendTableRow } from './TableRows'
+import { highlightedRanges, isHighlightsEffect } from './Highlights'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
@@ -356,6 +357,9 @@ function buildDecorations(
   const decorations: Range<Decoration>[] = []
   const { from: cursorFrom } = state.selection.main
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
+  // Passages surlignes par la revision : leurs lignes restent en texte brut.
+  const reviewed = highlightedRanges(state)
+  const underReview = (from: number, to: number): boolean => reviewed.some(r => r.from <= to && r.to >= from)
 
   // Zone du frontmatter : le panneau des proprietes s'il est branche, sinon
   // le badge replie (null si le curseur y est, ou sans frontmatter).
@@ -375,6 +379,7 @@ function buildDecorations(
       const line = state.doc.line(n)
       if (n === cursorLine) continue
       if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      if (underReview(line.from, line.to)) continue
       const lineText = state.doc.sliceString(line.from, line.to)
       // Une ligne d'integration seule (une image `![[x.png]]` collee entre
       // deux lignes de texte) garde le rendu de son plugin.
@@ -423,6 +428,7 @@ function buildDecorations(
         continue
       }
       if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      if (underReview(line.from, line.to)) continue
       const from = line.from
       const build = (): HTMLElement => {
         try {
@@ -495,6 +501,7 @@ function buildDecorations(
 
       const hasRemoteCursor = remoteCursors.some(p => p >= node.from && p <= node.to)
       if (hasRemoteCursor) return false
+      if (underReview(node.from, node.to)) return false
 
       const text = state.doc.sliceString(node.from, node.to)
 
@@ -678,7 +685,7 @@ export function createLivePreviewExtension(
       return buildDecorations(state, registry, hooks, ctx, getActiveScopeIds)
     },
     update(decorations, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e))) {
+      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e) || isHighlightsEffect(e))) {
         return buildDecorations(tr.state, registry, hooks, ctx, getActiveScopeIds)
       }
       return decorations.map(tr.changes)

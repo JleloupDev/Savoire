@@ -71,6 +71,12 @@ export interface EditorController {
   getActivePlugins(): ActivePluginInfo[]
   /** Raccourci en vigueur d'une commande, pret a afficher (« Ctrl+B »), ou null. */
   describeHotkey?(commandId: string): string | null
+  /** Selection courante, en positions du texte (celles du CRDT). */
+  getSelectionRange?(): { from: number; to: number }
+  /** Selectionne un passage et le montre. */
+  selectRange?(from: number, to: number): void
+  /** Passages surlignes par l'application (revision). */
+  setHighlights?(ranges: readonly import('./Highlights').EditorHighlight[]): void
 }
 
 import type { Extension } from '@codemirror/state'

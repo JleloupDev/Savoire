@@ -3,16 +3,21 @@
 //
 // Panneau « Revision » : les commentaires de la note active, et les agents.
 //
-// Version 1, volontairement simple : un commentaire vise une note entiere,
-// sans ancrage. Un agent se lance sur la note active, dans un mode qui
+// Un commentaire vise la note entiere ou un passage (ancre qui suit les
+// modifications). Une suggestion propose de remplacer un passage : on
+// l'accepte (la note change) ou on la refuse. Les passages vises sont
+// surlignes dans l'editeur ; un clic sur la citation y mene.
+// Un agent se lance sur la note active, dans un mode qui
 // debloque des droits (lecture, relecture, redaction), toujours bornes par
 // ceux de la personne qui le lance. Ce qu'il fait porte « agent, pour Jean ».
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Widget } from '@savoire/plugin-api'
+import type { ICRDT, Widget } from '@savoire/plugin-api'
+import type { EditorController } from '@savoire/editor-core'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
   AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
-  type AgentRunResult, type IVaultSyncSession, type ReviewEntry, type ReviewStatus, type ReviewThread, type UserActor,
+  type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus, type ReviewText,
+  type ReviewThread, type UserActor,
 } from '@savoire/application'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 
@@ -24,18 +29,77 @@ function reviewFor(session: IVaultSyncSession): ReviewService {
   return service
 }
 
-// Brouillon demande depuis l'editeur (« Commenter » sur une selection) :
-// garde ici si le panneau n'est pas encore monte.
-let pendingDraft: string | null = null
-const draftListeners = new Set<(text: string) => void>()
+// ── Editeur actif : selection, passages surlignes ─────────────────────────
 
-/** Ouvre un brouillon de commentaire qui cite le passage selectionne. */
-export function startCommentDraft(selection: string): void {
-  const quote = selection.trim()
-    ? selection.trim().split('\n').slice(0, 6).map(l => `> ${l}`).join('\n') + '\n\n'
-    : ''
-  if (draftListeners.size === 0) { pendingDraft = quote; return }
-  for (const cb of draftListeners) cb(quote)
+let activeEditor: EditorController | null = null
+const editorListeners = new Set<() => void>()
+
+/** L'editeur actif (appele quand un editeur prend la main). */
+export function setReviewEditor(ctrl: EditorController | null): void {
+  activeEditor = ctrl
+  for (const cb of editorListeners) cb()
+}
+
+/**
+ * Le texte d'une note pour la revision : positions relatives (ancres) et
+ * remplacement. La note est ouverte le temps de `use`, puis rendue.
+ */
+export function withReviewText<T>(session: IVaultSyncSession, docId: string, use: (text: ReviewText) => T): T | null {
+  const crdt = session.openDocument(docId) as ICRDT
+  try {
+    const collab = crdt.collaborativeText?.()
+    const shared = crdt.sharedText?.()
+    if (!collab || !shared) return null
+    const text: ReviewText = {
+      toString: () => collab.toString(),
+      get length() { return collab.length },
+      createRelPos: (i, assoc) => collab.createRelPos(i, assoc),
+      resolveRelPos: rp => collab.resolveRelPos(rp),
+      slice: (a, b) => collab.slice(a, b),
+      replace: (from, to, insert) => shared.applyDelta([
+        ...(from > 0 ? [{ retain: from }] : []),
+        ...(to > from ? [{ delete: to - from }] : []),
+        ...(insert ? [{ insert }] : []),
+      ]),
+    }
+    return use(text)
+  } finally {
+    session.closeDocument(docId)
+  }
+}
+
+// ── Brouillons demandes depuis l'editeur ──────────────────────────────────
+
+/** Brouillon : un commentaire ou une suggestion, sur un passage ou non. */
+export interface ReviewDraft {
+  kind: 'comment' | 'suggestion'
+  docId?: string
+  anchor?: ReviewAnchor
+}
+
+// Garde ici si le panneau n'est pas encore monte.
+let pendingDraft: ReviewDraft | null = null
+const draftListeners = new Set<(draft: ReviewDraft) => void>()
+
+function startDraft(draft: ReviewDraft): void {
+  if (draftListeners.size === 0) { pendingDraft = draft; return }
+  for (const cb of draftListeners) cb(draft)
+}
+
+/**
+ * « Commenter » / « Suggérer » sur la selection : ancre le passage tout de
+ * suite (il suivra les modifications faites pendant qu'on ecrit).
+ */
+export function startReviewDraft(kind: 'comment' | 'suggestion', session: IVaultSyncSession | undefined, docId: string | undefined, from: number, to: number): void {
+  const anchor = session && docId && to > from
+    ? withReviewText(session, docId, text => ReviewService.anchor(text, from, to)) ?? undefined
+    : undefined
+  startDraft({ kind, ...(docId ? { docId } : {}), ...(anchor ? { anchor } : {}) })
+}
+
+/** Ancien point d'entree : un commentaire qui cite le texte (sans ancre). */
+export function startCommentDraft(_selection: string): void {
+  startDraft({ kind: 'comment' })
 }
 
 const BUTTON: React.CSSProperties = {
@@ -47,14 +111,21 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const [path, setPath] = useState<string | null>(() => manager.getActiveDocument()?.path ?? null)
   const [tick, setTick] = useState(0)
   const [draft, setDraft] = useState('')
+  // Passage vise par le brouillon, et texte propose (suggestion).
+  const [draftAnchor, setDraftAnchor] = useState<{ docId?: string; anchor: ReviewAnchor } | null>(null)
+  const [draftKind, setDraftKind] = useState<'comment' | 'suggestion'>('comment')
+  const [replacement, setReplacement] = useState('')
   const [modeId, setModeId] = useState<string>('review')
   const [run, setRun] = useState<AgentRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
-    const take = (quote: string) => {
-      setDraft(quote)
+    const take = (d: ReviewDraft) => {
+      setDraftKind(d.kind)
+      setDraftAnchor(d.anchor ? { docId: d.docId, anchor: d.anchor } : null)
+      setReplacement(d.anchor?.quote ?? '')
+      setDraft('')
       requestAnimationFrame(() => {
         const el = inputRef.current
         if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
@@ -80,6 +151,28 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   useEffect(() => review?.onChange(() => setTick(t => t + 1)), [review])
 
   const docId = path ? client?.resolveDocumentId(path) : undefined
+
+  // Passages vises par les fils ouverts : surlignes dans l'editeur.
+  const [editorTick, setEditorTick] = useState(0)
+  useEffect(() => {
+    const cb = () => setEditorTick(t => t + 1)
+    editorListeners.add(cb)
+    return () => { editorListeners.delete(cb) }
+  }, [])
+  useEffect(() => {
+    if (!review || !session || !docId || !activeEditor?.setHighlights) return
+    const ranges = withReviewText(session, docId, text => review.threads(docId)
+      .filter(t => t.root.anchor && (t.root.status ?? 'open') === 'open')
+      .flatMap(t => {
+        const at = ReviewService.locate(t.root.anchor!, text)
+        return at && at.to > at.from ? [{
+          from: at.from, to: at.to, id: t.root.id,
+          className: t.root.kind === 'suggestion' ? 'review-mark review-mark-suggestion' : 'review-mark',
+          title: t.root.kind === 'suggestion' ? 'Suggestion (panneau Révision)' : `Commentaire : ${t.root.text.slice(0, 80)}`,
+        }] : []
+      })) ?? []
+    activeEditor.setHighlights(ranges)
+  }, [review, session, docId, tick, editorTick])
   const account = refs.activeAccount.current
   const canWrite = !refs.isReadOnly.current && refs.selectedVault.current?.role !== 'viewer'
 
@@ -100,14 +193,36 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     try { action() } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
   }
 
+  // Le brouillon vise-t-il bien la note affichee ?
+  const anchorHere = draftAnchor && (!draftAnchor.docId || draftAnchor.docId === docId) ? draftAnchor.anchor : null
+  const suggesting = draftKind === 'suggestion' && !!anchorHere
+
   function submit() {
     setError(null)
     try {
-      review!.comment(docId!, draft, me)
+      if (suggesting) review!.suggest(docId!, anchorHere!, replacement, me, draft)
+      else review!.comment(docId!, draft, me, anchorHere ?? undefined)
       setDraft('')
+      setDraftAnchor(null)
+      setDraftKind('comment')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  /** Montre le passage d'un fil dans l'editeur. */
+  function reveal(entry: ReviewEntry) {
+    if (!entry.anchor) return
+    const at = withReviewText(session!, docId!, text => ReviewService.locate(entry.anchor!, text))
+    if (!at) { setError('Ce passage n’existe plus dans la note.'); return }
+    activeEditor?.selectRange?.(at.from, at.to)
+  }
+
+  function accept(rootId: string) {
+    act(() => {
+      const done = withReviewText(session!, docId!, text => review!.accept(rootId, text, me))
+      if (!done) throw new Error('Note indisponible : ouvrez-la pour accepter la suggestion.')
+    })
   }
 
   async function launch(agentId: string) {
@@ -144,21 +259,40 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             canWrite={canWrite}
             onReply={text => act(() => review.reply(t.root.id, text, me))}
             onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
+            onReveal={() => reveal(t.root)}
+            onAccept={() => accept(t.root.id)}
           />
         ))}
       </div>
 
+      {anchorHere && (
+        <div data-testid="review-draft-anchor" style={{ marginTop: 12, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+          <Quote text={anchorHere.quote} strike={suggesting} />
+          <button title="Viser toute la note" data-testid="review-draft-unanchor" onClick={() => { setDraftAnchor(null); setDraftKind('comment') }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+        </div>
+      )}
+      {suggesting && (
+        <textarea
+          data-testid="review-replacement"
+          value={replacement}
+          onChange={e => setReplacement(e.target.value)}
+          placeholder="Texte proposé (vide : supprimer le passage)"
+          style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, minHeight: 50, padding: 8, borderRadius: 6, border: '1px solid rgba(34,197,94,.5)', background: 'rgba(34,197,94,.06)', color: 'inherit', font: 'inherit', fontSize: 12 }}
+        />
+      )}
       <textarea
         data-testid="review-input"
         ref={inputRef}
         value={draft}
         onChange={e => setDraft(e.target.value)}
         disabled={!canWrite}
-        placeholder={canWrite ? 'Écrire un commentaire…' : 'Lecture seule : vous ne pouvez pas commenter.'}
-        style={{ width: '100%', boxSizing: 'border-box', marginTop: 12, minHeight: 60, padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 12 }}
+        placeholder={!canWrite ? 'Lecture seule : vous ne pouvez pas commenter.' : suggesting ? 'Explication (facultative)…' : anchorHere ? 'Commenter ce passage…' : 'Écrire un commentaire…'}
+        style={{ width: '100%', boxSizing: 'border-box', marginTop: anchorHere ? 6 : 12, minHeight: suggesting ? 36 : 60, padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 12 }}
       />
-      <button data-testid="review-submit" style={{ ...BUTTON, marginTop: 6 }} disabled={!canWrite || !draft.trim()} onClick={submit}>
-        Commenter
+      <button data-testid="review-submit" style={{ ...BUTTON, marginTop: 6 }}
+        disabled={!canWrite || (suggesting ? replacement === anchorHere!.quote : !draft.trim())} onClick={submit}>
+        {suggesting ? 'Suggérer' : 'Commenter'}
       </button>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: 12, marginTop: 6 }}>{error}</div>}
 
@@ -194,18 +328,35 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   )
 }
 
-function Thread({ thread, canWrite, onReply, onStatus }: {
+const SUGGESTION_STATUS: Partial<Record<ReviewStatus, string>> = { accepted: 'Acceptée', rejected: 'Refusée' }
+
+function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept }: {
   thread: ReviewThread
   canWrite: boolean
   onReply: (text: string) => void
   onStatus: (status: ReviewStatus) => void
+  onReveal: () => void
+  onAccept: () => void
 }) {
   const [draft, setDraft] = useState('')
   const { root, replies } = thread
   const isComment = root.kind === 'comment'
+  const isSuggestion = root.kind === 'suggestion'
+  const open = (root.status ?? 'open') === 'open'
   return (
-    <div data-testid="review-thread" data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
-      <Entry entry={root} />
+    <div data-testid="review-thread" data-kind={root.kind} data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
+      <Entry entry={root} onReveal={onReveal} />
+      {isSuggestion && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+          {open && canWrite && (
+            <>
+              <button data-testid="review-accept" onClick={onAccept} style={{ ...SMALL, color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>Accepter</button>
+              <button data-testid="review-reject" onClick={() => onStatus('rejected')} style={SMALL}>Refuser</button>
+            </>
+          )}
+          {!open && <span data-testid="review-suggestion-status">{SUGGESTION_STATUS[root.status!] ?? root.status}{root.statusBy ? ` par ${describeActor(root.statusBy)}` : ''}</span>}
+        </div>
+      )}
       {isComment && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
           <select
@@ -225,7 +376,7 @@ function Thread({ thread, canWrite, onReply, onStatus }: {
           {replies.map(r => <Entry key={r.id} entry={r} />)}
         </div>
       )}
-      {isComment && canWrite && (
+      {(isComment || isSuggestion) && canWrite && (
         <div style={{ display: 'flex', gap: 6, marginLeft: 14 }}>
           <input
             data-testid="review-reply-input"
@@ -248,7 +399,29 @@ function Thread({ thread, canWrite, onReply, onStatus }: {
   )
 }
 
-function Entry({ entry }: { entry: ReviewEntry }) {
+const SMALL: React.CSSProperties = {
+  fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)',
+  background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
+}
+
+/** Passage cite. Barre : le texte qu'une suggestion remplacerait. */
+function Quote({ text, strike, onClick }: { text: string; strike?: boolean; onClick?: () => void }) {
+  const short = text.length > 280 ? `${text.slice(0, 280)}…` : text
+  return (
+    <div
+      data-testid="review-quote"
+      onClick={onClick}
+      title={onClick ? 'Montrer le passage dans la note' : undefined}
+      style={{
+        flex: 1, minWidth: 0, fontSize: 12, padding: '3px 8px', borderLeft: `3px solid ${strike ? 'rgba(239,68,68,.6)' : 'rgba(234,179,8,.7)'}`,
+        background: strike ? 'rgba(239,68,68,.06)' : 'rgba(234,179,8,.08)', whiteSpace: 'pre-wrap', color: 'var(--text-muted)',
+        textDecoration: strike ? 'line-through' : 'none', cursor: onClick ? 'pointer' : 'default', borderRadius: 3,
+      }}
+    >{short || '(position)'}</div>
+  )
+}
+
+function Entry({ entry, onReveal }: { entry: ReviewEntry; onReveal?: () => void }) {
   const isAgent = entry.author.kind === 'agent'
   return (
     <div
@@ -262,9 +435,19 @@ function Entry({ entry }: { entry: ReviewEntry }) {
         <span data-testid="review-author">{describeActor(entry.author)}</span>
         <span>· {new Date(entry.createdAt).toLocaleString()}</span>
       </div>
-      <div style={{ marginTop: 4, fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--text)' }}>
-        {entry.kind === 'edit' ? `✎ ${entry.text}` : entry.text}
-      </div>
+      {entry.anchor && (
+        <div style={{ marginTop: 4 }}><Quote text={entry.anchor.quote} strike={entry.kind === 'suggestion'} onClick={onReveal} /></div>
+      )}
+      {entry.kind === 'suggestion' && (
+        <div data-testid="review-replacement-text" style={{ marginTop: 3, fontSize: 12, padding: '3px 8px', borderLeft: '3px solid rgba(34,197,94,.6)', background: 'rgba(34,197,94,.07)', whiteSpace: 'pre-wrap', borderRadius: 3 }}>
+          {entry.replacement || <i style={{ color: 'var(--text-faint)' }}>(supprimer le passage)</i>}
+        </div>
+      )}
+      {!(entry.kind === 'suggestion' && entry.text === 'Suggestion') && (
+        <div style={{ marginTop: 4, fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--text)' }}>
+          {entry.kind === 'edit' ? `✎ ${entry.text}` : entry.text}
+        </div>
+      )}
     </div>
   )
 }

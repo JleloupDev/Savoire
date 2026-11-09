@@ -643,3 +643,7 @@ button:active { filter: brightness(0.84); }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .sv-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* ─── Revision : passages vises par un commentaire ou une suggestion ─────────── */
+.review-mark { background: rgba(234, 179, 8, 0.22); border-bottom: 2px solid rgba(234, 179, 8, 0.8); border-radius: 2px; }
+.review-mark-suggestion { background: rgba(239, 68, 68, 0.12); border-bottom-color: rgba(239, 68, 68, 0.7); }

@@ -34,13 +34,18 @@ export interface AgentTarget {
 /** Une entree de la revision, telle qu'un agent la voit. */
 export interface AgentReviewEntry {
   id: string
-  kind: 'comment' | 'edit'
+  /** 'suggestion' : une modification proposee d'un passage (voir `quote` et `replacement`). */
+  kind: 'comment' | 'edit' | 'suggestion'
   text: string
+  /** Passage vise, s'il y en a un. */
+  quote?: string
+  /** Suggestion : le texte propose a la place du passage. */
+  replacement?: string
   /** « Jean », ou « Relecteur (IA), pour Jean ». */
   author: string
   authorIsAgent: boolean
   createdAt: string
-  status?: 'open' | 'resolved' | 'rejected'
+  status?: 'open' | 'resolved' | 'rejected' | 'accepted'
 }
 
 export interface AgentReviewThread {
