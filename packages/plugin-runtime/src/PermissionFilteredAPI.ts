@@ -75,6 +75,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.agents
   }
 
+  get ai() {
+    this.require('ai')
+    return this.inner.ai
+  }
+
   get query() {
     this.require('vault:read')
     return this.inner.query

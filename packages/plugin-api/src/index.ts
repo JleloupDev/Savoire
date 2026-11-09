@@ -127,3 +127,4 @@ export {
 } from './queryEval'
 export type { EvalDoc } from './queryEval'
 export * from './libraries'
+export * from './ai'

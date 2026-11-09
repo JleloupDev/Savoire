@@ -63,6 +63,12 @@ export interface AgentRunContext {
   /** Journal de l'execution, montre a la personne qui a lance l'agent. */
   note(line: string): void
 
+  /**
+   * L'IA de la personne qui lance l'agent (ses connexions, ses cles, gardees
+   * par l'application). Absente : aucune IA configuree.
+   */
+  ai?: { chat(request: import('./ai').AIChatRequest): Promise<import('./ai').AIChatResponse> }
+
   documents: {
     read(docId: string): Promise<string>
     /** Ajoute a la fin d'une note ouverte. L'ecriture est tracee dans la revision. */

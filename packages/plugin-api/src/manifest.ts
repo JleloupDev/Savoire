@@ -75,3 +75,5 @@ export type PluginPermission =
   | 'ui:settings'
   /** Proposer des agents (voir agents.ts). */
   | 'agents'
+  /** Demander des reponses a l'IA de la personne, ou ajouter un fournisseur (voir ai.ts). */
+  | 'ai'

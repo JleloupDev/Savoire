@@ -19,6 +19,7 @@ import {
   type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus, type ReviewText,
   type ReviewThread, type UserActor,
 } from '@savoire/application'
+import { aiService } from './aiService'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 
 // Un service par session de vault : la carte partagee est ouverte une fois.
@@ -234,6 +235,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
       user: { userId: me.userId, displayName: me.displayName, canWrite },
       target: { docId: docId!, path: path! },
       client: client!, session: session!, review: review!,
+      // L'IA de la personne (absente si aucune connexion n'est configuree).
+      ...(aiService.connections().length ? { ai: { chat: (req: Parameters<typeof aiService.chat>[0]) => aiService.chat(req) } } : {}),
     }))
   }
 

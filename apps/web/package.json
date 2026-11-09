@@ -35,6 +35,8 @@
     "@savoire/plugin-graph": "workspace:*",
     "@savoire/plugin-hashtags": "workspace:*",
     "@savoire/plugin-history": "workspace:*",
+    "@savoire/plugin-agent-proofreader": "workspace:*",
+    "@savoire/plugin-ai-mistral": "workspace:*",
     "@savoire/plugin-latex": "workspace:*",
     "@savoire/plugin-mermaid": "workspace:*",
     "@savoire/plugin-metadata": "workspace:*",

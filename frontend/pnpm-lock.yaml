@@ -161,9 +161,15 @@ importers:
       '@savoire/plugin-agenda':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agenda
+      '@savoire/plugin-agent-proofreader':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-agent-proofreader
       '@savoire/plugin-agent-reviewer':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agent-reviewer
+      '@savoire/plugin-ai-mistral':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-ai-mistral
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
@@ -563,7 +569,27 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/plugins/plugin-agent-proofreader:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/plugins/plugin-agent-reviewer:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-ai-mistral:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*

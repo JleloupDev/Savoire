@@ -56,6 +56,8 @@ export interface IPluginAPI {
   index?: IPluginIndexAPI
   /** Agents proposes par le plugin (permission 'agents'). Voir agents.ts. */
   agents?: AgentRegistry
+  /** IA de la personne : reponses et fournisseurs (voir ai.ts). Permission 'ai'. */
+  ai?: import('./ai').AIAPI
   /** Moteur de raccourcis clavier : lire et changer les touches des commandes. */
   hotkeys?: HotkeyAPI
   /** Requetes sur les notes du vault (bases, listes, proprietes). Voir query.ts.

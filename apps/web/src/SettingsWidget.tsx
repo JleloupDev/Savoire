@@ -4,6 +4,8 @@
 // Tabs: Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
+import { AISettings } from './AISettings'
+import type { AIService } from '@savoire/application'
 import { Icon } from '@savoire/ui-components'
 import { useState, useEffect } from 'react'
 import type { Widget } from '@savoire/plugin-api'
@@ -46,7 +48,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault'
+type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai'
 
 export function SettingsPanel({
   loader,
@@ -55,6 +57,7 @@ export function SettingsPanel({
   hotkeys,
   commands,
   vaultIndexer,
+  ai,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -65,6 +68,8 @@ export function SettingsPanel({
   pluginSettings?: PluginSettingsService
   /** Pair indexeur du vault ouvert (profil serveur) : onglet Vault. */
   vaultIndexer?: { indexer: IVaultIndexer; isOwner: boolean; vaultName: string }
+  /** L'IA de la personne : onglet IA. */
+  ai?: AIService
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -106,6 +111,7 @@ export function SettingsPanel({
           )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
           <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
+          {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
           {vaultIndexer && (
             <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
           )}
@@ -120,6 +126,7 @@ export function SettingsPanel({
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
+        {tab === 'ai' && ai && <AISettings ai={ai} />}
         {tab === 'vault' && vaultIndexer && (
           <VaultIndexerSettings indexer={vaultIndexer.indexer} isOwner={vaultIndexer.isOwner} vaultName={vaultIndexer.vaultName} />
         )}

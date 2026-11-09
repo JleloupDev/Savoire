@@ -100,6 +100,8 @@ export interface AgentContextDeps {
   client: VaultClient
   session: IVaultSyncSession
   review: ReviewService
+  /** L'IA de la personne (absente : aucune connexion). */
+  ai?: AgentRunContext['ai']
 }
 
 /** Tout ce qu'un agent peut faire, et rien d'autre. Chaque appel est verifie. */
@@ -110,6 +112,11 @@ export class AgentContext implements AgentRunContext {
 
   get actor(): AgentActor {
     return this.deps.actor
+  }
+
+  /** L'IA de la personne : ses connexions, ses cles, tenues par l'application. */
+  get ai(): AgentRunContext['ai'] {
+    return this.deps.ai
   }
 
   can(capability: AgentCapability): boolean {
@@ -204,6 +211,7 @@ export interface RunAgentParams {
   client: VaultClient
   session: IVaultSyncSession
   review: ReviewService
+  ai?: AgentRunContext['ai']
 }
 
 /** Lance un agent sur une note, avec les droits demande ∩ mode ∩ personne. */
@@ -220,6 +228,7 @@ export async function runAgent(p: RunAgentParams): Promise<AgentRunResult> {
     client: p.client,
     session: p.session,
     review: p.review,
+    ai: p.ai,
   })
   try {
     await p.agent.run(ctx, p.target)

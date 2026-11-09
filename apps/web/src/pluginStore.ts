@@ -139,6 +139,34 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-agent-reviewer')).default,
   },
   {
+    // Type d'agent qui utilise l'IA de la personne (cles tenues par l'application).
+    id: 'plugin-agent-proofreader', preinstalled: false,
+    manifest: {
+      id: 'plugin-agent-proofreader',
+      name: 'Agent Correcteur (IA)',
+      version: '0.0.1',
+      description: 'Un agent qui corrige la note avec votre IA, en suggestions à accepter',
+      scope: 'personal',
+      permissions: ['agents'],
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-agent-proofreader')).default,
+  },
+  {
+    // Fournisseur d'IA apporte par un plugin : il decrit le service, l'application l'appelle.
+    id: 'plugin-ai-mistral', preinstalled: false,
+    manifest: {
+      id: 'plugin-ai-mistral',
+      name: 'Mistral AI',
+      version: '0.0.1',
+      description: 'Ajoute Mistral AI aux services d’IA (votre clé reste dans Savoire)',
+      scope: 'personal',
+      permissions: ['ai'],
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-ai-mistral')).default,
+  },
+  {
     id: 'plugin-plaintext', preinstalled: false,
     manifest: {
       id: 'plugin-plaintext',

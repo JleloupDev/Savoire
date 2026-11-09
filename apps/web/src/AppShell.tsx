@@ -12,6 +12,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
+import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
@@ -455,6 +456,8 @@ export function AppShell() {
   // Arret du suivi des natures de documents (vault precedent).
   const documentKindsStopRef = useRef<(() => void) | null>(null)
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
+  // L'IA est celle de la personne connectee : ses connexions, ses cles.
+  setAIAccount(activeAccountRef.current?.userId)
   const onOpenSharedNoteRef = useRef<(note: SharedNote) => void>(() => {})
   const docEventUnsubRef = useRef<(() => void) | null>(null)
   // Copie d'un vault vers le poste et retour (menu d'un vault), et sa fenetre de progression.
@@ -1563,7 +1566,7 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined}
+            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>
           </div>

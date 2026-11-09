@@ -440,6 +440,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public indexer?: IIndexerAPI
   public icons?: IconAPI
   public libraries?: import('@savoire/plugin-api').ISharedLibraries
+  public ai?: import('@savoire/plugin-api').AIAPI
 
   constructor(
     public readonly blocks: BlockRegistryImpl,
