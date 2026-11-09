@@ -27,6 +27,13 @@
 //   OUT_DIR         dossier de sortie
 //   API_FILE_OWNER, INDEXER_FILE_OWNER  "uid:gid" du lecteur de chaque fichier
 //                   (production : l'utilisateur de l'image api, du pair)
+//
+// Connexion par un service externe (facultatif) : un fournisseur est ajoute
+// des que son identifiant ET son secret sont donnes, retire s'ils disparaissent.
+//   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+//   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
+//   MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT (id du
+//                   tenant, ou « common » : tout compte Microsoft ; defaut)
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, chownSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -245,6 +252,88 @@ try {
 } catch (err) {
   // Une marque refusee ne doit pas empecher la connexion de marcher.
   console.error(`bootstrap : marque des pages de connexion non appliquee (${err.message}).`)
+}
+
+// ── Connexion par Google, GitHub, Microsoft ────────────────────────────────
+// Fournisseurs de l'instance : la personne choisit « Continuer avec Google »
+// sur la page de connexion ; un compte Savoire est cree a la premiere venue,
+// relie ensuite. Les noms servent de cle : relancer met a jour, sans doublon.
+const PROVIDER_OPTIONS = { isLinkingAllowed: true, isCreationAllowed: true, isAutoCreation: true, isAutoUpdate: true }
+const MS_TENANTS = { common: 'AZURE_AD_TENANT_TYPE_COMMON', organizations: 'AZURE_AD_TENANT_TYPE_ORGANISATIONS', consumers: 'AZURE_AD_TENANT_TYPE_CONSUMERS' }
+const EXTERNAL_IDPS = [
+  {
+    name: 'Google', kind: 'google', id: 'GOOGLE_CLIENT_ID', secret: 'GOOGLE_CLIENT_SECRET',
+    body: () => ({ scopes: ['openid', 'profile', 'email'] }),
+  },
+  {
+    name: 'GitHub', kind: 'github', id: 'GITHUB_CLIENT_ID', secret: 'GITHUB_CLIENT_SECRET',
+    body: () => ({ scopes: ['read:user', 'user:email'] }),
+  },
+  {
+    name: 'Microsoft', kind: 'azure', id: 'MICROSOFT_CLIENT_ID', secret: 'MICROSOFT_CLIENT_SECRET',
+    body: () => {
+      const tenant = process.env.MICROSOFT_TENANT?.trim() || 'common'
+      return {
+        tenant: MS_TENANTS[tenant] ? { tenantType: MS_TENANTS[tenant] } : { tenantId: tenant },
+        emailVerified: true,
+        scopes: ['openid', 'profile', 'email', 'User.Read'],
+      }
+    },
+  },
+]
+
+async function findIdp(name) {
+  const found = await api('POST', '/admin/v1/idps/templates/_search', {
+    queries: [{ idpNameQuery: { name, method: 'TEXT_QUERY_METHOD_EQUALS' } }],
+  })
+  return found.result?.[0]
+}
+
+async function ensureExternalIdps() {
+  const enabled = []
+  for (const idp of EXTERNAL_IDPS) {
+    const clientId = process.env[idp.id]?.trim()
+    const clientSecret = process.env[idp.secret]?.trim()
+    const existing = await findIdp(idp.name)
+    if (!clientId || !clientSecret) {
+      if (existing) {
+        // Plus d'identifiants : le bouton disparait de la page de connexion.
+        await api('DELETE', `/admin/v1/policies/login/idps/${existing.id}`).catch(() => {})
+        await api('DELETE', `/admin/v1/idps/templates/${existing.id}`)
+        console.log(`bootstrap : connexion ${idp.name} retiree.`)
+      }
+      continue
+    }
+    const body = { name: idp.name, clientId, clientSecret, providerOptions: PROVIDER_OPTIONS, ...idp.body() }
+    let id = existing?.id
+    if (id) {
+      try { await api('PUT', `/admin/v1/idps/${idp.kind}/${id}`, body) } catch (err) { if (!isNoChange(err)) throw err }
+    } else {
+      id = (await api('POST', `/admin/v1/idps/${idp.kind}`, body)).id
+    }
+    try { await api('POST', '/admin/v1/policies/login/idps', { idpId: id }) } catch (err) {
+      // Deja dans la politique de connexion : rien a faire.
+      if (err.code !== 6 && !isNoChange(err)) throw err
+    }
+    enabled.push(idp.name)
+  }
+  if (enabled.length) {
+    // Les fournisseurs externes doivent etre permis par la politique de connexion.
+    const { policy } = await api('GET', '/admin/v1/policies/login')
+    if (!policy.allowExternalIdp) {
+      const { details, isDefault, idps, ...fields } = policy
+      try { await api('PUT', '/admin/v1/policies/login', { ...fields, allowExternalIdp: true }) } catch (err) { if (!isNoChange(err)) throw err }
+    }
+    console.log(`bootstrap : connexion par ${enabled.join(', ')} active.`)
+    console.log(`bootstrap : adresse de retour a declarer chez chaque fournisseur : ${ISSUER}/idps/callback`)
+  }
+}
+
+try {
+  await ensureExternalIdps()
+} catch (err) {
+  // Un fournisseur refuse ne doit pas empecher la connexion par mot de passe.
+  console.error(`bootstrap : connexion externe non configuree (${err.message}).`)
 }
 
 const webClientId = await ensureOidcApp(projectId, WEB_APP, {

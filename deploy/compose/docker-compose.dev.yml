@@ -138,6 +138,14 @@ services:
       DEV_MODE: "true"
       DEFAULT_LANGUAGE: fr
       OUT_DIR: /out
+      # Connexion externe en dev : variables du shell (voir .env.example).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT: ${MICROSOFT_TENANT:-common}
     volumes:
       - ./zitadel/bootstrap.mjs:/bootstrap/bootstrap.mjs:ro
       - ./zitadel/branding:/bootstrap/branding:ro

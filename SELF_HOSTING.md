@@ -148,10 +148,14 @@ docker compose --env-file .env logs portainer | grep setup_token | tail -1
   L'adresse est vérifiée par un code envoyé par courriel.
 - Mot de passe oublié, double authentification, passkeys : sur la page de
   connexion de Zitadel.
-- Connexion avec Google, GitHub ou Microsoft : dans la console de Zitadel,
-  *Paramètres → Fournisseurs d'identité*. Il faut d'abord déclarer une appli
-  chez le fournisseur choisi (quelques minutes), avec l'adresse de retour que
-  Zitadel indique.
+- Connexion avec Google, GitHub ou Microsoft :
+  1. Déclarer une appli chez le fournisseur (quelques minutes), avec
+     l'adresse de retour `https://auth.exemple.fr/idps/callback`.
+  2. Dans `.env` : `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` (de même
+     `GITHUB_…`, `MICROSOFT_…`).
+  3. `docker compose up -d zitadel-bootstrap` : le bouton « Google » apparaît
+     sur la page de connexion. Un compte est créé à la première connexion.
+  Vider les deux variables puis relancer retire le bouton.
 - Fermer l'inscription libre : console, *Paramètres → Paramètres de
   connexion*, décocher « Enregistrement autorisé ».
 - Bloquer un compte dans Savoire : page Administration de l'appli. Ses
