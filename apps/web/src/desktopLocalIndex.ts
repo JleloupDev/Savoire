@@ -12,6 +12,7 @@ import { DesktopVaultIndexer, loadTauriBridge, openDesktopIndex, pathForVaultId 
 import { loadDesktopProfile } from './createDesktopRoot'
 import type { LocalIndexBinding } from './localIndex'
 import { readNoteWindow } from './noteWindow'
+import { extractorRegistry } from './extractors'
 
 /** Null : ce vault n'est pas un dossier de la machine. */
 export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId: string): Promise<LocalIndexBinding | null> {
@@ -30,7 +31,10 @@ export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId:
     directory: session.directory,
     readState: id => session.readDocumentState(id),
     stateDirOf: crdtDirOf,
+    // Documents que Savoire n'edite pas : lus par les extracteurs des plugins.
+    extractor: path => extractorRegistry.forPath(path),
   })
+  const offExtractors = extractorRegistry.onChange(() => indexer.extractorsChanged())
   const rows = new BaseRowFeeder(index)
   return {
     kind: 'native',
@@ -46,6 +50,7 @@ export async function openDesktopLocalIndex(session: IVaultSyncSession, vaultId:
     start: () => { if (!readNoteWindow()) indexer.start() },
     noteText: (id, path, content) => indexer.noteText(id, path, content),
     dispose: async () => {
+      offExtractors()
       indexer.dispose()
       await rows.whenIdle()
       await index.close()

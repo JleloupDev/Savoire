@@ -27,3 +27,4 @@ export {
   AgentRegistryImpl,
 } from './PluginRegistries'
 export { SharedLibraryRegistry, requiredLibraries } from './SharedLibraryRegistry'
+export { ExtractorRegistryImpl } from './ExtractorRegistry'

@@ -12,6 +12,7 @@ export class WorkspaceService implements IWorkspaceAPI {
     return {
       read: (documentId: string) => getClient()?.read(documentId) ?? Promise.resolve(''),
       readDocumentByPath: (path: string) => getClient()?.readDocumentByPath(path) ?? Promise.resolve(''),
+      readBinary: (path: string) => getClient()?.readBinary(path) ?? Promise.resolve(null),
       write: (documentId: string, content: string) => getClient()?.write(documentId, content) ?? Promise.resolve(),
       list: (dir?: string) => getClient()?.list(dir) ?? Promise.resolve([]),
       exists: (documentId: string) => getClient()?.exists(documentId) ?? Promise.resolve(false),

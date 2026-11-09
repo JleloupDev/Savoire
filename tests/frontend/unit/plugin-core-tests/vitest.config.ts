@@ -37,6 +37,7 @@ export default defineConfig({
       '@savoire/plugin-board': src('plugin-board'),
       '@savoire/plugin-outline': src('plugin-outline'),
       '@savoire/plugin-latex': src('plugin-latex'),
+      '@savoire/plugin-documents': src('plugin-documents'),
       '@savoire/plugin-agent-proofreader': src('plugin-agent-proofreader'),
       '@savoire/plugin-ai-mistral': src('plugin-ai-mistral'),
       // Avant '@savoire/plugin-page' : un alias vise aussi ses sous-chemins.

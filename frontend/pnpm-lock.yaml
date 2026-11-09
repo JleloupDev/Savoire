@@ -50,6 +50,9 @@ importers:
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../packages/plugin-api
       '@tauri-apps/api':
         specifier: 2.12.1
         version: 2.12.1
@@ -191,6 +194,9 @@ importers:
       '@savoire/plugin-code-block':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-code-block
+      '@savoire/plugin-documents':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-documents
       '@savoire/plugin-excalidraw':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-excalidraw
@@ -681,6 +687,16 @@ importers:
       highlight.js:
         specifier: ^11.9.0
         version: 11.11.1
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-documents:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
     devDependencies:
       typescript:
         specifier: ^5.4.0

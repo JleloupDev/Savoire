@@ -19,6 +19,7 @@
   "dependencies": {
     "@savoire/indexer-core": "workspace:*",
     "@savoire/platform": "workspace:*",
+    "@savoire/plugin-api": "workspace:*",
     "@tauri-apps/api": "2.12.1"
   },
   "devDependencies": {

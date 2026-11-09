@@ -72,3 +72,30 @@ describe('nature d un document (vault sur disque)', () => {
     expect(file.documents[byPath.get('Essai.wtf')!.id].kind).toBe('crdt')
   })
 })
+
+describe('document sans CRDT modifie ailleurs en meme temps (vault sur disque)', () => {
+  const sessions: FileSystemVaultSession[] = []
+  afterEach(async () => { for (const s of sessions.splice(0)) await s.dispose() })
+
+  it('rien n est ecrase : le fichier reste la version 1, notre contenu devient la version 2', async () => {
+    const fs = new InMemoryVaultFileSystem({ watch: false })
+    await fs.writeText('Courses.table', '| a |')
+    const s = await FileSystemVaultSession.open(fs, { vaultId: 'v1', token: '', userId: 'a', onChanged: () => {} }, { persistMs: 5, projectMs: 5, scanMs: 5 })
+    sessions.push(s)
+    const id = s.directory.getAll().find(d => d.path === 'Courses.table')!.id
+    const doc = s.openSnapshot(id)
+    expect(await doc.load()).toBe('| a |')
+    const seen: string[] = []
+    doc.onRemoteWrite(c => seen.push(c))
+    // Un autre logiciel modifie le fichier, Savoire ne l'a pas encore vu.
+    await fs.writeText('Courses.table', '| b |')
+    await doc.write('| c |')
+    expect(await fs.readText('Courses.table')).toBe('| b |')
+    expect(await fs.readText('Courses (version 2).table')).toBe('| c |')
+    expect(seen).toEqual(['| b |'])
+    // Sans conflit : ecriture normale.
+    await doc.write('| d |')
+    expect(await fs.readText('Courses.table')).toBe('| d |')
+    s.closeSnapshot(id)
+  })
+})

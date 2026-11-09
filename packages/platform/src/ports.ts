@@ -181,6 +181,11 @@ export interface IVaultFiles {
 export interface IVaultContentSession {
   /** Lecture ponctuelle (embeds, vault.read) sans garder de synchro ouverte. */
   readDocument(docId: string, kind: DocumentSyncKind): Promise<string>
+  /**
+   * Octets d'un document tel qu'il est stocke (un .docx, un .pdf du dossier
+   * du vault). Absent, ou null : ce profil ne garde que du texte.
+   */
+  readDocumentBytes?(docId: string): Promise<Uint8Array | null>
   /** Ouvre (ou reprend) un document snapshot. Compte les ouvertures. */
   openSnapshot(docId: string): ISnapshotDocument
   /** Rend une ouverture ; la synchro s'arrete quand il n'en reste aucune. */

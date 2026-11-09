@@ -56,6 +56,8 @@ export interface IPluginAPI {
   index?: IPluginIndexAPI
   /** Agents proposes par le plugin (permission 'agents'). Voir agents.ts. */
   agents?: AgentRegistry
+  /** Extracteurs de contenu (Word, HTML, images...) pour l'index et l'apercu. Voir extractors.ts. */
+  extractors?: import('./extractors').ExtractorRegistry
   /** IA de la personne : reponses et fournisseurs (voir ai.ts). Permission 'ai'. */
   ai?: import('./ai').AIAPI
   /** Moteur de raccourcis clavier : lire et changer les touches des commandes. */

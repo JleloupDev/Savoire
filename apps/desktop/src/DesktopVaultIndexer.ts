@@ -15,17 +15,22 @@
 //  - au fil de l'eau : la surveillance du disque (un fichier modifie, l'etat
 //    d'un document non textuel), l'arborescence de la session (creation,
 //    renommage, suppression, corbeille) et le texte des notes ouvertes
-//    (editeur).
+//    (editeur) ;
+//  - les documents que Savoire n'edite pas (Word, Excel, PDF, images...) :
+//    leur texte et leurs proprietes, tires par les EXTRACTEURS des plugins,
+//    entrent dans l'index comme une note. Un extracteur qui arrive (plugin
+//    installe) fait relire ces fichiers.
 //
 // La session et le systeme de fichiers sont decrits ici par ce qui sert :
 // les tests passent un dossier simule.
 import { NOTE_EXTENSIONS, extOf, isTrashPath, noteInputFromUpdates } from '@savoire/indexer-core'
+import { MAX_EXTRACT_BYTES, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
 import type { NoteInput } from '@savoire/indexer-core'
 import type { ILocalIndex } from '@savoire/indexer-core/local'
 import type { FileChange, FileEntry, IVaultFileSystem } from '@savoire/platform'
 
 export interface DesktopIndexSources {
-  fs: Pick<IVaultFileSystem, 'list' | 'readText' | 'stat'> & Partial<Pick<IVaultFileSystem, 'watch'>>
+  fs: Pick<IVaultFileSystem, 'list' | 'readText' | 'stat'> & Partial<Pick<IVaultFileSystem, 'watch' | 'readBytes'>>
   /** Arborescence de la session : ids stables des documents. */
   directory: {
     getAll(): readonly { id: string; path: string }[]
@@ -37,6 +42,8 @@ export interface DesktopIndexSources {
   stateDirOf(id: string): string
   /** Le fichier visible fait foi (texte). Defaut : .md et .outline. */
   isText?(path: string): boolean
+  /** Extracteur d'un fichier qui n'est pas une note (plugins). Absent : aucun. */
+  extractor?(path: string): ExtractorSpec | undefined
 }
 
 export interface DesktopIndexerOptions {
@@ -95,6 +102,11 @@ export class DesktopVaultIndexer {
     if (unwatch) this.unsubs.push(unwatch)
     this.fullPending = true
     this.enqueue(() => this.flush())
+  }
+
+  /** Les extracteurs ont change (plugin installe ou retire) : tout est recompare. */
+  extractorsChanged(): void {
+    if (this.started) this.schedule(true)
   }
 
   /** Le texte a jour d'une note ouverte (editeur) : indexe tout de suite. */
@@ -172,6 +184,27 @@ export class DesktopVaultIndexer {
     return this.sources.isText ? this.sources.isText(path) : TEXT_EXTENSIONS.has(extOf(path))
   }
 
+  /** Un fichier que l'index lit par un extracteur (pas une note). */
+  private extractorOf(path: string): ExtractorSpec | undefined {
+    if (indexable(path) || isTrashPath(path) || !this.sources.fs.readBytes) return undefined
+    return this.sources.extractor?.(path)
+  }
+
+  /** Lu par son fichier visible : un texte, ou un fichier extrait. */
+  private byFile(path: string): boolean {
+    return this.isText(path) || !!this.extractorOf(path)
+  }
+
+  /** Signature d'un fichier : extrait, elle porte l'extracteur et sa version. */
+  private fileSignature(path: string, e: FileEntry | null | undefined): string {
+    const x = this.extractorOf(path)
+    return x ? `x|${path}|${fileSig(e)}|${x.id}@${x.version ?? 1}` : `f|${path}|${fileSig(e)}`
+  }
+
+  private known(path: string): boolean {
+    return indexable(path) || !!this.extractorOf(path)
+  }
+
   /** Signature d'un document non textuel : ses fichiers d'etat. */
   private stateSig(entries: readonly FileEntry[]): string {
     return entries
@@ -203,13 +236,13 @@ export class DesktopVaultIndexer {
         list.push(e)
       }
     }
-    const docs = this.sources.directory.getAll().filter(d => indexable(d.path))
+    const docs = this.sources.directory.getAll().filter(d => this.known(d.path))
     const stored = await this.signatures()
     const indexed = await this.index.paths()
     const jobs: Job[] = []
     for (const d of docs) {
-      const sig = this.isText(d.path)
-        ? `f|${d.path}|${fileSig(files.get(d.path))}`
+      const sig = this.byFile(d.path)
+        ? this.fileSignature(d.path, files.get(d.path))
         : `c|${d.path}|${this.stateSig(states.get(this.sources.stateDirOf(d.id)) ?? [])}`
       if (stored.get(d.id) !== sig) jobs.push({ id: d.id, path: d.path, sig })
     }
@@ -229,10 +262,10 @@ export class DesktopVaultIndexer {
 
   /** Quelques fichiers ont change : seules les notes concernees sont relues. */
   private async update(paths: readonly string[]): Promise<void> {
-    const docs = this.sources.directory.getAll().filter(d => indexable(d.path))
+    const docs = this.sources.directory.getAll().filter(d => this.known(d.path))
     const byPath = new Map(docs.map(d => [d.path, d]))
     const byStateDir = new Map<string, { id: string; path: string }>()
-    for (const d of docs) if (!this.isText(d.path)) byStateDir.set(this.sources.stateDirOf(d.id), d)
+    for (const d of docs) if (!this.byFile(d.path)) byStateDir.set(this.sources.stateDirOf(d.id), d)
     const stored = await this.signatures()
     const jobs: Job[] = []
     const seen = new Set<string>()
@@ -246,9 +279,9 @@ export class DesktopVaultIndexer {
         continue
       }
       const d = byPath.get(p)
-      if (!d || !this.isText(d.path) || seen.has(d.id)) continue
+      if (!d || !this.byFile(d.path) || seen.has(d.id)) continue
       seen.add(d.id)
-      const sig = `f|${d.path}|${fileSig(await this.sources.fs.stat(d.path).catch(() => null))}`
+      const sig = this.fileSignature(d.path, await this.sources.fs.stat(d.path).catch(() => null))
       if (stored.get(d.id) !== sig) jobs.push({ ...d, sig })
     }
     await this.run(jobs, false)
@@ -257,6 +290,22 @@ export class DesktopVaultIndexer {
   // ── Lecture et ecriture ─────────────────────────────────────────────────
 
   private async read(job: Job): Promise<NoteInput | null> {
+    const extractor = this.extractorOf(job.path)
+    if (extractor) {
+      const stat = await this.sources.fs.stat(job.path)
+      // Trop gros : signe sans le lire (son nom reste trouvable dans l'arbre).
+      if (!stat || (stat.size ?? 0) > MAX_EXTRACT_BYTES) return null
+      const bytes = await this.sources.fs.readBytes!(job.path)
+      try {
+        const content = await extractor.extract(bytes, { path: job.path })
+        // Proprietes en frontmatter : interrogeables comme celles d'une note.
+        return { id: job.id, path: job.path, content: extractedToMarkdown(content), frontmatter: true }
+      } catch (err) {
+        // Fichier abime : on le signe quand meme, il ne sera relu que s'il change.
+        console.warn('[index du bureau] extraction impossible', job.path, err)
+        return null
+      }
+    }
     if (this.isText(job.path)) {
       return { id: job.id, path: job.path, content: await this.sources.fs.readText(job.path) }
     }

@@ -75,6 +75,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.agents
   }
 
+  /** Extracteurs : des fonctions pures sur des octets, aucune permission. */
+  get extractors() {
+    return this.inner.extractors
+  }
+
   get ai() {
     this.require('ai')
     return this.inner.ai

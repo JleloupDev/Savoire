@@ -30,7 +30,7 @@
         "img-src": "'self' data: blob:",
         "font-src": "'self' data:",
         "worker-src": "'self' blob:",
-        "frame-src": "'self' savoire-board: http://savoire-board.localhost https://savoire-board.localhost",
+        "frame-src": "'self' blob: savoire-board: http://savoire-board.localhost https://savoire-board.localhost",
         "connect-src": "'self' ipc: http://ipc.localhost http: https: ws: wss:"
       }
     }

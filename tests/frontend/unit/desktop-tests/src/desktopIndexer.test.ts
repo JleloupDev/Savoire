@@ -16,6 +16,7 @@ import { NodeSqliteDriver } from '@savoire/indexer-core/node'
 import { DirectLocalIndex } from '@savoire/indexer-core/local'
 import { DesktopVaultIndexer } from '@savoire/desktop'
 import type { FileChange, FileEntry } from '@savoire/platform'
+import type { ExtractorSpec } from '@savoire/plugin-api'
 
 const dirs: string[] = []
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
@@ -76,6 +77,12 @@ class FakeVault {
           const f = this.files.get(path)
           if (!f) throw new Error(`absent : ${path}`)
           return f.text ?? ''
+        },
+        readBytes: async (path: string) => {
+          this.reads++
+          const f = this.files.get(path)
+          if (!f) throw new Error(`absent : ${path}`)
+          return f.bytes ?? new TextEncoder().encode(f.text ?? '')
         },
         watch: (cb: (c: FileChange[]) => void) => { this.watcher = cb; return () => { this.watcher = null } },
       },
@@ -206,6 +213,44 @@ describe('DesktopVaultIndexer', () => {
     vault.write('B.md', 'poire')
     await indexer.whenIdle()
     expect((await index.queryEngine().query({ from: { notes: true } })).total).toBe(2)
+    indexer.dispose()
+  })
+})
+
+describe('DesktopVaultIndexer : documents lus par un extracteur', () => {
+  it('un .docx est indexe par son extracteur, relu s il change, et quand un extracteur arrive', async () => {
+    const vault = new FakeVault()
+    vault.write('Note.md', '# Note')
+    vault.write('Rapport.docx', 'budget annuel du projet')
+    vault.write('Photo.heic', 'binaire')
+    let extractors: ExtractorSpec[] = []
+    const calls: string[] = []
+    const docx: ExtractorSpec = {
+      id: 'docx', label: 'Word', extensions: ['docx'], version: 1,
+      extract: async (bytes, info) => { calls.push(info.path); return { title: 'Rapport', sections: [{ text: new TextDecoder().decode(bytes) }], props: { auteur: 'Jean' } } },
+    }
+    const index = await DirectLocalIndex.open(NodeSqliteDriver.open(tempFile()), { persistence: 'disk' })
+    const indexer = new DesktopVaultIndexer(index, { ...vault.sources(), extractor: p => extractors.find(e => e.extensions.some(x => p.endsWith(`.${x}`))) }, opts)
+    indexer.start()
+    await indexer.whenIdle()
+    const search = async (t: string) => (await index.searchEngine().search({ text: t })).hits.map(h => h.id)
+    expect(await search('budget')).toEqual([])
+    // Le plugin arrive : le fichier est lu.
+    extractors = [docx]
+    indexer.extractorsChanged()
+    await indexer.whenIdle()
+    expect(await search('budget')).toEqual(['id-Rapport.docx'])
+    const q = await index.queryEngine().query({ from: { notes: true }, where: { field: { prop: 'auteur' }, op: 'eq', value: 'Jean' } })
+    expect(q.rows.map(r => r.title)).toEqual(['Rapport'])
+    // Rien n'a change : pas relu.
+    indexer.extractorsChanged()
+    await indexer.whenIdle()
+    expect(calls).toEqual(['Rapport.docx'])
+    // Le fichier change sur le disque : relu.
+    vault.write('Rapport.docx', 'bilan definitif')
+    await indexer.whenIdle()
+    expect(await search('definitif')).toEqual(['id-Rapport.docx'])
+    expect(calls).toEqual(['Rapport.docx', 'Rapport.docx'])
     indexer.dispose()
   })
 })

@@ -40,6 +40,7 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
 
   read(documentId: string): Promise<string> { return this.inner.read(documentId) }
   readDocumentByPath(path: string): Promise<string> { return this.inner.readDocumentByPath(path) }
+  readBinary(path: string): Promise<Uint8Array | null> { return this.inner.readBinary?.(path) ?? Promise.resolve(null) }
   write(documentId: string, content: string): Promise<void> { return this.inner.write(documentId, content) }
   editText(documentId: string, edit: (current: string) => string): Promise<boolean> {
     return this.inner.editText?.(documentId, edit) ?? Promise.reject(new Error('Edition de texte indisponible.'))

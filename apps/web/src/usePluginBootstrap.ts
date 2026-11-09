@@ -34,6 +34,7 @@ import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
+import { extractorRegistry } from './extractors'
 import { aiService } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
@@ -318,6 +319,8 @@ export function usePluginBootstrap({
       pluginApi.libraries = sharedLibraries
       // IA : l'application tient les cles et fait les appels ; les plugins ont une vue sans cle.
       pluginApi.ai = aiService.pluginAPI()
+      // Extracteurs (Word, HTML, images...) : index et apercus.
+      pluginApi.extractors = extractorRegistry
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
         onEdited: (docId, text) => {

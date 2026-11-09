@@ -119,6 +119,13 @@ export class VaultClient implements VaultAPI {
     return this.storage.readFile(this.vaultId, path, this.token)
   }
 
+  /** Octets d'un document qui n'est pas du texte (dossier du poste). Null : indisponible. */
+  async readBinary(path: string): Promise<Uint8Array | null> {
+    const doc = this._resolveDocumentByPath(path)
+    if (!doc || !this.session?.readDocumentBytes) return null
+    return this.session.readDocumentBytes(doc.id)
+  }
+
   async write(documentId: string, content: string): Promise<void> {
     const meta = this.directory.getById(documentId)
     if (!meta) throw new Error(`Document not found: ${documentId}`)

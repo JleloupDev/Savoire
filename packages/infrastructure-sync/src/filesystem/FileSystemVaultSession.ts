@@ -337,6 +337,13 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     this.snapshots.close(docId)
   }
 
+  /** Le fichier tel qu'il est sur le disque (Word, PDF, image...). */
+  async readDocumentBytes(docId: string): Promise<Uint8Array | null> {
+    const path = this.directory.pathOf(docId)
+    if (!path) return null
+    return this.enqueue(async () => ((await this.fs.exists(path)) ? this.fs.readBytes(path) : null))
+  }
+
   async readDocument(docId: string, kind: DocumentSyncKind): Promise<string> {
     if (kind === 'snapshot') return this.snapshots.read(docId)
     const loaded = this.replicas.get(docId)
@@ -1039,6 +1046,20 @@ export class FileSystemVaultSession implements IVaultSyncSession {
       initial,
       push: content => this.enqueue(async () => {
         const target = this.snapshotTarget(docId)
+        // Conflit : le fichier a change sur le disque (un autre logiciel) depuis
+        // notre derniere lecture. On n'ecrase rien : le fichier reste la
+        // version 1, notre contenu devient « Nom (version 2).ext » a cote.
+        if (target !== detachedPathOf(docId) && state.lastDisk !== undefined && await this.fs.exists(target)) {
+          const onDisk = await this.fs.readText(target)
+          if (onDisk !== state.lastDisk && onDisk !== content) {
+            const copy = await this.conflictCopyPath(target)
+            await this.fs.writeText(copy, content)
+            state.lastDisk = onDisk
+            this.scheduleScan()
+            for (const cb of [...state.listeners]) cb(onDisk, EXTERNAL_WRITER_ID)
+            return
+          }
+        }
         const hash = await contentHash(content)
         const meta: SnapshotMeta = { userId: this.params.userId, session: this.sessionId, hash }
         await this.fs.writeText(snapshotMetaOf(docId), JSON.stringify(meta))
@@ -1051,6 +1072,17 @@ export class FileSystemVaultSession implements IVaultSyncSession {
       pushPresence: async () => {},
       onPresence: () => () => {},
       close: () => { if (this.snapshotStates.get(docId) === state) this.snapshotStates.delete(docId) },
+    }
+  }
+
+  /** « Nom (version 2).ext », ou la premiere version libre. */
+  private async conflictCopyPath(path: string): Promise<string> {
+    const slash = path.lastIndexOf('/')
+    const dot = path.lastIndexOf('.')
+    const [stem, ext] = dot > slash + 1 ? [path.slice(0, dot), path.slice(dot)] : [path, '']
+    for (let n = 2; ; n++) {
+      const candidate = `${stem} (version ${n})${ext}`
+      if (!(await this.fs.exists(candidate))) return candidate
     }
   }
 

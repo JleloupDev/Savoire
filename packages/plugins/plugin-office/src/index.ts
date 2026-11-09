@@ -11,7 +11,7 @@
 // ailleurs.
 
 import { createIcon } from '@savoire/plugin-api'
-import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, VaultAPI } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, VaultAPI, ExtractorSpec } from '@savoire/plugin-api'
 import { describeLink, normalizeUrl, parseOfficeLink, serializeOfficeLink, type OfficeLink } from './state'
 
 export { describeLink, normalizeUrl, parseOfficeLink, serializeOfficeLink } from './state'
@@ -56,6 +56,7 @@ function createOfficeView(
   ctx: FileContext,
   sync: PluginAPI['sync'],
   icons?: PluginAPI['icons'],
+  extractors?: PluginAPI['extractors'],
 ): FileView {
   const vault: VaultAPI | undefined = ctx.vault
   const docName = path.split('/').at(-1) ?? path
@@ -68,10 +69,24 @@ function createOfficeView(
   let room: DocumentRoom | null = null
   let unsubRoom: (() => void) | null = null
   let generation = 0
+  // Un vrai fichier Office (dossier du poste), pas un lien : son apercu.
+  let preview: HTMLElement | null = null
 
   function render(): void {
     if (!container) return
     container.innerHTML = ''
+    if (preview) {
+      const banner = document.createElement('div')
+      banner.dataset.testid = 'office-preview-banner'
+      banner.style.cssText = 'padding:6px 14px;font:12px var(--font-ui,sans-serif);color:var(--text-muted,#64748b);border-bottom:1px solid var(--border,#e2e8f0);display:flex;align-items:center;gap:6px'
+      banner.append(createIcon(icons, type.icon, { size: 14 }), `${type.label} · aperçu en lecture seule : il se modifie dans son logiciel.`)
+      const body = document.createElement('div')
+      body.dataset.testid = 'office-preview'
+      body.style.cssText = 'height:calc(100% - 31px);overflow:auto'
+      body.appendChild(preview)
+      container.append(banner, body)
+      return
+    }
     const card = document.createElement('div')
     card.style.cssText = CARD
     card.dataset.testid = 'office-card'
@@ -204,9 +219,23 @@ function createOfficeView(
           } catch {
             error = 'Impossible de lire le lien.'
           }
+          // Pas un lien : peut-etre le fichier lui-meme (une archive « PK »).
+          if (!link) {
+            const bytes = await vault.readBinary?.(path).catch(() => null)
+            const spec = extractors?.forPath(path)
+            if (bytes && bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && spec) {
+              try {
+                preview = spec.preview ? await spec.preview(bytes, { path }) : await genericOfficePreview(spec, bytes, path)
+              } catch (err) {
+                error = `Aperçu impossible : ${err instanceof Error ? err.message : String(err)}`
+              }
+              readOnly = true
+            }
+          }
         }
         if (generation !== myGen) return
         render()
+        if (preview) return
 
         // Un lien change par un autre membre arrive ici, sans recharger.
         const docId = vault?.resolveDocumentId(path)
@@ -240,6 +269,19 @@ function createOfficeView(
   }
 }
 
+/** Apercu du contenu extrait (titre, sections, tableaux), sans le plugin Documents. */
+async function genericOfficePreview(spec: ExtractorSpec, bytes: Uint8Array, path: string): Promise<HTMLElement> {
+  const content = await spec.extract(bytes, { path })
+  const root = document.createElement('div')
+  root.style.cssText = 'max-width:860px;margin:0 auto;padding:24px 32px;font:15px/1.6 var(--font-editor,Georgia,serif);color:var(--text,#1e293b)'
+  if (content.title) { const h = document.createElement('h1'); h.textContent = content.title; root.appendChild(h) }
+  for (const s of content.sections) {
+    if (s.heading) { const h = document.createElement('h2'); h.textContent = s.heading; root.appendChild(h) }
+    for (const line of s.text.split('\n')) if (line.trim()) { const p = document.createElement('p'); p.style.whiteSpace = 'pre-wrap'; p.textContent = line; root.appendChild(p) }
+  }
+  return root
+}
+
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
 const plugin: VaultPlugin = {
@@ -262,7 +304,7 @@ const plugin: VaultPlugin = {
         collaborationMode: 'none',
         // Document vide : le lien se colle depuis la fiche.
         create: async () => '',
-        open: (path: string, ctx: FileContext) => createOfficeView(path, type, ctx, api.sync, api.icons),
+        open: (path: string, ctx: FileContext) => createOfficeView(path, type, ctx, api.sync, api.icons, api.extractors),
       })
     }
   },

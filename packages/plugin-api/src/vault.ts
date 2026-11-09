@@ -21,6 +21,11 @@ export interface VaultAPI {
   read(documentId: string): Promise<string>
   /** Seule exception path-based: lecture d'un document/attachment via son chemin. */
   readDocumentByPath(path: string): Promise<string>
+  /**
+   * Octets d'un document qui n'est pas du texte (un .docx, un .pdf du dossier
+   * du vault). Absent, ou null : ce profil ne garde pas ses octets.
+   */
+  readBinary?(path: string): Promise<Uint8Array | null>
   write(documentId: string, content: string): Promise<void>
   list(dir?: string): Promise<string[]>
   exists(documentId: string): Promise<boolean>
