@@ -439,6 +439,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   /** Pouvoirs de l'index de tout le vault (liens, tags), poses par l'application. */
   public indexer?: IIndexerAPI
   public icons?: IconAPI
+  public libraries?: import('@savoire/plugin-api').ISharedLibraries
 
   constructor(
     public readonly blocks: BlockRegistryImpl,

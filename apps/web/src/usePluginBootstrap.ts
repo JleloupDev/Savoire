@@ -34,6 +34,7 @@ import type { GraphIndexContributor } from '@savoire/plugin-graph'
 import { EditorAreaWidget } from './EditorAreaWidget'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
+import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
@@ -109,7 +110,7 @@ export function usePluginBootstrap({
   appCommands = [],
 }: PluginBootstrapOptions): PluginBootstrapResult {
   const pluginAPIRef = useRef<IEditorHostAPI | null>(null)
-  const pluginLoaderRef = useRef(new PluginLoader())
+  const pluginLoaderRef = useRef(new PluginLoader(sharedLibraries))
   // Plugins actifs ou non : partage par tous les registres. Voir PluginActivation.
   const activationRef = useRef(new PluginActivation())
   const defaultPluginsRef = useRef<VaultPlugin[]>([])
@@ -313,6 +314,7 @@ export function usePluginBootstrap({
       pluginApi.indexer = indexerServicesRef.current!.powers
       pluginApi.properties = propertyTypesRef.current!
       pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
+      pluginApi.libraries = sharedLibraries
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
         onEdited: (docId, text) => {

@@ -16,13 +16,16 @@ export interface PluginEntry {
 export class PluginLoader implements IPluginLoader {
   private loaded = new Map<string, PluginEntry>()
 
+  /** `libraries` : les bibliotheques communes fournies aux plugins charges depuis leur code. */
+  constructor(private readonly libraries?: import('./SharedLibraryRegistry').SharedLibraryRegistry) {}
+
   async loadFromCode(id: string, code: string, api: PluginAPI): Promise<void> {
     if (this.loaded.has(id)) {
       console.warn(`[PluginLoader] Plugin '${id}' is already loaded. Unloading first.`)
       await this.unload(id)
     }
 
-    const sandbox = new PluginSandbox()
+    const sandbox = new PluginSandbox(this.libraries)
     await sandbox.load(code, api)
     this.loaded.set(id, { id, sandbox, plugin: null, api })
     console.log(`[PluginLoader] Plugin loaded: ${id}`)

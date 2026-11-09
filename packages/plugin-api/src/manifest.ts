@@ -40,6 +40,12 @@ export interface PluginManifest {
    */
   defaultActive?: boolean
   /**
+   * Bibliotheques communes dont le plugin a besoin (require('react')...),
+   * chargees avant lui. Voir libraries.ts. Les plugins du depot n'en ont pas
+   * besoin : ils sont construits avec l'application.
+   */
+  libraries?: import('./libraries').SharedLibraryId[]
+  /**
    * Portee du plugin, declaree par lui-meme. Defaut : 'vault'.
    *
    *  'vault'    — touche le contenu partage : il ouvre un type de fichier, ou

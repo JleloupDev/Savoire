@@ -94,6 +94,11 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.icons
   }
 
+  /** Bibliotheques communes : aucune permission (ce sont des bibliotheques, pas des donnees). */
+  get libraries() {
+    return this.inner.libraries
+  }
+
   get indexer() {
     this.require('vault:read')
     return this.inner.indexer

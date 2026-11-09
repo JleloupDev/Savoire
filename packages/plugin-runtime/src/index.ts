@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 export { PluginLoader } from './PluginLoader'
 export { PluginActivation } from './PluginActivation'
-export { PluginSandbox } from './PluginSandbox'
+export { PluginSandbox, wrapCommonJs, isCommonJsPlugin } from './PluginSandbox'
 export { PermissionFilteredAPI } from './PermissionFilteredAPI'
 export { InMemorySharedText, applyTextDelta } from './InMemorySharedText'
 export { InMemoryQueryEngine, QueryError, foldText } from './InMemoryQueryEngine'
@@ -26,3 +26,4 @@ export {
   PluginAPIImpl,
   AgentRegistryImpl,
 } from './PluginRegistries'
+export { SharedLibraryRegistry, requiredLibraries } from './SharedLibraryRegistry'

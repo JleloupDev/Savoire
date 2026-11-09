@@ -16,3 +16,4 @@ export type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, 
 export type { Command, CommandContext } from './CommandRegistry'
 export type { DocumentViewOptions } from './DocumentView'
 export * from './Highlights'
+export { codeMirrorModules } from './sharedCodeMirror'

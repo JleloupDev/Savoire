@@ -70,6 +70,9 @@ export interface IPluginAPI {
   /** Pouvoirs de l'index de tout le vault (liens, tags, etat). Voir indexer.ts.
    *  Permission 'vault:read'. available() faux : garder le comportement local. */
   indexer?: IIndexerAPI
+  /** Bibliotheques communes (React, CodeMirror...), dans la version de Savoire.
+   *  Voir libraries.ts. Aucune permission. */
+  libraries?: import('./libraries').ISharedLibraries
   /** Icones de l'appli (Lucide), a inserer dans le DOM. Voir icons.ts.
    *  Aucune permission. Absent sur un hote sans icones : voir createIcon(). */
   icons?: IconAPI

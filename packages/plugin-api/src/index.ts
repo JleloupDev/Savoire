@@ -126,3 +126,4 @@ export {
   splitFormulaFilter, compareScalar, matchesDoc, sortDocs, groupDocs, checkAggregates, aggregateDocs,
 } from './queryEval'
 export type { EvalDoc } from './queryEval'
+export * from './libraries'

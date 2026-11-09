@@ -12,6 +12,7 @@ import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
+import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
@@ -613,7 +614,7 @@ export function AppShell() {
     pluginAPI: pluginAPIRef,
     markdownEditorMode: markdownEditorModeRef,
     contentIndexingService: contentIndexingServiceRef,
-    createPluginLoader: () => new PluginLoader(),
+    createPluginLoader: () => new PluginLoader(sharedLibraries),
     isReadOnly: isReadOnlyRef,
     onCrdtTextChange: onCrdtTextChangeRef,
     describeUnsupportedType: describeUnsupportedTypeRef,
