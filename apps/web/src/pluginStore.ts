@@ -240,6 +240,21 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-quickref')).default,
   },
   {
+    // Communaute, a installer : documents .tex ecrits a plusieurs (CRDT), avec apercu.
+    id: 'plugin-latex', preinstalled: false,
+    manifest: {
+      id: 'plugin-latex',
+      name: 'LaTeX',
+      version: '0.0.1',
+      description: 'Des documents LaTeX (.tex) écrits à plusieurs, avec un aperçu des formules',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+    },
+    extensions: ['tex'],
+    load: async () => (await import('@savoire/plugin-latex')).default,
+  },
+  {
     id: 'plugin-wtf', preinstalled: false,
     manifest: {
       id: 'plugin-wtf',

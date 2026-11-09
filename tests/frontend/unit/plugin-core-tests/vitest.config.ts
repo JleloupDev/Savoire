@@ -36,6 +36,7 @@ export default defineConfig({
       '@savoire/plugin-hashtags': src('plugin-hashtags'),
       '@savoire/plugin-board': src('plugin-board'),
       '@savoire/plugin-outline': src('plugin-outline'),
+      '@savoire/plugin-latex': src('plugin-latex'),
       // Avant '@savoire/plugin-page' : un alias vise aussi ses sous-chemins.
       '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
       '@savoire/plugin-page': src('plugin-page'),

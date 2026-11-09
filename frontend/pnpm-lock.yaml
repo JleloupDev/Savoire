@@ -200,6 +200,9 @@ importers:
       '@savoire/plugin-history':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-history
+      '@savoire/plugin-latex':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-latex
       '@savoire/plugin-mermaid':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-mermaid
@@ -751,6 +754,28 @@ importers:
       react:
         specifier: ^18.3.1
         version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-latex:
+    dependencies:
+      '@codemirror/commands':
+        specifier: ^6.3.0
+        version: 6.10.3
+      '@codemirror/language':
+        specifier: ^6.10.0
+        version: 6.12.3
+      '@codemirror/state':
+        specifier: ^6.4.0
+        version: 6.6.0
+      '@codemirror/view':
+        specifier: ^6.24.0
+        version: 6.40.0
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
