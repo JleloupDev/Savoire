@@ -82,3 +82,23 @@ public sealed class GetIndexerDocumentQueryHandler(
         return new IndexerUpdatesDto([], IndexerUpdateFormats.Yjs);
     }
 }
+
+/// <summary>
+/// Les octets d'un fichier du vault (PDF, Word, image...), pour que le pair
+/// en tire le texte. Null : fichier inconnu dans ce vault, ou vault non servi
+/// par le pair gere.
+/// </summary>
+public sealed record GetIndexerFileQuery(string VaultId, string FileId) : IRequest<Stream?>;
+
+public sealed class GetIndexerFileQueryHandler(
+    IVaultDocumentRepository       vaultDocuments,
+    IVaultIndexerSettingRepository settings,
+    Savoire.Application.Abstractions.IContentStore store) : IRequestHandler<GetIndexerFileQuery, Stream?>
+{
+    public async Task<Stream?> Handle(GetIndexerFileQuery q, CancellationToken ct)
+    {
+        if (await vaultDocuments.GetVaultIdAsync(q.FileId, ct) != q.VaultId) return null;
+        if ((await settings.GetAsync(q.VaultId, ct)).Mode != IndexerMode.Managed) return null;
+        return await store.ReadAttachmentAsync(q.VaultId, q.FileId, ct);
+    }
+}

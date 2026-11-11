@@ -13,6 +13,7 @@ export class WorkspaceService implements IWorkspaceAPI {
       read: (documentId: string) => getClient()?.read(documentId) ?? Promise.resolve(''),
       readDocumentByPath: (path: string) => getClient()?.readDocumentByPath(path) ?? Promise.resolve(''),
       readBinary: (path: string) => getClient()?.readBinary(path) ?? Promise.resolve(null),
+      uploadFile: (file: File, folder?: string) => getClient()?.uploadFile(file, folder) ?? Promise.reject(new Error('No active vault')),
       write: (documentId: string, content: string) => getClient()?.write(documentId, content) ?? Promise.resolve(),
       list: (dir?: string) => getClient()?.list(dir) ?? Promise.resolve([]),
       exists: (documentId: string) => getClient()?.exists(documentId) ?? Promise.resolve(false),

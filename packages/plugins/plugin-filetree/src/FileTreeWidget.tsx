@@ -476,6 +476,13 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
   const canCreateFile = !!vault.createFile
   const canCreateFolder = !!vault.createFolder
 
+  /** Fichiers ajoutes tels quels (PDF, Word, images...), a la racine du vault. */
+  async function importFiles(files: File[]) {
+    for (const f of files) {
+      try { await vault.uploadFile!(f) } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    }
+  }
+
   return (
     <RelinkContext.Provider value={relink}>
     <ShowExtensionsContext.Provider value={showExt}>
@@ -570,6 +577,11 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
             <div style={{ display: 'flex', gap: 4 }}>
               {canCreateFile && <button data-testid="tree-new-file" onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="file-plus" size={14} />Note</button>}
               {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="folder-plus" size={14} />Dossier</button>}
+              {vault.uploadFile && (
+                <button data-testid="tree-import-files" title="Ajouter des fichiers (PDF, Word, images...) tels quels" onClick={() => pickFiles(files => void importFiles(files))} style={{ ...btnStyle('var(--text, #0f172a)'), flex: 'none', padding: '3px 8px' }}>
+                  <Icon name="upload" size={14} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -611,4 +623,15 @@ export class FileTreeWidget {
   dispose(): void {
     // no cleanup needed
   }
+}
+
+/** Choisir des fichiers sur le poste. */
+function pickFiles(onPick: (files: File[]) => void): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.multiple = true
+  input.style.display = 'none'
+  input.addEventListener('change', () => { if (input.files?.length) onPick(Array.from(input.files)); input.remove() }, { once: true })
+  document.body.appendChild(input)
+  input.click()
 }

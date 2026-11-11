@@ -66,7 +66,7 @@ export interface BackendMetrics {
   duration: Histogram
 }
 
-type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings'
+type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings' | 'file'
 
 export class BackendClient {
   constructor(
@@ -107,6 +107,25 @@ export class BackendClient {
    */
   settings(vaultId: string, section: string, signal?: AbortSignal): Promise<UpdatesLog | null> {
     return this.log('settings', `/internal/indexer/vaults/${encodeURIComponent(vaultId)}/settings/${encodeURIComponent(section)}`, signal)
+  }
+
+  /**
+   * Octets d'un fichier du vault (PDF, Word, image...), au plus `maxBytes` ;
+   * null s'il est inconnu (ou plus) dans ce vault, ou trop gros.
+   */
+  async file(vaultId: string, fileId: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array | null> {
+    const timeout = AbortSignal.timeout(this.opts.timeoutMs * 4)
+    const res = await fetch(`${this.opts.url}/internal/indexer/vaults/${encodeURIComponent(vaultId)}/files/${encodeURIComponent(fileId)}`, {
+      headers: { authorization: `Bearer ${await this.opts.token.get()}`, 'user-agent': this.opts.userAgent },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    if (res.status === 404) return null
+    if (res.status === 401) this.opts.token.invalidate?.()
+    if (!res.ok) throw new BackendError(res.status, 'http_' + res.status, `Le backend a repondu ${res.status} (file).`, res.status >= 500 || res.status === 429)
+    const declared = Number(res.headers.get('content-length') ?? '0')
+    if (declared > maxBytes) { await res.body?.cancel(); return null }
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    return bytes.length > maxBytes ? null : bytes
   }
 
   private async log(route: Route, path: string, signal?: AbortSignal): Promise<UpdatesLog | null> {

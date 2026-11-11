@@ -67,6 +67,8 @@ export interface IndexerConfig {
   lagWarnMs: number
   statsIntervalMs: number
   metricsAuth: 'token' | 'none'
+  extractFiles: 'on' | 'off'
+  ocr: 'on' | 'off'
   metricsMaxVaults: number
   slowCallMs: number
   shutdownTimeoutMs: number
@@ -113,6 +115,8 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'cacheTtlMs', env: 'SAVOIRE_INDEXER_CACHE_TTL_MS', kind: 'duration', def: '10000', min: 0, max: 3600000, doc: 'Duree de vie d\'un resultat en cache.' },
   { key: 'lagWarnMs', env: 'SAVOIRE_INDEXER_LAG_WARN_MS', kind: 'duration', def: '5000', min: 0, max: 3600000, doc: 'Retard au-dela duquel un index est rendu `lagging` (avec `lagMs`).' },
   { key: 'statsIntervalMs', env: 'SAVOIRE_INDEXER_STATS_INTERVAL_MS', kind: 'duration', def: '30000', min: 1000, max: 3600000, doc: 'Rafraichissement des tailles et nombres de notes par vault (metriques).' },
+  { key: 'extractFiles', env: 'SAVOIRE_INDEXER_EXTRACT_FILES', kind: 'enum', def: 'on', values: ['on', 'off'], doc: 'Lire le texte des fichiers (PDF, Word, Excel, PowerPoint, LibreOffice, pages web, CSV, images) par les extracteurs des plugins officiels.' },
+  { key: 'ocr', env: 'SAVOIRE_INDEXER_OCR', kind: 'enum', def: 'on', values: ['on', 'off'], doc: 'Lire le texte dans les images (OCR, quelques secondes par image ; langues gardees dans `{dataDir}/ocr`).' },
   { key: 'metricsAuth', env: 'SAVOIRE_INDEXER_METRICS_AUTH', kind: 'enum', def: 'token', values: ['token', 'none'], doc: '`/metrics` demande le jeton de service (`token`) ou non (`none`, reseau prive seulement).' },
   { key: 'metricsMaxVaults', env: 'SAVOIRE_INDEXER_METRICS_MAX_VAULTS', kind: 'int', def: '1000', min: 0, max: 1000000, doc: 'Vaults detailles dans `/metrics` (les plus gros, en retard ou en construction d\'abord) ; 0 : aucun.' },
   { key: 'slowCallMs', env: 'SAVOIRE_INDEXER_SLOW_CALL_MS', kind: 'duration', def: '1000', min: 0, max: 600000, doc: 'Appel journalise en avertissement au-dela de cette duree.' },

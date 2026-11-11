@@ -57,6 +57,14 @@ public class InternalIndexerController(IMediator mediator, IOptionsMonitor<Index
             ? Ok(updates)
             : Error(404, "not_found", "Document inconnu dans ce vault.");
 
+    // GET /internal/indexer/vaults/{vaultId}/files/{fileId}
+    // Octets d'un fichier (PDF, Word, image...) : le pair en tire le texte.
+    [HttpGet("vaults/{vaultId}/files/{fileId}")]
+    public async Task<IActionResult> FileBytes(string vaultId, string fileId, CancellationToken ct) =>
+        await Mediator.Send(new GetIndexerFileQuery(vaultId, fileId), ct) is { } stream
+            ? File(stream, "application/octet-stream")
+            : Error(404, "not_found", "Fichier inconnu dans ce vault.");
+
     // GET /internal/indexer/vaults/{vaultId}/settings/{section}
     // Reglages du vault lus par le pair (section « properties » : types des proprietes).
     [HttpGet("vaults/{vaultId}/settings/{section}")]

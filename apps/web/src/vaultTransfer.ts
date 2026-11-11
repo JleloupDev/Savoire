@@ -16,6 +16,8 @@ import type { DocumentSyncKind, IVaultFileSystem } from '@savoire/platform'
 import type { VaultTransferActions, VaultSummaryLike } from '@savoire/plugin-vault-browser'
 import { notify } from '@savoire/notifications'
 import { createZip, type ZipEntry } from './zipArchive'
+import { isBinaryDocumentPath } from './diskShapes'
+import { isAttachmentPath } from '@savoire/platform'
 
 /** Ce que la coquille bureau donne a l'app pour copier un vault vers le disque et retour. */
 export interface VaultFolderHost {
@@ -115,7 +117,7 @@ function notionImportAction(ctx: VaultTransferContext): VaultTransferActions['im
       }
       const fs = memoryFolder!(name)
       for (const f of files) await fs.writeBytes(f.path, f.bytes)
-      const service = new VaultTransferService({ remote: ctx.appRemote, openDiskSession: memorySession!, transferOptions: () => ({ syncKindOf: ctx.syncKindOf }) })
+      const service = new VaultTransferService({ remote: ctx.appRemote, openDiskSession: memorySession!, transferOptions: () => fileOptions(ctx) })
       const job = service.uploadVault(fs, name)
       void job.result.then(() => ctx.refreshVaults(), () => {})
       const run: VaultTransferRun = { title: `Import Notion « ${name} »`, job, doneLabel: () => `${counts}. ${report.warnings.join(' ')}`.trim() }
@@ -123,6 +125,11 @@ function notionImportAction(ctx: VaultTransferContext): VaultTransferActions['im
       ctx.show(run)
     }).catch(err => ctx.onError(`Import Notion impossible : ${errorText(err)}`)),
   }
+}
+
+/** Types des documents, et fichiers binaires (PDF, Word...) copies tels quels. */
+function fileOptions(ctx: VaultTransferContext) {
+  return { syncKindOf: ctx.syncKindOf, isFile: (path: string) => isAttachmentPath(path) || isBinaryDocumentPath(path) }
 }
 
 /** « Export-1234….zip » -> « Import Notion » ; sinon le nom du fichier. */
@@ -146,7 +153,7 @@ function pickFile(accept: string): Promise<File | null> {
 
 function baseTransferActions<TVault extends VaultSummaryLike>(ctx: VaultTransferContext): VaultTransferActions<TVault> | null {
   const host = folderHost
-  const transferOptions = () => ({ syncKindOf: ctx.syncKindOf })
+  const transferOptions = () => fileOptions(ctx)
   const start = (run: VaultTransferRun): void => {
     announceTransfer(run)
     ctx.show(run)

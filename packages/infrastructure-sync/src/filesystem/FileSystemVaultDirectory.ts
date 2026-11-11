@@ -23,10 +23,10 @@ const FROM_DISK = 'disk'
 const REMOTE = 'remote'
 
 // `kind` : nature du document, enregistree avec lui (absente pour le Markdown).
-type VaultEntry = { path: string; kind?: DocumentSyncKind }
+type VaultEntry = { path: string; kind?: DocumentSyncKind; binary?: true }
 
 function metaOf(id: string, entry: VaultEntry): IDocumentMeta {
-  return entry.kind ? { id, path: entry.path, kind: entry.kind } : { id, path: entry.path }
+  return { id, path: entry.path, ...(entry.kind ? { kind: entry.kind } : {}), ...(entry.binary ? { binary: true as const } : {}) }
 }
 
 /** Ce que le repertoire demande au disque. */
@@ -82,7 +82,7 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
 
   add(doc: IDocumentMeta): void {
     if (this.disposed) return
-    this.map.set(doc.id, doc.kind ? { path: doc.path, kind: doc.kind } : { path: doc.path })
+    this.map.set(doc.id, { path: doc.path, ...(doc.kind ? { kind: doc.kind } : {}), ...(doc.binary ? { binary: true } : {}) })
   }
 
   remove(id: string): void {
@@ -177,7 +177,7 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
       for (const [id, path] of docs) {
         const old = this.map.get(id) as VaultEntry | undefined
         const kind = kinds.get(id) ?? old?.kind
-        if (old?.path !== path || old?.kind !== kind) this.map.set(id, kind ? { path, kind } : { path })
+        if (old?.path !== path || old?.kind !== kind) this.map.set(id, { ...(old ?? {}), path, ...(kind ? { kind } : {}) })
       }
       this.folderMap.forEach((_v: unknown, f: string) => { if (!folders.has(f)) this.folderMap.delete(f) })
       for (const f of folders) if (!this.folderMap.has(f)) this.folderMap.set(f, 1)
@@ -188,7 +188,7 @@ export class FileSystemVaultDirectory implements IVaultDirectory {
   setPathFromDisk(id: string, path: string): void {
     if (this.disposed) return
     const old = this.map.get(id) as VaultEntry | undefined
-    this.doc.transact(() => this.map.set(id, old?.kind ? { path, kind: old.kind } : { path }), FROM_DISK)
+    this.doc.transact(() => this.map.set(id, { ...(old ?? {}), path }), FROM_DISK)
   }
 
   // ── Interne ──────────────────────────────────────────────────────────────

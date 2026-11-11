@@ -22,6 +22,11 @@ export interface IDocumentMeta {
    * (le Markdown est toujours un CRDT, le reste un instantane par defaut).
    */
   kind?: DocumentSyncKind
+  /**
+   * Fichier binaire (PDF, Word, image...) : ses octets sont gardes tels quels
+   * (IVaultFiles), jamais edites. Absent : d'apres son extension (images).
+   */
+  binary?: true
 }
 
 // ── Document fetcher port ──────────────────────────────────────────────────────

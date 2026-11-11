@@ -32,13 +32,15 @@ public sealed record StoreAttachmentCommand(
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }
 
-public sealed class StoreAttachmentCommandHandler(IContentStore store)
+public sealed class StoreAttachmentCommandHandler(IContentStore store, IIndexerChangeRepository changes)
     : IRequestHandler<StoreAttachmentCommand, string>
 {
     public async Task<string> Handle(StoreAttachmentCommand cmd, CancellationToken ct)
     {
         if (cmd.FileId is null) return await store.WriteAttachmentAsync(cmd.VaultId, cmd.FileName, cmd.Content, ct);
         await store.PutAttachmentAsync(cmd.VaultId, cmd.FileId, cmd.Content, ct);
+        // Le pair indexeur relit le fichier (texte d'un PDF, d'un Word, d'une image).
+        await changes.RecordFileChangedAsync(cmd.FileId, ct);
         return cmd.FileId;
     }
 }

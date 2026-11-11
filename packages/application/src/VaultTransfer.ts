@@ -120,7 +120,7 @@ export async function transferVault(
 ): Promise<VaultTransferReport> {
   const syncKindOf = options.syncKindOf ?? documentSyncKind
   const isFile = options.isFile ?? isAttachmentPath
-  const kindOf = (path: string, stored?: DocumentSyncKind): EntryKind => (isFile(path) ? 'file' : stored ?? syncKindOf(path))
+  const kindOf = (path: string, stored?: DocumentSyncKind, binary?: boolean): EntryKind => (binary || isFile(path) ? 'file' : stored ?? syncKindOf(path))
   const report: VaultTransferReport = {
     copied: 0, skipped: 0, folders: 0, maps: 0, bytes: 0, errors: [],
     renamedIds: {}, renamedPaths: {}, cancelled: false,
@@ -171,7 +171,12 @@ export async function transferVault(
         if (!plan.existing && !target.directory.getById(plan.targetId)) {
           // Le contenu est en place : le document peut apparaitre.
           // La nature enregistree voyage avec le document.
-          target.directory.add({ id: plan.targetId, path: plan.targetPath, ...(plan.source.kind ? { kind: plan.source.kind } : {}) })
+          target.directory.add({
+            id: plan.targetId, path: plan.targetPath,
+            ...(plan.source.kind ? { kind: plan.source.kind } : {}),
+            // Un fichier (PDF, Word...) reste un fichier : ses octets tels quels.
+            ...(plan.kind === 'file' ? { binary: true as const } : {}),
+          })
         }
       } catch (err) {
         if (err instanceof VaultGoneError) throw err
@@ -222,7 +227,7 @@ export async function transferVault(
 async function planDocuments(
   docs: readonly IDocumentMeta[],
   target: IVaultSyncSession,
-  kindOf: (path: string, stored?: DocumentSyncKind) => EntryKind,
+  kindOf: (path: string, stored?: DocumentSyncKind, binary?: boolean) => EntryKind,
   report: VaultTransferReport,
 ): Promise<Plan[]> {
   const byPath = new Map(target.directory.getAll().map(d => [d.path, d]))
@@ -231,7 +236,7 @@ async function planDocuments(
   for (const doc of docs) {
     const there = target.directory.getById(doc.id)
     const plan: Plan = {
-      source: doc, targetId: doc.id, kind: kindOf(doc.path, doc.kind),
+      source: doc, targetId: doc.id, kind: kindOf(doc.path, doc.kind, doc.binary),
       // Meme document deja present : son chemin dans la cible reste le sien.
       targetPath: there ? there.path : doc.path,
       existing: !!there,
@@ -246,7 +251,7 @@ async function planDocuments(
   for (const plan of fresh) {
     if (!rejected.has(plan.targetId)) continue
     const samePath = byPath.get(plan.source.path)
-    if (samePath && kindOf(samePath.path, samePath.kind) === plan.kind && !plans.some(p => p.existing && p.targetId === samePath.id)) {
+    if (samePath && kindOf(samePath.path, samePath.kind, samePath.binary) === plan.kind && !plans.some(p => p.existing && p.targetId === samePath.id)) {
       // Reprise d'une copie deja faite sous un autre identifiant.
       plan.targetId = samePath.id
       plan.existing = true

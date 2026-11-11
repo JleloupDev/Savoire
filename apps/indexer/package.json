@@ -11,7 +11,16 @@
   },
   "dependencies": {
     "@savoire/indexer-core": "workspace:*",
-    "@savoire/plugin-api": "workspace:*"
+    "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-csv": "workspace:*",
+    "@savoire/plugin-excel": "workspace:*",
+    "@savoire/plugin-images": "workspace:*",
+    "@savoire/plugin-opendocument": "workspace:*",
+    "@savoire/plugin-pdf": "workspace:*",
+    "@savoire/plugin-powerpoint": "workspace:*",
+    "@savoire/plugin-webpage": "workspace:*",
+    "@savoire/plugin-word": "workspace:*",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

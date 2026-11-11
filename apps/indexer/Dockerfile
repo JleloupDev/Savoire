@@ -29,6 +29,8 @@ ENV NODE_ENV=production \
     SAVOIRE_INDEXER_PORT=7070
 WORKDIR /app
 COPY --from=build /repo/apps/indexer/dist/ ./dist/
+# OCR des images : tesseract.js reste un module (il lance son worker depuis ses fichiers).
+RUN npm install --omit=dev --no-audit --no-fund tesseract.js@7.0.0 && npm cache clean --force
 # Les index (un SQLite par vault) : volume sur SSD local, jamais un partage SMB/NFS.
 RUN mkdir -p /data && chown node:node /data
 USER node

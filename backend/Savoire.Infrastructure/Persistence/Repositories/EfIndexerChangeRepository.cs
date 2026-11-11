@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using Microsoft.EntityFrameworkCore;
+using Savoire.Domain.Aggregates;
 using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
 
@@ -27,6 +28,13 @@ public class EfIndexerChangeRepository(AppDbContext db) : IIndexerChangeReposito
         await db.Database.ExecuteSqlAsync(
             $"INSERT INTO indexer_feed_state (key, value) VALUES ({EpochKey}, replace(gen_random_uuid()::text, '-', '')) ON CONFLICT (key) DO NOTHING", ct);
         return await ReadEpochAsync(ct) ?? throw new InvalidOperationException("indexer_feed_state : epoch absent.");
+    }
+
+    public async Task RecordFileChangedAsync(string fileId, CancellationToken ct = default)
+    {
+        await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
+        await IndexerChangeWriter.RecordOperationAsync(db, CrdtResourceType.Document, fileId, ct);
+        if (tx is not null) await tx.CommitAsync(ct);
     }
 
     private Task<string?> ReadEpochAsync(CancellationToken ct) =>

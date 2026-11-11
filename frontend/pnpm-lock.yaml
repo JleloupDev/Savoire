@@ -112,6 +112,33 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
+      '@savoire/plugin-csv':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-csv
+      '@savoire/plugin-excel':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-excel
+      '@savoire/plugin-images':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-images
+      '@savoire/plugin-opendocument':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-opendocument
+      '@savoire/plugin-pdf':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-pdf
+      '@savoire/plugin-powerpoint':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-powerpoint
+      '@savoire/plugin-webpage':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-webpage
+      '@savoire/plugin-word':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-word
+      tesseract.js:
+        specifier: 7.0.0
+        version: 7.0.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

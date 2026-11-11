@@ -37,6 +37,7 @@ import {
   lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, propertySchemaFromUpdates, propertySchemaKey,
   vaultTreeFromUpdates,
 } from '@savoire/indexer-core'
+import { MAX_EXTRACT_BYTES, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
 import type { BaseManifest, IndexInspection, IndexPower, IndexStatus, NoteInput, NoteRecord } from '@savoire/indexer-core'
 import { NodeSqliteDriver } from '@savoire/indexer-core/node'
 import { BASE_LOT_COUNT, baseLotOf } from '@savoire/plugin-api'
@@ -68,6 +69,8 @@ export interface StoreOptions {
   unavailableRetryAfterS: number
   /** Pouvoirs inscrits (tests : versions modifiees). */
   powers?: () => IndexPower[]
+  /** Extracteur d'un fichier (PDF, Word...) : plugins officiels seulement. Absent : fichiers ignores. */
+  extractor?: (path: string) => ExtractorSpec | undefined
 }
 
 /** Pourquoi un vault est (re)construit. */
@@ -836,7 +839,7 @@ export class VaultStore {
       const notes = new Map<string, string>()
       const liveBases = new Map<string, string>()
       for (const [id, path] of vt.docs) {
-        if (isNotePath(path)) notes.set(id, path)
+        if (isNotePath(path) || this.extractable(path)) notes.set(id, path)
         else if (isBasePath(path)) liveBases.set(id, path)
       }
       await this.slot.run(prio, async () => {
@@ -902,8 +905,41 @@ export class VaultStore {
     return this.fetches.run(fn)
   }
 
+  /** Un fichier (PDF, Word, image...) que lit un extracteur officiel. */
+  private extractable(path: string): boolean {
+    return !!this.opts.extractor && !isTrashPath(path) && !isNotePath(path) && !!this.opts.extractor(path)
+  }
+
+  /** Le texte d'un fichier, par son extracteur : une entree d'index comme une note. */
+  private async extractFile(v: Vault, id: string, path: string, signal?: AbortSignal): Promise<NoteInput | null | undefined> {
+    const spec = this.opts.extractor!(path)!
+    const bytes = await this.fetch(() => this.backend.file(v.id, id, MAX_EXTRACT_BYTES, signal))
+    if (!bytes) return undefined
+    try {
+      const content = await spec.extract(bytes, { path })
+      return { id, path, content: extractedToMarkdown(content), frontmatter: true }
+    } catch (err) {
+      this.m.skipped.inc({ reason: 'extract' })
+      this.log.warn('fichier illisible', { vault: v.id, doc: id, err })
+      return undefined
+    }
+  }
+
   /** Lit des notes au backend puis les ecrit, en une transaction par lot de BUILD_BATCH. */
-  private async writeNotes(v: Vault, handle: () => Promise<Handle>, items: { id: string; path: string }[], prio: Priority, origin: string, signal?: AbortSignal): Promise<void> {
+  private async writeNotes(v: Vault, handle: () => Promise<Handle>, all: { id: string; path: string }[], prio: Priority, origin: string, signal?: AbortSignal): Promise<void> {
+    // Les fichiers d'abord, a part : leur extraction (OCR...) se fait hors transaction.
+    const files = all.filter(it => this.extractable(it.path))
+    const items = all.filter(it => !this.extractable(it.path))
+    for (const f of files) {
+      const input = await this.extractFile(v, f.id, f.path, signal)
+      if (input === undefined) continue
+      await this.slot.run(prio, async () => {
+        const h = await handle()
+        if (input) await h.index.applyDocs([input])
+        this.m.docs.inc({ origin }, 1)
+        v.lastWriteAt = Date.now()
+      }, signal)
+    }
     for (let i = 0; i < items.length; i += this.opts.buildBatch) {
       const slice = items.slice(i, i + this.opts.buildBatch)
       const logs = await mapLimit(slice, this.opts.fetchConcurrency, it => this.fetch(() => this.readDoc(v, it.id, signal)))

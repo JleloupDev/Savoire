@@ -22,4 +22,10 @@ public interface IIndexerChangeRepository
     /// reparties de zero) : le pair sait alors qu'il doit tout reconstruire.
     /// </summary>
     Task<string> GetEpochAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Les octets d'un fichier du vault ont change (envoi d'un PDF, d'un Word...) :
+    /// le pair le relira. Sans effet pour un fichier non inscrit dans un vault.
+    /// </summary>
+    Task RecordFileChangedAsync(string fileId, CancellationToken ct = default);
 }

@@ -96,6 +96,13 @@ const MIN_OCR_SIDE = 64
 
 export type Ocr = (bytes: Uint8Array) => Promise<string>
 
+/** Reglages de l'OCR (le pair indexeur : cache des langues, OCR coupe). */
+const ocrSettings: { enabled: boolean; cachePath?: string } = { enabled: true }
+
+export function configureOcr(settings: { enabled?: boolean; cachePath?: string }): void {
+  Object.assign(ocrSettings, settings)
+}
+
 type TesseractWorker = { recognize(image: unknown): Promise<{ data: { text: string } }>; terminate(): Promise<unknown> }
 let worker: Promise<TesseractWorker> | null = null
 
@@ -103,7 +110,7 @@ let worker: Promise<TesseractWorker> | null = null
 export const tesseractOcr: Ocr = async bytes => {
   worker ??= (async () => {
     const { createWorker } = await import('tesseract.js')
-    return createWorker(OCR_LANGUAGES) as unknown as Promise<TesseractWorker>
+    return createWorker(OCR_LANGUAGES, 1, ocrSettings.cachePath ? { cachePath: ocrSettings.cachePath } : {}) as unknown as Promise<TesseractWorker>
   })().catch(err => { worker = null; throw err })
   const w = await worker
   // Navigateur : un Blob ; Node (pair indexeur) : un Buffer.
@@ -125,7 +132,7 @@ export async function extractImage(bytes: Uint8Array, ocr: Ocr | null = tesserac
   const sections = [{ text: [`Image ${info.format}`, size, info.camera, info.taken].filter(Boolean).join(' · ') }]
   // SVG : son texte est deja lisible ; trop petite : rien a lire.
   const big = (info.width ?? 0) >= MIN_OCR_SIDE && (info.height ?? 0) >= MIN_OCR_SIDE
-  if (ocr && info.format !== 'SVG' && big) {
+  if (ocr && ocrSettings.enabled && info.format !== 'SVG' && big) {
     const text = await ocr(bytes).catch(err => { console.warn('[plugin-images] OCR impossible', err); return '' })
     if (text) sections.push({ heading: 'Texte dans l’image', text } as { heading?: string; text: string })
   }

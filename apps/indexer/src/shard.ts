@@ -5,6 +5,8 @@
 // le nombre de fils). Messages simples (clonables) avec le fil principal :
 // le meme code tourne dans un Worker ou dans le fil principal (WORKERS=0,
 // tests).
+import { join } from 'node:path'
+import { officialExtractors } from './extractors'
 import { getHeapStatistics } from 'node:v8'
 import type { IndexPower } from '@savoire/indexer-core'
 import { BackendClient } from './backend'
@@ -77,6 +79,8 @@ export class Shard {
       feedStaleMs: c.feedStaleMs,
       statsIntervalMs: c.statsIntervalMs,
       unavailableRetryAfterS: c.unavailableRetryAfterS,
+      // Fichiers (PDF, Word...) : extracteurs des plugins officiels seulement.
+      ...(c.extractFiles === 'on' ? { extractor: officialExtractors({ ocr: c.ocr === 'on', cacheDir: join(c.dataDir, 'ocr') }) } : {}),
       ...(powers ? { powers } : {}),
     }, metrics => new BackendClient({
       url: c.backendUrl, token: bearerSourceFor(c), name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,

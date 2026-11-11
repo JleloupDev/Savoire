@@ -27,6 +27,9 @@ const options = {
   legalComments: 'none',
   logLevel: 'info',
   define: { __INDEXER_VERSION__: JSON.stringify(pkg.version) },
+  // Tesseract (OCR des images) lance un worker depuis ses propres fichiers :
+  // il reste un module installe a cote (voir Dockerfile), pas empaquete.
+  external: ['tesseract.js'],
   // require() de modules integres dans du code CommonJS empaquete.
   banner: { js: "import { createRequire as __savoireRequire } from 'node:module'; const require = __savoireRequire(import.meta.url);" },
 }

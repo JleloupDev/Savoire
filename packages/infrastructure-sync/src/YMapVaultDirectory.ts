@@ -9,10 +9,10 @@ import type { DocumentSyncKind, IDocumentMeta, IVaultDirectory } from '@savoire/
 const Y_ = Y as Record<string, any>
 
 // `kind` : nature du document, enregistree avec lui (absente pour le Markdown).
-type VaultEntry = { path: string; kind?: DocumentSyncKind }
+type VaultEntry = { path: string; kind?: DocumentSyncKind; binary?: true }
 
 function metaOf(id: string, entry: VaultEntry): IDocumentMeta {
-  return entry.kind ? { id, path: entry.path, kind: entry.kind } : { id, path: entry.path }
+  return { id, path: entry.path, ...(entry.kind ? { kind: entry.kind } : {}), ...(entry.binary ? { binary: true as const } : {}) }
 }
 
 // Satisfait structurellement le port ICrdt d'edgesync-protocol (applyUpdate /
@@ -50,7 +50,7 @@ export class YMapVaultDirectory implements IVaultDirectory {
   }
 
   add(doc: IDocumentMeta): void {
-    this.map.set(doc.id, doc.kind ? { path: doc.path, kind: doc.kind } : { path: doc.path })
+    this.map.set(doc.id, { path: doc.path, ...(doc.kind ? { kind: doc.kind } : {}), ...(doc.binary ? { binary: true } : {}) })
   }
 
   remove(id: string): void {

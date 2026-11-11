@@ -22,10 +22,13 @@ namespace Savoire.Server.Controllers;
 [Route("api/v1/vaults/{vaultId}/attachments")]
 public partial class AttachmentsController(IMediator mediator) : AppControllerBase(mediator)
 {
-    private static readonly HashSet<string> AllowedExtensions =
+    // Tout type de fichier est accepte (PDF, Word, images...) : il est garde tel
+    // quel. A la lecture, seules les images s'affichent ; le reste se
+    // telecharge, dans un bac a sable (jamais execute sur notre origine).
+    private static readonly HashSet<string> ImageExtensions =
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"];
 
-    private const long MaxFileSize = 20 * 1024 * 1024; // 20 MB
+    private const long MaxFileSize = 50 * 1024 * 1024; // 50 MB
 
     /// <summary>
     /// Chemin de stockage accepte : un identifiant (lettres, chiffres, tirets)
@@ -45,6 +48,8 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
 
     // POST /api/v1/vaults/{vaultId}/attachments/{fileId}  (rangee sous l'id du document)
     [HttpPost("{fileId}")]
+    [RequestSizeLimit(MaxFileSize + 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize + 1024 * 1024)]
     public Task<ActionResult<AttachmentDto>> UploadWithId(string vaultId, string fileId, IFormFile file, CancellationToken ct)
         => FileIdRegex().IsMatch(fileId)
             ? Store(vaultId, fileId, file, ct)
@@ -53,9 +58,7 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
     private async Task<ActionResult<AttachmentDto>> Store(string vaultId, string? fileId, IFormFile file, CancellationToken ct)
     {
         if (file.Length == 0)                         return BadRequest("Empty file.");
-        if (file.Length > MaxFileSize)                return BadRequest("File too large (max 20 MB).");
-        string ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!AllowedExtensions.Contains(ext))         return BadRequest($"Extension not allowed: {ext}");
+        if (file.Length > MaxFileSize)                return BadRequest("File too large (max 50 MB).");
 
         await using Stream stream = file.OpenReadStream();
         string storagePath = await Mediator.Send(
@@ -94,12 +97,18 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
         Stream? stream = await Mediator.Send(new ReadAttachmentQuery(vaultId, path, GetCallerId()), ct);
         if (stream is null) return NotFound();
 
+        // Rien ne s'execute jamais depuis un fichier envoye (un SVG ou un HTML
+        // ouvert directement) : bac a sable, type non devine par le navigateur.
+        Response.Headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
         // Un fichier range sous un identifiant n'a pas d'extension : son type
         // se lit dans ses premiers octets.
         string ext = Path.GetExtension(path);
         if (ext.Length > 0) return File(stream, GetContentType(ext));
         byte[] bytes = await ReadAllAsync(stream, ct);
-        return File(bytes, SniffContentType(bytes));
+        string type = SniffContentType(bytes);
+        // Pas une image : un telechargement, jamais affiche comme une page.
+        return type.StartsWith("image/", StringComparison.Ordinal) ? File(bytes, type) : File(bytes, "application/octet-stream", "fichier");
     }
 
     // DELETE /api/v1/vaults/{vaultId}/attachments/{path}

@@ -26,6 +26,8 @@ export interface VaultAPI {
    * du vault). Absent, ou null : ce profil ne garde pas ses octets.
    */
   readBinary?(path: string): Promise<Uint8Array | null>
+  /** Ajoute un fichier quelconque (PDF, Word, image...) au dossier `folder`, tel quel. Rend son chemin. */
+  uploadFile?(file: File, folder?: string): Promise<string>
   write(documentId: string, content: string): Promise<void>
   list(dir?: string): Promise<string[]>
   exists(documentId: string): Promise<boolean>

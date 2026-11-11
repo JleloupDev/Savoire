@@ -48,3 +48,12 @@ export const diskSessionOptions: FileSystemVaultSessionOptions = {
   isTextDocument: isTextDocumentPath,
   isTreeDocument: isTreeDocumentPath,
 }
+
+/** Extensions toujours binaires (octets gardes tels quels), meme sans plugin. */
+const BINARY_BY_DEFAULT = new Set(['pdf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'doc', 'xls', 'ppt', 'zip', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg', 'mp3', 'mp4', 'wav', 'mov'])
+
+/** Un fichier binaire : copie telle quelle d'un vault a l'autre, lu par les extracteurs. */
+export function isBinaryDocumentPath(path: string): boolean {
+  const ext = extOf(path)
+  return resolve?.(ext)?.superType === 'binary' || BINARY_BY_DEFAULT.has(ext)
+}

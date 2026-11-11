@@ -103,7 +103,7 @@ export class VaultClient implements VaultAPI {
     const doc = this._resolveDocumentByPath(path)
     if (this.session) {
       // Une piece jointe est inscrite au repertoire, mais son contenu est un fichier.
-      if (path.startsWith(ATTACHMENTS_DIR) || isAttachmentPath(path) || !doc) {
+      if (path.startsWith(ATTACHMENTS_DIR) || isAttachmentPath(path) || !doc || doc.binary) {
         const files = this.session.files
         return this.withAttachment(path, key => files.read(key))
       }
@@ -122,8 +122,37 @@ export class VaultClient implements VaultAPI {
   /** Octets d'un document qui n'est pas du texte (dossier du poste). Null : indisponible. */
   async readBinary(path: string): Promise<Uint8Array | null> {
     const doc = this._resolveDocumentByPath(path)
-    if (!doc || !this.session?.readDocumentBytes) return null
-    return this.session.readDocumentBytes(doc.id)
+    if (!doc || !this.session) return null
+    // Dossier du poste : le fichier lui-meme ; serveur : les octets gardes (IVaultFiles).
+    if (this.session.readDocumentBytes) return this.session.readDocumentBytes(doc.id)
+    if (doc.binary || isAttachmentPath(doc.path)) return (await this.session.files.readBytes(doc.id)).bytes
+    return null
+  }
+
+  /**
+   * Ajoute un fichier quelconque au vault (PDF, Word, image...) : ses octets
+   * sont gardes tels quels, dans `folder`. Rend son chemin.
+   */
+  async uploadFile(file: File, folder = ''): Promise<string> {
+    if (!this.session) throw new Error('Aucun vault ouvert.')
+    const report = this.uploads.begin(file.name)
+    try {
+      const dir = folder.replace(/\/+$/, '')
+      const name = file.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'fichier'
+      const dot = name.lastIndexOf('.')
+      const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+      let path = dir ? `${dir}/${name}` : name
+      for (let n = 2; this._findDocumentByPath(path); n++) path = `${dir ? `${dir}/` : ''}${stem} ${n}${ext}`
+      const id = crypto.randomUUID()
+      await this.session.registerDocuments([id])
+      await this.session.files.upload(id, file, { onProgress: f => report.progress(f) })
+      this.addDocument({ id, path, binary: true })
+      report.done(path)
+      return path
+    } catch (err) {
+      report.fail(err)
+      throw err
+    }
   }
 
   async write(documentId: string, content: string): Promise<void> {
