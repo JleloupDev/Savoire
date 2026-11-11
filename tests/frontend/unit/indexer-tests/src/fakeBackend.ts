@@ -207,6 +207,25 @@ export class FakeBackend {
     this.touch(vaultId, 'settings')
   }
 
+  /** Un fichier envoye (binaire) : une entree d'arbre, sans document CRDT. */
+  addFile(vaultId: string, docId: string, path: string): void {
+    const v = this.vault(vaultId)
+    v.tree.doc.getMap('vault').set(docId, { path, binary: true })
+    this.touch(vaultId, 'vault')
+  }
+
+  /** Le texte qu'un membre publie dans l'annexe « texte » d'un fichier (ExtractedTextPublisher). */
+  publishText(vaultId: string, fileId: string, markdown: string): void {
+    const v = this.vault(vaultId)
+    const annexId = `${fileId}~texte`
+    const annex = this.docOf(v, annexId)
+    annex.doc.transact(() => {
+      annex.doc.getMap('tree').set('markdown', markdown)
+      annex.doc.getMap('tree').set('extractor', 'test@1')
+    })
+    this.touch(vaultId, 'document', annexId)
+  }
+
   rename(vaultId: string, docId: string, path: string): void {
     const v = this.vaults.get(vaultId)!
     v.tree.doc.getMap('vault').set(docId, { path })

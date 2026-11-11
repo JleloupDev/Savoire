@@ -56,7 +56,7 @@ export async function extractOpenDocument(bytes: Uint8Array): Promise<ExtractedC
   return { title, sections: sections.filter(s => s.heading || s.text), props }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'opendocument', label: 'Documents LibreOffice', extensions: ['odt', 'ods', 'odp'], version: 1, extract: b => extractOpenDocument(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'opendocument', label: 'Documents LibreOffice', extensions: ['odt', 'ods', 'odp'], version: 1, extract: b => extractOpenDocument(b) }
 
 let unregister: (() => void) | null = null
 

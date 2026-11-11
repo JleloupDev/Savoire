@@ -140,6 +140,7 @@ export async function extractImage(bytes: Uint8Array, ocr: Ocr | null = tesserac
 }
 
 export const EXTRACTOR: ExtractorSpec = {
+  official: true,
   id: 'images', label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'], version: 2,
   extract: b => extractImage(b),
   preview: (b, info) => nativePreview(b, extensionOfPath(info.path)),

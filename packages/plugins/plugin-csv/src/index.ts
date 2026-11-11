@@ -51,7 +51,7 @@ export async function extractCsv(bytes: Uint8Array): Promise<ExtractedContent> {
   }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'csv', label: 'Tableaux CSV', extensions: ['csv', 'tsv'], version: 1, extract: b => extractCsv(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'csv', label: 'Tableaux CSV', extensions: ['csv', 'tsv'], version: 1, extract: b => extractCsv(b) }
 
 const FILE_TYPES = [
   { extension: 'csv', label: 'Tableau CSV', icon: 'sheet', superType: 'text' as const },

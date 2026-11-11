@@ -20,7 +20,7 @@ export async function extractPptx(bytes: Uint8Array): Promise<ExtractedContent> 
   return { title: meta.title, sections, props: { ...meta.props, diapositives: slides.length } }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'pptx', label: 'Présentations PowerPoint', extensions: ['pptx'], version: 1, extract: b => extractPptx(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'pptx', label: 'Présentations PowerPoint', extensions: ['pptx'], version: 1, extract: b => extractPptx(b) }
 
 let unregister: (() => void) | null = null
 

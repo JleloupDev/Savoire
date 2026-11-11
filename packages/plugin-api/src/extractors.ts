@@ -38,6 +38,13 @@ export interface ExtractorSpec {
   extensions: string[]
   /** Version : la changer fait relire les fichiers deja extraits. */
   version?: number
+  /**
+   * Extracteur d'un plugin officiel (verifie par Savoire) : le pair indexeur
+   * du serveur le fait tourner lui-meme. Sinon, c'est l'application d'un
+   * membre qui extrait le texte et le publie avec le fichier (annexe
+   * « texte »), pour que le serveur le trouve aussi.
+   */
+  official?: boolean
   extract(bytes: Uint8Array, info: { path: string }): Promise<ExtractedContent>
   /** Apercu en lecture seule. Absent : l'apercu generique (texte des sections). */
   preview?(bytes: Uint8Array, info: { path: string }): Promise<HTMLElement> | HTMLElement
@@ -84,3 +91,6 @@ export function extensionOfPath(path: string): string {
   const dot = name.lastIndexOf('.')
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
 }
+
+/** Nom de l'annexe qui porte le texte extrait d'un fichier (publie par un membre). */
+export const EXTRACTED_TEXT_ANNEX = 'texte'

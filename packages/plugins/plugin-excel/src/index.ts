@@ -51,7 +51,7 @@ export async function extractXlsx(bytes: Uint8Array): Promise<ExtractedContent> 
   return { title: meta.title, sections, props: { ...meta.props, feuilles: sheets.length } }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'xlsx', label: 'Classeurs Excel', extensions: ['xlsx'], version: 1, extract: b => extractXlsx(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'xlsx', label: 'Classeurs Excel', extensions: ['xlsx'], version: 1, extract: b => extractXlsx(b) }
 
 let unregister: (() => void) | null = null
 

@@ -33,7 +33,7 @@ export async function extractHtml(bytes: Uint8Array): Promise<ExtractedContent> 
   return { title, sections, ...(description ? { props: { description: decodeEntities(description) } } : {}) }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'html', label: 'Pages web', extensions: ['html', 'htm'], version: 1, extract: b => extractHtml(b), preview: b => htmlPreview(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'html', label: 'Pages web', extensions: ['html', 'htm'], version: 1, extract: b => extractHtml(b), preview: b => htmlPreview(b) }
 
 const FILE_TYPES = [
   { extension: 'html', label: 'Page web', icon: 'globe', superType: 'text' as const },

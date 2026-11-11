@@ -36,7 +36,7 @@ export async function extractDocx(bytes: Uint8Array): Promise<ExtractedContent> 
   return { title, sections: sections.filter(s => s.heading || s.text), props: meta.props }
 }
 
-export const EXTRACTOR: ExtractorSpec = { id: 'docx', label: 'Documents Word', extensions: ['docx'], version: 1, extract: b => extractDocx(b) }
+export const EXTRACTOR: ExtractorSpec = { official: true, id: 'docx', label: 'Documents Word', extensions: ['docx'], version: 1, extract: b => extractDocx(b) }
 
 let unregister: (() => void) | null = null
 

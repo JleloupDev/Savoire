@@ -35,9 +35,9 @@ import { join } from 'node:path'
 import {
   NOTE_EXTENSIONS, VaultIndex, baseManifestFromUpdates, defaultPowers, diffTree, extOf, isTrashPath, lightRowRecord,
   lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, propertySchemaFromUpdates, propertySchemaKey,
-  vaultTreeFromUpdates,
+  vaultTreeFromUpdates, withDoc,
 } from '@savoire/indexer-core'
-import { MAX_EXTRACT_BYTES, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
+import { EXTRACTED_TEXT_ANNEX, MAX_EXTRACT_BYTES, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
 import type { BaseManifest, IndexInspection, IndexPower, IndexStatus, NoteInput, NoteRecord } from '@savoire/indexer-core'
 import { NodeSqliteDriver } from '@savoire/indexer-core/node'
 import { BASE_LOT_COUNT, baseLotOf } from '@savoire/plugin-api'
@@ -191,6 +191,20 @@ const NOTE_EXT = NOTE_EXTENSIONS
 const ROWS_PER_TX = 500
 const LOT_SIG_CACHE = 64
 const SUFFIXES = ['', '-wal', '-shm', '-journal']
+
+/**
+ * Un autre fichier (lu par un plugin non officiel, ou par aucun) : indexe par
+ * son nom, et par le texte qu'un membre a publie dans son annexe « texte ».
+ */
+function isOtherFile(path: string): boolean {
+  return !isTrashPath(path) && !isNotePath(path) && !isBasePath(path) && /\.[a-z0-9]{1,8}$/i.test(path)
+}
+
+/** Annexe « texte » d'un fichier : son id -> l'id du fichier. */
+function fileOfTextAnnex(id: string): string | undefined {
+  const suffix = `~${EXTRACTED_TEXT_ANNEX}`
+  return id.endsWith(suffix) ? id.slice(0, -suffix.length) : undefined
+}
 
 function isNotePath(path: string): boolean {
   return !isTrashPath(path) && NOTE_EXT.has(extOf(path))
@@ -815,7 +829,9 @@ export class VaultStore {
     }
     const lots = new Map<string, Set<number>>()
     const others: string[] = []
-    for (const id of docIds) {
+    for (const raw of docIds) {
+      // Le texte publie d'un fichier a change : c'est le fichier a relire.
+      const id = fileOfTextAnnex(raw) ?? raw
       const lot = parseLotDocId(id)
       if (lot) {
         let s = lots.get(lot.baseId)
@@ -839,7 +855,7 @@ export class VaultStore {
       const notes = new Map<string, string>()
       const liveBases = new Map<string, string>()
       for (const [id, path] of vt.docs) {
-        if (isNotePath(path) || this.extractable(path)) notes.set(id, path)
+        if (isNotePath(path) || this.extractable(path) || isOtherFile(path)) notes.set(id, path)
         else if (isBasePath(path)) liveBases.set(id, path)
       }
       await this.slot.run(prio, async () => {
@@ -925,13 +941,42 @@ export class VaultStore {
     }
   }
 
+  /**
+   * Un fichier sans extracteur officiel : le texte qu'un membre a publie dans
+   * son annexe « texte » (extrait sur son poste), sinon son propre texte s'il
+   * est un document CRDT, sinon son nom seul.
+   */
+  private async publishedText(v: Vault, id: string, path: string, signal?: AbortSignal): Promise<NoteInput | undefined> {
+    const log = await this.fetch(() => this.readDoc(v, `${id}~${EXTRACTED_TEXT_ANNEX}`, signal))
+    let content = ''
+    if (log && log.format === 'yjs') {
+      try {
+        const md = treeValueFromUpdates(bytesOf(log), 'markdown')
+        if (typeof md === 'string') content = md
+      } catch (err) {
+        this.log.warn('texte publie illisible', { vault: v.id, doc: id, err })
+      }
+    }
+    if (!log) {
+      // Pas d'annexe : un document CRDT d'un type inconnu du pair (texte) se lit lui-meme.
+      const own = await this.fetch(() => this.readDoc(v, id, signal))
+      if (own && own.format === 'yjs') {
+        try {
+          const text = withDoc(bytesOf(own), doc => doc.getText('codemirror').toString())
+          if (text) return { id, path, content: text, frontmatter: false }
+        } catch { /* illisible : son nom seul */ }
+      }
+    }
+    return { id, path, content, frontmatter: content.startsWith('---') }
+  }
+
   /** Lit des notes au backend puis les ecrit, en une transaction par lot de BUILD_BATCH. */
   private async writeNotes(v: Vault, handle: () => Promise<Handle>, all: { id: string; path: string }[], prio: Priority, origin: string, signal?: AbortSignal): Promise<void> {
     // Les fichiers d'abord, a part : leur extraction (OCR...) se fait hors transaction.
-    const files = all.filter(it => this.extractable(it.path))
-    const items = all.filter(it => !this.extractable(it.path))
+    const files = all.filter(it => isOtherFile(it.path) || this.extractable(it.path))
+    const items = all.filter(it => !files.includes(it))
     for (const f of files) {
-      const input = await this.extractFile(v, f.id, f.path, signal)
+      const input = this.extractable(f.path) ? await this.extractFile(v, f.id, f.path, signal) : await this.publishedText(v, f.id, f.path, signal)
       if (input === undefined) continue
       await this.slot.run(prio, async () => {
         const h = await handle()
@@ -1173,12 +1218,14 @@ export class VaultStore {
       // En place : un changement vu avant cette lecture y est deja (il attendait la fin de la construction).
       if (inPlace && v.tree && v.tree.lastAt < treeAt) v.tree = undefined
       const notes: { id: string; path: string }[] = []
+      const files: { id: string; path: string }[] = []
       const bases = new Map<string, BaseInfo>()
       for (const [id, path] of tree.docs) {
         if (isNotePath(path)) notes.push({ id, path })
         else if (isBasePath(path)) bases.set(id, { path, checked: false })
+        else if (isOtherFile(path) || this.extractable(path)) files.push({ id, path })
       }
-      const total = notes.length + bases.size
+      const total = notes.length + files.length + bases.size
       let done = 0
       const progress = async () => {
         v.progress = total ? done / total : 1
@@ -1231,6 +1278,14 @@ export class VaultStore {
         await progress()
       }
 
+      // Fichiers (PDF, images, autres) : extraits ou lus dans leur annexe « texte ».
+      for (let i = 0; i < files.length; i += batch) {
+        const slice = files.slice(i, i + batch)
+        await this.writeNotes(v, handle, slice, BUILD, 'build', signal)
+        done += slice.length
+        await progress()
+      }
+
       // Bases : chaque lot de lignes legeres.
       const space = inPlace ? 'S' : 'T'
       for (const [b, info] of bases) {
@@ -1242,7 +1297,7 @@ export class VaultStore {
       // Ce qui est indexe mais n'est plus dans l'arbre.
       await this.slot.run(BUILD, async () => {
         const h = await handle()
-        const ids = new Set(notes.map(n => n.id))
+        const ids = new Set([...notes, ...files].map(n => n.id))
         const gone = [...(await h.index.paths()).keys()].filter(id => !ids.has(id))
         if (gone.length) await h.index.removeDocs(gone)
         for (const b of await h.index.bases()) {
@@ -1299,7 +1354,7 @@ export class VaultStore {
       const seconds = (performance.now() - t0) / 1000
       this.m.builds.inc({ mode: inPlace ? 'in_place' : 'beside', result: 'ok' })
       this.m.buildSeconds.observe({ mode: inPlace ? 'in_place' : 'beside' }, seconds)
-      this.log.info('construction terminee', { vault: v.id, reason, notes: notes.length, bases: bases.size, seconds: Math.round(seconds * 10) / 10 })
+      this.log.info('construction terminee', { vault: v.id, reason, notes: notes.length, files: files.length, bases: bases.size, seconds: Math.round(seconds * 10) / 10 })
       await this.refreshStats(v)
       // Types changes pendant la construction : on recommence avec les bons.
       if (v.typesDirty || (v.schemaKey ?? '') !== typesKey) {
@@ -1461,3 +1516,8 @@ function round(x: number): number {
 }
 
 export { HttpError }
+
+/** Une valeur de la racine de l'arbre d'un document (annexe « texte » : `markdown`). */
+function treeValueFromUpdates(updates: readonly Uint8Array[], key: string): unknown {
+  return withDoc(updates, doc => doc.getMap('tree').get(key))
+}

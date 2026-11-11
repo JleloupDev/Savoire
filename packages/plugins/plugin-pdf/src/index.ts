@@ -67,6 +67,7 @@ export async function extractPdf(bytes: Uint8Array): Promise<ExtractedContent> {
 }
 
 export const EXTRACTOR: ExtractorSpec = {
+  official: true,
   id: 'pdf', label: 'PDF', extensions: ['pdf'], version: 2,
   extract: b => extractPdf(b),
   preview: b => nativePreview(b, 'pdf'),

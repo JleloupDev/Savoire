@@ -15,10 +15,11 @@ import { describeLoginError } from './serverErrors'
 import { ModuleShareDialog } from './ModuleShareDialog'
 import { onModuleShareRequest } from './moduleShare'
 import { diskSessionOptions } from './diskShapes'
+import { extractorRegistry } from './extractors'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
-import { isKeyManagedSession, watchDocumentKinds, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
+import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
@@ -460,6 +461,8 @@ export function AppShell() {
   // Module dont on ouvre les options de partage (plugin Modules).
   const [moduleSharePath, setModuleSharePath] = useState<string | null>(null)
   useEffect(() => onModuleShareRequest(setModuleSharePath), [])
+  // Arret de la publication du texte extrait (vault precedent).
+  const extractedTextStopRef = useRef<(() => void) | null>(null)
   // Arret du suivi des natures de documents (vault precedent).
   const documentKindsStopRef = useRef<(() => void) | null>(null)
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
@@ -714,6 +717,17 @@ export function AppShell() {
       // La nature des documents anciens est recopiee depuis leur type, quand
       // son plugin est la : un membre sans ce plugin les relira correctement.
       publications.reset()
+      // Serveur : le texte des fichiers lus par un plugin non officiel est
+      // extrait ici et publie avec le fichier (le serveur ne fait tourner que
+      // les plugins officiels). Un vault du poste s'indexe lui-meme.
+      extractedTextStopRef.current?.()
+      extractedTextStopRef.current = null
+      if (active.session && !active.session.readDocumentBytes) {
+        const publisher = new ExtractedTextPublisher(active.session, path => extractorRegistry.forPath(path), () => !isReadOnlyRef.current)
+        const stop = publisher.start()
+        const off = extractorRegistry.onChange(() => publisher.refresh())
+        extractedTextStopRef.current = () => { stop(); off() }
+      }
       documentKindsStopRef.current?.()
       documentKindsStopRef.current = active.session
         ? watchDocumentKinds(active.session.directory, (path) => {
