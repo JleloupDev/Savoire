@@ -84,6 +84,13 @@ export interface FileSystemVaultSessionOptions {
    * .outline. Les autres documents CRDT (arbre) gardent leur etat seul.
    */
   isTextDocument?: (path: string) => boolean
+  /**
+   * Un document CRDT a ce chemin est-il un arbre (carte mentale, dessin,
+   * page, base) ? Son fichier visible recoit l'arbre en JSON, a chaque
+   * modification : le fichier existe et se lit hors de Savoire. Sens unique :
+   * une modification faite ailleurs dans ce JSON n'est pas reprise.
+   */
+  isTreeDocument?: (path: string) => boolean
 }
 
 interface DocReplica {
@@ -129,6 +136,15 @@ interface SnapshotMeta {
   hash: string
 }
 
+/** Racine de l'arbre d'un document (meme nom que l'API des plugins, ISharedTree). */
+const TREE_ROOT_NAME = 'tree'
+
+/** L'arbre d'un document, en JSON lisible (cartes, listes, textes). */
+export function treeToJson(doc: YDoc): string {
+  const root = (doc as unknown as { getMap(n: string): { toJSON(): unknown } }).getMap(TREE_ROOT_NAME)
+  return `${JSON.stringify({ savoire: 'tree', tree: root.toJSON() }, null, 2)}\n`
+}
+
 function ytextOf(doc: YDoc): { toString(): string; length: number; insert(i: number, s: string): void; delete(i: number, n: number): void } {
   return doc.getText('codemirror')
 }
@@ -157,6 +173,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
   private readonly projectMs: number
   private readonly scanMs: number
   private readonly isText: (path: string) => boolean
+  private readonly isTree: (path: string) => boolean
 
   private readonly replicas = new Map<string, DocReplica>()
   private readonly replicasByDir = new Map<string, { docId: string; replica: DocReplica }>()
@@ -217,6 +234,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     this.projectMs = options.projectMs ?? 400
     this.scanMs = options.scanMs ?? 100
     this.isText = options.isTextDocument ?? (path => hasExtension(path, DEFAULT_TEXT_EXTENSIONS))
+    this.isTree = path => !this.isText(path) && (options.isTreeDocument?.(path) ?? false)
     this.directory = new FileSystemVaultDirectory({
       added: (id, path) => this.localOp(() => this.diskAdd(id, path)),
       renamed: (id, from, to) => this.localOp(() => this.diskRename(id, from, to)),
@@ -520,7 +538,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     this.forgetUrl(id)
     // Un texte qui avait deja un etat (document sans chemin, copie d'un vault) :
     // le fichier visible le montre.
-    if (this.isText(path)) await this.projectFromState(id)
+    if (this.isText(path) || this.isTree(path)) await this.projectFromState(id)
   }
 
   private async diskRename(id: string, from: string, to: string): Promise<void> {
@@ -935,7 +953,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
   private scheduleProjection(docId: string): void {
     if (this.disposed && !this.replicas.has(docId)) return
     const path = this.directory.pathOf(docId)
-    if (!path || !this.isText(path)) return
+    if (!path || !(this.isText(path) || this.isTree(path))) return
     const old = this.projectTimers.get(docId)
     if (old) clearTimeout(old)
     this.projectTimers.set(docId, setTimeout(() => {
@@ -948,6 +966,7 @@ export class FileSystemVaultSession implements IVaultSyncSession {
   private async projectNow(docId: string, replica = this.replicas.get(docId)): Promise<void> {
     if (!replica) return
     const path = this.directory.pathOf(docId)
+    if (path && this.isTree(path)) return this.projectTree(docId, replica, path)
     if (!path || !this.isText(path)) return
     // Supprime ou deplace ailleurs entre-temps : la relecture du dossier tranchera.
     if (!(await this.fs.exists(path))) return
@@ -971,6 +990,28 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     await this.refreshMeta(docId, path, await contentHash(text))
   }
 
+  /** L'arbre en JSON dans le fichier visible, s'il a change (sens unique). */
+  private async projectTree(docId: string, replica: DocReplica, path: string): Promise<void> {
+    if (!(await this.fs.exists(path))) return
+    const json = treeToJson(replica.doc)
+    if (json === replica.base?.text) return
+    // Un fichier venu d'un autre logiciel (un dessin Excalidraw d'origine...)
+    // n'est jamais ecrase : seul un fichier vide, ou deja ecrit par Savoire.
+    if (!(await this.isOwnTreeFile(path))) return
+    await replica.log.flush()
+    await this.fs.writeText(path, json)
+    replica.base = { text: json, state: new Uint8Array() }
+    await this.refreshMeta(docId, path, await contentHash(json))
+  }
+
+  /** Fichier d'arbre vide, ou ecrit par Savoire (reconnu a son en-tete). */
+  private async isOwnTreeFile(path: string): Promise<boolean> {
+    const current = await this.fs.readText(path).catch(() => null)
+    if (current === null) return false
+    if (current.trim() === '') return true
+    try { return (JSON.parse(current) as { savoire?: unknown }).savoire === 'tree' } catch { return false }
+  }
+
   /** Texte deja dote d'un etat (sans chemin jusqu'ici) : son fichier visible le montre. */
   private async projectFromState(docId: string): Promise<void> {
     const loaded = this.replicas.get(docId)
@@ -984,11 +1025,14 @@ export class FileSystemVaultSession implements IVaultSyncSession {
     })
     try {
       for (const u of await log.readNew()) Y_.applyUpdate(doc, u)
-      const text = ytextOf(doc).toString()
       const path = this.directory.pathOf(docId)
+      const tree = !!path && this.isTree(path)
+      const text = tree ? treeToJson(doc) : ytextOf(doc).toString()
       if (!text || !path) return
       const current = await this.fs.readText(path).catch(() => null)
-      if (current !== '') return
+      // Un arbre se reecrit (sens unique) s'il est vide ou deja a nous ; un
+      // texte seulement si son fichier est vide.
+      if (tree ? current === text || !(await this.isOwnTreeFile(path)) : current !== '') return
       await this.rememberProjection(docId, null, text)
       await this.fs.writeText(path, text)
       await this.refreshMeta(docId, path, await contentHash(text))

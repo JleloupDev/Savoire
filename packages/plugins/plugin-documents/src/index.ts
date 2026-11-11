@@ -39,7 +39,7 @@ export const EXTRACTORS: ExtractorSpec[] = [
 
 /** Types sans autre plugin : ce plugin les ouvre en apercu. (Office : le plugin Office.) */
 const FILE_TYPES = [
-  { extension: 'pdf', label: 'PDF', icon: 'file-text' },
+  { extension: 'pdf', label: 'PDF', icon: 'file-text', superType: 'binary' as const },
   { extension: 'html', label: 'Page web', icon: 'globe' },
   { extension: 'htm', label: 'Page web', icon: 'globe' },
   { extension: 'csv', label: 'Tableau CSV', icon: 'sheet' },

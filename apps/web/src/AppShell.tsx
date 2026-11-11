@@ -14,6 +14,7 @@ import { defaultServerFor, getServerChoice } from './serverConnection'
 import { describeLoginError } from './serverErrors'
 import { ModuleShareDialog } from './ModuleShareDialog'
 import { onModuleShareRequest } from './moduleShare'
+import { diskSessionOptions } from './diskShapes'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
@@ -1197,7 +1198,7 @@ export function AppShell() {
       const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
       return spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
     },
-    memoryDiskSession: (fs, params) => FileSystemVaultSession.open(fs, params),
+    memoryDiskSession: (fs, params) => FileSystemVaultSession.open(fs, params, diskSessionOptions),
     memoryFolder: (name) => new InMemoryVaultFileSystem({ rootLabel: name, watch: false }),
     show: setTransferRun,
     refreshVaults: () => onRefreshRef.current(),

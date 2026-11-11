@@ -127,6 +127,8 @@ const plugin: VaultPlugin = {
       icon: 'messages-square',
       // Les messages vivent dans le CRDT du document : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
+      // Contenu : un arbre (ctx.tree). Sur le disque : son JSON.
+      crdtRoot: 'tree',
       create: async () => '',
       open: (path: string, ctx: FileContext) => createChatView(path, ctx, api.icons),
     })

@@ -441,6 +441,8 @@ const plugin: VaultPlugin = {
       // La scene est un CRDT (un element par cle de l'arbre partage) :
       // edition simultanee, sans verrou.
       collaborationMode: 'crdt',
+      // Contenu : un arbre (ctx.tree). Sur le disque : son JSON.
+      crdtRoot: 'tree',
 
       // Non ecrit pour un type 'crdt' : la vue pose la scene a la premiere
       // modification.

@@ -89,6 +89,21 @@ export interface FileTypeSpec {
   /** Voir CollaborationMode. Defaut : 'lock'. */
   collaborationMode?: CollaborationMode
   /**
+   * Super type du fichier.
+   *  'text'   : son contenu est du texte. Sur le disque, le fichier visible
+   *             est tenu a jour (un texte CRDT dans les deux sens, un arbre
+   *             CRDT en JSON) ;
+   *  'binary' : des octets (PDF, image...), jamais reecrits par Savoire ;
+   *             lus par les extracteurs.
+   * Defaut : 'text'.
+   */
+  superType?: 'text' | 'binary'
+  /**
+   * Document 'crdt' : son contenu est un texte (ctx.text) ou un arbre
+   * (ctx.tree). Defaut : 'text'.
+   */
+  crdtRoot?: 'text' | 'tree'
+  /**
    * If false, this type does not appear in the creation picker (e.g., images).
    * The icon is still used elsewhere (file tree, tabs, etc.).
    * Default: true.

@@ -36,6 +36,7 @@ import type { EditorAreaRefs } from './EditorAreaWidget'
 import { PluginInspectorWidget } from './PluginInspectorWidget'
 import { extractorRegistry } from './extractors'
 import { requestModuleShare } from './moduleShare'
+import { setDiskTypeResolver } from './diskShapes'
 import { publications } from './publication'
 import { aiService } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
@@ -415,6 +416,8 @@ export function usePluginBootstrap({
       pluginAPIRef.current = pluginApi
       triggersRef.current = triggers
       fileTypeRegistryRef.current = fileTypeRegistry
+      // Fichiers lisibles sur le disque selon le type declare par chaque plugin.
+      setDiskTypeResolver(ext => fileTypeRegistry.resolveRegistered(ext))
 
       // see ADR-012 — rempli au fil du chargement, avant que le workspace ne
       // soit pret (onBeforeReady attend le chargement des plugins).

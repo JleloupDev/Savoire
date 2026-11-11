@@ -53,6 +53,8 @@ export function createBasePlugin(): VaultPlugin {
         icon: 'database',
         // Le manifeste est un arbre partage : edition simultanee, sans verrou.
         collaborationMode: 'crdt',
+      // Contenu : un arbre (ctx.tree). Sur le disque : son JSON.
+      crdtRoot: 'tree',
         creatable: true,
         // Un document crdt neuf commence vide : la vue pose la structure a la
         // premiere modification (voir docs/Architecture/plugin-crdt-api.md).

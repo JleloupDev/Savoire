@@ -80,6 +80,8 @@ const plugin: VaultPlugin = {
       icon: 'network',
       // L'arbre du document est un CRDT : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
+      // Contenu : un arbre (ctx.tree). Sur le disque : son JSON.
+      crdtRoot: 'tree',
 
       // Un document 'crdt' neuf commence vide : la vue pose la racine a la
       // premiere modification. Ce contenu n'est pas ecrit.

@@ -20,6 +20,7 @@
 // `disk:<chemin>` = un dossier, sinon un vault du serveur. La connexion n'est
 // jamais requise.
 
+import { diskSessionOptions } from './diskShapes'
 import type {
   AppVaultSummary, AppWorkspace, IVaultSyncSession, IVaultSyncSessionFactory, IVaultsBackend,
   VaultSyncSessionFactoryParams,
@@ -282,7 +283,7 @@ export class UnifiedVaultSessionFactory implements IVaultSyncSessionFactory {
 }
 
 /** La session d'un vault sur son dossier (format Obsidian + `.savoire/`). */
-const openOnDiskDefault: DiskSessionOpener = (fs, params) => FileSystemVaultSession.open(fs, params)
+const openOnDiskDefault: DiskSessionOpener = (fs, params) => FileSystemVaultSession.open(fs, params, diskSessionOptions)
 
 /** Ce que le profil bureau donne a l'application (voir profile.ts). */
 export interface DesktopProfileParts {

@@ -45,6 +45,8 @@ const plugin: VaultPlugin = {
       icon: 'notebook-text',
       // Le contenu est un arbre CRDT : edition simultanee, sans verrou.
       collaborationMode: 'crdt',
+      // Contenu : un arbre (ctx.tree). Sur le disque : son JSON.
+      crdtRoot: 'tree',
       creatable: true,
       // Page vide : pas de titre dans le contenu, c'est le nom du fichier.
       create: async () => '',
