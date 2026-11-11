@@ -123,6 +123,14 @@ const plugin: VaultPlugin = {
   },
 
   async onload(api: PluginAPI) {
+    // Le texte des fichiers .txt et .log dans la recherche.
+    api.extractors?.register({
+      id: 'text', label: 'Texte brut', extensions: ['txt', 'log'], version: 1,
+      extract: async bytes => {
+        const t = new TextDecoder('utf-8').decode(bytes)
+        return { sections: [{ text: t.charCodeAt(0) === 0xfeff ? t.slice(1) : t }] }
+      },
+    })
     api.files.register({
       extension: 'txt',
       label: 'Texte brut',

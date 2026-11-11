@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Apercus en lecture seule. Generique : le contenu extrait (titre,
-// proprietes, sections, tableaux). Particuliers : HTML (cadre sans script),
-// PDF (lecteur du navigateur), images.
-import type { ExtractedContent, PropertyValue } from '@savoire/plugin-api'
+// Apercus en lecture seule des plugins de documents (Word, PDF, images...).
+// Generique : le contenu extrait (titre, proprietes, sections, tableaux).
+// Particuliers : HTML (cadre sans script), PDF et images (le navigateur).
+import type { ExtractedContent, ExtractorSpec } from './extractors'
+import type { PropertyValue } from './properties'
+import type { FileContext, FileView } from './files'
 
 const STYLE = `
 .doc-preview { max-width: 860px; margin: 0 auto; padding: 24px 32px 48px; font: 15px/1.6 var(--font-editor, Georgia, serif); color: var(--text, #1e293b); }
@@ -19,7 +21,7 @@ const STYLE = `
 .doc-banner { padding: 6px 14px; font: 12px var(--font-ui, sans-serif); color: var(--text-muted, #64748b); background: var(--bg-elevated, #f8fafc); border-bottom: 1px solid var(--border, #e2e8f0); }
 `
 let injected = false
-export function ensureStyle(): void {
+export function ensureDocumentPreviewStyle(): void {
   if (injected || typeof document === 'undefined') return
   injected = true
   const s = document.createElement('style')
@@ -41,7 +43,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: 
 const show = (v: PropertyValue) => (Array.isArray(v) ? v.join(', ') : String(v))
 
 export function genericPreview(content: ExtractedContent): HTMLElement {
-  ensureStyle()
+  ensureDocumentPreviewStyle()
   const root = el('div', undefined, 'doc-preview')
   if (content.title) root.appendChild(el('h1', content.title))
   const props = Object.entries(content.props ?? {})
@@ -94,4 +96,33 @@ export function nativePreview(bytes: Uint8Array, ext: string): HTMLElement {
   img.src = url
   img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto'
   return img
+}
+
+/**
+ * Vue en lecture seule d'un document : un bandeau, puis l'apercu de son
+ * extracteur (ou l'apercu generique du contenu extrait).
+ */
+export function createDocumentPreviewView(path: string, ctx: FileContext, spec: ExtractorSpec): FileView {
+  let dead = false
+  return {
+    mount(container: HTMLElement) {
+      ensureDocumentPreviewStyle()
+      container.replaceChildren()
+      container.style.cssText = 'height:100%;display:flex;flex-direction:column;overflow:hidden'
+      const banner = el('div', 'Aperçu en lecture seule : ce document se modifie dans son logiciel.', 'doc-banner')
+      banner.dataset.testid = 'document-banner'
+      const body = el('div')
+      body.dataset.testid = 'document-preview'
+      body.style.cssText = 'flex:1;min-height:0;overflow:auto'
+      container.append(banner, body)
+      void (async () => {
+        const bytes = await ctx.vault?.readBinary?.(path)
+        if (dead) return
+        if (!bytes) { body.textContent = 'Aperçu indisponible : les octets de ce fichier ne sont pas disponibles ici.'; return }
+        const view = spec.preview ? await spec.preview(bytes, { path }) : genericPreview(await spec.extract(bytes, { path }))
+        if (!dead) body.replaceChildren(view)
+      })().catch(err => { if (!dead) body.textContent = `Aperçu impossible : ${err instanceof Error ? err.message : String(err)}` })
+    },
+    destroy() { dead = true },
+  }
 }

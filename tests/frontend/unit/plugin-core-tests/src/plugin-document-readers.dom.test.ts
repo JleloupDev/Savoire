@@ -5,9 +5,17 @@
 // HTML, CSV, images ; contenu vu comme une note pour l'index ; apercu.
 import { describe, it, expect } from 'vitest'
 import { extractedToMarkdown } from '@savoire/plugin-api'
-import {
-  EXTRACTORS, extractCsv, extractDocx, extractHtml, extractImage, extractOpenDocument, extractPptx, extractXlsx, genericPreview,
-} from '@savoire/plugin-documents'
+import { createDocumentPreviewView, genericPreview } from '@savoire/plugin-api'
+import { EXTRACTOR as CSV, extractCsv } from '@savoire/plugin-csv'
+import { EXTRACTOR as DOCX, extractDocx } from '@savoire/plugin-word'
+import { EXTRACTOR as PPTX, extractPptx } from '@savoire/plugin-powerpoint'
+import { EXTRACTOR as XLSX, extractXlsx } from '@savoire/plugin-excel'
+import { EXTRACTOR as ODF, extractOpenDocument } from '@savoire/plugin-opendocument'
+import { EXTRACTOR as HTML, extractHtml } from '@savoire/plugin-webpage'
+import { EXTRACTOR as IMAGES, extractImage } from '@savoire/plugin-images'
+import { EXTRACTOR as PDF, extractPdf } from '@savoire/plugin-pdf'
+
+const EXTRACTORS = [CSV, DOCX, PPTX, XLSX, ODF, HTML, IMAGES, PDF]
 import { createZip } from '../../../../../apps/web/src/zipArchive'
 
 const enc = new TextEncoder()
@@ -74,13 +82,13 @@ describe('documents existants : extracteurs', () => {
     expect(csv.props).toEqual({ lignes: 2, colonnes: 2 })
     // PNG 3 x 2 (en-tete IHDR suffit).
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 3, 0, 0, 0, 2, 8, 6, 0, 0, 0])
-    expect((await extractImage(png)).props).toEqual({ format: 'PNG', largeur: 3, hauteur: 2 })
+    expect((await extractImage(png, null)).props).toEqual({ format: 'PNG', largeur: 3, hauteur: 2 })
   })
 
   it('un fichier abime donne une erreur lisible ; chaque extension a un extracteur', async () => {
-    await expect(extractDocx(enc.encode('pas une archive'))).rejects.toThrow(/archive Office/)
+    await expect(extractDocx(enc.encode('pas une archive'))).rejects.toThrow(/archive lisible/)
     const exts = EXTRACTORS.flatMap(e => e.extensions)
-    for (const e of ['docx', 'pptx', 'xlsx', 'odt', 'ods', 'odp', 'html', 'csv', 'txt', 'png', 'jpg', 'pdf']) expect(exts).toContain(e)
+    for (const e of ['docx', 'pptx', 'xlsx', 'odt', 'ods', 'odp', 'html', 'csv', 'png', 'jpg', 'pdf']) expect(exts).toContain(e)
   })
 
   it('apercu : titre, proprietes, tableaux', () => {
@@ -95,15 +103,14 @@ describe('documents existants : vues en lecture seule', () => {
   const tick = () => new Promise(r => setTimeout(r, 30))
 
   it('apercu d un CSV, et message clair sans octets', async () => {
-    const { createPreviewView } = await import('@savoire/plugin-documents')
     const ctx = { vault: { readBinary: async () => enc.encode('a,b\n1,2\n') } }
     const el = document.createElement('div')
-    createPreviewView('t.csv', ctx as never, null).mount(el)
+    createDocumentPreviewView('t.csv', ctx as never, CSV).mount(el)
     await tick()
     expect(el.querySelector('[data-testid="document-banner"]')!.textContent).toMatch(/lecture seule/)
     expect(el.querySelectorAll('td')).toHaveLength(4)
     const none = document.createElement('div')
-    createPreviewView('t.csv', { vault: {} } as never, null).mount(none)
+    createDocumentPreviewView('t.csv', { vault: {} } as never, CSV).mount(none)
     await tick()
     expect(none.textContent).toMatch(/Aperçu indisponible/)
   })
@@ -127,3 +134,45 @@ describe('documents existants : vues en lecture seule', () => {
     expect(el.querySelector('[data-testid="office-url"]')).toBeNull()
   })
 })
+
+describe('documents existants : PDF et OCR', () => {
+  it('PDF : le texte de chaque page, et le nombre de pages', async () => {
+    const pdf = minimalPdf(['Bonjour depuis la page un', 'Seconde page'])
+    const c = await extractPdf(pdf)
+    expect(c.sections.map(s => s.heading)).toEqual(['Page 1', 'Page 2'])
+    expect(c.sections[0].text).toContain('Bonjour depuis la page un')
+    expect(c.props).toMatchObject({ pages: 2 })
+  })
+
+  it('images : le texte reconnu (OCR) devient une section', async () => {
+    // PNG 200 x 100 (en-tete seul) : assez grande pour l'OCR.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 200, 0, 0, 0, 100, 8, 6, 0, 0, 0])
+    const c = await extractImage(png, async () => 'FACTURE 2026')
+    expect(c.sections.at(-1)).toEqual({ heading: 'Texte dans l’image', text: 'FACTURE 2026' })
+    // Petite image : pas d'OCR.
+    const small = png.slice(); small[19] = 10; small[23] = 10
+    expect((await extractImage(small, async () => 'X')).sections).toHaveLength(1)
+  })
+})
+
+/** Un PDF minimal valide, une page par texte (police standard Helvetica). */
+function minimalPdf(pages: string[]): Uint8Array {
+  const objs: string[] = []
+  const kids = pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')
+  objs.push('<< /Type /Catalog /Pages 2 0 R >>')
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`)
+  const font = 3 + pages.length * 2
+  pages.forEach((t, i) => {
+    const stream = `BT /F1 12 Tf 72 720 Td (${t}) Tj ET`
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${4 + i * 2} 0 R >>`)
+    objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
+  })
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return new TextEncoder().encode(out)
+}

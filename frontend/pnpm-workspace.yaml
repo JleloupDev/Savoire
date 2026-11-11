@@ -14,3 +14,5 @@ packages:
   - "../tests/frontend/integration/*"
 allowBuilds:
   esbuild: true
+  # Son postinstall ne fait qu une annonce (opencollective) : inutile.
+  tesseract.js: false

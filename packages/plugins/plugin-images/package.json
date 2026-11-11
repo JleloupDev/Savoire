@@ -1,5 +1,5 @@
 {
-  "name": "@savoire/plugin-documents",
+  "name": "@savoire/plugin-images",
   "version": "0.0.1",
   "type": "module",
   "exports": {
@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@savoire/plugin-api": "workspace:*"
+    "@savoire/plugin-api": "workspace:*",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

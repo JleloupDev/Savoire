@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Extracteur d'images : dimensions, et pour une photo JPEG la date de prise
-// de vue et l'appareil (EXIF). Lu dans les octets, sans bibliotheque.
-// Le texte DANS l'image (OCR) demanderait une bibliotheque : pas ici.
-import type { ExtractedContent, PropertyValue } from '@savoire/plugin-api'
+// plugin-images — le lecteur d'images. Pour l'index :
+//  - les dimensions, et pour une photo la date de prise de vue et l'appareil
+//    (EXIF), lus dans les octets ;
+//  - le TEXTE dans l'image (OCR), par Tesseract (tesseract.js, Apache-2.0),
+//    en francais et en anglais. Le moteur et les langues (environ 15 Mo par
+//    langue) se telechargent a la premiere lecture, puis restent en cache.
+// L'OCR prend quelques secondes par image : il ne tourne qu'a l'indexation,
+// en tache de fond. Desactiver ce plugin retire l'indexation des images.
+import { extensionOfPath, nativePreview, type ExtractedContent, type ExtractorSpec, type PluginAPI, type PropertyValue, type VaultPlugin } from '@savoire/plugin-api'
 
 export interface ImageInfo {
   format: string
@@ -84,7 +89,31 @@ export function imageInfo(b: Uint8Array): ImageInfo | null {
   return null
 }
 
-export async function extractImage(bytes: Uint8Array): Promise<ExtractedContent> {
+/** Langues de l'OCR (codes Tesseract). */
+export const OCR_LANGUAGES = ['fra', 'eng']
+/** En dessous, une image (icone, puce) n'a pas de texte utile. */
+const MIN_OCR_SIDE = 64
+
+export type Ocr = (bytes: Uint8Array) => Promise<string>
+
+type TesseractWorker = { recognize(image: unknown): Promise<{ data: { text: string } }>; terminate(): Promise<unknown> }
+let worker: Promise<TesseractWorker> | null = null
+
+/** L'OCR par Tesseract (un seul moteur, garde pour les images suivantes). */
+export const tesseractOcr: Ocr = async bytes => {
+  worker ??= (async () => {
+    const { createWorker } = await import('tesseract.js')
+    return createWorker(OCR_LANGUAGES) as unknown as Promise<TesseractWorker>
+  })().catch(err => { worker = null; throw err })
+  const w = await worker
+  // Navigateur : un Blob ; Node (pair indexeur) : un Buffer.
+  const NodeBuffer = (globalThis as { Buffer?: { from(b: Uint8Array): unknown } }).Buffer
+  const input = typeof window === 'undefined' && NodeBuffer ? NodeBuffer.from(bytes) : new Blob([bytes as BlobPart])
+  const { data } = await w.recognize(input)
+  return data.text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+export async function extractImage(bytes: Uint8Array, ocr: Ocr | null = tesseractOcr): Promise<ExtractedContent> {
   const info = imageInfo(bytes)
   if (!info) throw new Error('Image illisible.')
   const props: Record<string, PropertyValue> = { format: info.format }
@@ -93,5 +122,43 @@ export async function extractImage(bytes: Uint8Array): Promise<ExtractedContent>
   if (info.taken) props.prise_le = info.taken
   if (info.camera) props.appareil = info.camera
   const size = info.width && info.height ? `${info.width} × ${info.height}` : ''
-  return { sections: [{ text: [`Image ${info.format}`, size, info.camera, info.taken].filter(Boolean).join(' · ') }], props }
+  const sections = [{ text: [`Image ${info.format}`, size, info.camera, info.taken].filter(Boolean).join(' · ') }]
+  // SVG : son texte est deja lisible ; trop petite : rien a lire.
+  const big = (info.width ?? 0) >= MIN_OCR_SIDE && (info.height ?? 0) >= MIN_OCR_SIDE
+  if (ocr && info.format !== 'SVG' && big) {
+    const text = await ocr(bytes).catch(err => { console.warn('[plugin-images] OCR impossible', err); return '' })
+    if (text) sections.push({ heading: 'Texte dans l’image', text } as { heading?: string; text: string })
+  }
+  return { sections, props }
 }
+
+export const EXTRACTOR: ExtractorSpec = {
+  id: 'images', label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'], version: 2,
+  extract: b => extractImage(b),
+  preview: (b, info) => nativePreview(b, extensionOfPath(info.path)),
+}
+
+let unregister: (() => void) | null = null
+
+const plugin: VaultPlugin = {
+  manifest: {
+    id: 'plugin-images',
+    name: 'Images',
+    version: '0.0.1',
+    description: 'Les images dans la recherche : dimensions, date, appareil, et le texte qu’elles contiennent (OCR)',
+    scope: 'vault',
+    permissions: ['vault:read'],
+    defaultActive: true,
+    // Verifie par l'equipe Savoire : peut tourner sur le pair indexeur du serveur.
+    official: true,
+  },
+  async onload(api: PluginAPI) {
+    unregister = api.extractors?.register(EXTRACTOR) ?? null
+  },
+  async onunload() {
+    unregister?.()
+    unregister = null
+  },
+}
+
+export default plugin

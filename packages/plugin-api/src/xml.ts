@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Lecture minimale de XML pour les extracteurs : sans DOMParser (l'index
+// Lecture minimale de XML pour les extracteurs des plugins de documents : sans DOMParser (l'index
 // tourne aussi hors navigateur), par expressions regulieres sur des formats
 // connus (Office Open XML, OpenDocument). Pas un analyseur XML general.
+
+import { readZip } from './archive'
+import type { PropertyValue } from './properties'
 
 const ENTITIES: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
@@ -52,4 +55,32 @@ export function firstText(xml: string, tag: string): string | undefined {
   const e = elements(xml, tag)[0]
   const t = e ? decodeEntities(e.inner.replace(/<[^>]+>/g, '')).trim() : ''
   return t || undefined
+}
+
+// ── Archives de XML (Office Open XML, OpenDocument) ────────────────────────
+
+
+/** Les fichiers XML d'une archive (.docx, .xlsx, .odt...), par chemin. */
+export async function openXmlArchive(bytes: Uint8Array): Promise<Map<string, string>> {
+  const files = new Map<string, string>()
+  const dec = new TextDecoder('utf-8')
+  let entries
+  try { entries = await readZip(bytes, 3) } catch { throw new Error('Fichier abîmé ou chiffré : ce n’est pas une archive lisible.') }
+  for (const f of entries) if (/\.(xml|rels)$/i.test(f.path)) files.set(f.path, dec.decode(f.bytes))
+  return files
+}
+
+/** Metadonnees d'un document Office (docProps/core.xml) : titre, auteur, dates, sujet. */
+export function officeCoreProps(files: Map<string, string>): { title?: string; props: Record<string, PropertyValue> } {
+  const core = files.get('docProps/core.xml') ?? ''
+  const props: Record<string, PropertyValue> = {}
+  const author = firstText(core, 'dc:creator')
+  const created = firstText(core, 'dcterms:created')
+  const modified = firstText(core, 'dcterms:modified')
+  const subject = firstText(core, 'dc:subject')
+  if (author) props.auteur = author
+  if (created) props.cree_le = created.slice(0, 10)
+  if (modified) props.modifie_le = modified.slice(0, 10)
+  if (subject) props.sujet = subject
+  return { title: firstText(core, 'dc:title'), props }
 }

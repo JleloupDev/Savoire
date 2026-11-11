@@ -109,8 +109,16 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-templates', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-templates')).default },
   { id: 'plugin-agenda', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-agenda')).createAgendaPlugin() },
   { id: 'plugin-history', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-history')).createHistoryPlugin() },
-  // Documents existants (Word, Excel, PDF, pages web, images...) : recherche et apercu.
-  { id: 'plugin-documents', preinstalled: true, core: true, extensions: ['pdf', 'html', 'htm', 'csv'], load: async () => (await import('@savoire/plugin-documents')).default },
+  // Documents existants : un plugin par type (son indexeur se desactive avec lui).
+  // Verifies par l'equipe Savoire (official) : ils tournent aussi sur le pair indexeur.
+  { id: 'plugin-word', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-word')).default },
+  { id: 'plugin-powerpoint', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-powerpoint')).default },
+  { id: 'plugin-excel', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-excel')).default },
+  { id: 'plugin-opendocument', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-opendocument')).default },
+  { id: 'plugin-pdf', preinstalled: true, core: true, extensions: ['pdf'], load: async () => (await import('@savoire/plugin-pdf')).default },
+  { id: 'plugin-images', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-images')).default },
+  { id: 'plugin-webpage', preinstalled: true, core: true, extensions: ['html', 'htm'], load: async () => (await import('@savoire/plugin-webpage')).default },
+  { id: 'plugin-csv', preinstalled: true, core: true, extensions: ['csv', 'tsv'], load: async () => (await import('@savoire/plugin-csv')).default },
 
   // ── Disponibles ────────────────────────────────────────────────────────────
   {

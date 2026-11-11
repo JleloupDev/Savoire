@@ -40,6 +40,12 @@ export interface PluginManifest {
    */
   defaultActive?: boolean
   /**
+   * Plugin propose et verifie par l'equipe Savoire. Seuls ceux-la tournent
+   * sur le serveur (pair indexeur gere par Savoire). Les autres tournent sur
+   * le poste de la personne, ou sur un pair indexeur heberge par le client.
+   */
+  official?: boolean
+  /**
    * Bibliotheques communes dont le plugin a besoin (require('react')...),
    * chargees avant lui. Voir libraries.ts. Les plugins du depot n'en ont pas
    * besoin : ils sont construits avec l'application.
