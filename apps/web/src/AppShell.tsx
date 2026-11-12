@@ -24,6 +24,7 @@ import { STORE_CATALOG } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
+import { SavoireStoreService } from './savoireStore'
 import { loadCustomHotkeys, saveCustomHotkeys } from './hotkeyPreferences'
 import { WorkspaceRoot } from '@savoire/workspace'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -42,6 +43,7 @@ import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
+import { CommandPaletteModal } from './CommandPaletteModal'
 import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
@@ -387,6 +389,7 @@ export function AppShell() {
   // basculait vers le Markdown brut a ete retire.
   const [markdownEditorMode] = useState<'source' | 'rich'>('rich')
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
+  const [paletteVisible, setPaletteVisible] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
 
   useEffect(() => subscribeLocale(setLocaleState), [])
@@ -502,10 +505,11 @@ export function AppShell() {
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
   // comme celles des plugins. Le ref garde les gestionnaires a jour.
   // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
-  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {} })
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {} })
   const appCommands = useMemo<PluginCommand[]>(() => [
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
+    { id: 'app:command-palette', label: 'Palette de commandes', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'p' }], run: () => appActionsRef.current.palette() },
     { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
     { id: 'app:toggle-editor-toolbar', label: 'Afficher ou masquer la barre d\'édition', run: () => setShowEditorToolbar(!showEditorToolbar()) },
   ], [])
@@ -559,6 +563,19 @@ export function AppShell() {
   useEffect(() => {
     pluginSettingsRef.current?.setPersonalStore(personalPluginStore(() => activeAccount?.userId))
   }, [activeAccount?.userId])
+
+  // Savoire Store : plugins tiers (iframe isolee), modeles et modules.
+  const savoireStoreRef = useRef<SavoireStoreService | null>(null)
+  savoireStoreRef.current ??= new SavoireStoreService({
+    userId: () => appAccountRef.current?.userId,
+    api: () => pluginAPIRef.current,
+    notify: (level, title, message) => notify(level, title, message),
+  })
+  useEffect(() => {
+    let cancelled = false
+    void whenPluginsReady().then(async () => { if (!cancelled) await savoireStoreRef.current?.startInstalled() })
+    return () => { cancelled = true }
+  }, [activeAccount?.userId, whenPluginsReady])
 
   // Un plugin change d'etat (ou vient d'etre charge) : ses panneaux se
   // ferment, la barre d'icones et l'explorateur se mettent a jour, les
@@ -1321,6 +1338,7 @@ export function AppShell() {
     newNote: () => void handleNewNote(),
     quickOpen: () => setQuickOpenVisible(true),
     openSettings: () => setSettingsOpen(true),
+    palette: () => setPaletteVisible(true),
   }
 
   // Raccourcis personnalises de la personne connectee : charges a la
@@ -1596,7 +1614,7 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService}
+            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService} store={savoireStoreRef.current ?? undefined}
               api={activeProfile.name === 'server' && tokenRef.current ? { token: () => tokenRef.current ?? '', vaults: vaults.map(v => ({ id: v.id, name: v.name })) } : undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>
@@ -1648,6 +1666,15 @@ export function AppShell() {
           session={vaultSessionRef.current}
           activeDoc={activeDoc ? { id: activeDoc.id, path: activeDoc.path } : null}
           onClose={() => setKeyDebugOpen(false)}
+        />
+      )}
+
+      {/* ── Palette de commandes (Ctrl+Maj+P) ── */}
+      {paletteVisible && pluginAPIRef.current && (
+        <CommandPaletteModal
+          commands={(pluginAPIRef.current.commands as unknown as { getAll(): PluginCommand[] }).getAll().filter(c => c.id !== 'app:command-palette')}
+          format={c => { const hk = pluginAPIRef.current?.hotkeys; const first = hk?.get(c.id)[0]; return first && hk ? hk.format(first) : '' }}
+          onClose={() => setPaletteVisible(false)}
         />
       )}
 

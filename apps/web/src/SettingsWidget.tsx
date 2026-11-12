@@ -6,6 +6,8 @@
 
 import { AISettings } from './AISettings'
 import { ApiTokenSettings } from './ApiTokenSettings'
+import { StoreSettings } from './StoreSettings'
+import type { SavoireStoreService } from './savoireStore'
 import type { AIService } from '@savoire/application'
 import { Icon } from '@savoire/ui-components'
 import { useState, useEffect } from 'react'
@@ -49,7 +51,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'api'
+type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'api'
 
 export function SettingsPanel({
   loader,
@@ -60,6 +62,7 @@ export function SettingsPanel({
   vaultIndexer,
   ai,
   api,
+  store,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -74,6 +77,8 @@ export function SettingsPanel({
   ai?: AIService
   /** Jetons de l'API ouverte (profil serveur) : onglet API. */
   api?: { token(): string; vaults: { id: string; name: string }[] }
+  /** Le Savoire Store : onglet Store. */
+  store?: SavoireStoreService
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -110,6 +115,7 @@ export function SettingsPanel({
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
         <div style={{ display: 'flex', gap: 0 }}>
           <button style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
+          {store && <button data-testid="settings-tab-store" style={tabStyle(tab === 'store')} onClick={() => setTab('store')}>Store</button>}
           {hotkeys && commands && (
             <button data-testid="settings-tab-hotkeys" style={tabStyle(tab === 'hotkeys')} onClick={() => setTab('hotkeys')}>{t('app', 'settings.tab.hotkeys')}</button>
           )}
@@ -128,6 +134,7 @@ export function SettingsPanel({
         {tab === 'plugins'  && (pluginSettings
           ? <PluginStore service={pluginSettings} />
           : <PluginsTab plugins={plugins} />)}
+        {tab === 'store' && store && <StoreSettings store={store} />}
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
