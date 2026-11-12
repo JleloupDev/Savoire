@@ -136,6 +136,21 @@ Précisions (backend) :
   - `next` est un curseur **composé**, opaque (par instance : son curseur et le nombre de résultats déjà rendus de sa page). Une page peut être plus courte que `limit` : on ne classe pas ce qu'une instance n'a pas encore rendu ;
   - une requête refusée par une instance (400) est rendue telle quelle ; une instance en échec donne `partial: true` (reporté sur les pages suivantes) ; toutes en échec : 503.
 
+### API ouverte (jetons personnels)
+
+Pour les outils externes (GPT, Claude, n8n, scripts). Jeton personnel `svp_…` (Paramètres → API), schéma d'authentification `access-token`, accepté **seulement** sur ces routes. Le jeton agit au nom de la personne ; il peut être limité à des vaults (403 `forbidden_vault` sinon). Lecture seule. Mêmes limites de débit que les routes publiques.
+
+| Route | Rôle |
+|---|---|
+| `GET/POST/DELETE /api/v1/me/access-tokens[/{id}]` | Gestion des jetons (compte connecté). Le jeton complet n'est rendu qu'à la création ; le serveur n'en garde que l'empreinte SHA-256. 50 jetons actifs au plus. |
+| `GET /api/open/v1/openapi.yaml` | Description OpenAPI (sans jeton), adresse du serveur comprise. |
+| `GET /api/open/v1/vaults` | Vaults du jeton. |
+| `POST /api/open/v1/vaults/{id}/search` | `{ text, limit?, folder? }` → `search.run` (limit 50 au plus). |
+| `GET /api/open/v1/vaults/{id}/notes` | `?folder&limit&cursor` → `query.run` sur les notes, par chemin. |
+| `GET /api/open/v1/vaults/{id}/notes/read` | `?path` ou `?id` → `documents.read`. |
+| `POST /api/open/v1/vaults/{id}/query` | Corps = `Query` → `query.run`. |
+| `POST /api/mcp` | Serveur MCP (transport HTTP, un message JSON-RPC par requête, réponse JSON ; pas de flux SSE). Outils : `list_vaults`, `search`, `list_notes`, `read_note` ; un vault se désigne par id ou par nom. |
+
 ## Index partagé compacté (canaux d'index du profil serveur)
 
 Étape 8 de l'ADR. Un canal d'index (`VaultHub.JoinIndex` / `PushIndexUpdate`) est un journal de mises à jour Yjs opaques. Pour qu'il ne grossisse pas sans fin :
@@ -159,6 +174,7 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 | `tags` | `list` | `{ prefix?, limit? }` → `{ items: [{ tag, count }] }` : `count` = nombre de notes ; casse ignorée ; `prefix` : ce tag et ses sous-tags ; `limit` 1 000 par défaut, 10 000 au plus. |
 | `tags` | `notes` | `{ tag, limit? }` → `{ items: [{ id, path, title }] }` : notes du tag, sous-tags compris (`a` donne aussi `a/b`) ; `limit` 500 par défaut, 5 000 au plus. |
 | `index` | `status` | `{}` → `IndexState` + `{ seq, docs, bytes }` |
+| `documents` | `read` | `{ id }` ou `{ path }` (casse ignorée) → `{ id, path, title, content, truncated }` : le texte d'une note en Markdown, relu dans son CRDT chez le backend (pas dans l'index) ; pour un fichier, le texte extrait ou publié. 512 Ki caractères au plus. 404 `not_found` si absent ou à la corbeille. Pouvoir du pair, hors index : sert l'API ouverte. |
 
 Résolution des liens (pouvoir `links`, façon Obsidian) : chemin exact (avec ou sans extension ; relatif au dossier de la note d'abord pour un lien « ./ », « ../ » ou Markdown), sinon nom de fichier sans extension (casse ignorée ; « a/b » exige un chemin qui finit par « /a/b » ; en cas d'ambiguïté le `.md`, puis le plus court chemin, puis l'ordre alphabétique), sinon alias du frontmatter.
 

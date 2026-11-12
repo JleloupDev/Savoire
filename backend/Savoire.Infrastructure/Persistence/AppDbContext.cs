@@ -32,6 +32,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<IndexerFeedStateEntity>    IndexerFeedState      => Set<IndexerFeedStateEntity>();
     public DbSet<VaultIndexerSettingEntity> VaultIndexerSettings  => Set<VaultIndexerSettingEntity>();
     public DbSet<PublicationEntity>         Publications          => Set<PublicationEntity>();
+    public DbSet<AccessTokenEntity>         AccessTokens          => Set<AccessTokenEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -262,6 +263,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
              .OnDelete(DeleteBehavior.Restrict);
         });
 
+
+        modelBuilder.Entity<AccessTokenEntity>(e =>
+        {
+            e.ToTable("access_tokens");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").HasMaxLength(64);
+            e.Property(x => x.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
+            e.Property(x => x.Prefix).HasColumnName("prefix").HasMaxLength(32).IsRequired();
+            e.Property(x => x.TokenHash).HasColumnName("token_hash").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Scope).HasColumnName("scope").HasMaxLength(16).IsRequired();
+            e.Property(x => x.VaultIds).HasColumnName("vault_ids");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+            e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
+            e.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.UserId);
+        });
 
         modelBuilder.Entity<PublicationEntity>(e =>
         {

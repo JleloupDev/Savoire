@@ -33,7 +33,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  NOTE_EXTENSIONS, VaultIndex, baseManifestFromUpdates, defaultPowers, diffTree, extOf, isTrashPath, lightRowRecord,
+  NOTE_EXTENSIONS, VaultIndex, stemOf, baseManifestFromUpdates, defaultPowers, diffTree, extOf, isTrashPath, lightRowRecord,
   lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, propertySchemaFromUpdates, propertySchemaKey,
   vaultTreeFromUpdates, withDoc,
 } from '@savoire/indexer-core'
@@ -189,6 +189,10 @@ export interface StoreSnapshot {
 
 const NOTE_EXT = NOTE_EXTENSIONS
 const ROWS_PER_TX = 500
+/** Pouvoir hors index : la lecture du texte d'un document (API ouverte). */
+const DOCUMENTS_CAPABILITY = 'documents'
+/** Texte rendu par documents.read, au plus. */
+const MAX_READ_CHARS = 512 * 1024
 const LOT_SIG_CACHE = 64
 const SUFFIXES = ['', '-wal', '-shm', '-journal']
 
@@ -437,6 +441,7 @@ export class VaultStore {
       this.pumpBuilds()
     }
     this.m.calls.inc({ capability })
+    if (capability === DOCUMENTS_CAPABILITY) return this.callDocuments(v, method, params, signal)
     return this.slot.run(INTERACTIVE, async () => {
       if (signal.aborted) throw unavailable('Delai depasse.', this.opts.unavailableRetryAfterS)
       if (!v.owned) throw notOwner(vaultId)
@@ -444,6 +449,46 @@ export class VaultStore {
       const result = await h.call(capability, method, params, { signal })
       return { result, gen: v.gen }
     }, signal)
+  }
+
+  /**
+   * `documents.read` : le texte d'une note (ou d'un fichier), relu dans son
+   * CRDT chez le backend, en Markdown. Sert l'API ouverte du serveur (ChatGPT,
+   * Claude, scripts) : l'index ne garde que des morceaux, pas le texte exact.
+   */
+  private async callDocuments(v: Vault, method: string, params: unknown, signal: AbortSignal): Promise<{ result: unknown; gen: number }> {
+    if (method !== 'read') throw new HttpError(404, 'unknown_method', `Methode inconnue : documents.${method}.`)
+    const p = (params ?? {}) as { id?: unknown; path?: unknown }
+    const id = typeof p.id === 'string' && p.id.length <= 200 ? p.id : undefined
+    const wanted = typeof p.path === 'string' && p.path.length <= 1024 ? p.path : undefined
+    if (!id && !wanted) throw new HttpError(400, 'invalid_query', 'Donner `id` ou `path`.')
+    const paths = await this.slot.run(INTERACTIVE, async () => (await this.handleFor(v, 'query')).paths(id ? [id] : undefined), signal)
+    let found: { id: string; path: string } | undefined
+    if (id) { const path = paths.get(id); if (path) found = { id, path } }
+    else {
+      const fold = wanted!.toLowerCase()
+      for (const [k, path] of paths) {
+        if (path === wanted) { found = { id: k, path }; break }
+        if (!found && path.toLowerCase() === fold) found = { id: k, path }
+      }
+    }
+    if (!found || isTrashPath(found.path)) throw new HttpError(404, 'not_found', 'Document introuvable dans ce vault.')
+    const input = await this.readText(v, found.id, found.path, signal)
+    if (!input) throw new HttpError(404, 'not_found', 'Document illisible ou vide.')
+    const truncated = input.content.length > MAX_READ_CHARS
+    return {
+      result: { id: found.id, path: found.path, title: stemOf(found.path), content: truncated ? input.content.slice(0, MAX_READ_CHARS) : input.content, truncated },
+      gen: v.gen,
+    }
+  }
+
+  /** Le texte d'un document, comme l'index le lit : note, fichier extrait, texte publie. */
+  private async readText(v: Vault, id: string, path: string, signal?: AbortSignal): Promise<NoteInput | null | undefined> {
+    if (this.extractable(path)) return this.extractFile(v, id, path, signal)
+    if (isOtherFile(path)) return this.publishedText(v, id, path, signal)
+    const log = await this.fetch(() => this.readDoc(v, id, signal))
+    if (!log || log.format !== 'yjs') return undefined
+    return noteInputFromUpdates(id, path, bytesOf(log))
   }
 
   /** L'index qui sait repondre a cette capacite. */

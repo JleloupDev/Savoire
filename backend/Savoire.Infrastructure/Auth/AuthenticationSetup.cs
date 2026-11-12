@@ -6,6 +6,8 @@
 //    verifies par ses cles publiees (JWKS) ;
 //  - « savoire » : jetons signes par Savoire (secret Jwt:Secret), pour les
 //    liens de partage et les vues integrees, sans compte.
+// Un troisieme schema, « access-token » (jetons personnels svp_...), ne sert
+// que sur l'API ouverte, ou il est demande explicitement.
 // Le choix se fait sur l'emetteur du jeton (lu sans verification : la
 // verification est faite ensuite par le schema choisi).
 
@@ -75,6 +77,8 @@ public static class AuthenticationSetup
                 };
                 options.Events = new JwtBearerEvents { OnMessageReceived = HubToken };
             })
+            // Jetons personnels de l'API ouverte : seulement sur ses routes.
+            .AddScheme<AuthenticationSchemeOptions, AccessTokenAuthenticationHandler>(AccessTokenAuthenticationHandler.Scheme, null)
             .AddJwtBearer(OidcScheme, options =>
             {
                 options.MapInboundClaims = false;

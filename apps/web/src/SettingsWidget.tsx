@@ -5,6 +5,7 @@
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
 import { AISettings } from './AISettings'
+import { ApiTokenSettings } from './ApiTokenSettings'
 import type { AIService } from '@savoire/application'
 import { Icon } from '@savoire/ui-components'
 import { useState, useEffect } from 'react'
@@ -48,7 +49,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai'
+type Tab = 'plugins' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'api'
 
 export function SettingsPanel({
   loader,
@@ -58,6 +59,7 @@ export function SettingsPanel({
   commands,
   vaultIndexer,
   ai,
+  api,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -70,6 +72,8 @@ export function SettingsPanel({
   vaultIndexer?: { indexer: IVaultIndexer; isOwner: boolean; vaultName: string }
   /** L'IA de la personne : onglet IA. */
   ai?: AIService
+  /** Jetons de l'API ouverte (profil serveur) : onglet API. */
+  api?: { token(): string; vaults: { id: string; name: string }[] }
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -112,6 +116,7 @@ export function SettingsPanel({
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
           <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
           {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
+          {api && <button data-testid="settings-tab-api" style={tabStyle(tab === 'api')} onClick={() => setTab('api')}>API</button>}
           {vaultIndexer && (
             <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
           )}
@@ -127,6 +132,7 @@ export function SettingsPanel({
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
         {tab === 'ai' && ai && <AISettings ai={ai} />}
+        {tab === 'api' && api && <ApiTokenSettings token={api.token} vaults={api.vaults} />}
         {tab === 'vault' && vaultIndexer && (
           <VaultIndexerSettings indexer={vaultIndexer.indexer} isOwner={vaultIndexer.isOwner} vaultName={vaultIndexer.vaultName} />
         )}

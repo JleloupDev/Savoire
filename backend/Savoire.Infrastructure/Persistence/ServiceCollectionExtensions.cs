@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IResourcePermissionRepository, EfResourcePermissionRepository>();
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
         services.AddScoped<IPublicationRepository,         EfPublicationRepository>();
+        services.AddScoped<IAccessTokenRepository,         EfAccessTokenRepository>();
 
         // Index repositories
 

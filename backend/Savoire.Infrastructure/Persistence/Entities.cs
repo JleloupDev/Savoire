@@ -207,3 +207,19 @@ public class PublicationEntity
     public DateTime CreatedAt   { get; set; }
     public DateTime UpdatedAt   { get; set; }
 }
+
+public class AccessTokenEntity
+{
+    public string    Id         { get; set; } = null!;
+    public string    UserId     { get; set; } = null!;
+    public string    Name       { get; set; } = null!;
+    public string    Prefix     { get; set; } = null!;
+    public string    TokenHash  { get; set; } = null!;
+    public string    Scope      { get; set; } = null!;
+    /// <summary>Ids des vaults permis, separes par des virgules ; null : tous.</summary>
+    public string?   VaultIds   { get; set; }
+    public DateTime  CreatedAt  { get; set; }
+    public DateTime? ExpiresAt  { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime? RevokedAt  { get; set; }
+}

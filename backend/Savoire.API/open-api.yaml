@@ -1,0 +1,149 @@
+openapi: 3.1.0
+info:
+  title: Savoire, API ouverte
+  version: 1.0.0
+  description: |
+    Lire ses notes Savoire depuis un outil externe (GPT, n8n, Zapier, script).
+    Lecture seule. Authentification : un jeton personnel, cree dans
+    Savoire (Parametres, onglet API), donne en en-tete
+    `Authorization: Bearer svp_...`. Le jeton agit au nom de la personne,
+    sur tous ses vaults ou seulement ceux choisis.
+servers:
+  - url: "{{SERVER}}/api/open/v1"
+components:
+  securitySchemes:
+    jeton:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+security:
+  - jeton: []
+paths:
+  /vaults:
+    get:
+      operationId: listVaults
+      summary: Les vaults accessibles avec ce jeton.
+      responses:
+        "200":
+          description: Les vaults.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vaults:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        role: { type: string }
+  /vaults/{vaultId}/search:
+    post:
+      operationId: searchNotes
+      summary: Recherche plein texte dans les notes et fichiers d'un vault.
+      parameters:
+        - { name: vaultId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, description: "Mots a chercher ; guillemets pour une expression exacte." }
+                limit: { type: integer, minimum: 1, maximum: 50, default: 10 }
+                folder: { type: string, description: "Limiter a un dossier." }
+      responses:
+        "200":
+          description: Les notes trouvees, avec des extraits.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  hits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        path: { type: string }
+                        title: { type: string }
+                        snippets:
+                          type: array
+                          items: { type: object, properties: { text: { type: string } } }
+        "403": { description: Vault hors du jeton., content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /vaults/{vaultId}/notes:
+    get:
+      operationId: listNotes
+      summary: Les notes d'un vault (ou d'un dossier), par chemin.
+      parameters:
+        - { name: vaultId, in: path, required: true, schema: { type: string } }
+        - { name: folder, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+        - { name: cursor, in: query, description: "Suite d'une liste (champ next).", schema: { type: string } }
+      responses:
+        "200":
+          description: Les notes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  next: { type: string }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        path: { type: string }
+                        title: { type: string }
+  /vaults/{vaultId}/notes/read:
+    get:
+      operationId: readNote
+      summary: Le texte complet d'une note, en Markdown (ou le texte d'un fichier).
+      parameters:
+        - { name: vaultId, in: path, required: true, schema: { type: string } }
+        - { name: path, in: query, description: "Chemin, ex. Projets/Plan.md.", schema: { type: string } }
+        - { name: id, in: query, description: "Id rendu par searchNotes ou listNotes.", schema: { type: string } }
+      responses:
+        "200":
+          description: La note.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  path: { type: string }
+                  title: { type: string }
+                  content: { type: string }
+                  truncated: { type: boolean }
+        "404": { description: Note introuvable., content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /vaults/{vaultId}/query:
+    post:
+      operationId: queryNotes
+      summary: Requete sur les notes et les bases (filtres, tris, groupes), format du pair indexeur.
+      parameters:
+        - { name: vaultId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Les lignes., content: { application/json: { schema: { type: object } } } }
