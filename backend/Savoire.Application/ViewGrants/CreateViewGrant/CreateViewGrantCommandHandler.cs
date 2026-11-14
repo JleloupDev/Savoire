@@ -15,6 +15,7 @@ namespace Savoire.Application.ViewGrants.CreateViewGrant;
 public sealed class CreateViewGrantCommandHandler(
     IVaultRepository    vaults,
     IShareLinkRepository shareLinks,
+    IVaultDocumentRepository vaultDocuments,
     ITokenService       tokenService,
     ILogger<CreateViewGrantCommandHandler> logger)
     : IRequestHandler<CreateViewGrantCommand, ViewGrantDto>
@@ -36,6 +37,13 @@ public sealed class CreateViewGrantCommandHandler(
             "CreateViewGrant start caller={Caller} doc={DocId} vault={VaultId} permission={Permission}",
             cmd.CallerId, docId, vaultId, permission);
 
+        // Le vault ne se croit jamais sur parole : le document doit y etre
+        // inscrit. Sans ce controle, un lien vers SA note donnait un jeton de
+        // vue pour le vault de quelqu'un d'autre.
+        string? owningVault = await vaultDocuments.GetVaultIdAsync(docId, ct);
+        if (owningVault is null || owningVault != vaultId)
+            throw new AccessDeniedException("Ce document n'appartient pas a ce vault.");
+
         string? userIdForPresence = cmd.CallerId;
 
         if (!string.IsNullOrWhiteSpace(cmd.ShareToken))
@@ -52,17 +60,17 @@ public sealed class CreateViewGrantCommandHandler(
         {
             logger.LogInformation("CreateViewGrant auth branch=view-caller");
             if (permission == "write")
-                await ShareLinkGuard.RequireDocumentWriteAsync(cmd.CallerId!, vaultId, docId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentWriteAsync(cmd.CallerId!, vaultId, docId, shareLinks, vaultDocuments, ct);
             else
-                await ShareLinkGuard.RequireDocumentReadAsync(cmd.CallerId!, vaultId, docId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentReadAsync(cmd.CallerId!, vaultId, docId, shareLinks, vaultDocuments, ct);
         }
         else if (!string.IsNullOrWhiteSpace(cmd.CallerId) && ShareLinkGuard.IsShareLinkCaller(cmd.CallerId))
         {
             logger.LogInformation("CreateViewGrant auth branch=share-caller");
             if (permission == "write")
-                await ShareLinkGuard.RequireDocumentWriteAsync(cmd.CallerId!, vaultId, docId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentWriteAsync(cmd.CallerId!, vaultId, docId, shareLinks, vaultDocuments, ct);
             else
-                await ShareLinkGuard.RequireDocumentReadAsync(cmd.CallerId!, vaultId, docId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentReadAsync(cmd.CallerId!, vaultId, docId, shareLinks, vaultDocuments, ct);
         }
         else
         {

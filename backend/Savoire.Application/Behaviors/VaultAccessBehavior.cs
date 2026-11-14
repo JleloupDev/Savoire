@@ -73,9 +73,9 @@ public class VaultAccessBehavior<TRequest, TResponse>(
         if (IsLinkCaller(req.CallerId))
         {
             if (req.RequiredAccess == VaultAccessLevel.Write)
-                await ShareLinkGuard.RequireDocumentWriteAsync(req.CallerId, req.VaultId, req.DocId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentWriteAsync(req.CallerId, req.VaultId, req.DocId, shareLinks, vaultDocuments, ct);
             else
-                await ShareLinkGuard.RequireDocumentReadAsync(req.CallerId, req.VaultId, req.DocId, shareLinks, ct);
+                await ShareLinkGuard.RequireDocumentReadAsync(req.CallerId, req.VaultId, req.DocId, shareLinks, vaultDocuments, ct);
             return;
         }
 

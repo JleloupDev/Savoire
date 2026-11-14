@@ -33,13 +33,10 @@ public static class ShareLinkGuard
         string callerId, string vaultId,
         IShareLinkRepository shareLinks, CancellationToken ct)
     {
+        // Un jeton de vue n'ouvre qu'UN document : jamais le repertoire du
+        // vault, ses index ni ses fichiers.
         if (IsViewCaller(callerId))
-        {
-            var view = ParseViewCaller(callerId);
-            if (view.VaultId == vaultId) return;
-            throw new AccessDeniedException("Token view non valide pour ce vault.");
-        }
-
+            throw new AccessDeniedException("Un jeton de vue n'ouvre qu'un document, pas le vault.");
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
         if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId) return;
         throw new AccessDeniedException("Lien de partage non valide pour ce vault.");
@@ -51,12 +48,7 @@ public static class ShareLinkGuard
         IShareLinkRepository shareLinks, CancellationToken ct)
     {
         if (IsViewCaller(callerId))
-        {
-            var view = ParseViewCaller(callerId);
-            if (view.VaultId == vaultId && view.Permission == "write") return;
-            throw new AccessDeniedException("Token view sans permission d'écriture sur ce vault.");
-        }
-
+            throw new AccessDeniedException("Un jeton de vue n'ouvre qu'un document, pas le vault.");
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
         if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId && link.AllowsWrite()) return;
         throw new AccessDeniedException("Lien de partage sans permission d'écriture sur ce vault.");
@@ -77,10 +69,11 @@ public static class ShareLinkGuard
     {
         if (IsViewCaller(callerId))
         {
-            await RequireVaultReadAsync(callerId, vaultId, shareLinks, ct);
-            return;
+            var view = ParseViewCaller(callerId);
+            VaultDocumentRecord? attached = await vaultDocuments.GetAsync(attachmentId, ct);
+            if (view.VaultId == vaultId && attached is not null && attached.VaultId == vaultId && attached.ParentDocId == view.DocId) return;
+            throw new AccessDeniedException("Jeton de vue non valide pour cette piece jointe.");
         }
-
         ShareLink link = await GetValidLinkOrThrowAsync(callerId, shareLinks, ct);
         if (link.ResourceType == ResourceType.Vault && link.ResourceId == vaultId) return;
         if (link.ResourceType == ResourceType.Document)
@@ -99,8 +92,9 @@ public static class ShareLinkGuard
     /// </summary>
     public static async Task RequireDocumentReadAsync(
         string callerId, string vaultId, string docId,
-        IShareLinkRepository shareLinks, CancellationToken ct)
+        IShareLinkRepository shareLinks, IVaultDocumentRepository vaultDocuments, CancellationToken ct)
     {
+        await RequireDocumentInVaultAsync(vaultId, docId, vaultDocuments, ct);
         if (IsViewCaller(callerId))
         {
             var view = ParseViewCaller(callerId);
@@ -120,8 +114,9 @@ public static class ShareLinkGuard
     /// </summary>
     public static async Task RequireDocumentWriteAsync(
         string callerId, string vaultId, string docId,
-        IShareLinkRepository shareLinks, CancellationToken ct)
+        IShareLinkRepository shareLinks, IVaultDocumentRepository vaultDocuments, CancellationToken ct)
     {
+        await RequireDocumentInVaultAsync(vaultId, docId, vaultDocuments, ct);
         if (IsViewCaller(callerId))
         {
             var view = ParseViewCaller(callerId);
@@ -133,6 +128,19 @@ public static class ShareLinkGuard
         if (link.ResourceType == ResourceType.Vault    && link.ResourceId == vaultId && link.AllowsWrite()) return;
         if (link.ResourceType == ResourceType.Document && link.ResourceId == docId   && link.AllowsWrite()) return;
         throw new AccessDeniedException("Lien de partage sans permission d'écriture sur ce document.");
+    }
+
+    /// <summary>
+    /// Le document doit etre inscrit dans le vault annonce (registre
+    /// « document -> vault »), comme pour un compte (VaultAccessGuard). Sans ce
+    /// controle, un lien vers SON vault ouvrait, par son identifiant, un
+    /// document de n'importe quel autre vault.
+    /// </summary>
+    public static async Task RequireDocumentInVaultAsync(
+        string vaultId, string docId, IVaultDocumentRepository vaultDocuments, CancellationToken ct)
+    {
+        string? owner = await vaultDocuments.GetVaultIdAsync(docId, ct);
+        if (owner is null || owner != vaultId) throw new DocumentNotInVaultException(vaultId);
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
