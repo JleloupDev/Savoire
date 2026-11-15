@@ -12,6 +12,7 @@ using Savoire.Application.Vaults.ListVaults;
 using Savoire.Application.Vaults.RemoveVaultMember;
 using Savoire.Application.Vaults.RenameVault;
 using Savoire.Application.Sync.VaultMemberIdentity;
+using Savoire.Server.Extensions;
 
 namespace Savoire.Server.Controllers;
 
@@ -24,6 +25,7 @@ public class VaultsController(IMediator mediator) : AppControllerBase(mediator)
 
     // POST /api/v1/users/{userId}/vaults
     [HttpPost("api/v1/users/{userId}/vaults")]
+    [RateLimited(RatePolicies.VaultCreate)]
     public async Task<IActionResult> Create(
         string userId, [FromBody] CreateVaultRequest req, CancellationToken ct)
     {

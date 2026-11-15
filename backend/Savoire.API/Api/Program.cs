@@ -129,6 +129,24 @@ builder.Services.AddCors(options =>
             policy, builder.Configuration, builder.Environment.IsDevelopment()));
 });
 
+// Derriere Caddy puis nginx (deploy/compose) : l'adresse du visiteur, le
+// protocole et l'hote d'origine arrivent dans les en-tetes X-Forwarded-*.
+// Sans eux, toutes les requetes semblent venir du proxy : les limites par
+// adresse ne distinguent personne, et les pages publiees annoncent l'adresse
+// interne. Active seulement par ForwardedHeaders:Enabled : une API joignable
+// directement croirait n'importe quel en-tete.
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost;
+    // Deux relais : Caddy, puis nginx.
+    o.ForwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 2);
+    // L'API n'est joignable que par ces relais (reseau interne des conteneurs).
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+});
+
 WebApplication app = builder.Build();
 
 // Migrations EF au demarrage. Les comptes viennent du fournisseur d'identite :
@@ -156,6 +174,7 @@ using (IServiceScope scope = app.Services.CreateScope())
 }
 
 // Pipeline — ordre obligatoire
+if (app.Configuration.GetValue("ForwardedHeaders:Enabled", false)) app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();

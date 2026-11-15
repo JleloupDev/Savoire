@@ -29,6 +29,7 @@ public class ErrorsController(IConfiguration config, IHttpClientFactory http, IL
     }
 
     [HttpPost("envelope")]
+    [RateLimited(RatePolicies.Anonymous)]
     [RequestSizeLimit(MaxEnvelopeBytes)]
     public async Task<IActionResult> Envelope(CancellationToken ct)
     {

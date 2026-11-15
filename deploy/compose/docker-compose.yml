@@ -189,6 +189,8 @@ services:
       Savoire__OidcConfigFile: /run/savoire/savoire-oidc.json
       Auth__AdminEmails__0: ${ADMIN_EMAIL:?}
       AllowedOrigins__0: https://${SAVOIRE_DOMAIN:?}
+      # Derriere Caddy puis nginx : adresse du visiteur et hote d'origine.
+      ForwardedHeaders__Enabled: "true"
       # Liens de partage et vues integrees : signes par Savoire.
       Jwt__Secret: ${JWT_SECRET:?}
       Jwt__Issuer: savoire-server

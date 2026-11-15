@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Savoire.Application.Common;
 using Savoire.Application.ViewGrants.CreateViewGrant;
 using Savoire.Application.ViewGrants.RedeemViewGrant;
+using Savoire.Server.Extensions;
 
 namespace Savoire.Server.Controllers;
 
@@ -53,6 +54,7 @@ public class ViewGrantsController(IMediator mediator, ILogger<ViewGrantsControll
     // - Bearer scoped share token (sub=share:...)
     // - Anonymous with shareToken in body
     [AllowAnonymous]
+    [RateLimited(RatePolicies.Anonymous)]
     [HttpPost("api/v1/view/grants")]
     public async Task<IActionResult> Create([FromBody] CreateViewGrantRequest req, CancellationToken ct)
     {
@@ -88,6 +90,7 @@ public class ViewGrantsController(IMediator mediator, ILogger<ViewGrantsControll
 
     // POST /api/v1/view/grants/redeem
     [AllowAnonymous]
+    [RateLimited(RatePolicies.Anonymous)]
     [HttpPost("api/v1/view/grants/redeem")]
     public async Task<IActionResult> Redeem([FromBody] RedeemViewGrantRequest req, CancellationToken ct)
     {

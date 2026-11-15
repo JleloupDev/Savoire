@@ -16,6 +16,7 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Savoire.Application.Attachments;
 using Savoire.Server.Models.Dto;
+using Savoire.Server.Extensions;
 
 namespace Savoire.Server.Controllers;
 
@@ -43,11 +44,13 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
 
     // POST /api/v1/vaults/{vaultId}/attachments  (ancien : nom genere par le serveur)
     [HttpPost]
+    [RateLimited(RatePolicies.Upload)]
     public Task<ActionResult<AttachmentDto>> Upload(string vaultId, IFormFile file, CancellationToken ct)
         => Store(vaultId, null, file, ct);
 
     // POST /api/v1/vaults/{vaultId}/attachments/{fileId}  (rangee sous l'id du document)
     [HttpPost("{fileId}")]
+    [RateLimited(RatePolicies.Upload)]
     [RequestSizeLimit(MaxFileSize + 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize + 1024 * 1024)]
     public Task<ActionResult<AttachmentDto>> UploadWithId(string vaultId, string fileId, IFormFile file, CancellationToken ct)

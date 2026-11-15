@@ -25,13 +25,17 @@ public static class IndexerSetup
             .Bind(config.GetSection(IndexerOptions.Section))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<IndexerOptions>, IndexerOptionsChecks>();
+        services.AddOptions<Savoire.Application.Common.LimitsOptions>()
+            .Bind(config.GetSection(Savoire.Application.Common.LimitsOptions.Section));
 
         services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             o.GlobalLimiter = PartitionedRateLimiter.CreateChained(
                 PartitionedRateLimiter.Create<HttpContext, string>(ctx => Partition(ctx, perVault: false)),
-                PartitionedRateLimiter.Create<HttpContext, string>(ctx => Partition(ctx, perVault: true)));
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => Partition(ctx, perVault: true)),
+                // Les autres routes limitees (envois, liens de partage...) : voir RateLimits.
+                PartitionedRateLimiter.Create<HttpContext, string>(RateLimits.Partition));
             o.OnRejected = async (context, ct) =>
             {
                 HttpResponse response = context.HttpContext.Response;
@@ -40,8 +44,10 @@ public static class IndexerSetup
                     : 1;
                 response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
                 response.ContentType = "application/json; charset=utf-8";
-                await response.WriteAsync(IndexerReply.ErrorJson(IndexerErrorCodes.RateLimited,
-                    "Trop de requetes vers le pair indexeur, reessayer plus tard.").ToJsonString(), ct);
+                string message = RateLimits.Applies(context.HttpContext)
+                    ? "Trop de requetes en peu de temps, reessayer plus tard."
+                    : "Trop de requetes vers le pair indexeur, reessayer plus tard.";
+                await response.WriteAsync(IndexerReply.ErrorJson(IndexerErrorCodes.RateLimited, message).ToJsonString(), ct);
             };
         });
         return services;
@@ -71,7 +77,7 @@ public static class IndexerSetup
     }
 
     /// <summary>Un seau plein d'une minute de jetons, rempli au fil de l'eau.</summary>
-    private static TokenBucketRateLimiterOptions Bucket(int perMinute)
+    internal static TokenBucketRateLimiterOptions Bucket(int perMinute)
     {
         perMinute = Math.Max(1, perMinute);
         bool slow = perMinute < 60;

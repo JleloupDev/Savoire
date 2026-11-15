@@ -28,3 +28,16 @@ public class PathConflictException(string path)
 
 public class FolderNotEmptyException(string folderId)
     : Exception($"Le dossier '{folderId}' contient des documents. Utilisez ?force=true pour forcer la suppression.");
+
+// Le proprietaire du vault a atteint son quota de stockage : plus rien ne s'y
+// ajoute tant que de la place n'est pas liberee.
+public class QuotaExceededException(string detail)
+    : Exception(detail);
+
+// Le serveur n'a presque plus de place : les gros envois sont refuses.
+public class StorageUnavailableException()
+    : Exception("Le serveur n'a plus assez de place pour cet envoi. Réessayez plus tard.");
+
+// Trop d'appels en peu de temps (hubs temps reel).
+public class TooManyRequestsException()
+    : Exception("Trop de requêtes en peu de temps. Réessayez dans un instant.");

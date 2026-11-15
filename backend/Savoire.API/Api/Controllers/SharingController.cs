@@ -23,6 +23,7 @@ using Savoire.Application.Sharing.GetResourceSharing;
 using Savoire.Application.Sharing.GrantPermission;
 using Savoire.Application.Sharing.RevokePermission;
 using Savoire.Application.Sharing.RevokeShareLink;
+using Savoire.Server.Extensions;
 
 namespace Savoire.Server.Controllers;
 
@@ -112,6 +113,7 @@ public class SharingController(IMediator mediator) : AppControllerBase(mediator)
 
     // GET /api/v1/share/{token}/access  — exchanges a share link token for a scoped JWT
     [AllowAnonymous]
+    [RateLimited(RatePolicies.Anonymous)]
     [HttpGet("api/v1/share/{token}/access")]
     public async Task<IActionResult> AccessShareLink(string token, CancellationToken ct)
         => Ok(await Mediator.Send(new AccessShareLinkQuery(token), ct));

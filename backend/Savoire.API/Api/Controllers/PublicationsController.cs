@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 using Savoire.Application.Publications;
 using Savoire.Domain.ReadModels;
 using Savoire.Server.Publications;
+using Savoire.Server.Extensions;
 
 namespace Savoire.Server.Controllers;
 
@@ -28,6 +29,7 @@ public class PublicationsController(IMediator mediator) : AppControllerBase(medi
     }
 
     [HttpPut("api/v1/vaults/{vaultId}/documents/{docId}/publication")]
+    [RateLimited(RatePolicies.Publish)]
     [RequestSizeLimit(32 * 1024 * 1024)]
     public async Task<IActionResult> Publish(string vaultId, string docId, [FromBody] PublishRequest req, CancellationToken ct)
         => Ok(await Mediator.Send(new PublishDocumentCommand(vaultId, docId, GetCallerId(), req.Title ?? "", req.Description ?? "", req.Html ?? "", req.Indexable), ct));
