@@ -71,6 +71,12 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Polices : servies ici (aucun appel a un autre domaine), nom au contenu.
+    location ~* ^/fonts/.+\.woff2$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
     # Cache long pour les assets hashés par Vite
     location /assets/ {
         expires 1y;

@@ -54,7 +54,7 @@ public class PublicationsController(IMediator mediator) : AppControllerBase(medi
         // Integree (module en lecture seule sur un autre site) : tout site peut l'afficher.
         bool embedded = embed == "1";
         Response.Headers["Content-Security-Policy"] =
-            "default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; "
+            "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data:; "
             + (embedded ? "frame-ancestors *; " : "frame-ancestors 'self'; ")
             + "base-uri 'none'; form-action 'none'; sandbox allow-popups allow-popups-to-escape-sandbox";
         Response.Headers["X-Content-Type-Options"] = "nosniff";
