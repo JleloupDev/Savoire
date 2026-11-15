@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@savoire/domain-index": "workspace:*"
+    "@savoire/domain-index": "workspace:*",
+    "dompurify": "3.4.17"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

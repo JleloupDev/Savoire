@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { sanitizeHtml } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI, BlockLine, BlockContext } from '@savoire/plugin-api'
 import { marked } from 'marked'
 
@@ -28,12 +29,12 @@ function renderListLine(line: BlockLine, ctx: BlockContext, inline: (md: string)
   // 1.4em de la puce. Une suite d'element s'aligne sur le texte.
   div.style.paddingLeft = `${2 * line.depth + 3.4}em`
   if (!m) {
-    div.innerHTML = inline(line.text.trim())
+    div.innerHTML = sanitizeHtml(inline(line.text.trim()))
     return div
   }
   const [, indent, marker, space, task, body] = m
   const content = document.createElement('span')
-  content.innerHTML = inline(body)
+  content.innerHTML = sanitizeHtml(inline(body))
 
   if (task !== undefined) {
     const checked = task !== ' '
@@ -158,7 +159,7 @@ const plugin: VaultPlugin = {
 
         const wrapper = document.createElement('div')
         wrapper.className = 'vault-rendered-block'
-        wrapper.innerHTML = html
+        wrapper.innerHTML = sanitizeHtml(html)
 
         // Améliore toutes les listes de premier niveau
         for (const list of Array.from(wrapper.children)) {

@@ -24,7 +24,7 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 })
 
 import { marked } from 'marked'
-import { BLOCK_DESTROY_EVENT } from '@savoire/plugin-api'
+import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
 import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savoire/plugin-api'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
@@ -145,7 +145,8 @@ class MarkdownWidget extends WidgetType {
   toDOM(): HTMLElement {
     const div = document.createElement('div')
     div.className = this.extraClass ? `vault-rendered-block ${this.extraClass}` : 'vault-rendered-block'
-    div.innerHTML = this.html
+    // Le texte vient d'une note (d'autres membres) : jamais de HTML brut.
+    div.innerHTML = sanitizeHtml(this.html)
     return div
   }
 
@@ -259,7 +260,7 @@ function listDepth(state: EditorState, pos: number): number {
 
 function inlineHtml(text: string, hooks?: HookRegistry): string {
   const pre = hooks ? hooks.runBeforeParseSync(text) : text
-  return marked.parseInline(pre) as string
+  return sanitizeHtml(marked.parseInline(pre) as string)
 }
 
 /** Rendu par defaut d'une ligne de liste ou de citation. */

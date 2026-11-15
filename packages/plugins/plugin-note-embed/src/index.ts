@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { createIcon } from '@savoire/plugin-api'
+import { createIcon, sanitizeHtml } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { renderImageEmbed } from './image'
@@ -57,7 +57,8 @@ export async function renderNotePart(
     }
     const preprocessed = await api.hooks.runBeforeParse(mdBody)
     // breaks : meme rendu des retours a la ligne que dans l'editeur.
-    body.innerHTML = String(marked.parse(preprocessed, { breaks: true }))
+    // La note integree vient d'autres membres : jamais de HTML brut.
+    body.innerHTML = sanitizeHtml(String(marked.parse(preprocessed, { breaks: true })))
   } catch {
     body.textContent = `⚠ Could not load "${targetPath}"`
   }

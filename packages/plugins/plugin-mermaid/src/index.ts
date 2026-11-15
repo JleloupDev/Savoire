@@ -16,7 +16,9 @@ function ensureInit(): void {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'loose',
+    // strict : pas de HTML dans les libelles, pas de clic qui appelle du code.
+    // Le diagramme vient d'une note, donc d'autres membres.
+    securityLevel: 'strict',
   })
   initialized = true
 }

@@ -11,6 +11,7 @@
 // texte selectionnable, les liens et les images nettes.
 import { markdownLanguage } from '@codemirror/lang-markdown'
 import { marked } from 'marked'
+import { sanitizeHtml } from '@savoire/plugin-api'
 import type { BlockContext, BlockRegistry, HookRegistry } from '@savoire/plugin-api'
 import { BLOCK_NODES } from './LivePreview'
 
@@ -36,7 +37,7 @@ function markdownBlock(text: string, hooks?: HookRegistry | null): HTMLElement {
   const div = document.createElement('div')
   div.className = 'vault-rendered-block'
   const pre = hooks ? hooks.runBeforeParseSync(text) : text
-  div.innerHTML = String(marked.parse(pre, { breaks: true }))
+  div.innerHTML = sanitizeHtml(String(marked.parse(pre, { breaks: true })))
   return div
 }
 

@@ -127,6 +127,9 @@ export function createLatexView(path: string, ctx: FileContext, api: PluginAPI |
 
       const render = (text: string) => {
         const { html, unknown } = renderLatex(text)
+        // HTML construit par render.ts a partir du texte : tout le texte y est
+        // echappe (esc), les liens passent par safeLink. Rien du document n'y
+        // entre tel quel ; pas de nettoyage en plus (il retirerait le MathML).
         page.innerHTML = html
         status.textContent = unknown.length ? `${unknown.length} commande(s) non reconnue(s)` : ''
         status.title = unknown.join(' ')
