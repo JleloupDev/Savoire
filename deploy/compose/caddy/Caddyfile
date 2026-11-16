@@ -7,7 +7,14 @@
 # L'appli : le conteneur web sert la page et relaie /api et /hubs (WebSocket).
 {$SAVOIRE_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy web:8080
+	# Savoire Store (docker-compose.store.yml), sous l'adresse de Savoire
+	# tant qu'il n'a pas de domaine. Sans le store, ces adresses repondent 502.
+	handle /store* {
+		reverse_proxy store:8080
+	}
+	handle {
+		reverse_proxy web:8080
+	}
 }
 
 # La connexion : Zitadel et sa page de connexion (login v2).

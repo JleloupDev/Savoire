@@ -11,8 +11,10 @@
 //  - paquets de notes (une Bible...) : leurs notes sont ajoutees au vault
 //    ouvert a leur chemin ; une note qui existe deja est gardee.
 //
-// Adresse du store : VITE_SAVOIRE_STORE_URL (developpement : /store, relaye
-// par Vite vers 127.0.0.1:5100). Cle publique : VITE_SAVOIRE_STORE_KEY
+// Adresse du store : VITE_SAVOIRE_STORE_URL, sinon /store (deploiement : sous
+// l'adresse de Savoire ; developpement : relaye par Vite vers 127.0.0.1:5100).
+// Cle publique : VITE_SAVOIRE_STORE_KEY, sinon celle que donne le serveur
+// Savoire (GET /api/v1/store/config)
 // (SPKI en base64). Sans cle, en developpement seulement, l'application la
 // demande au store (et le dit dans la console) ; en production, elle refuse
 // d'installer.
@@ -20,6 +22,7 @@ import type { PluginAPI } from '@savoire/plugin-api'
 import { templateFolderOf } from '@savoire/plugin-api'
 import { FramedPlugin, StorePackageError, idAfterCreate, notesOfPackage, setPluginFrameUrl, sha256Hex, verifyStorePackage, type StorePackage } from '@savoire/plugin-runtime'
 import { boardFrameUrl } from './tauriRuntime'
+import { serverUrl } from '@savoire/infrastructure-sync'
 
 // Bureau : la page cadre des boards sert aussi aux plugins (la CSP de la fenetre bloque le JS en ligne).
 setPluginFrameUrl(boardFrameUrl())
@@ -200,6 +203,16 @@ export class SavoireStoreService {
     const configured = this.opts.publicKey ?? (typeof env.VITE_SAVOIRE_STORE_KEY === 'string' ? env.VITE_SAVOIRE_STORE_KEY : '')
     if (configured) return Promise.resolve(configured)
     this.key ??= (async () => {
+      // Deploiement : le serveur Savoire donne la cle publique du store
+      // (Store:PublicKey, separee du store lui-meme : un store compromis ne
+      // peut pas la changer).
+      try {
+        const res = await fetch(serverUrl('/api/v1/store/config'), { headers: { Accept: 'application/json' } })
+        if (res.ok) {
+          const cfg = await res.json() as { publicKey?: string | null }
+          if (cfg.publicKey) return cfg.publicKey
+        }
+      } catch { /* pas de serveur (bureau hors ligne) */ }
       if (!env.DEV) throw new StorePackageError('Clé du Savoire Store non configurée : installation impossible.')
       const k = await this.json<{ spki: string; keyId: string }>('/api/v1/signing-key')
       console.warn(`[store] developpement : cle du store lue sur le store lui-meme (${k.keyId}). En production, VITE_SAVOIRE_STORE_KEY.`)

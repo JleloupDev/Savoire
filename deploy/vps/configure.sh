@@ -105,7 +105,15 @@ generate GLITCHTIP_SECRET_KEY "$(secret 50)"
 generate GRAFANA_ADMIN_PASSWORD "$(secret 24)"
 generate GLITCHTIP_ADMIN_PASSWORD "$(password)"
 generate RESTIC_PASSWORD "$(secret 40)"
-generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml"
+generate STORE_DB_PASSWORD "$(secret 32)"
+# Cle de signature du store (ECDSA P-256), en base64 d'un PEM, et sa cle
+# publique (SPKI, base64) que l'API donne a l'application. Jamais changee.
+if [ -z "$(get STORE_SIGNING_KEY)" ]; then
+  store_pem="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 2>/dev/null)"
+  set_var STORE_SIGNING_KEY "$(printf '%s\n' "$store_pem" | base64 -w0)"
+  set_var STORE_PUBLIC_KEY "$(printf '%s\n' "$store_pem" | openssl pkey -pubout -outform DER 2>/dev/null | base64 -w0)"
+fi
+generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml:docker-compose.store.yml"
 mkdir -p "$COMPOSE_DIR/backups" "$COMPOSE_DIR/metrics"
 
 # Verifications simples.

@@ -69,6 +69,24 @@ Les scripts de `deploy/vps/` :
 
 La suite de ce guide décrit l'installation à la main.
 
+## Savoire Store
+
+Le store (plugins, modèles, modules) est déployé avec Savoire
+(`deploy/compose/docker-compose.store.yml`, dans `COMPOSE_FILE`). Il répond
+sous l'adresse de Savoire, `https://SAVOIRE_DOMAIN/store/`, tant qu'il n'a pas
+de domaine à lui. Ses comptes sont ceux de Savoire ; `ADMIN_EMAIL` relit les
+publications.
+
+- `configure.sh` génère sa clé de signature (`STORE_SIGNING_KEY`) et sa clé
+  publique (`STORE_PUBLIC_KEY`). Elles partent dans la copie hors machine avec
+  le `.env`. **Ne jamais les changer** : les applications refuseraient tous
+  les paquets.
+- Son image : `savoire-store` dans `SAVOIRE_REGISTRY`, ou construite depuis
+  les sources du dépôt voisin `SavoireStore` (`docker-compose.build.yml`,
+  `STORE_SOURCE`).
+- Sa base, `savoire_store`, est dans le même PostgreSQL : elle est sauvegardée
+  avec les autres.
+
 ## Prérequis
 
 - Une machine Linux avec Docker et le plugin Compose, 2 Go de RAM au moins

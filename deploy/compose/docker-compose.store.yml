@@ -1,0 +1,77 @@
+# Savoire Store (depot voisin SavoireStore) : catalogue des plugins, modeles
+# et modules, avec Savoire. Ajoute a COMPOSE_FILE dans .env :
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ops.yml:docker-compose.store.yml
+#
+# Pas encore de domaine a lui : il repond sous l'adresse de Savoire,
+# https://SAVOIRE_DOMAIN/store/ (Caddy y envoie /store). L'application le
+# trouve la sans reglage (meme origine : pas de CORS).
+#
+# Comptes : ceux de Savoire (meme Zitadel, meme projet). Tout compte Savoire
+# laisse un avis ou publie ; ADMIN_EMAIL relit les publications.
+#
+# Cle de signature des paquets : STORE_SIGNING_KEY dans .env (generee par
+# configure.sh, copiee hors machine avec le .env). NE JAMAIS LA CHANGER : les
+# applications refuseraient tous les paquets. Sa cle publique
+# (STORE_PUBLIC_KEY) est donnee a l'application par l'API.
+#
+# Image : ${SAVOIRE_REGISTRY}/savoire-store, ou construite depuis les sources
+# (docker-compose.build.yml, STORE_SOURCE).
+services:
+  # La base du store, dans le PostgreSQL de Savoire. Relance sans risque.
+  store-db:
+    image: postgres:17.10-alpine
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      STORE_DB_PASSWORD: ${STORE_DB_PASSWORD:?}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        psql -v ON_ERROR_STOP=1 -v pw="$$STORE_DB_PASSWORD" -d postgres <<'SQL'
+        SELECT 'CREATE ROLE savoire_store LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'savoire_store')\gexec
+        ALTER ROLE savoire_store PASSWORD :'pw';
+        SELECT 'CREATE DATABASE savoire_store OWNER savoire_store' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'savoire_store')\gexec
+        SQL
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  store:
+    restart: unless-stopped
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-store:${STORE_VERSION:-latest}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Store: Host=postgres;Port=5432;Database=savoire_store;Username=savoire_store;Password=${STORE_DB_PASSWORD:?};GSS Encryption Mode=Disable
+      Store__PathBase: /store
+      Store__OidcConfigFile: /run/savoire/savoire-oidc.json
+      Store__SigningKeyPem: ${STORE_SIGNING_KEY:?}
+      Store__AdminEmails__0: ${ADMIN_EMAIL:?}
+      # Facultatif : sans jeton, GitHub limite a 60 appels par heure.
+      Store__GitHubToken: ${STORE_GITHUB_TOKEN:-}
+      ForwardedHeaders__Enabled: "true"
+    volumes:
+      - savoire-config:/run/savoire:ro
+    # Le reseau backend (base, Zitadel par l'alias de Caddy) ; Caddy le joint
+    # par ce meme reseau. Il sort sur Internet (releases GitHub).
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /store/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      store-db:
+        condition: service_completed_successfully
+      zitadel-bootstrap:
+        condition: service_completed_successfully
+
+  api:
+    environment:
+      # Ou l'application trouve le store, et la cle publique qui verifie ses paquets.
+      Store__Url: /store
+      Store__PublicKey: ${STORE_PUBLIC_KEY:?}

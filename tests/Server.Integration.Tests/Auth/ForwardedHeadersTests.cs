@@ -5,6 +5,7 @@
 // elle ne les croit pas : une API joignable directement ne se laisse pas
 // dicter son adresse.
 
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 
@@ -38,5 +39,25 @@ public class ForwardedHeadersTests : IClassFixture<AppFactory>
     {
         string yaml = await (await _factory.CreateClient().SendAsync(Request())).Content.ReadAsStringAsync();
         yaml.Should().NotContain("savoire.exemple.fr");
+    }
+}
+
+[Collection("Integration")]
+public class StoreConfigTests : IClassFixture<AppFactory>
+{
+    private readonly AppFactory _factory;
+    public StoreConfigTests(AppFactory factory) => _factory = factory;
+
+    [Fact(DisplayName = "Store : le serveur donne l'adresse et la cle publique du store, sans compte")]
+    public async Task StoreConfig()
+    {
+        using var configured = _factory.WithWebHostBuilder(b => b
+            .UseSetting("Store:Url", "/store").UseSetting("Store:PublicKey", "MFkwEw-cle"));
+        var json = await configured.CreateClient().GetFromJsonAsync<System.Text.Json.Nodes.JsonObject>("/api/v1/store/config");
+        json!["url"]!.GetValue<string>().Should().Be("/store");
+        json["publicKey"]!.GetValue<string>().Should().Be("MFkwEw-cle");
+
+        var none = await _factory.CreateClient().GetFromJsonAsync<System.Text.Json.Nodes.JsonObject>("/api/v1/store/config");
+        none!["publicKey"].Should().BeNull();
     }
 }
