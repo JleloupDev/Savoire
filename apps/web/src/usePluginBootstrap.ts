@@ -47,6 +47,7 @@ import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
 import { linkPreviewDelay, showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
 import { notify } from '@savoire/notifications'
+import { takeRemoteEditors } from '@savoire/infrastructure-sync'
 interface PluginBootstrapOptions {
   /** The shared SyncAPI instance (stable, created once). */
   roomClient: SyncAPI
@@ -345,6 +346,7 @@ export function usePluginBootstrap({
         return session.openTree(documentId)
       }
       vaultProxy.closeTree = documentId => { vaultSessionRef.current?.closeDocument(documentId) }
+      vaultProxy.takeRemoteEditors = documentId => takeRemoteEditors(documentId)
       vaultProxy.getCurrentUser = () => {
         const account = editorAreaRefs.activeAccount.current
         return account ? { id: account.userId, name: account.displayName || account.userId } : null

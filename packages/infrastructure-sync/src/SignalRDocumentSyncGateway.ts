@@ -9,6 +9,7 @@ import {
 } from '@microsoft/signalr'
 import { UpdateSource, type DocumentUpdate, type IDocumentSyncGateway } from '@savoire/domain-sync'
 import { base64ToBytes, bytesToBase64 } from './base64'
+import { noteRemoteEditor } from './remoteEditors'
 
 export interface SignalRDocumentSyncGatewayOptions {
   serverUrl?: string
@@ -84,7 +85,8 @@ export class SignalRDocumentSyncGateway implements IDocumentSyncGateway {
       .withAutomaticReconnect()
       .build()
 
-    this.connection.on('ReceiveOperation', (docId: string, _clientId: string, opBase64: string) => {
+    this.connection.on('ReceiveOperation', (docId: string, _clientId: string, opBase64: string, author?: unknown) => {
+      noteRemoteEditor(docId, author)
       const update: DocumentUpdate = {
         updateId: `${docId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
         documentId: docId,

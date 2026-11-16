@@ -7,7 +7,11 @@
 //  - pendant qu'on ecrit, une version au plus toutes les 5 minutes, et une
 //    derniere quand on quitte la note ;
 //  - chaque version porte son auteur : seule la personne qui tape enregistre
-//    (ce qui arrive d'un pair est enregistre chez lui) ;
+//    (ce qui arrive d'un pair est enregistre chez lui). Exception : un invite
+//    (lien de partage, sans compte) ne tient pas d'historique ; ceux qui
+//    voient arriver ses modifications les enregistrent a son nom, « Invité » ;
+//  - ce qui arrive d'un autre ne se melange jamais a ce qu'on a tape : ce
+//    qu'on avait tape devient d'abord une version a son nom ;
 //  - les versions vivent dans une carte partagee de la note : tous les
 //    membres du vault les voient ;
 //  - restaurer remet le texte d'une version comme une modification de plus :
@@ -20,7 +24,13 @@ export const VERSION_INTERVAL_MS = 5 * 60_000
 /** Versions gardees par note ; les plus anciennes partent. */
 export const MAX_VERSIONS = 100
 
-export interface VersionAuthor { id: string; name: string }
+export interface VersionAuthor { id: string; name: string; guest?: boolean }
+
+/** Une modification recue arrive d'eux (voir VaultAPI.takeRemoteEditors). */
+export interface RemoteEditor { id: string; name: string; guest: boolean }
+
+/** Delai sans nouvelle modification d'un invite avant d'enregistrer sa version. */
+export const GUEST_SETTLE_MS = 60_000
 
 export interface NoteVersion {
   id: string
@@ -61,6 +71,8 @@ interface DocState {
   pending?: string
   /** Date du dernier enregistrement d'ici. */
   savedAt: number
+  /** Modifications d'invites pas encore enregistrees : le texte, ses auteurs, la derniere date. */
+  guest?: { text: string; authors: Map<string, RemoteEditor>; at: number }
 }
 
 export class VersionRecorder {
@@ -81,14 +93,32 @@ export class VersionRecorder {
    * Une note s'est stabilisee (2 s sans changement). `local` : la personne a
    * tape ici depuis la derniere fois.
    */
-  observe(docId: string, text: string, local: boolean): void {
+  observe(docId: string, text: string, local: boolean, editors: RemoteEditor[] = []): void {
     if (!docId) return
     const s = this.state(docId)
     if (!local) {
+      if (text === s.seen) return
+      // Ce qu'on avait tape devient une version a son nom, AVANT ce qui
+      // arrive : sinon la version suivante melangerait les deux sous notre nom.
+      if (s.pending !== undefined) this.flush(docId)
+      const guests = editors.filter(e => e.guest)
+      if (guests.length > 0) {
+        const map = this.deps.openMap(docId)
+        // Premiere modification d'une note sans historique : le texte d'avant.
+        if (map && s.seen !== undefined && s.seen.trim() && listVersions(map).length === 0) {
+          this.write(map, { at: new Date(this.now() - 1).toISOString(), author: null, text: s.seen })
+        }
+        const authors = s.guest?.authors ?? new Map<string, RemoteEditor>()
+        for (const g of guests) authors.set(g.id, g)
+        s.guest = { text, authors, at: this.now() }
+      } else if (s.guest) {
+        // Un membre ecrit par-dessus : ce qu'a fait l'invite est enregistre d'abord.
+        this.flushGuest(docId)
+      }
       s.seen = text
-      if (s.pending !== undefined) s.pending = text
       return
     }
+    if (s.guest) this.flushGuest(docId)
     const map = this.deps.openMap(docId)
     if (!map) return
     // Premiere modification d'une note sans historique : on garde d'abord
@@ -104,6 +134,8 @@ export class VersionRecorder {
   /** Enregistre ce qui attend : une note, ou toutes. */
   flush(docId?: string): void {
     for (const id of docId ? [docId] : [...this.docs.keys()]) {
+      // Quitter la note : ce qu'ont fait les invites est enregistre aussi.
+      if (!docId) this.flushGuest(id)
       const s = this.docs.get(id)
       if (!s || s.pending === undefined) continue
       const map = this.deps.openMap(id)
@@ -120,7 +152,27 @@ export class VersionRecorder {
   tick(): void {
     for (const [id, s] of this.docs) {
       if (s.pending !== undefined && this.now() - s.savedAt >= VERSION_INTERVAL_MS) this.flush(id)
+      if (s.guest && this.now() - s.guest.at >= GUEST_SETTLE_MS) this.flushGuest(id)
     }
+  }
+
+  /**
+   * La version des invites d'une note, a leur nom. Plusieurs membres peuvent
+   * la voir arriver : celui qui l'enregistre le premier gagne, les autres
+   * voient le meme texte en tete et n'ecrivent rien.
+   */
+  flushGuest(docId: string): void {
+    const s = this.docs.get(docId)
+    const g = s?.guest
+    if (!s || !g) return
+    s.guest = undefined
+    const map = this.deps.openMap(docId)
+    if (!map || listVersions(map)[0]?.text === g.text) return
+    const authors = [...g.authors.values()]
+    const author: VersionAuthor = authors.length === 1
+      ? { id: authors[0].id, name: authors[0].name || 'Invité', guest: true }
+      : { id: 'guests', name: 'Invités', guest: true }
+    this.write(map, { at: new Date(g.at).toISOString(), author, text: g.text })
   }
 
   /**

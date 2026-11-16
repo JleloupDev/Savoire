@@ -7,8 +7,8 @@ import type { ISharedMap, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { HISTORY_MAP, VersionRecorder, type NoteVersion } from './history'
 import { HistoryWidget, type HistoryHost } from './HistoryWidget'
 
-export { VersionRecorder, listVersions, diffLines, diffStats, HISTORY_MAP, VERSION_INTERVAL_MS, MAX_VERSIONS } from './history'
-export type { NoteVersion, VersionAuthor, DiffLine } from './history'
+export { VersionRecorder, listVersions, diffLines, diffStats, HISTORY_MAP, VERSION_INTERVAL_MS, MAX_VERSIONS, GUEST_SETTLE_MS } from './history'
+export type { NoteVersion, VersionAuthor, DiffLine, RemoteEditor } from './history'
 
 const TICK_MS = 30_000
 
@@ -41,7 +41,8 @@ export function createHistoryPlugin(): VaultPlugin {
       })
 
       api.hooks.onDocumentStabilized((docId, _path, content, _version, info) => {
-        recorder.observe(keyOf(docId), content, !!info?.local)
+        const local = !!info?.local
+        recorder.observe(keyOf(docId), content, local, local ? [] : api.vault.takeRemoteEditors?.(docId) ?? [])
       })
 
       const host: HistoryHost = {

@@ -45,3 +45,5 @@ export {
 export type { VaultFolderMeta, DocumentIdEntry, DocumentsFile } from './filesystem/vaultFolderFormat'
 export { diffText, applyTextEdits } from './filesystem/textDiff'
 export type { TextEdit } from './filesystem/textDiff'
+export { noteRemoteEditor, takeRemoteEditors } from './remoteEditors'
+export type { RemoteEditor } from './remoteEditors'

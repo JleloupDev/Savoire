@@ -93,6 +93,12 @@ export interface VaultAPI {
   sharedData?(documentId: string): import('./sharedMap').DocumentSharedData
   /** La personne connectee (auteur des versions, des messages). null : aucune session. */
   getCurrentUser?(): { id: string; name: string } | null
+  /**
+   * Qui a modifie cette note a distance depuis le dernier appel (puis oublie).
+   * `guest` : un invite (lien de partage, sans compte), qui ne tient pas
+   * d'historique : c'est a ceux qui le voient de noter sa version.
+   */
+  takeRemoteEditors?(documentId: string): { id: string; name: string; guest: boolean }[]
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */
