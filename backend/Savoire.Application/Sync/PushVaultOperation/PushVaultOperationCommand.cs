@@ -3,11 +3,13 @@
 using MediatR;
 
 using Savoire.Application.Common;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.PushVaultOperation;
 
 public sealed record PushVaultOperationCommand(string CallerId, string VaultId, byte[] OpBytes)
-    : IRequest, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => OpBytes.Length;
 }

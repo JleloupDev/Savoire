@@ -5,6 +5,7 @@ using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
 
 using Savoire.Application.Common;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.IndexChannel;
 
@@ -15,9 +16,10 @@ public static class IndexResource
 }
 
 public sealed record PushIndexUpdateCommand(string CallerId, string VaultId, string Namespace, byte[] OpBytes)
-    : IRequest, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => OpBytes.Length;
 }
 
 public sealed class PushIndexUpdateCommandHandler(ICrdtOpRepository ops)

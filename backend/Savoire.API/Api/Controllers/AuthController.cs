@@ -34,4 +34,31 @@ public class AuthController(IMediator mediator) : ControllerBase
         await mediator.Send(new GetCurrentUserQuery(HttpContext.GetUserId()), ct) is { } user
             ? Ok(user)
             : Unauthorized();
+
+    /// <summary>Ce que le compte occupe sur le serveur (ses vaults) et son quota de stockage.</summary>
+    [HttpGet("me/usage")]
+    [Authorize]
+    public async Task<IActionResult> Usage(CancellationToken ct) =>
+        Ok(await mediator.Send(new Savoire.Application.Admin.Queries.GetAccountUsageQuery(HttpContext.GetUserId()), ct));
+
+    public sealed record DeleteMyAccountRequest(string? Confirm);
+
+    /// <summary>Mot a renvoyer pour confirmer la suppression de son compte.</summary>
+    public const string DeleteConfirmation = "SUPPRIMER";
+
+    /// <summary>
+    /// Supprime le compte de la personne connectee, ses vaults et tout leur
+    /// contenu, ici et chez le fournisseur d'identite. Irreversible : le
+    /// corps doit porter { "confirm": "SUPPRIMER" }.
+    /// </summary>
+    [HttpDelete("me")]
+    [Authorize]
+    public async Task<IActionResult> DeleteMe([FromBody] DeleteMyAccountRequest? body, CancellationToken ct)
+    {
+        if (body?.Confirm != DeleteConfirmation)
+            return Problem(statusCode: 400, title: "Confirmation manquante",
+                detail: $"Envoyer {{ \"confirm\": \"{DeleteConfirmation}\" }} pour supprimer le compte.");
+        await mediator.Send(new Savoire.Application.Admin.Commands.DeleteAccountCommand(HttpContext.GetUserId()), ct);
+        return NoContent();
+    }
 }

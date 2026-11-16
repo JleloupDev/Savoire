@@ -50,6 +50,8 @@ builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssemblies(appAssembly, apiAssembly);
     cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
     cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(VaultAccessBehavior<,>));
+    // Apres le controle d'acces : le quota de stockage du proprietaire du vault.
+    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(VaultStorageQuotaBehavior<,>));
 });
 builder.Services.AddScoped<IVaultAccessGuard, VaultAccessGuard>();
 builder.Services.AddValidatorsFromAssembly(appAssembly);
@@ -114,10 +116,13 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddSignalR(o =>
 {
     o.AddFilter<HubErrorFilter>();
+    // Apres HubErrorFilter (qui nomme le refus) : limite d'appels par compte.
+    o.AddFilter<HubRateLimitFilter>();
     o.MaximumReceiveMessageSize = 4 * 1024 * 1024;
 });
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.DocumentLockRegistry>();
+builder.Services.AddSingleton<Savoire.Server.Hubs.HubCallLimiter>();
 
 // 7. CORS : origines web (AllowedOrigins) + application de bureau
 // (DesktopAppOrigins, origines Tauri par defaut). Jamais « toutes les

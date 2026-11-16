@@ -9,4 +9,10 @@ namespace Savoire.Domain.Interfaces;
 public interface IAccountCache
 {
     void Forget(string userId);
+    /// <summary>
+    /// Compte supprime : un jeton encore valide chez le fournisseur d'identite
+    /// ne le recree pas (sans cela, la premiere requete d'un onglet reste
+    /// ouvert ferait renaitre un compte vide).
+    /// </summary>
+    void MarkDeleted(string userId);
 }

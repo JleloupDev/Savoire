@@ -8,7 +8,7 @@ using Savoire.Domain.ValueObjects;
 
 namespace Savoire.Infrastructure.Persistence.Repositories;
 
-public class EfVaultRepository(AppDbContext db) : IVaultRepository
+public class EfVaultRepository(AppDbContext db, Savoire.Application.Abstractions.IContentStore files, Savoire.Application.Abstractions.IVaultStorageQuota quota) : IVaultRepository
 {
     public async Task<Vault?> GetByIdAsync(string vaultId, CancellationToken ct = default)
     {
@@ -86,8 +86,15 @@ public class EfVaultRepository(AppDbContext db) : IVaultRepository
         // Le pair indexeur l'apprend par son flux, dans la meme transaction.
         await using var tx = await IndexerChangeWriter.BeginIfNoneAsync(db, ct);
         await IndexerChangeWriter.RecordVaultGoneAsync(db, vaultId, purgeRows: true, ct);
+        // Tout le contenu du vault, avant sa ligne : la cascade emporterait
+        // le registre de ses documents, qui sert a retrouver leur journal.
+        await VaultEraser.EraseRowsAsync(db, vaultId, ct);
         await db.Vaults.Where(v => v.Id == vaultId).ExecuteDeleteAsync(ct);
         if (tx is not null) await tx.CommitAsync(ct);
+        // Les fichiers, une fois la base validee : un echec ici laisse des
+        // fichiers sans vault, que la purge des restes retrouve.
+        if (db.Database.CurrentTransaction is null) await files.DeleteVaultAsync(vaultId, ct);
+        quota.Invalidate(vaultId);
     }
 
     public async Task AddMemberAsync(VaultMember member, CancellationToken ct = default)

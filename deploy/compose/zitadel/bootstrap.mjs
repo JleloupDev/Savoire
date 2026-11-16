@@ -359,6 +359,18 @@ const indexer = await ensureMachine(INDEXER_USER, 'Pair indexeur', previousIndex
 })
 const apiService = await ensureMachine(API_USER, 'API Savoire', previousApi?.Indexer?.Oidc)
 
+// L'API supprime chez Zitadel le compte d'une personne qui supprime son compte
+// Savoire (droit a l'effacement) : son compte de service gere les
+// utilisateurs de l'organisation, rien d'autre. Un echec ici n'empeche pas
+// de demarrer ; la suppression d'un compte serait alors refusee (403).
+try {
+  await api('POST', '/management/v1/orgs/me/members', { userId: apiService.Subject, roles: ['ORG_USER_MANAGER'] })
+  console.log('bootstrap : savoire-api peut supprimer un compte (ORG_USER_MANAGER).')
+} catch (err) {
+  // 6 : deja membre de l'organisation.
+  if (err.code !== 6 && !isNoChange(err)) console.error(`bootstrap : role de savoire-api non donne (${err.message}).`)
+}
+
 // Audience des jetons de service : le projet (porte « aud » = projet).
 const serviceScope = `openid urn:zitadel:iam:org:project:id:${projectId}:aud`
 

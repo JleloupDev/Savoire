@@ -3,11 +3,12 @@
 using MediatR;
 
 using Savoire.Application.Common;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.SnapshotVault;
 
 public sealed record SnapshotVaultCommand(string CallerId, string VaultId, byte[] SnapshotBytes)
-    : IRequest, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess, IReleasesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

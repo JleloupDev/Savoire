@@ -61,4 +61,28 @@ public class AzureBlobContentStore(
         var blob = _container.GetBlobClient(AttachBlobName(vaultId, storagePath));
         await blob.DeleteIfExistsAsync(cancellationToken: ct);
     }
+
+    public async Task DeleteVaultAsync(string vaultId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(vaultId) || vaultId.Contains('/')) return;
+        await foreach (var blob in _container.GetBlobsAsync(Azure.Storage.Blobs.Models.BlobTraits.None, Azure.Storage.Blobs.Models.BlobStates.None, vaultId + "/", ct))
+            await _container.DeleteBlobIfExistsAsync(blob.Name, cancellationToken: ct);
+    }
+
+    public async Task<IReadOnlyList<string>> ListVaultIdsAsync(CancellationToken ct = default)
+    {
+        var ids = new List<string>();
+        await foreach (var item in _container.GetBlobsByHierarchyAsync(Azure.Storage.Blobs.Models.BlobTraits.None, Azure.Storage.Blobs.Models.BlobStates.None, "/", null, ct))
+            if (item.IsPrefix) ids.Add(item.Prefix.TrimEnd('/'));
+        return ids;
+    }
+
+    public async Task<long> GetVaultBytesAsync(string vaultId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(vaultId) || vaultId.Contains('/')) return 0;
+        long total = 0;
+        await foreach (var blob in _container.GetBlobsAsync(Azure.Storage.Blobs.Models.BlobTraits.None, Azure.Storage.Blobs.Models.BlobStates.None, vaultId + "/", ct))
+            total += blob.Properties.ContentLength ?? 0;
+        return total;
+    }
 }

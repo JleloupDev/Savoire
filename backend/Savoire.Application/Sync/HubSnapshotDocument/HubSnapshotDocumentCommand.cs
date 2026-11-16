@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 using MediatR;
 using Savoire.Application.Common;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.HubSnapshotDocument;
 
@@ -9,7 +10,7 @@ public sealed record HubSnapshotDocumentCommand(
     string CallerId,
     string VaultId,
     string DocId,
-    byte[] SnapshotBytes) : IRequest, IRequiresDocumentAccess
+    byte[] SnapshotBytes) : IRequest, IRequiresDocumentAccess, IReleasesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

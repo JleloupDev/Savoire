@@ -31,9 +31,11 @@ public sealed class JoinRoomQueryHandler(ICrdtOpRepository ops) : IRequestHandle
 
 /// <summary>Remplacer le snapshot d'un document.</summary>
 public sealed record PushRoomSnapshotCommand(string CallerId, string VaultId, string DocId, string SnapshotJson)
-    : IRequest, IRequiresDocumentAccess
+    : IRequest, IRequiresDocumentAccess, Savoire.Application.Abstractions.IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => Encoding.UTF8.GetByteCount(SnapshotJson);
+    public bool ReplacesExisting => true;
 }
 
 public sealed class PushRoomSnapshotCommandHandler(ICrdtOpRepository ops) : IRequestHandler<PushRoomSnapshotCommand>

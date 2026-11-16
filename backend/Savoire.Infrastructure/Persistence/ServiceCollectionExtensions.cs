@@ -66,16 +66,23 @@ public static class ServiceCollectionExtensions
             var store = new AzureBlobContentStore(blobServiceClient, "vaults");
 
             services.AddSingleton<IContentStore>(store);
+            services.AddSingleton(new Savoire.Infrastructure.Services.StorageLocation(null));
             services.AddSingleton<IHostedService>(_ => new BlobContainerInitializer(store));
         }
         else
         {
             // see ADR-020
             services.AddSingleton<IContentStore>(sp => new LocalFileContentStore(StorageRoot(sp.GetRequiredService<IConfiguration>())));
+            services.AddSingleton(sp => new Savoire.Infrastructure.Services.StorageLocation(StorageRoot(sp.GetRequiredService<IConfiguration>())));
         }
 
         // Existing repositories (scoped — depend on DbContext)
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
+        services.AddScoped<Savoire.Application.Abstractions.IOrphanPurger, VaultEraser>();
+        // Suppression d'un compte : chez le fournisseur d'identite, puis ici.
+        services.AddHttpClient(Savoire.Infrastructure.Auth.ZitadelUserAdmin.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+        services.AddSingleton<Savoire.Application.Abstractions.IIdentityProviderAdmin, Savoire.Infrastructure.Auth.ZitadelUserAdmin>();
+        services.AddScoped<Savoire.Application.Abstractions.IAccountEraser, Savoire.Infrastructure.Auth.AccountEraser>();
         services.AddScoped<IFolderRepository, EfFolderRepository>();
         services.AddScoped<ICrdtOpRepository, EfCrdtOpRepository>();
 
@@ -105,6 +112,8 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(HttpIndexerPeerClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddHttpClient(IndexerServiceTokens.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
         services.TryAddSingleton(TimeProvider.System);
+        // Quota de stockage par compte (section Limits).
+        services.AddSingleton<Savoire.Application.Abstractions.IVaultStorageQuota, Savoire.Infrastructure.Services.VaultStorageQuota>();
         services.AddSingleton<IndexerServiceTokens>();
         services.AddSingleton<IIndexerPeerClient, HttpIndexerPeerClient>();
 

@@ -31,7 +31,14 @@ public sealed record OidcProfile(string? Email, bool EmailVerified, string? Name
 public sealed class OidcAccountCache(IMemoryCache cache) : IAccountCache
 {
     public static string Key(string subject) => "oidc-account:" + subject;
+    public static string DeletedKey(string subject) => "oidc-deleted:" + subject;
     public void Forget(string userId) => cache.Remove(Key(userId));
+    public void MarkDeleted(string userId)
+    {
+        cache.Remove(Key(userId));
+        // Plus long que la vie d'un jeton d'acces : apres, plus aucun n'est valide.
+        cache.Set(DeletedKey(userId), true, TimeSpan.FromHours(24));
+    }
 }
 
 public sealed class OidcAccountResolver(
@@ -54,6 +61,8 @@ public sealed class OidcAccountResolver(
     {
         string key = OidcAccountCache.Key(subject);
         if (cache.TryGetValue(key, out OidcAccount? cached)) return cached;
+        // Compte supprime : son jeton, encore valide chez l'IdP, ne le recree pas.
+        if (cache.TryGetValue(OidcAccountCache.DeletedKey(subject), out _)) return null;
 
         AppUser? user = await users.FindByIdAsync(subject);
         if (user is null)

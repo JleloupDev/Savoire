@@ -36,6 +36,11 @@ public class DomainExceptionHandler : IExceptionHandler
             AccessDeniedException         => (403, "access-denied",        "Access denied"),
             PathConflictException         => (409, "path-conflict",        "Path already in use"),
             FolderNotEmptyException       => (400, "folder-not-empty",     "Folder not empty"),
+            // Limites (voir LimitsOptions)
+            QuotaExceededException        => (413, "quota-exceeded",       "Storage quota exceeded"),
+            StorageUnavailableException   => (507, "storage-unavailable",  "Not enough storage on the server"),
+            TooManyRequestsException      => (429, "rate-limited",         "Too many requests"),
+            IdentityProviderException     => (502, "identity-provider",    "Identity provider error"),
             _                             => (500, "internal-error",       "Internal error")
         };
 

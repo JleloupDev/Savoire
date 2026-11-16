@@ -18,3 +18,7 @@ public class UserNotFoundException(string userId)
 
 public class IdentityOperationException(IEnumerable<IdentityError> errors)
     : Exception(string.Join(", ", errors.Select(e => e.Description)));
+
+// Le fournisseur d'identite a refuse une operation, ou n'a pas repondu.
+public class IdentityProviderException(string detail)
+    : Exception(detail);

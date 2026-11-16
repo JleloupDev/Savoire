@@ -3,6 +3,7 @@
 using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Repositories;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.EdgesyncBlob;
 
@@ -11,9 +12,11 @@ public sealed record PersistEdgesyncBlobCommand(
     string Key,
     byte[] Bytes,
     string CallerId
-) : IRequest, IRequiresVaultAccess
+) : IRequest, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => Bytes.Length;
+    public bool ReplacesExisting => true;
 }
 
 public sealed class PersistEdgesyncBlobCommandHandler(IEdgesyncBlobRepository blobs)

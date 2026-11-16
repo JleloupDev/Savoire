@@ -27,9 +27,10 @@ public sealed record StoreAttachmentCommand(
     string FileName,
     Stream Content,
     string CallerId
-) : IRequest<string>, IRequiresVaultAccess
+) : IRequest<string>, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => Content.CanSeek ? Content.Length : 0;
 }
 
 public sealed class StoreAttachmentCommandHandler(IContentStore store, IIndexerChangeRepository changes)
@@ -61,7 +62,7 @@ public sealed class ReadAttachmentQueryHandler(IContentStore store)
 }
 
 public sealed record DeleteAttachmentCommand(string VaultId, string StoragePath, string CallerId)
-    : IRequest, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess, IReleasesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

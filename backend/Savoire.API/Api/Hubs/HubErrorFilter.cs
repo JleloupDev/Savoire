@@ -22,6 +22,10 @@ public sealed class HubErrorFilter(ILogger<HubErrorFilter> logger) : IHubFilter
     public const string DocumentNotInVault = "document-not-in-vault";
     /// <summary>Acces reconnu mais insuffisant (lecteur qui ecrit...).</summary>
     public const string AccessDenied = "access-denied";
+    /// <summary>Le proprietaire du vault a atteint son quota de stockage (ou le serveur est plein).</summary>
+    public const string QuotaExceeded = "quota-exceeded";
+    /// <summary>Trop d'appels en peu de temps.</summary>
+    public const string RateLimited = "rate-limited";
 
     public async ValueTask<object?> InvokeMethodAsync(
         HubInvocationContext invocationContext,
@@ -46,6 +50,9 @@ public sealed class HubErrorFilter(ILogger<HubErrorFilter> logger) : IHubFilter
         DocumentNotInVaultException => DocumentNotInVault,
         VaultNotFoundException      => VaultNotFound,
         AccessDeniedException       => AccessDenied,
+        QuotaExceededException      => QuotaExceeded,
+        StorageUnavailableException => QuotaExceeded,
+        TooManyRequestsException    => RateLimited,
         _                           => null,
     };
 }

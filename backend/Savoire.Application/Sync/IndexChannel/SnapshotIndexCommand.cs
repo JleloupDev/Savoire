@@ -20,13 +20,14 @@ using MediatR;
 using Savoire.Application.Common;
 using Savoire.Domain.Aggregates;
 using Savoire.Domain.Repositories;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Sync.IndexChannel;
 
 /// <summary>Memes droits que PushIndexUpdate : ecrire dans le vault.</summary>
 public sealed record SnapshotIndexCommand(
     string CallerId, string VaultId, string Namespace, byte[] SnapshotBytes, IReadOnlyCollection<string> ReplacedOpIds)
-    : IRequest<int>, IRequiresVaultAccess
+    : IRequest<int>, IRequiresVaultAccess, IReleasesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

@@ -17,6 +17,7 @@ using Savoire.Application.Common;
 using Savoire.Domain.Exceptions;
 using Savoire.Domain.ReadModels;
 using Savoire.Domain.Repositories;
+using Savoire.Application.Abstractions;
 
 namespace Savoire.Application.Publications;
 
@@ -44,14 +45,16 @@ public sealed record GetPublicationQuery(string VaultId, string DocumentId, stri
 public sealed record PublishDocumentCommand(
     string VaultId, string DocumentId, string CallerId,
     string Title, string Description, string Html, bool Indexable)
-    : IRequest<PublicationDto>, IRequiresVaultAccess
+    : IRequest<PublicationDto>, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public long StorageBytes => System.Text.Encoding.UTF8.GetByteCount(Html);
+    public bool ReplacesExisting => true;
 }
 
 /// <summary>Retire la page : l'adresse ne repond plus.</summary>
 public sealed record UnpublishDocumentCommand(string VaultId, string DocumentId, string CallerId)
-    : IRequest, IRequiresVaultAccess
+    : IRequest, IRequiresVaultAccess, IReleasesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
 }

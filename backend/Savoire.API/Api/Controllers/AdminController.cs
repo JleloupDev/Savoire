@@ -29,4 +29,23 @@ public class AdminController(IMediator mediator) : ControllerBase
         await mediator.Send(new DisableUserCommand(userId));
         return NoContent();
     }
+
+    /// <summary>
+    /// Supprime un compte, ses vaults et tout leur contenu, ici et chez le
+    /// fournisseur d'identite (demande d'effacement). Irreversible.
+    /// </summary>
+    [HttpDelete("users/{userId}")]
+    public async Task<IActionResult> DeleteUser(string userId, CancellationToken ct)
+    {
+        await mediator.Send(new DeleteAccountCommand(userId), ct);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Restes de vaults supprimes (lignes et fichiers sans vault). Par defaut
+    /// on compte seulement ; dryRun=false efface.
+    /// </summary>
+    [HttpPost("orphans/purge")]
+    public async Task<IActionResult> PurgeOrphans([FromQuery] bool dryRun = true, CancellationToken ct = default) =>
+        Ok(await mediator.Send(new PurgeOrphansCommand(dryRun), ct));
 }

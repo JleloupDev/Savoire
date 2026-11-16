@@ -51,4 +51,45 @@ public class LocalFileContentStore(string storageRoot) : IContentStore
         if (File.Exists(path)) File.Delete(path);
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Le dossier d'un vault, ou null si l'identifiant ne designe pas un
+    /// dossier situe directement sous la racine (jamais « .. », ni un chemin).
+    /// </summary>
+    private string? VaultDir(string vaultId)
+    {
+        if (string.IsNullOrWhiteSpace(vaultId) || vaultId is "." or ".."
+            || vaultId.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '\0']) >= 0) return null;
+        string root = Path.GetFullPath(storageRoot);
+        string dir = Path.GetFullPath(Path.Combine(root, vaultId));
+        return Path.GetDirectoryName(dir) == root.TrimEnd(Path.DirectorySeparatorChar) ? dir : null;
+    }
+
+    public Task DeleteVaultAsync(string vaultId, CancellationToken ct = default)
+    {
+        string? dir = VaultDir(vaultId);
+        if (dir is not null && Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> ListVaultIdsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<string> ids = Directory.Exists(storageRoot)
+            ? Directory.EnumerateDirectories(storageRoot).Select(d => Path.GetFileName(d)!).ToList()
+            : [];
+        return Task.FromResult(ids);
+    }
+
+    public Task<long> GetVaultBytesAsync(string vaultId, CancellationToken ct = default)
+    {
+        string? dir = VaultDir(vaultId);
+        if (dir is null || !Directory.Exists(dir)) return Task.FromResult(0L);
+        long total = 0;
+        foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            try { total += new FileInfo(file).Length; } catch (IOException) { /* efface entre-temps */ }
+        }
+        return Task.FromResult(total);
+    }
 }
