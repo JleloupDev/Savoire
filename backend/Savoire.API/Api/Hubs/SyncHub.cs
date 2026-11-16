@@ -3,6 +3,7 @@
 // SyncHub — Hub SignalR principal à /hubs/sync.
 // see ADR-001
 
+using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -79,8 +80,28 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger, HubSubscriptio
             "Op received from {Id} for {DocId} — {Size} bytes",
             Context.ConnectionId, docId, opBytes.Length);
 
+        // L'auteur de la modification, donne par le serveur (jamais par le
+        // client) : l'historique des versions l'attribue a la bonne personne.
+        // Un lien de partage ou un jeton de vue sans compte : « Invité ».
         await Clients.OthersInGroup($"doc:{docId}")
-            .SendAsync("ReceiveOperation", docId, clientId, opBase64);
+            .SendAsync("ReceiveOperation", docId, clientId, opBase64, AuthorOf(GetCallerId()));
+    }
+
+    /// <summary>Qui modifie : un compte (son nom), ou un invite (lien de partage).</summary>
+    public sealed record OperationAuthor(string Id, string Name, bool Guest);
+
+    private OperationAuthor AuthorOf(string callerId)
+    {
+        if (Savoire.Application.Sharing.ShareLinkGuard.IsShareLinkCaller(callerId)
+            || Savoire.Application.Sharing.ShareLinkGuard.IsViewCaller(callerId))
+        {
+            string? viewer = Context.User?.FindFirstValue("view_user_id");
+            return viewer is { Length: > 0 } && !viewer.StartsWith("share:", StringComparison.Ordinal)
+                ? new OperationAuthor(viewer, Context.User?.FindFirstValue("display_name") ?? "Invité", false)
+                : new OperationAuthor(callerId.StartsWith("share:", StringComparison.Ordinal) ? callerId : viewer ?? callerId, "Invité", true);
+        }
+        string name = Context.User?.FindFirstValue("display_name") ?? Context.User?.FindFirstValue("email") ?? callerId;
+        return new OperationAuthor(callerId, name, false);
     }
 
     /// <summary>
