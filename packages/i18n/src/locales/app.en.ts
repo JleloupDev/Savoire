@@ -67,6 +67,7 @@ export const appEn = {
   'settings.tab.triggers': 'Triggers',
   'settings.tab.themes': 'Themes',
   'settings.tab.hotkeys': 'Hotkeys',
+  'settings.tab.layout': 'Layout',
   'settings.hotkeys.intro': 'Click + then press the key combination. A chosen hotkey replaces the default one; ↺ restores it. A command can have several hotkeys.',
   'settings.hotkeys.search': 'Filter commands…',
   'settings.hotkeys.none': 'None',

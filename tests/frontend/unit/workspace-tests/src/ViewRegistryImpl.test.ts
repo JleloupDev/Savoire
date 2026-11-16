@@ -69,4 +69,52 @@ describe('ViewRegistryImpl', () => {
     registry.get('v')!.createView(ctx)
     expect(createView).toHaveBeenCalledWith(ctx)
   })
+
+  describe('panneaux retires par la disposition', () => {
+    function setup() {
+      const registry = new ViewRegistryImpl()
+      registry.registerGroup({ id: 'tools', title: 'Outils', container: 'right' })
+      registry.register({ ...makeSpec('backlinks'), groupId: 'tools' })
+      registry.register(makeSpec('search'))
+      registry.register({ ...makeSpec('editor-area'), container: 'center' })
+      return registry
+    }
+
+    it('cache une vue retiree', () => {
+      const registry = setup()
+      registry.setHiddenIds(['search'])
+      expect(registry.get('search')).toBeUndefined()
+      expect(registry.getAll().map(v => v.id)).not.toContain('search')
+      expect(registry._hiddenIds()).toContain('search')
+    })
+
+    it('cache un groupe retire et ses vues', () => {
+      const registry = setup()
+      registry.setHiddenIds(['tools'])
+      expect(registry.getGroup('tools')).toBeUndefined()
+      expect(registry.get('backlinks')).toBeUndefined()
+      expect(registry._hiddenIds()).toEqual(expect.arrayContaining(['tools', 'backlinks']))
+    })
+
+    it('garde toujours l\'editeur', () => {
+      const registry = setup()
+      registry.setHiddenIds(['editor-area'])
+      expect(registry.get('editor-area')).toBeDefined()
+    })
+
+    it('liste aussi les panneaux retires, pour les remettre', () => {
+      const registry = setup()
+      registry.setHiddenIds(['tools', 'search'])
+      const { groups, views } = registry.listPanels()
+      expect(groups.map(g => g.id)).toEqual(['tools'])
+      expect(views.map(v => v.id)).toEqual(expect.arrayContaining(['backlinks', 'search']))
+    })
+
+    it('remet un panneau', () => {
+      const registry = setup()
+      registry.setHiddenIds(['search'])
+      registry.setHiddenIds([])
+      expect(registry.get('search')).toBeDefined()
+    })
+  })
 })

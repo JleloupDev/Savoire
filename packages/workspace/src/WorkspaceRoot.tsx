@@ -98,6 +98,10 @@ function addPanelToWorkspace(
       direction: spec.container === 'left' ? 'left' : 'right',
       referencePanel: firstCenterId,
     }
+  } else if (spec.container === 'center' && firstCenterId && api.getPanel(firstCenterId)) {
+    // Vue principale : onglet a cote de l'editeur, pas dans le groupe actif
+    // (qui peut etre un volet quand elle revient en cours de route).
+    position = { referencePanel: firstCenterId }
   }
 
   const panelOptions = {
@@ -122,6 +126,90 @@ function addPanelToWorkspace(
       console.error('[WorkspaceRoot] Failed to add panel', spec.id, err)
     }
   }
+}
+
+// ─── Right/center panels ───────────────────────────────────────────────────
+
+/**
+ * Pose les panneaux droite/centre visibles qui ne sont pas encore dans la
+ * mise en page. Au demarrage : tous. Ensuite : ceux qui reviennent (plugin
+ * reactive, panneau remis par la disposition). Rend les ancres centre/droite.
+ */
+function placeDockedPanels(
+  manager: WorkspaceManagerImpl,
+  ctx: ViewContext,
+  api: DockviewApi,
+): { center?: string; right?: string } {
+  const groups = manager.views.getGroups()
+  const groupAnchor = new Map<string, string>()
+  for (const spec of manager.views.getAll()) {
+    if (spec.groupId && !groupAnchor.has(spec.groupId)) {
+      groupAnchor.set(spec.groupId, spec.id)
+    }
+  }
+
+  // Track the last registered view per group to chain belowOf in stack mode
+  const groupLastView = new Map<string, string>() // groupId → last added view id
+
+  const resolved = manager.views.getAll()
+    .filter(spec => {
+      const container = spec.groupId
+        ? (groups.find(g => g.id === spec.groupId)?.container ?? spec.container)
+        : spec.container
+      return container !== 'left'
+    })
+    .map(spec => {
+      if (!spec.groupId) return spec
+      const group = groups.find(g => g.id === spec.groupId)
+      if (!group) return spec
+      const anchorId = groupAnchor.get(spec.groupId)!
+      if (spec.id === anchorId) {
+        groupLastView.set(spec.groupId, spec.id)
+        return { ...spec, container: group.container, initialSize: spec.initialSize ?? group.initialSize, closable: spec.closable ?? group.closable, tabOf: undefined, belowOf: undefined }
+      }
+      if (group.layout === 'stack') {
+        const prevId = groupLastView.get(spec.groupId) ?? anchorId
+        groupLastView.set(spec.groupId, spec.id)
+        return { ...spec, container: group.container, belowOf: prevId, tabOf: undefined }
+      }
+      groupLastView.set(spec.groupId, spec.id)
+      return { ...spec, container: group.container, tabOf: anchorId, belowOf: undefined }
+    })
+
+  // Une vue rattachee a un panneau masque (« Versions » a cote de « Révision »)
+  // rejoint la colonne de droite au lieu d'en ouvrir une nouvelle.
+  const visibleIds = new Set(resolved.map(spec => spec.id))
+  const attached = resolved.map(spec => ({
+    ...spec,
+    tabOf: spec.tabOf && visibleIds.has(spec.tabOf) ? spec.tabOf : undefined,
+    belowOf: spec.belowOf && visibleIds.has(spec.belowOf) ? spec.belowOf : undefined,
+  }))
+
+  const sorted = [...attached].sort((a, b) => {
+    if (a.container === 'center' && b.container !== 'center') return -1
+    if (b.container === 'center' && a.container !== 'center') return 1
+    if (a.tabOf === b.id) return 1
+    if (b.tabOf === a.id) return -1
+    if (a.belowOf === b.id) return 1
+    if (b.belowOf === a.id) return -1
+    return 0
+  })
+
+  // Panneaux deja poses : ils servent d'ancres aux nouveaux.
+  let firstCenterId = sorted.find(spec => spec.container === 'center' && api.getPanel(spec.id))?.id
+  let firstRightId = sorted.find(spec => spec.container === 'right' && api.getPanel(spec.id))?.id
+  for (const spec of sorted) {
+    if (api.getPanel(spec.id)) continue
+    // All right-container panels that have no explicit tabOf/belowOf are auto-tabbed
+    // to the first right panel so they share a single dockview column.
+    const needsRightAnchor =
+      spec.container === 'right' && !spec.tabOf && !spec.belowOf && firstRightId && spec.id !== firstRightId
+    const resolvedSpec = needsRightAnchor ? { ...spec, tabOf: firstRightId } : spec
+    addPanelToWorkspace(resolvedSpec, ctx, api, firstCenterId)
+    if (spec.container === 'center' && !firstCenterId) firstCenterId = spec.id
+    if (spec.container === 'right' && !firstRightId) firstRightId = spec.id
+  }
+  return { center: firstCenterId, right: firstRightId }
 }
 
 // ─── WorkspaceRoot ─────────────────────────────────────────────────────────
@@ -179,65 +267,10 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
         if (!mountedRef.current) return
         const ctx: ViewContext = { workspace: manager, vault, fileTypes: fileTypesRef?.current ?? noopFileTypeRegistry }
 
-        // ── Resolve groupId for right/center panels ────────────────────────
-        // Left panels are NOT added here — they are added lazily via switchLeftMode.
-        const groupAnchor = new Map<string, string>()
-        for (const spec of manager.views.getAll()) {
-          if (spec.groupId && !groupAnchor.has(spec.groupId)) {
-            groupAnchor.set(spec.groupId, spec.id)
-          }
-        }
-
-        // Track the last registered view per group to chain belowOf in stack mode
-        const groupLastView = new Map<string, string>() // groupId → last added view id
-
-        const resolved = manager.views.getAll()
-          .filter(spec => {
-            const container = spec.groupId
-              ? (manager.views.getGroups().find(g => g.id === spec.groupId)?.container ?? spec.container)
-              : spec.container
-            return container !== 'left'
-          })
-          .map(spec => {
-            if (!spec.groupId) return spec
-            const group = manager.views.getGroups().find(g => g.id === spec.groupId)
-            if (!group) return spec
-            const anchorId = groupAnchor.get(spec.groupId)!
-            if (spec.id === anchorId) {
-              groupLastView.set(spec.groupId, spec.id)
-              return { ...spec, container: group.container, initialSize: spec.initialSize ?? group.initialSize, closable: spec.closable ?? group.closable, tabOf: undefined, belowOf: undefined }
-            }
-            if (group.layout === 'stack') {
-              const prevId = groupLastView.get(spec.groupId) ?? anchorId
-              groupLastView.set(spec.groupId, spec.id)
-              return { ...spec, container: group.container, belowOf: prevId, tabOf: undefined }
-            }
-            groupLastView.set(spec.groupId, spec.id)
-            return { ...spec, container: group.container, tabOf: anchorId, belowOf: undefined }
-          })
-
-        const sorted = [...resolved].sort((a, b) => {
-          if (a.container === 'center' && b.container !== 'center') return -1
-          if (b.container === 'center' && a.container !== 'center') return 1
-          if (a.tabOf === b.id) return 1
-          if (b.tabOf === a.id) return -1
-          if (a.belowOf === b.id) return 1
-          if (b.belowOf === a.id) return -1
-          return 0
-        })
-
-        let firstCenterId: string | undefined
-        let firstRightId: string | undefined
-        for (const spec of sorted) {
-          // All right-container panels that have no explicit tabOf/belowOf are auto-tabbed
-          // to the first right panel so they share a single dockview column.
-          const needsRightAnchor =
-            spec.container === 'right' && !spec.tabOf && !spec.belowOf && firstRightId && spec.id !== firstRightId
-          const resolvedSpec = needsRightAnchor ? { ...spec, tabOf: firstRightId } : spec
-          addPanelToWorkspace(resolvedSpec, ctx, event.api, firstCenterId)
-          if (spec.container === 'center' && !firstCenterId) firstCenterId = spec.id
-          if (spec.container === 'right' && !firstRightId) firstRightId = spec.id
-        }
+        // Right/center panels now; left ones lazily via switchLeftMode.
+        const placeDocked = () => placeDockedPanels(manager, ctx, event.api)
+        const anchors = placeDocked()
+        const firstCenterId = anchors.center
 
         // ── Left panel adder — given to WorkspaceManagerImpl for lazy mode switching ──
         manager.setLeftPanelAdder((spec, panelCtx) => {
@@ -251,10 +284,18 @@ export function WorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onReady, cla
           }
         }, ctx)
 
-        // Attach ResizeObserver to right group
-        const rightAnchorId = manager.getPaneAnchorPanelId('right')
-        rightGroupEl = rightAnchorId ? (event.api.getPanel(rightAnchorId)?.group.element ?? null) : null
-        if (rightGroupEl) resizeObserver.observe(rightGroupEl)
+        // Attach ResizeObserver to right group (again when panels come back).
+        const observeRightGroup = () => {
+          const rightAnchorId = manager.getPaneAnchorPanelId('right')
+          const el = rightAnchorId ? (event.api.getPanel(rightAnchorId)?.group.element ?? null) : null
+          if (el === rightGroupEl) return
+          if (rightGroupEl) resizeObserver.unobserve(rightGroupEl)
+          rightGroupEl = el
+          if (rightGroupEl) resizeObserver.observe(rightGroupEl)
+          updateButtonPositions()
+        }
+        observeRightGroup()
+        manager.setDockedPanelSyncer(() => { placeDocked(); observeRightGroup() })
 
         updateButtonPositions()
         onReady?.(manager)

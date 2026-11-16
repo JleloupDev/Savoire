@@ -13,10 +13,24 @@ export class ViewRegistryImpl implements ViewRegistry {
   private readonly groups = new Map<string, GroupEntry>()
   private _currentPlugin: string | undefined
   private activation: ActivationLike | undefined
+  /** Panneaux retires par la disposition choisie (vue par defaut, options). */
+  private hidden: ReadonlySet<string> = new Set()
 
   /** Vue d'un plugin desactive : masquee, pas supprimee. */
   private live(pluginId: string | undefined): boolean {
     return !this.activation || this.activation.isEnabled(pluginId)
+  }
+
+  private groupVisible(id: string): boolean {
+    const entry = this.groups.get(id)
+    return !!entry && this.live(entry.pluginId) && !this.hidden.has(id)
+  }
+
+  /** Une vue d'un groupe retire disparait avec lui. Un groupe inconnu ne compte pas. */
+  private specVisible(e: SpecEntry): boolean {
+    if (!this.live(e.pluginId) || this.hidden.has(e.spec.id)) return false
+    const groupId = e.spec.groupId
+    return !groupId || !this.groups.has(groupId) || this.groupVisible(groupId)
   }
 
   // ── ViewSpec ──────────────────────────────────────────────────────────────
@@ -30,12 +44,12 @@ export class ViewRegistryImpl implements ViewRegistry {
   }
 
   getAll(): ViewSpec[] {
-    return Array.from(this.specs.values()).filter(e => this.live(e.pluginId)).map(e => e.spec)
+    return Array.from(this.specs.values()).filter(e => this.specVisible(e)).map(e => e.spec)
   }
 
   get(id: string): ViewSpec | undefined {
     const entry = this.specs.get(id)
-    return entry && this.live(entry.pluginId) ? entry.spec : undefined
+    return entry && this.specVisible(entry) ? entry.spec : undefined
   }
 
   // ── ViewGroup ─────────────────────────────────────────────────────────────
@@ -50,12 +64,30 @@ export class ViewRegistryImpl implements ViewRegistry {
   }
 
   getGroups(): ViewGroup[] {
-    return Array.from(this.groups.values()).filter(e => this.live(e.pluginId)).map(e => e.group)
+    return Array.from(this.groups.values()).filter(e => this.groupVisible(e.group.id)).map(e => e.group)
   }
 
   getGroup(id: string): ViewGroup | undefined {
     const entry = this.groups.get(id)
-    return entry && this.live(entry.pluginId) ? entry.group : undefined
+    return entry && this.groupVisible(id) ? entry.group : undefined
+  }
+
+  // ── Disposition ───────────────────────────────────────────────────────────
+
+  /** Panneaux (vues ou groupes) que la disposition retire. L'editeur reste toujours. */
+  setHiddenIds(ids: Iterable<string>): void {
+    this.hidden = new Set([...ids].filter(id => id !== 'editor-area'))
+  }
+
+  /**
+   * Tous les panneaux de plugins actifs, presents ou retires par la
+   * disposition : pour les options, qui doivent pouvoir les remettre.
+   */
+  listPanels(): { groups: ViewGroup[]; views: ViewSpec[] } {
+    return {
+      groups: Array.from(this.groups.values()).filter(e => this.live(e.pluginId)).map(e => e.group),
+      views: Array.from(this.specs.values()).filter(e => this.live(e.pluginId)).map(e => e.spec),
+    }
   }
 
   // ── Plugin lifecycle ──────────────────────────────────────────────────────
@@ -68,11 +100,11 @@ export class ViewRegistryImpl implements ViewRegistry {
     this.activation = activation
   }
 
-  /** Vues et groupes d'un plugin desactive : pour fermer leurs panneaux ouverts. */
+  /** Vues et groupes masques (plugin desactive, disposition) : pour fermer leurs panneaux ouverts. */
   _hiddenIds(): string[] {
     const ids: string[] = []
-    for (const [id, e] of this.specs) if (!this.live(e.pluginId)) ids.push(id)
-    for (const [id, e] of this.groups) if (!this.live(e.pluginId)) ids.push(id)
+    for (const [id, e] of this.specs) if (!this.specVisible(e)) ids.push(id)
+    for (const id of this.groups.keys()) if (!this.groupVisible(id)) ids.push(id)
     return ids
   }
 

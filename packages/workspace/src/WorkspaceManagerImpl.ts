@@ -39,6 +39,8 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
   private activeLeftPanelIds: Set<string> = new Set()
   private leftPanelAdder: ((spec: ViewSpec, ctx: ViewContext) => void) | null = null
   private leftPanelCtx: ViewContext | null = null
+  /** Pose les panneaux droite/centre qui manquent (WorkspaceRoot). */
+  private dockedPanelSyncer: (() => void) | null = null
   // ─────────────────────────────────────────────────────────────────────────
   private openFileCallbacks: ((path: string) => void)[] = []
   private vaultChangeCallbacks: (() => void)[] = []
@@ -298,6 +300,50 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
   setLeftPanelAdder(fn: (spec: ViewSpec, ctx: ViewContext) => void, ctx: ViewContext): void {
     this.leftPanelAdder = fn
     this.leftPanelCtx = ctx
+  }
+
+  /** Called by WorkspaceRoot: adds the right/center panels that are missing from the layout. */
+  setDockedPanelSyncer(fn: () => void): void {
+    this.dockedPanelSyncer = fn
+  }
+
+  /**
+   * Remet la mise en page d'accord avec les vues visibles : ferme les panneaux
+   * masques (plugin desactive, disposition), pose ceux qui sont revenus.
+   */
+  syncPanels(): void {
+    // Fermer ou poser des colonnes fait recalculer la mise en page : le volet
+    // gauche peut prendre la place liberee.
+    const leftIds = [...this.activeLeftPanelIds]
+    const leftWidth = this.paneStates.left.collapsed ? 0 : this.port.getPaneWidth(leftIds)
+    const hidden = (this.views as { _hiddenIds?: () => string[] })._hiddenIds?.() ?? []
+    for (const id of hidden) {
+      this.port.closePanel(id)
+      this.activeLeftPanelIds.delete(id)
+    }
+    // Le mode du volet gauche a disparu : le volet se replie.
+    if (this.leftMode !== null && !this.views.getGroup(this.leftMode) && !this.views.get(this.leftMode)) {
+      for (const id of this.activeLeftPanelIds) this.port.closePanel(id)
+      this.activeLeftPanelIds = new Set()
+      this.leftMode = null
+      if (!this.paneStates.left.collapsed) {
+        this.paneStates.left = { collapsed: true }
+        this.emitPaneState('left')
+      }
+    }
+    this.dockedPanelSyncer?.()
+    // Un panneau ajoute dans un volet droit replie doit rester replie.
+    if (this.paneStates.right.collapsed) this.port.collapsePane('right', this.getPanePanelIds('right'))
+    // Dockview repartit la place a parts egales : le volet gauche reprend sa largeur.
+    if (leftWidth > 0 && !this.paneStates.left.collapsed) this.port.setPaneWidth([...this.activeLeftPanelIds], leftWidth)
+  }
+
+  /** Ouvre le volet gauche sur un groupe ou une vue ; null le replie. */
+  showLeft(modeId: string | null): void {
+    if (modeId === null) { this.collapsePane('left'); return }
+    if (!this.views.getGroup(modeId) && !this.views.get(modeId)) return
+    if (this.leftMode !== modeId) this.switchLeftMode(modeId)
+    else this.expandPane('left')
   }
 
   toggleGroup(groupId: string): void {

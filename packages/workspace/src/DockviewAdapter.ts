@@ -101,7 +101,11 @@ export class DockviewAdapter implements WorkspacePort {
   setPaneWidth(panelIds: string[], width: number): void {
     const groups = this.getGroupsForPanelIds(panelIds)
     for (const group of groups) {
+      // Bornes posees le temps du calcul : sans elles, Dockview ignore la
+      // taille quand un voisin est verrouille (volet replie a 0).
+      group.api.setConstraints({ minimumWidth: width, maximumWidth: width, minimumHeight: 0 })
       group.api.setSize({ width })
+      group.api.setConstraints({ minimumWidth: 100, maximumWidth: Number.MAX_SAFE_INTEGER, minimumHeight: 0 })
     }
   }
 

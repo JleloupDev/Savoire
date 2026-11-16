@@ -105,4 +105,40 @@ describe('WorkspaceManagerImpl', () => {
       expect(manager.views.getAll()).toHaveLength(1)
     })
   })
+
+  describe('disposition', () => {
+    const view = (id: string, container: 'left' | 'right') =>
+      ({ id, title: id, container, createView: () => ({ render: () => null }) })
+
+    it('syncPanels() ferme les panneaux retires et repose ceux qui manquent', () => {
+      const syncer = vi.fn()
+      manager.setDockedPanelSyncer(syncer)
+      manager.views.register(view('review', 'right'))
+      manager.views.setHiddenIds(['review'])
+      manager.syncPanels()
+      expect(port.closePanel).toHaveBeenCalledWith('review')
+      expect(syncer).toHaveBeenCalled()
+    })
+
+    it('syncPanels() replie le volet gauche dont le mode a disparu', () => {
+      const adder = vi.fn()
+      manager.views.register(view('search', 'left'))
+      manager.setLeftPanelAdder(adder, {} as never)
+      manager.showLeft('search')
+      expect(manager.getPaneState('left').collapsed).toBe(false)
+      manager.views.setHiddenIds(['search'])
+      manager.syncPanels()
+      expect(port.closePanel).toHaveBeenCalledWith('search')
+      expect(manager.getPaneState('left').collapsed).toBe(true)
+    })
+
+    it('showLeft() ignore un panneau retire', () => {
+      const adder = vi.fn()
+      manager.views.register(view('search', 'left'))
+      manager.views.setHiddenIds(['search'])
+      manager.setLeftPanelAdder(adder, {} as never)
+      manager.showLeft('search')
+      expect(adder).not.toHaveBeenCalled()
+    })
+  })
 })

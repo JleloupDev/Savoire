@@ -18,6 +18,7 @@ import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
+import { LayoutSettings, type LayoutPanels } from './LayoutSettings'
 import { setLinkPreviewDelay, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'api'
+type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'api'
 
 export function SettingsPanel({
   loader,
@@ -63,6 +64,7 @@ export function SettingsPanel({
   ai,
   api,
   store,
+  layout,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -79,6 +81,8 @@ export function SettingsPanel({
   api?: { token(): string; vaults: { id: string; name: string }[] }
   /** Le Savoire Store : onglet Store. */
   store?: SavoireStoreService
+  /** Panneaux de l'espace de travail : onglet Disposition. */
+  layout?: { panels: LayoutPanels; applyPanes(): void }
 }) {
   const [tab, setTab] = useState<Tab>('plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -121,6 +125,7 @@ export function SettingsPanel({
           )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
           <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
+          {layout && <button data-testid="settings-tab-layout" style={tabStyle(tab === 'layout')} onClick={() => setTab('layout')}>{t('app', 'settings.tab.layout')}</button>}
           {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
           {api && <button data-testid="settings-tab-api" style={tabStyle(tab === 'api')} onClick={() => setTab('api')}>API</button>}
           {vaultIndexer && (
@@ -138,6 +143,7 @@ export function SettingsPanel({
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
+        {tab === 'layout' && layout && <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />}
         {tab === 'ai' && ai && <AISettings ai={ai} />}
         {tab === 'api' && api && <ApiTokenSettings token={api.token} vaults={api.vaults} />}
         {tab === 'vault' && vaultIndexer && (

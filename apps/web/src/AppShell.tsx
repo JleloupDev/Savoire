@@ -32,6 +32,7 @@ import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
 import { setShowEditorToolbar, showEditorToolbar, useShowFileExtensions } from './displayPreferences'
+import { layoutPreferences, subscribeLayoutPreferences } from './layoutPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
 import { PluginLoader } from '@savoire/plugin-runtime'
@@ -583,14 +584,41 @@ export function AppShell() {
   const refreshPluginUI = useCallback(() => {
     const m = managerRef.current
     if (m) {
-      const views = m.views as { _hiddenIds?: () => string[] }
-      for (const id of views._hiddenIds?.() ?? []) m.closePanel(id)
+      m.syncPanels()
       setRibbonItems(m.getRibbonItems())
       m.notifyVaultChange()
     }
     window.dispatchEvent(new Event('savoire-plugins-changed'))
   }, [])
   useEffect(() => activationRef.current.onChange(refreshPluginUI), [activationRef, refreshPluginUI])
+
+  // ── Disposition : panneaux presents et volets ouverts (vue par defaut) ─────
+  // Les panneaux retires sont filtres avant la pose des panneaux, puis a
+  // chaque changement dans les options.
+  const onBeforeReadyWithLayout = useCallback(async (m: WorkspaceManagerImpl) => {
+    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    await onBeforeReady(m)
+  }, [onBeforeReady])
+  useEffect(() => subscribeLayoutPreferences(() => {
+    const m = managerRef.current
+    if (!m) return
+    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    m.syncPanels()
+    setRibbonItems(m.getRibbonItems())
+  }), [])
+  /** Volets du demarrage : maintenant (vue choisie dans les options) ou a l'ouverture. */
+  const applyLayoutPanes = useCallback((m: WorkspaceManagerImpl, startup: boolean) => {
+    const { config } = layoutPreferences()
+    if (startup) { if (config.leftOpen) m.openDefaultLeft(config.leftOpen) }
+    else m.showLeft(config.leftOpen)
+    if (!config.rightOpen) { m.collapsePane('right'); return }
+    m.expandPane('right')
+    if (config.rightFocus && m.views.get(config.rightFocus)) {
+      m.focusPanel(config.rightFocus)
+      // L'editeur reste le panneau actif.
+      m.focusPanel('editor-area')
+    }
+  }, [])
 
   // Charge le code des plugins du store que le vault (ou la personne) a
   // installes. Un membre installe un plugin de vault : il se charge chez tous.
@@ -1579,7 +1607,7 @@ export function AppShell() {
       <WorkspaceRoot
         vault={vaultProxy}
         fileTypesRef={fileTypeRegistryRef}
-        onBeforeReady={onBeforeReady}
+        onBeforeReady={onBeforeReadyWithLayout}
         onReady={(m) => {
           managerRef.current = m
           m.notifyVaultChange()
@@ -1593,7 +1621,7 @@ export function AppShell() {
             const doc = documentsRef.current.find(d => d.path === path)
             if (doc) setActiveDoc(cur => cur?.id === doc.id ? cur : doc)
           })
-          if (!noteWindow) m.openDefaultLeft('explorer')
+          if (!noteWindow) applyLayoutPanes(m, true)
         }}
         style={{ flex: 1, overflow: 'hidden' }}
       />
@@ -1614,7 +1642,8 @@ export function AppShell() {
       {settingsOpen && (
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <SettingsPanel loader={pluginLoaderRef.current} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService} store={savoireStoreRef.current ?? undefined}
+            <SettingsPanel loader={pluginLoaderRef.current}
+              layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService} store={savoireStoreRef.current ?? undefined}
               api={activeProfile.name === 'server' && tokenRef.current ? { token: () => tokenRef.current ?? '', vaults: vaults.map(v => ({ id: v.id, name: v.name })) } : undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>
