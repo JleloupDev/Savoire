@@ -119,6 +119,8 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-opendocument', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-opendocument')).default },
   { id: 'plugin-pdf', preinstalled: true, core: true, extensions: ['pdf'], load: async () => (await import('@savoire/plugin-pdf')).default },
   { id: 'plugin-images', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-images')).default },
+  // Videos et sons : lecteur, et ![[x.mp4]] dans les notes.
+  { id: 'plugin-video', preinstalled: true, core: true, editorDefault: true, extensions: ['mp4', 'm4v', 'webm', 'mov', 'ogv', 'mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac'], load: async () => (await import('@savoire/plugin-video')).default },
   { id: 'plugin-webpage', preinstalled: true, core: true, extensions: ['html', 'htm'], load: async () => (await import('@savoire/plugin-webpage')).default },
   { id: 'plugin-csv', preinstalled: true, core: true, extensions: ['csv', 'tsv'], load: async () => (await import('@savoire/plugin-csv')).default },
 

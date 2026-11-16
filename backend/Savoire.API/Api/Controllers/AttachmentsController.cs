@@ -110,8 +110,11 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
         if (ext.Length > 0) return File(stream, GetContentType(ext));
         byte[] bytes = await ReadAllAsync(stream, ct);
         string type = SniffContentType(bytes);
-        // Pas une image : un telechargement, jamais affiche comme une page.
-        return type.StartsWith("image/", StringComparison.Ordinal) ? File(bytes, type) : File(bytes, "application/octet-stream", "fichier");
+        // Une image, une video ou un son : servi avec son type (lecteur du
+        // navigateur). Le reste : un telechargement, jamais affiche comme une page.
+        return type.StartsWith("image/", StringComparison.Ordinal) || type.StartsWith("video/", StringComparison.Ordinal) || type.StartsWith("audio/", StringComparison.Ordinal)
+            ? File(bytes, type, enableRangeProcessing: true)
+            : File(bytes, "application/octet-stream", "fichier");
     }
 
     // DELETE /api/v1/vaults/{vaultId}/attachments/{path}
@@ -142,6 +145,15 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
         ".webp"       => "image/webp",
         ".svg"        => "image/svg+xml",
         ".avif"       => "image/avif",
+        ".mp4" or ".m4v" => "video/mp4",
+        ".webm"       => "video/webm",
+        ".mov"        => "video/quicktime",
+        ".ogv"        => "video/ogg",
+        ".mp3"        => "audio/mpeg",
+        ".wav"        => "audio/wav",
+        ".ogg" or ".oga" => "audio/ogg",
+        ".m4a"        => "audio/mp4",
+        ".flac"       => "audio/flac",
         _             => "application/octet-stream",
     };
 
@@ -156,6 +168,15 @@ public partial class AttachmentsController(IMediator mediator) : AppControllerBa
         if (StartsWith(0, 0x47, 0x49, 0x46, 0x38)) return "image/gif";
         if (StartsWith(0, 0x52, 0x49, 0x46, 0x46) && StartsWith(8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
         if (StartsWith(4, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69)) return "image/avif";
+        // Videos et sons (plugin-video).
+        if (StartsWith(4, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74)) return "video/quicktime";      // ftypqt
+        if (StartsWith(4, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41)) return "audio/mp4";      // ftypM4A
+        if (StartsWith(4, 0x66, 0x74, 0x79, 0x70)) return "video/mp4";                        // ftyp...
+        if (StartsWith(0, 0x1A, 0x45, 0xDF, 0xA3)) return "video/webm";
+        if (StartsWith(0, 0x4F, 0x67, 0x67, 0x53)) return "audio/ogg";                        // OggS
+        if (StartsWith(0, 0x66, 0x4C, 0x61, 0x43)) return "audio/flac";                       // fLaC
+        if (StartsWith(0, 0x49, 0x44, 0x33) || StartsWith(0, 0xFF, 0xFB) || StartsWith(0, 0xFF, 0xF3)) return "audio/mpeg";
+        if (StartsWith(0, 0x52, 0x49, 0x46, 0x46) && StartsWith(8, 0x57, 0x41, 0x56, 0x45)) return "audio/wav";
         string head = System.Text.Encoding.UTF8.GetString(b, 0, Math.Min(b.Length, 512)).TrimStart('﻿', ' ', '\t', '\r', '\n');
         if (head.StartsWith("<svg", StringComparison.OrdinalIgnoreCase) || head.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase))
             return "image/svg+xml";

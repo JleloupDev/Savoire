@@ -168,7 +168,7 @@ const plugin: VaultPlugin = {
 
       // K1 — read-only embed: ![[filename]]
       // Une base (.base) a son propre rendu (plugin-base).
-      detect: (text) => { const e = parseEmbedBlock(text); return e !== null && !/\.(base|board)$/i.test(e.targetPath) },
+      detect: (text) => { const e = parseEmbedBlock(text); return e !== null && !/\.(base|board|mp4|m4v|webm|mov|ogv|mp3|wav|ogg|oga|m4a|flac)$/i.test(e.targetPath) },
 
       deserialize(raw) {
         return parseEmbedBlock(String(raw)) ?? parseEmbedTarget('')

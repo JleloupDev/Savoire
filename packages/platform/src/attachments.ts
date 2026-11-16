@@ -21,7 +21,11 @@ export type AttachmentLocation = 'note-folder' | 'attachments'
 export const ATTACHMENT_LOCATION: AttachmentLocation = 'note-folder'
 
 /** Extensions des pieces jointes (celles que le serveur accepte). */
-export const ATTACHMENT_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
+export const ATTACHMENT_EXTENSIONS: ReadonlySet<string> = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif',
+  // Videos et sons (plugin-video) : ranges et partages comme les images.
+  'mp4', 'm4v', 'webm', 'mov', 'ogv', 'mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac',
+])
 
 /** Vrai si ce chemin designe une piece jointe (image). */
 export function isAttachmentPath(path: string): boolean {

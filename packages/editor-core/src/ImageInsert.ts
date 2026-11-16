@@ -22,6 +22,14 @@ export const imageUploader = Facet.define<ImageUploader, ImageUploader | null>({
 })
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
+/** Videos et sons : deposes, colles, choisis comme les images (plugin-video). */
+const MEDIA_EXTS = new Set(['mp4', 'm4v', 'webm', 'mov', 'ogv', 'mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac'])
+
+/** Une image, une video ou un son : envoye au vault et integre dans la note. */
+export function isEmbeddableFile(file: File): boolean {
+  const ext = file.name.split('.').at(-1)?.toLowerCase() ?? ''
+  return isImageFile(file) || MEDIA_EXTS.has(ext) || /^(video|audio)\//.test(file.type)
+}
 
 export function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true
@@ -90,7 +98,7 @@ let nextInsertionId = 0
  */
 export async function insertImageFiles(view: EditorView, files: readonly File[], pos: number, pasted = false): Promise<boolean> {
   const upload = view.state.facet(imageUploader)
-  const images = files.filter(isImageFile)
+  const images = files.filter(isEmbeddableFile)
   if (!upload || images.length === 0 || view.state.readOnly) return false
 
   const id = ++nextInsertionId
@@ -137,7 +145,7 @@ export function pickAndInsertImages(view: EditorView): void {
   }
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = 'image/*'
+  input.accept = 'image/*,video/*,audio/*'
   input.multiple = true
   input.style.display = 'none'
   input.addEventListener('change', () => {
@@ -157,7 +165,7 @@ export function imageInsertExtension(upload: ImageUploader): Extension {
     EditorView.domEventHandlers({
       paste(event, view) {
         const data = event.clipboardData
-        const files = Array.from(data?.files ?? []).filter(isImageFile)
+        const files = Array.from(data?.files ?? []).filter(isEmbeddableFile)
         // Du texte avec l'image (copie depuis un traitement de texte) : on
         // colle le texte, comme Obsidian.
         if (files.length === 0 || data?.getData('text/plain') || view.state.readOnly) return false
@@ -166,7 +174,7 @@ export function imageInsertExtension(upload: ImageUploader): Extension {
         return true
       },
       drop(event, view) {
-        const files = Array.from(event.dataTransfer?.files ?? []).filter(isImageFile)
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(isEmbeddableFile)
         if (files.length === 0 || view.state.readOnly) return false
         event.preventDefault()
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head

@@ -305,6 +305,9 @@ importers:
       '@savoire/plugin-vault-browser':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-vault-browser
+      '@savoire/plugin-video':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-video
       '@savoire/plugin-webpage':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-webpage
@@ -1190,6 +1193,16 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/plugins/plugin-video:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/plugins/plugin-webpage:
     dependencies:
       '@savoire/plugin-api':
@@ -1544,6 +1557,9 @@ importers:
       '@savoire/plugin-templates':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-templates
+      '@savoire/plugin-video':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-video
       '@savoire/plugin-wikilinks':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-wikilinks
