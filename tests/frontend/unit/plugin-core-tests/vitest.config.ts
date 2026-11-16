@@ -23,7 +23,7 @@ export default defineConfig({
       '@savoire/plugin-module': src('plugin-module'),
       '@savoire/plugin-office': src('plugin-office'),
       '@savoire/plugin-wtf': src('plugin-wtf'),
-      '@savoire/plugin-quickref': src('plugin-quickref'),
+      '@savoire/plugin-bible': src('plugin-bible'),
       '@savoire/plugin-templates': src('plugin-templates'),
       '@savoire/plugin-agenda': src('plugin-agenda'),
       '@savoire/plugin-history': src('plugin-history'),

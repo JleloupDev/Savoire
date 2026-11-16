@@ -77,6 +77,8 @@ export type PluginPermission =
   | 'vault:read'
   | 'vault:write'
   | 'network:*'
+  /** Un seul site, par exemple 'network:wol.jw.org'. */
+  | `network:${string}`
   | 'ui:editor'
   | 'ui:settings'
   /** Proposer des agents (voir agents.ts). */

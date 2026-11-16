@@ -55,7 +55,7 @@
     "@savoire/plugin-outline": "workspace:*",
     "@savoire/plugin-page": "workspace:*",
     "@savoire/plugin-plaintext": "workspace:*",
-    "@savoire/plugin-quickref": "workspace:*",
+    "@savoire/plugin-bible": "workspace:*",
     "@savoire/plugin-runtime": "workspace:*",
     "@savoire/plugin-search": "workspace:*",
     "@savoire/plugin-table": "workspace:*",

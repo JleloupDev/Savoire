@@ -12,7 +12,7 @@ const SETTLE_MS = 5
 const CATALOG: PluginCatalogEntry[] = [
   { manifest: { id: 'plugin-backlinks', name: 'Rétroliens', version: '1', scope: 'vault' }, preinstalled: true, core: true },
   { manifest: { id: 'plugin-agenda', name: 'Agenda', version: '1', scope: 'personal' }, preinstalled: true, core: true },
-  { manifest: { id: 'plugin-quickref', name: 'QuickRef', version: '1', scope: 'vault' }, preinstalled: false },
+  { manifest: { id: 'plugin-bible', name: 'Bible', version: '1', scope: 'vault' }, preinstalled: false, formerIds: ['plugin-quickref'] },
 ]
 
 function service(initial: PersonalPluginState = { installed: [], removed: [], disabled: [] }) {
@@ -35,7 +35,7 @@ describe('plugins core', () => {
     const core = svc.list().filter(p => p.core)
     expect(core.map(p => p.id)).toEqual(['plugin-backlinks', 'plugin-agenda'])
     expect(core.every(p => p.installed && p.enabled)).toBe(true)
-    expect(svc.list().find(p => p.id === 'plugin-quickref')!.core).toBe(false)
+    expect(svc.list().find(p => p.id === 'plugin-bible')!.core).toBe(false)
   })
 
   it('se desactivent et se reactivent, sans jamais se desinstaller', async () => {
@@ -56,5 +56,17 @@ describe('plugins core', () => {
     expect(disabled()).toContain('plugin-agenda')
     svc.setEnabled('plugin-agenda', true)
     expect(disabled()).not.toContain('plugin-agenda')
+  })
+
+  it('un plugin renomme garde le reglage de son ancien id, puis le sien', async () => {
+    const session = await factory.open({ vaultId: 'renomme', token: '', userId: 'alice', onChanged: () => {} })
+    sessions.push(session)
+    session.openVaultSettings('plugins').set('plugin-quickref', { installed: true, enabled: true })
+    const { svc, disabled } = service()
+    svc.attachVault(session)
+    expect(svc.list().find(p => p.id === 'plugin-bible')).toMatchObject({ installed: true, enabled: true })
+    svc.setEnabled('plugin-bible', false)
+    expect(disabled()).toContain('plugin-bible')
+    expect(svc.list().find(p => p.id === 'plugin-bible')).toMatchObject({ installed: true, enabled: false })
   })
 })

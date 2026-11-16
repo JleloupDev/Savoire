@@ -32,6 +32,7 @@ export { BOOKS, CHAPTER_COUNT, type BibleBook } from './books'
 export { BIBLES, bibleById, type BibleEdition } from './bibles'
 export { parseWolChapter, pieceText, decodeEntities, wolChapterUrl, type ParsedVerse } from './wol'
 export { chapterNote, bookNote, indexNote, chapterPath, bookPath, indexPath, installedBibleId } from './notes'
+export { BibleWidget, type BibleHost } from './BibleWidget'
 export { installBible, BibleInstallError, type InstallTarget, type InstallProgress, type InstallResult } from './install'
 
 /** Lectures de notes en parallele au chargement. */

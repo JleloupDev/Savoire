@@ -60,6 +60,9 @@ export interface IPluginAPI {
   extractors?: import('./extractors').ExtractorRegistry
   /** IA de la personne : reponses et fournisseurs (voir ai.ts). Permission 'ai'. */
   ai?: import('./ai').AIAPI
+  /** Lire une page https (application bureau seulement). Permission 'network:*'
+   *  ou 'network:<site>'. Voir network.ts. */
+  network?: import('./network').NetworkAPI
   /** Moteur de raccourcis clavier : lire et changer les touches des commandes. */
   hotkeys?: HotkeyAPI
   /** Requetes sur les notes du vault (bases, listes, proprietes). Voir query.ts.

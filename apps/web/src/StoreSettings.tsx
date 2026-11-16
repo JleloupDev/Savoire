@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { permissionLabel, type SavoireStoreService, type StoreItem, type StoreItemDetail } from './savoireStore'
 
-const KINDS: Record<string, string> = { plugin: 'Plugin', template: 'Modèle de note', module: 'Module' }
+const KINDS: Record<string, string> = { plugin: 'Plugin', template: 'Modèle de note', module: 'Module', notes: 'Notes' }
 
 const small: React.CSSProperties = { color: 'var(--text-faint)', fontSize: '0.75rem' }
 const row: React.CSSProperties = { padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)' }
@@ -21,6 +21,7 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
   const [installed, setInstalled] = useState(() => store.installed())
   const [q, setQ] = useState('')
   const [kind, setKind] = useState('')
+  const [progress, setProgress] = useState<{ id: string; done: number; total: number } | null>(null)
   const [items, setItems] = useState<StoreItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -45,13 +46,16 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
   async function install(id: string) {
     setBusy(id); setError(null); setDone(null)
     try {
-      const r = await store.install(id)
+      const r = await store.install(id, (n, total) => setProgress({ id, done: n, total }))
       setConfirming(null)
-      setDone(r.path ? `Ajouté au vault : ${r.path}` : 'Plugin installé.')
+      setDone(r.kind === 'notes'
+        ? `Ajouté au vault : ${r.written ?? 0} note(s)${r.skipped ? `, ${r.skipped} déjà présente(s) gardée(s)` : ''}.`
+        : r.path ? `Ajouté au vault : ${r.path}` : 'Plugin installé.')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(null)
+      setProgress(null)
     }
   }
 
@@ -63,7 +67,7 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
   return (
     <div data-testid="store-settings" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={small}>
-        Plugins, modèles de notes et modules publiés sur le Savoire Store. Chaque paquet est signé par le store et vérifié avant
+        Plugins, modèles de notes, modules et paquets de notes publiés sur le Savoire Store. Chaque paquet est signé par le store et vérifié avant
         l’installation. Le code d’un plugin tourne à part, isolé de Savoire : il ne fait que ce que ses droits permettent.
       </div>
       {error && <div data-testid="store-error" style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
@@ -141,11 +145,17 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
                     </div>
                   </>
                 ) : (
-                  <div style={{ marginBottom: 8 }}>Une note sera ajoutée au vault ouvert.</div>
+                  <div style={{ marginBottom: 8 }}>
+                    {item.kind === 'notes'
+                      ? 'Les notes du paquet seront ajoutées au vault ouvert, à leur place. Une note qui existe déjà est gardée telle quelle.'
+                      : 'Une note sera ajoutée au vault ouvert.'}
+                  </div>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button data-testid="store-confirm-install" disabled={busy === item.id} style={button(true)} onClick={() => void install(item.id)}>
-                    {busy === item.id ? 'Installation…' : 'Confirmer'}
+                    {busy === item.id
+                      ? progress?.id === item.id ? `Installation… ${progress.done} / ${progress.total}` : 'Installation…'
+                      : 'Confirmer'}
                   </button>
                   <button style={button(false)} onClick={() => setConfirming(null)}>Annuler</button>
                 </div>

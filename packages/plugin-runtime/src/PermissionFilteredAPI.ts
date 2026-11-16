@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { PluginAPI, PluginPermission } from '@savoire/plugin-api'
+import type { NetworkAPI, PluginAPI, PluginPermission } from '@savoire/plugin-api'
+import { networkAllowed } from '@savoire/plugin-api'
 
 // see ADR-013
 export class PermissionFilteredAPI implements PluginAPI {
@@ -83,6 +84,22 @@ export class PermissionFilteredAPI implements PluginAPI {
   get ai() {
     this.require('ai')
     return this.inner.ai
+  }
+
+  /** Reseau : seulement les sites declares (network:<site>, ou network:* pour tous). */
+  get network(): NetworkAPI | undefined {
+    const inner = this.inner.network
+    if (!inner) return undefined
+    const granted = [...this.permissions]
+    if (!granted.some(p => p.startsWith('network:'))) this.require('network:*')
+    return {
+      fetchText: async (url: string) => {
+        if (!networkAllowed(granted, url)) {
+          throw new Error(`[PluginRuntime] Permission denied: network access to '${url}'. Declare 'network:<site>' in the plugin manifest.`)
+        }
+        return inner.fetchText(url)
+      },
+    }
   }
 
   get query() {

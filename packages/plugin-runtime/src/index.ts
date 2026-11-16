@@ -30,5 +30,5 @@ export { SharedLibraryRegistry, requiredLibraries } from './SharedLibraryRegistr
 export { ExtractorRegistryImpl } from './ExtractorRegistry'
 export { FramedPlugin, buildPluginSrcdoc, framedPluginCsp, checkExtracted, idAfterCreate, setPluginFrameUrl, MAX_FRAME_WRITES_PER_MINUTE } from './FramedPlugin'
 export type { FramedPluginOptions } from './FramedPlugin'
-export { verifyStorePackage, sha256Hex, storeKeyId, StorePackageError } from './StorePackage'
+export { verifyStorePackage, sha256Hex, storeKeyId, StorePackageError, notesOfPackage, NOTES_PREFIX } from './StorePackage'
 export type { StorePackage, StoreItemKind } from './StorePackage'

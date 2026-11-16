@@ -7,7 +7,9 @@
 //    chaque compte ; sa signature est reverifiee a chaque demarrage. Le code
 //    tourne dans une iframe isolee (FramedPlugin), jamais dans la page ;
 //  - modeles de note et modules : ce sont des notes, ajoutees au vault ouvert
-//    (dossier des modeles, dossier Modules/).
+//    (dossier des modeles, dossier Modules/) ;
+//  - paquets de notes (une Bible...) : leurs notes sont ajoutees au vault
+//    ouvert a leur chemin ; une note qui existe deja est gardee.
 //
 // Adresse du store : VITE_SAVOIRE_STORE_URL (developpement : /store, relaye
 // par Vite vers 127.0.0.1:5100). Cle publique : VITE_SAVOIRE_STORE_KEY
@@ -16,7 +18,7 @@
 // d'installer.
 import type { PluginAPI } from '@savoire/plugin-api'
 import { templateFolderOf } from '@savoire/plugin-api'
-import { FramedPlugin, StorePackageError, idAfterCreate, setPluginFrameUrl, sha256Hex, verifyStorePackage, type StorePackage } from '@savoire/plugin-runtime'
+import { FramedPlugin, StorePackageError, idAfterCreate, notesOfPackage, setPluginFrameUrl, sha256Hex, verifyStorePackage, type StorePackage } from '@savoire/plugin-runtime'
 import { boardFrameUrl } from './tauriRuntime'
 
 // Bureau : la page cadre des boards sert aussi aux plugins (la CSP de la fenetre bloque le JS en ligne).
@@ -24,7 +26,7 @@ setPluginFrameUrl(boardFrameUrl())
 
 export interface StoreItem {
   id: string
-  kind: 'plugin' | 'template' | 'module'
+  kind: 'plugin' | 'template' | 'module' | 'notes'
   name: string
   summary: string
   author: string
@@ -34,6 +36,15 @@ export interface StoreItem {
   ratingCount: number
   downloads: number
   price: { cents: number; currency: string } | null
+}
+
+export interface StoreInstallResult {
+  kind: StorePackage['kind']
+  /** Modele ou module : la note ajoutee. */
+  path?: string
+  /** Paquet de notes : notes ecrites, et deja presentes (gardees). */
+  written?: number
+  skipped?: number
 }
 
 export interface StoreItemDetail {
@@ -218,8 +229,9 @@ export class SavoireStoreService {
    * Installe un element. Plugin : garde et demarre. Modele ou module :
    * ajoute la note au vault ouvert, et rend son chemin.
    */
-  async install(id: string): Promise<{ kind: StorePackage['kind']; path?: string }> {
+  async install(id: string, onProgress?: (done: number, total: number) => void): Promise<StoreInstallResult> {
     const { pkg, bytes, signature, sha256 } = await this.download(id)
+    if (pkg.kind === 'notes') return { kind: pkg.kind, ...await this.addNotes(pkg, onProgress) }
     if (pkg.kind !== 'plugin') return { kind: pkg.kind, path: await this.addNote(pkg) }
     const userId = this.opts.userId()
     if (!userId) throw new Error('Connectez-vous pour installer un plugin.')
@@ -295,6 +307,28 @@ export class SavoireStoreService {
     if (framed) await framed.stop()
     const s = this.states.get(id)
     if (s && s.state === 'running') s.state = 'stopped'
+  }
+
+  /** Un paquet de notes : chaque note a son chemin, sauf celles qui existent deja. */
+  private async addNotes(pkg: StorePackage, onProgress?: (done: number, total: number) => void): Promise<{ written: number; skipped: number }> {
+    const api = this.opts.api()
+    const vault = api?.vault
+    if (!vault?.createFile || !api) throw new Error('Ouvrez un vault pour y ajouter ces notes.')
+    const notes = notesOfPackage(pkg)
+    let written = 0
+    let skipped = 0
+    for (const [i, note] of notes.entries()) {
+      if (vault.resolveDocumentId(note.path)) skipped++
+      else {
+        await vault.createFile(note.path)
+        const docId = await idAfterCreate(api, note.path)
+        if (vault.editText) await vault.editText(docId, () => note.text)
+        else await vault.write(docId, note.text)
+        written++
+      }
+      onProgress?.(i + 1, notes.length)
+    }
+    return { written, skipped }
   }
 
   /** Un modele ou un module : une note ajoutee au vault ouvert. */

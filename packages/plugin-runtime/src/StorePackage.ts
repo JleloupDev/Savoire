@@ -8,7 +8,7 @@
 // est connue de l'application : un paquet qu'elle ne valide pas n'est jamais
 // installe, ni charge (la verification est refaite a chaque demarrage).
 
-export type StoreItemKind = 'plugin' | 'template' | 'module'
+export type StoreItemKind = 'plugin' | 'template' | 'module' | 'notes'
 
 export interface StorePackage {
   format: 1
@@ -76,9 +76,34 @@ export async function verifyStorePackage(
   if (pkg?.format !== 1 || typeof pkg.id !== 'string' || typeof pkg.version !== 'string' || !pkg.manifest || typeof pkg.files !== 'object') {
     throw new StorePackageError('Format de paquet inconnu.')
   }
-  if (!['plugin', 'template', 'module'].includes(pkg.kind)) throw new StorePackageError(`Sorte inconnue : ${String(pkg.kind)}.`)
+  if (!['plugin', 'template', 'module', 'notes'].includes(pkg.kind)) throw new StorePackageError(`Sorte inconnue : ${String(pkg.kind)}.`)
   if (expect.id && pkg.id !== expect.id) throw new StorePackageError('Le paquet ne correspond pas à l’élément demandé.')
   if (expect.version && pkg.version !== expect.version) throw new StorePackageError('Le paquet ne correspond pas à la version demandée.')
   if (pkg.manifest.id !== pkg.id || pkg.manifest.version !== pkg.version) throw new StorePackageError('Manifeste incohérent.')
   return pkg
+}
+
+/** Prefixe des notes d'un paquet de notes (« notes/Bible/Bible.md »). */
+export const NOTES_PREFIX = 'notes/'
+
+/**
+ * Les notes d'un paquet de notes : chemin dans le vault et texte, dans
+ * l'ordre des chemins. Le store controle deja les chemins a la publication ;
+ * on les recontrole ici (rien hors du vault, rien de cache).
+ */
+export function notesOfPackage(pkg: StorePackage): { path: string; text: string }[] {
+  if (pkg.kind !== 'notes') throw new StorePackageError('Ce paquet n’est pas un paquet de notes.')
+  const notes: { path: string; text: string }[] = []
+  for (const [name, text] of Object.entries(pkg.files)) {
+    if (!name.startsWith(NOTES_PREFIX) || typeof text !== 'string') continue
+    const path = name.slice(NOTES_PREFIX.length)
+    const parts = path.split('/')
+    if (!path || path.startsWith('/') || path.includes('\\') || path.includes(':')
+      || parts.some(p => !p || p === '.' || p === '..' || p.startsWith('.'))) {
+      throw new StorePackageError(`Chemin refusé dans le paquet : ${path}`)
+    }
+    notes.push({ path, text })
+  }
+  if (!notes.length) throw new StorePackageError('Paquet de notes vide.')
+  return notes.sort((a, b) => a.path.localeCompare(b.path, 'fr', { numeric: true }))
 }

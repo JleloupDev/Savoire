@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll } from 'vitest'
-import { verifyStorePackage, sha256Hex, storeKeyId, StorePackageError } from '@savoire/plugin-runtime'
+import { verifyStorePackage, sha256Hex, storeKeyId, StorePackageError, notesOfPackage, type StorePackage } from '@savoire/plugin-runtime'
 
 const b64 = (buf: ArrayBuffer | Uint8Array): string => Buffer.from(buf instanceof Uint8Array ? buf : new Uint8Array(buf)).toString('base64')
 
@@ -61,5 +61,25 @@ describe('verifyStorePackage', () => {
 
   it('calcule l id de cle comme le store', async () => {
     expect(await storeKeyId(spki)).toMatch(/^[0-9a-f]{16}$/)
+  })
+})
+
+describe('paquet de notes', () => {
+  const pkg = (files: Record<string, string>) =>
+    ({ format: 1, id: 'bible', kind: 'notes', version: '1.0.0', manifest: { id: 'bible', name: 'Bible', version: '1.0.0' }, files }) as unknown as StorePackage
+
+  it('les notes, a leur chemin, dans l\'ordre', () => {
+    expect(notesOfPackage(pkg({ 'notes/B/Gen 10.md': 'b', 'notes/B/Gen 2.md': 'a', 'autre.txt': 'x' }))).toEqual([
+      { path: 'B/Gen 2.md', text: 'a' },
+      { path: 'B/Gen 10.md', text: 'b' },
+    ])
+  })
+
+  it('refuse un chemin hors du vault ou cache, et un paquet vide', () => {
+    for (const bad of ['notes/../x.md', 'notes//x.md', 'notes/.obsidian/a.md', 'notes/C:/x.md', 'notes/a/./b.md']) {
+      expect(() => notesOfPackage(pkg({ [bad]: 'x' }))).toThrow(StorePackageError)
+    }
+    expect(() => notesOfPackage(pkg({}))).toThrow('vide')
+    expect(() => notesOfPackage({ ...pkg({ 'notes/a.md': 'x' }), kind: 'plugin' })).toThrow('pas un paquet de notes')
   })
 })

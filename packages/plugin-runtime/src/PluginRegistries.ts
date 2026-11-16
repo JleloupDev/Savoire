@@ -441,6 +441,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public icons?: IconAPI
   public libraries?: import('@savoire/plugin-api').ISharedLibraries
   public ai?: import('@savoire/plugin-api').AIAPI
+  public network?: import('@savoire/plugin-api').NetworkAPI
   public extractors?: import('@savoire/plugin-api').ExtractorRegistry
 
   constructor(

@@ -39,6 +39,7 @@ import { requestModuleShare } from './moduleShare'
 import { setDiskTypeResolver } from './diskShapes'
 import { publications } from './publication'
 import { aiService } from './aiService'
+import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
 import type { VaultSummary } from './types'
@@ -324,6 +325,8 @@ export function usePluginBootstrap({
       pluginApi.libraries = sharedLibraries
       // IA : l'application tient les cles et fait les appels ; les plugins ont une vue sans cle.
       pluginApi.ai = aiService.pluginAPI()
+      // Pages web des sites autorises : bureau seulement (CORS sur le web).
+      pluginApi.network = desktopNetwork()
       // Extracteurs (Word, HTML, images...) : index et apercus.
       pluginApi.extractors = extractorRegistry
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Lire une page web pour un plugin, sur une liste fermee de sites
+# (voir src/web_fetch.rs).
+
+[[set]]
+identifier = "network"
+description = "Lire une page https des sites autorises (wol.jw.org) pour les plugins."
+permissions = [
+  "allow-web-fetch-text",
+]

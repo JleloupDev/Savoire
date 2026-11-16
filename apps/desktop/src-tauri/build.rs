@@ -37,6 +37,7 @@ const COMMANDS: &[&str] = &[
     "open_external",
     "note_window_open",
     "note_window_pin",
+    "web_fetch_text",
 ];
 
 fn main() {

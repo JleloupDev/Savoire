@@ -552,7 +552,7 @@ export function AppShell() {
       .map(m => [m.id, m]))
     return STORE_CATALOG.flatMap(e => {
       const manifest = loaded.get(e.id) ?? e.manifest
-      return manifest ? [{ manifest, preinstalled: e.preinstalled, core: e.core }] : []
+      return manifest ? [{ manifest, preinstalled: e.preinstalled, core: e.core, formerIds: e.formerIds }] : []
     })
   }
   const pluginSettingsRef = useRef<PluginSettingsService | null>(null)

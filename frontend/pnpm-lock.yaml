@@ -209,6 +209,9 @@ importers:
       '@savoire/plugin-base':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-base
+      '@savoire/plugin-bible':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-bible
       '@savoire/plugin-board':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-board
@@ -284,9 +287,6 @@ importers:
       '@savoire/plugin-powerpoint':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-powerpoint
-      '@savoire/plugin-quickref':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-quickref
       '@savoire/plugin-runtime':
         specifier: workspace:*
         version: link:../../packages/plugin-runtime
@@ -685,6 +685,22 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/plugins/plugin-bible:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   ../packages/plugins/plugin-board:
     dependencies:
       '@codemirror/commands':
@@ -1073,16 +1089,6 @@ importers:
         version: 5.9.3
 
   ../packages/plugins/plugin-powerpoint:
-    dependencies:
-      '@savoire/plugin-api':
-        specifier: workspace:*
-        version: link:../../plugin-api
-    devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  ../packages/plugins/plugin-quickref:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*
@@ -1505,6 +1511,9 @@ importers:
       '@savoire/plugin-base':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-base
+      '@savoire/plugin-bible':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-bible
       '@savoire/plugin-board':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-board
@@ -1532,9 +1541,6 @@ importers:
       '@savoire/plugin-page':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-page
-      '@savoire/plugin-quickref':
-        specifier: workspace:*
-        version: link:../../../../packages/plugins/plugin-quickref
       '@savoire/plugin-templates':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-templates

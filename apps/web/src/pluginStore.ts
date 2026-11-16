@@ -41,6 +41,8 @@ export interface StoreEntry {
   manifest?: PluginManifest
   /** Extensions de fichier que le plugin ouvre : pour proposer de l'installer. */
   extensions?: string[]
+  /** Anciens ids (plugin renomme) : leur reglage de vault est repris. */
+  formerIds?: string[]
   load(ctx: PluginLoadContext): Promise<VaultPlugin>
 }
 
@@ -264,18 +266,19 @@ export const STORE_CATALOG: StoreEntry[] = [
     },
   },
   {
-    id: 'plugin-quickref', preinstalled: false,
+    // Ancien « QuickRef » : un vault qui l'avait installe garde le plugin.
+    id: 'plugin-bible', preinstalled: false, formerIds: ['plugin-quickref'],
     manifest: {
-      id: 'plugin-quickref',
-      name: 'QuickRef',
-      version: '0.0.1',
-      description: 'Citer la Bible : « ! » puis un livre, un chapitre ou un mot insère les versets',
+      id: 'plugin-bible',
+      name: 'Bible',
+      version: '0.1.0',
+      description: 'Choisir et télécharger sa Bible, puis citer : « ! » et un livre, un chapitre ou un mot insère les versets',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'network:wol.jw.org'],
       defaultActive: true,
     },
     extensions: [],
-    load: async () => (await import('@savoire/plugin-quickref')).default,
+    load: async () => (await import('@savoire/plugin-bible')).default,
   },
   {
     // Communaute, a installer : documents .tex ecrits a plusieurs (CRDT), avec apercu.

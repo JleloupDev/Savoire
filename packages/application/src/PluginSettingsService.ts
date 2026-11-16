@@ -25,6 +25,8 @@ export interface PluginCatalogEntry {
   preinstalled: boolean
   /** Plugin core : livre avec Savoire, toujours installe, desactivable. */
   core?: boolean
+  /** Anciens ids du plugin (renomme) : leur reglage de vault vaut pour lui tant qu'il n'a pas le sien. */
+  formerIds?: string[]
 }
 
 export interface PluginInfo {
@@ -208,7 +210,13 @@ export class PluginSettingsService {
   }
 
   private vaultSetting(id: string): VaultPluginSetting | undefined {
-    return this.vaultSettings?.getAll().find(e => e.id === id)?.value as VaultPluginSetting | undefined
+    const all = this.vaultSettings?.getAll()
+    if (!all) return undefined
+    for (const key of [id, ...(this.entry(id)?.formerIds ?? [])]) {
+      const found = all.find(e => e.id === key)
+      if (found) return found.value as VaultPluginSetting
+    }
+    return undefined
   }
 
   private writeVault(id: string, setting: VaultPluginSetting): void {

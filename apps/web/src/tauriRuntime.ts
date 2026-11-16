@@ -34,3 +34,17 @@ export function boardFrameUrl(scope: unknown = globalThis, userAgent: string = t
   if (!isTauriRuntime(scope) || isAndroidRuntime(userAgent)) return null
   return /\bWindows\b/.test(userAgent) ? 'http://savoire-board.localhost/' : 'savoire-board://localhost/'
 }
+
+/**
+ * Lecture de pages web pour les plugins (api.network) : version bureau
+ * seulement, par la commande native web_fetch_text (liste fermee de sites).
+ * Undefined ailleurs : sur le web, le navigateur ne lit pas les autres sites.
+ */
+export function desktopNetwork(
+  scope: unknown = globalThis,
+  userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : '',
+): { fetchText(url: string): Promise<string> } | undefined {
+  if (!isTauriRuntime(scope) || isAndroidRuntime(userAgent)) return undefined
+  const internals = (scope as { __TAURI_INTERNALS__: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> } }).__TAURI_INTERNALS__
+  return { fetchText: async url => String(await internals.invoke('web_fetch_text', { url })) }
+}

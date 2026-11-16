@@ -29,6 +29,8 @@ mod vault_fs;
 mod vaults;
 #[cfg(desktop)]
 mod watch;
+#[cfg(desktop)]
+mod web_fetch;
 
 use tauri::Manager;
 
@@ -84,6 +86,7 @@ pub fn run() {
             oauth::open_external,
             note_window::note_window_open,
             note_window::note_window_pin,
+            web_fetch::web_fetch_text,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");
