@@ -329,6 +329,9 @@ importers:
       dockview:
         specifier: ^4.3.0
         version: 4.13.1(react@18.3.1)
+      html-to-image:
+        specifier: 1.11.13
+        version: 1.11.13
       marked:
         specifier: ^9.0.0
         version: 9.1.6
@@ -3537,6 +3540,9 @@ packages:
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
+
+  html-to-image@1.11.13:
+    resolution: {integrity: sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==}
 
   human-signals@5.0.0:
     resolution: {integrity: sha512-AXcZb6vzzrFAUE61HnN4mpLqd/cSIwNQjtNWR0euPm6y0iqx3G4gOXaIDdtdDwZmhwe82LA6+zinmW4UBWVePQ==}
@@ -6821,6 +6827,8 @@ snapshots:
   highlight.js@11.11.1: {}
 
   html-escaper@2.0.2: {}
+
+  html-to-image@1.11.13: {}
 
   human-signals@5.0.0: {}
 

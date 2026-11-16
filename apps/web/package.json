@@ -68,6 +68,7 @@
     "@savoire/workspace": "workspace:*",
     "@sentry/browser": "11.8.0",
     "dockview": "^4.3.0",
+    "html-to-image": "1.11.13",
     "marked": "^9.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

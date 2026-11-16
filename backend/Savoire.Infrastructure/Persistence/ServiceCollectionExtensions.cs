@@ -91,6 +91,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IShareLinkRepository,           EfShareLinkRepository>();
         services.AddScoped<IPublicationRepository,         EfPublicationRepository>();
         services.AddScoped<IAccessTokenRepository,         EfAccessTokenRepository>();
+        services.AddScoped<IFeedbackRepository,            EfFeedbackRepository>();
 
         // Index repositories
 

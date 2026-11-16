@@ -33,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<VaultIndexerSettingEntity> VaultIndexerSettings  => Set<VaultIndexerSettingEntity>();
     public DbSet<PublicationEntity>         Publications          => Set<PublicationEntity>();
     public DbSet<AccessTokenEntity>         AccessTokens          => Set<AccessTokenEntity>();
+    public DbSet<FeedbackReportEntity>      FeedbackReports       => Set<FeedbackReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -281,6 +282,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.RevokedAt).HasColumnName("revoked_at");
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<FeedbackReportEntity>(e =>
+        {
+            e.ToTable("feedback_reports");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").HasMaxLength(64);
+            e.Property(x => x.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(x => x.Message).HasColumnName("message").IsRequired();
+            e.Property(x => x.ContextJson).HasColumnName("context").IsRequired();
+            e.Property(x => x.UserAgent).HasColumnName("user_agent").HasMaxLength(512);
+            e.Property(x => x.Screenshot).HasColumnName("screenshot");
+            e.Property(x => x.ScreenshotType).HasColumnName("screenshot_type").HasMaxLength(32);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.ArchivedAt).HasColumnName("archived_at");
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.CreatedAt);
         });
 
         modelBuilder.Entity<PublicationEntity>(e =>

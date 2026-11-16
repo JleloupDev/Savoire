@@ -324,6 +324,59 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("edgesync_blobs", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.FeedbackReportEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<string>("ContextJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("context");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<byte[]>("Screenshot")
+                        .HasColumnType("bytea")
+                        .HasColumnName("screenshot");
+
+                    b.Property<string>("ScreenshotType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("screenshot_type");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("feedback_reports", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.FolderEntity", b =>
                 {
                     b.Property<string>("Id")

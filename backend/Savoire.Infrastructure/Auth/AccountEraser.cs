@@ -7,7 +7,7 @@
 //     S'il refuse ou ne repond pas, rien n'est efface (on peut recommencer) ;
 //  2. dans Savoire, en une transaction : ses vaults et tout leur contenu
 //     (VaultEraser), sa place dans les vaults des autres, les droits qu'on lui
-//     avait donnes, ses cles, ses jetons personnels, son compte ;
+//     avait donnes, ses cles, ses jetons personnels, ses retours, son compte ;
 //  3. les fichiers de ses vaults, une fois la base validee.
 // Les vaults qu'elle possedait disparaissent pour tous leurs membres : un
 // vault n'a pas d'autre proprietaire possible aujourd'hui.
@@ -56,6 +56,7 @@ public sealed class AccountEraser(
             await db.VaultKeyWraps.Where(k => k.UserId == userId).ExecuteDeleteAsync(ct);
             await db.VaultMemberIdentities.Where(i => i.UserId == userId).ExecuteDeleteAsync(ct);
             await db.AccessTokens.Where(t => t.UserId == userId).ExecuteDeleteAsync(ct);
+            await db.FeedbackReports.Where(f => f.UserId == userId).ExecuteDeleteAsync(ct);
             IdentityResult deleted = await users.DeleteAsync(user);
             if (!deleted.Succeeded)
                 throw new InvalidOperationException("Compte : suppression impossible : "

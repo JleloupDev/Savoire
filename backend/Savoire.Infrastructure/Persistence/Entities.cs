@@ -223,3 +223,16 @@ public class AccessTokenEntity
     public DateTime? LastUsedAt { get; set; }
     public DateTime? RevokedAt  { get; set; }
 }
+
+public class FeedbackReportEntity
+{
+    public string    Id             { get; set; } = null!;
+    public string    UserId         { get; set; } = null!;
+    public string    Message        { get; set; } = null!;
+    public string    ContextJson    { get; set; } = null!;
+    public string?   UserAgent      { get; set; }
+    public byte[]?   Screenshot     { get; set; }
+    public string?   ScreenshotType { get; set; }
+    public DateTime  CreatedAt      { get; set; }
+    public DateTime? ArchivedAt     { get; set; }
+}

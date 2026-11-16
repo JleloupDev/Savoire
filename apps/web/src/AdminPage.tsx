@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import type { IAdminAPI, AppAdminUser } from '@savoire/application'
 import { t, ti } from '@savoire/i18n'
+import { FeedbackAdmin } from './FeedbackAdmin'
 
 export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
   const { token, isReady, logout } = useAuth()
@@ -12,6 +13,7 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
 
   const [users, setUsers] = useState<AppAdminUser[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'users' | 'feedback'>('users')
 
   const loadUsers = useCallback(async () => {
     if (!token) return
@@ -75,14 +77,25 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
         minHeight: 42,
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{t('app', 'admin.title')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{t('app', 'admin.title')}</span>
+          {(['users', 'feedback'] as const).map(id => (
+            <button key={id} onClick={() => setTab(id)} data-testid={`admin-tab-${id}`} style={{
+              ...topBtn,
+              background: tab === id ? 'var(--accent-dim)' : 'transparent',
+              borderColor: tab === id ? 'var(--accent)' : 'transparent',
+            }}>{id === 'users' ? 'Comptes' : 'Retours'}</button>
+          ))}
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => navigate('/')} style={topBtn}>{t('app', 'admin.back')}</button>
           <button onClick={handleLogout} style={{ ...topBtn, color: 'var(--color-danger)' }}>{t('app', 'topbar.logout')}</button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: 16, gap: 16 }}>
+      {tab === 'feedback' && <FeedbackAdmin />}
+
+      {tab === 'users' && <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: 16, gap: 16 }}>
 
         {/* ── Comptes : chez le fournisseur d'identite ── */}
         <div style={{
@@ -198,7 +211,7 @@ export function AdminPage({ adminApi }: { adminApi: IAdminAPI }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

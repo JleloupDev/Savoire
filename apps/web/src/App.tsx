@@ -11,6 +11,7 @@ import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
 import { loadModulePlugins } from './pluginStore'
 import { ToastContainer } from './ToastContainer'
+import { FeedbackBubble } from './FeedbackBubble'
 import { getServerChoice } from './serverConnection'
 import { CALLBACK_PATH, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
 import { isAndroidRuntime, isTauriRuntime } from './tauriRuntime'
@@ -42,7 +43,7 @@ export function App() {
               <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
               <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} loadPlugins={loadModulePlugins} />} />
               <Route path="/view" element={<ViewGrantPage />} />
-              <Route path="/" element={<AppShell />} />
+              <Route path="/" element={<><AppShell /><FeedbackBubble /></>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
