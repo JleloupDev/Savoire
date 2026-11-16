@@ -59,16 +59,29 @@ export class PublicationService {
   }
 
   /** Publie (ou met a jour) la page de la note. */
+  /** Publie (ou met a jour) la page de la note. Reserve aux administrateurs du vault. */
   async publish(docId: string, path: string, indexable: boolean): Promise<PublicationInfo> {
+    const body = await this.render(docId, path)
+    const res = await this.call('PUT', docId, { ...body, indexable })
+    const info = await res.json() as PublicationInfo
+    this.known.set(docId, info)
+    return info
+  }
+
+  /** Contenu d'une page deja publiee (la page suit la note) : tout redacteur. */
+  private async refresh(docId: string, path: string): Promise<void> {
+    const body = await this.render(docId, path)
+    const res = await this.call('PUT', docId, body, '/content')
+    this.known.set(docId, await res.json() as PublicationInfo)
+  }
+
+  private async render(docId: string, path: string): Promise<{ title: string; description: string; html: string }> {
     const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '')
     const text = await this.d.read(docId)
     // La note commence deja par un titre : pas de second titre au-dessus.
     const startsWithHeading = /^\s*(?:---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n\s*)?#\s+\S/.test(text)
     const { html, description } = await renderNoteForWeb(text, { ...this.d.renderOptions(), title: startsWithHeading ? '' : title })
-    const res = await this.call('PUT', docId, { title, description, html, indexable })
-    const info = await res.json() as PublicationInfo
-    this.known.set(docId, info)
-    return info
+    return { title, description, html }
   }
 
   async unpublish(docId: string): Promise<void> {
@@ -87,7 +100,7 @@ export class PublicationService {
       this.timers.delete(docId)
       void (async () => {
         const info = cached ?? await this.status(docId)
-        if (info) await this.publish(docId, path, info.indexable)
+        if (info) await this.refresh(docId, path)
       })().catch(err => console.warn('[publication] mise a jour impossible', err))
     }, REPUBLISH_MS))
   }
@@ -99,17 +112,17 @@ export class PublicationService {
     this.known.clear()
   }
 
-  private async call(method: 'GET' | 'PUT' | 'DELETE', docId: string, body?: unknown): Promise<Response> {
+  private async call(method: 'GET' | 'PUT' | 'DELETE', docId: string, body?: unknown, suffix = ''): Promise<Response> {
     const vaultId = this.d.vaultId()
     if (!vaultId) throw new Error('Aucun vault ouvert.')
-    const res = await fetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/publication`), {
+    const res = await fetch(serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/${encodeURIComponent(docId)}/publication${suffix}`), {
       method,
       headers: { authorization: `Bearer ${this.d.token()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
-      throw new Error(res.status === 403 ? 'Vous n’avez pas le droit de publier cette note.' : `Publication impossible (${res.status}). ${detail.slice(0, 160)}`)
+      throw new Error(res.status === 403 ? 'Publier sur le web est réservé aux administrateurs du vault.' : `Publication impossible (${res.status}). ${detail.slice(0, 160)}`)
     }
     return res
   }

@@ -15,7 +15,7 @@ using Savoire.Application.Common;
 namespace Savoire.Server.Hubs;
 
 [Authorize]
-public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
+public class SyncHub(IMediator mediator, ILogger<SyncHub> logger, HubSubscriptions subscriptions) : Hub
 {
     // ── Methods called by the client ──────────────────────────────────────────
 
@@ -23,12 +23,16 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     {
         await mediator.Send(new CheckVaultAccessQuery(GetCallerId(), vaultId, VaultAccessLevel.Read));
         await Groups.AddToGroupAsync(Context.ConnectionId, $"vault:{vaultId}");
+        subscriptions.Add(HubKind.Sync, Context.ConnectionId, GetCallerId(), vaultId, null, $"vault:{vaultId}");
         logger.LogInformation("Client {Id} joined vault {VaultId}", Context.ConnectionId, vaultId);
         await Clients.Caller.SendAsync("VaultJoined", vaultId);
     }
 
     public async Task LeaveVault(string vaultId)
-        => await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"vault:{vaultId}");
+    {
+        subscriptions.Remove(Context.ConnectionId, $"vault:{vaultId}");
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"vault:{vaultId}");
+    }
 
     public async Task JoinDocument(string vaultId, string docId)
     {
@@ -36,6 +40,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
         JoinDocumentResult result = await mediator.Send(new JoinDocumentQuery(callerId, vaultId, docId));
 
         await Groups.AddToGroupAsync(Context.ConnectionId, $"doc:{docId}");
+        subscriptions.Add(HubKind.Sync, Context.ConnectionId, callerId, vaultId, docId, $"doc:{docId}");
         JoinedDocuments().Add(docId);
 
         // Non-vault-members with document-level permission subscribe to metadata
@@ -53,6 +58,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
     public async Task LeaveDocument(string vaultId, string docId)
     {
         JoinedDocuments().Remove(docId);
+        subscriptions.Remove(Context.ConnectionId, $"doc:{docId}");
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"doc:{docId}");
     }
 
@@ -116,6 +122,7 @@ public class SyncHub(IMediator mediator, ILogger<SyncHub> logger) : Hub
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
+        subscriptions.Forget(Context.ConnectionId);
         logger.LogInformation("Client disconnected: {Id}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }

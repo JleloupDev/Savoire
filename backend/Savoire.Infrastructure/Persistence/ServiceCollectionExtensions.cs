@@ -113,6 +113,9 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(HttpIndexerPeerClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddHttpClient(IndexerServiceTokens.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
         services.TryAddSingleton(TimeProvider.System);
+        // Droits a date de fin : retires chaque minute (M7).
+        services.AddSingleton<Savoire.Infrastructure.Services.ExpiredPermissionSweeper>();
+        services.AddHostedService(sp => sp.GetRequiredService<Savoire.Infrastructure.Services.ExpiredPermissionSweeper>());
         // Quota de stockage par compte (section Limits).
         services.AddSingleton<Savoire.Application.Abstractions.IVaultStorageQuota, Savoire.Infrastructure.Services.VaultStorageQuota>();
         services.AddSingleton<IndexerServiceTokens>();

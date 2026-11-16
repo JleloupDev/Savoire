@@ -25,7 +25,8 @@ namespace Savoire.Server.Hubs;
 public sealed class VaultHub(
     IMediator             mediator,
     ILogger<VaultHub>     logger,
-    DocumentLockRegistry  locks) : Hub
+    DocumentLockRegistry  locks,
+    HubSubscriptions      subscriptions) : Hub
 {
     // ── Vault CRDT sync ───────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ public sealed class VaultHub(
         JoinVaultResult result = await mediator.Send(new JoinVaultQuery(GetCallerId(), vaultId));
 
         await Groups.AddToGroupAsync(Context.ConnectionId, vaultId);
+        subscriptions.Add(HubKind.Vault, Context.ConnectionId, GetCallerId(), vaultId, null, vaultId);
 
         await Clients.Caller.SendAsync("InitVault", vaultId, result.Ops);
 
@@ -106,6 +108,7 @@ public sealed class VaultHub(
     {
         JoinIndexResult result = await mediator.Send(new JoinIndexQuery(GetCallerId(), vaultId, ns));
         await Groups.AddToGroupAsync(Context.ConnectionId, IndexGroup(vaultId, ns));
+        subscriptions.Add(HubKind.Vault, Context.ConnectionId, GetCallerId(), vaultId, null, IndexGroup(vaultId, ns));
         // Ops rendues a CETTE connexion : SnapshotIndex ne remplacera qu'elles.
         Context.Items[JoinedIndexKey(vaultId, ns)] = result.OpIds ?? [];
         logger.LogInformation(
@@ -237,6 +240,7 @@ public sealed class VaultHub(
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        subscriptions.Forget(Context.ConnectionId);
         // Sans cela, fermer un onglet laisserait le document verrouille pour
         // tout le monde, sans detenteur joignable.
         foreach (string key in locks.ReleaseAllFor(Context.ConnectionId))

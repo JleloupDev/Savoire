@@ -123,6 +123,7 @@ builder.Services.AddSignalR(o =>
 builder.Services.AddSingleton<Savoire.Server.Hubs.EdgeSyncRooms>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.DocumentLockRegistry>();
 builder.Services.AddSingleton<Savoire.Server.Hubs.HubCallLimiter>();
+builder.Services.AddSingleton<Savoire.Server.Hubs.HubSubscriptions>();
 
 // 7. CORS : origines web (AllowedOrigins) + application de bureau
 // (DesktopAppOrigins, origines Tauri par defaut). Jamais « toutes les
@@ -213,10 +214,14 @@ app.MapGet("/health/ready", async (AppDbContext db, CancellationToken ct) =>
         : Results.Json(new { status = "database-unreachable" }, statusCode: 503)).AllowAnonymous();
 
 app.MapControllers();
-app.MapHub<SyncHub>("/hubs/sync");
-app.MapHub<VaultHub>("/hubs/vault");
-app.MapHub<DocumentRoomHub>("/hubs/room");
-app.MapHub<EdgeSyncHub>("/hubs/edgesync");
+// Une connexion temps reel ne survit pas a son jeton : a l'expiration, le
+// serveur la ferme ; le client se reconnecte avec un jeton neuf, et ses
+// droits sont reverifies (M7).
+static void CloseAtExpiry(Microsoft.AspNetCore.Http.Connections.HttpConnectionDispatcherOptions o) => o.CloseOnAuthenticationExpiration = true;
+app.MapHub<SyncHub>("/hubs/sync", CloseAtExpiry);
+app.MapHub<VaultHub>("/hubs/vault", CloseAtExpiry);
+app.MapHub<DocumentRoomHub>("/hubs/room", CloseAtExpiry);
+app.MapHub<EdgeSyncHub>("/hubs/edgesync", CloseAtExpiry);
 // DocumentHub removed — legacy hub replaced by VaultHub (MediatR)
 
 app.Run();

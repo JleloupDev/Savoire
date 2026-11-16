@@ -23,12 +23,25 @@ public sealed class VaultAccessGuard(
         if (owner != vaultId) throw new DocumentNotInVaultException(vaultId);
     }
 
+    /// <summary>
+    /// Le membre, sauf si le droit qui l'a fait entrer a expire (droit sur le
+    /// vault avec une date de fin, revue du 14/11/2026, M7). Le balayage
+    /// periodique (ExpiredPermissionSweeper) le retire ensuite pour de bon.
+    /// </summary>
+    private async Task<VaultMember?> ActiveMemberAsync(string vaultId, string callerId, CancellationToken ct)
+    {
+        VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
+        if (member is null) return null;
+        ResourcePermission? grant = await permissions.GetAsync(ResourceType.Vault, vaultId, SubjectType.User, callerId, ct);
+        return grant is not null && grant.IsExpired() ? null : member;
+    }
+
     public async Task RequireReadAsync(string callerId, string vaultId, CancellationToken ct = default)
     {
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
-        VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
+        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
         if (member is null) throw new VaultNotFoundException(vaultId);
     }
 
@@ -37,7 +50,7 @@ public sealed class VaultAccessGuard(
         Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
-        VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
+        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
         if (member is null) throw new VaultNotFoundException(vaultId);
         if (member.Role == VaultRole.Viewer)
             throw new AccessDeniedException("Vault viewers cannot modify this vault.");
@@ -50,7 +63,7 @@ public sealed class VaultAccessGuard(
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
 
-        VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
+        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
         if (member is not null) return;
 
         // Not a vault member — check for a document-level permission.
@@ -70,7 +83,7 @@ public sealed class VaultAccessGuard(
         if (vault is null) throw new VaultNotFoundException(vaultId);
         if (vault.IsOwner(callerId)) return;
 
-        VaultMember? member = await vaults.GetMemberAsync(vaultId, callerId, ct);
+        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
         if (member is not null)
         {
             if (member.Role == VaultRole.Viewer)

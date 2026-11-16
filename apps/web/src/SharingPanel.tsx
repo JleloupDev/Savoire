@@ -283,7 +283,7 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
           {loading && <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.loading')}</div>}
 
           {tab === 'web' && publications && doc && target === 'document' && (
-            <PublishWebTab service={publications} docId={doc.id} path={doc.path} canWrite={vault?.role !== 'viewer'} />
+            <PublishWebTab service={publications} docId={doc.id} path={doc.path} canWrite={vault?.role === 'owner'} />
           )}
 
           {tab === 'permissions' && (

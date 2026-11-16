@@ -18,3 +18,16 @@ public sealed class CheckVaultAccessQueryHandler : IRequestHandler<CheckVaultAcc
 {
     public Task Handle(CheckVaultAccessQuery request, CancellationToken ct) => Task.CompletedTask;
 }
+
+/// <summary>
+/// Verifie seulement un droit sur un document (meme principe que
+/// CheckVaultAccessQuery). Sert a reverifier un abonnement temps reel quand
+/// un droit change (HubSubscriptions).
+/// </summary>
+public sealed record CheckDocumentAccessQuery(string CallerId, string VaultId, string DocId, VaultAccessLevel RequiredAccess)
+    : IRequest, IRequiresDocumentAccess;
+
+public sealed class CheckDocumentAccessQueryHandler : IRequestHandler<CheckDocumentAccessQuery>
+{
+    public Task Handle(CheckDocumentAccessQuery request, CancellationToken ct) => Task.CompletedTask;
+}

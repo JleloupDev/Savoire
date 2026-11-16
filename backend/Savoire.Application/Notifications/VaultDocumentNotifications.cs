@@ -33,3 +33,9 @@ public record AccessRevokedNotification(
 public record VaultMembershipChangedNotification(
     string VaultId
 ) : INotification;
+
+/// <summary>Un compte est bloque ou supprime : ses connexions ouvertes perdent leurs abonnements.</summary>
+public record AccountAccessChangedNotification(string UserId) : INotification;
+
+/// <summary>Un lien de partage est revoque : les connexions ouvertes par lui perdent leurs abonnements.</summary>
+public record ShareLinkRevokedNotification(string LinkId) : INotification;

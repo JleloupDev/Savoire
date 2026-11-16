@@ -10,7 +10,8 @@ public sealed class RevokeShareLinkCommandHandler(
     IVaultRepository              vaults,
     IResourcePermissionRepository permissions,
     IShareLinkRepository          shareLinks,
-    IVaultDocumentRepository      vaultDocuments)
+    IVaultDocumentRepository      vaultDocuments,
+    IPublisher                    publisher)
     : IRequestHandler<RevokeShareLinkCommand>
 {
     public async Task Handle(RevokeShareLinkCommand cmd, CancellationToken ct)
@@ -24,5 +25,6 @@ public sealed class RevokeShareLinkCommandHandler(
 
         link.Revoke();
         await shareLinks.UpdateAsync(link, ct);
+        await publisher.Publish(new Savoire.Application.Notifications.ShareLinkRevokedNotification(link.Id), ct);
     }
 }

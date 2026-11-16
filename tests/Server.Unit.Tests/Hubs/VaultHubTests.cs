@@ -40,7 +40,8 @@ public class VaultHubTests
         var identity = new ClaimsIdentity([new Claim("sub", UserId)], "Bearer");
         context.User.Returns(new ClaimsPrincipal(identity));
 
-        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>(), new DocumentLockRegistry())
+        _hub = new VaultHub(_mediator, Substitute.For<ILogger<VaultHub>>(), new DocumentLockRegistry(),
+            new HubSubscriptions(Substitute.For<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(), Substitute.For<ILogger<HubSubscriptions>>()))
         {
             Clients = _clients,
             Groups  = _groups,

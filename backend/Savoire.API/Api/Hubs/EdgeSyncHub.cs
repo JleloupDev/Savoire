@@ -36,7 +36,8 @@ public sealed class EdgeSyncRooms
 public sealed class EdgeSyncHub(
     IMediator             mediator,
     EdgeSyncRooms         rooms,
-    ILogger<EdgeSyncHub>  logger) : Hub
+    ILogger<EdgeSyncHub>  logger,
+    HubSubscriptions      subscriptions) : Hub
 {
     // A relayed frame is one protocol message; 2 MB of base64 is far above any
     // legitimate envelope and protects the relay from memory abuse.
@@ -57,6 +58,7 @@ public sealed class EdgeSyncHub(
         rooms.VaultsByConnection.GetOrAdd(Context.ConnectionId, _ => new ConcurrentDictionary<string, byte>())[vaultId] = 1;
 
         await Groups.AddToGroupAsync(Context.ConnectionId, Group(vaultId));
+        subscriptions.Add(HubKind.EdgeSync, Context.ConnectionId, callerId, vaultId, null, Group(vaultId));
         await Clients.OthersInGroup(Group(vaultId)).SendAsync("PeerUp", vaultId, Context.ConnectionId);
 
         logger.LogInformation("EdgeSync: {ConnectionId} joined {VaultId} ({Count} peer(s) present)",
@@ -93,6 +95,7 @@ public sealed class EdgeSyncHub(
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        subscriptions.Forget(Context.ConnectionId);
         if (rooms.VaultsByConnection.TryRemove(Context.ConnectionId, out var vaults))
         {
             foreach (string vaultId in vaults.Keys)

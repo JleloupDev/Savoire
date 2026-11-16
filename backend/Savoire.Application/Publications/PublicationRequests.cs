@@ -40,11 +40,26 @@ public sealed record GetPublicationQuery(string VaultId, string DocumentId, stri
 
 /// <summary>
 /// Publie la note, ou met a jour sa page. La premiere fois, une adresse est
-/// choisie d'apres le titre. Exige le droit d'ecrire dans le vault.
+/// choisie d'apres le titre. Reserve aux administrateurs du vault (proprietaire,
+/// droit admin) : une page publiee est visible de tout Internet.
 /// </summary>
 public sealed record PublishDocumentCommand(
     string VaultId, string DocumentId, string CallerId,
     string Title, string Description, string Html, bool Indexable)
+    : IRequest<PublicationDto>, IRequiresVaultAccess, IConsumesVaultStorage
+{
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Admin;
+    public long StorageBytes => System.Text.Encoding.UTF8.GetByteCount(Html);
+    public bool ReplacesExisting => true;
+}
+
+/// <summary>
+/// Met a jour le contenu d'une page DEJA publiee (la page suit la note en
+/// direct). Un redacteur du vault le peut ; publier, changer la visibilite ou
+/// retirer la page restent reserves aux administrateurs. Sans page : 404.
+/// </summary>
+public sealed record RefreshPublicationCommand(
+    string VaultId, string DocumentId, string CallerId, string Title, string Description, string Html)
     : IRequest<PublicationDto>, IRequiresVaultAccess, IConsumesVaultStorage
 {
     public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
@@ -52,11 +67,29 @@ public sealed record PublishDocumentCommand(
     public bool ReplacesExisting => true;
 }
 
+public sealed class RefreshPublicationCommandHandler(IPublicationRepository publications, IVaultDocumentRepository docs)
+    : IRequestHandler<RefreshPublicationCommand, PublicationDto>
+{
+    public async Task<PublicationDto> Handle(RefreshPublicationCommand cmd, CancellationToken ct)
+    {
+        if (cmd.Html.Length > PublicationLimits.MaxHtmlChars)
+            throw new ValidationException([new ValidationFailure("html", "Page trop lourde pour être publiée.")]);
+        await Publications.EnsureInVault(docs, cmd.VaultId, cmd.DocumentId, ct);
+        Publication existing = await publications.GetByDocumentAsync(cmd.DocumentId, ct)
+            ?? throw new DocumentNotFoundException(cmd.DocumentId);
+        string title = Publications.Clip(cmd.Title.Trim(), PublicationLimits.MaxTitleChars);
+        string description = Publications.Clip(cmd.Description.Trim(), PublicationLimits.MaxDescriptionChars);
+        DateTime now = DateTime.UtcNow;
+        await publications.UpdateAsync(cmd.DocumentId, title, description, cmd.Html, existing.Indexable, now, ct);
+        return Publications.ToDto(existing with { Title = title, Description = description, Html = cmd.Html, UpdatedAt = now });
+    }
+}
+
 /// <summary>Retire la page : l'adresse ne repond plus.</summary>
 public sealed record UnpublishDocumentCommand(string VaultId, string DocumentId, string CallerId)
     : IRequest, IRequiresVaultAccess, IReleasesVaultStorage
 {
-    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Write;
+    public VaultAccessLevel RequiredAccess => VaultAccessLevel.Admin;
 }
 
 /// <summary>Page publique, sans compte. Null : rien a cette adresse.</summary>

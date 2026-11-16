@@ -45,3 +45,39 @@ public class VaultHubAccessChangedHandler(IHubContext<VaultHub> hub)
     public Task Handle(VaultMembershipChangedNotification n, CancellationToken ct) =>
         hub.Clients.Group(n.VaultId).SendAsync("VaultAccessChanged", n.VaultId, ct);
 }
+
+/// <summary>
+/// Un droit a change sur un vault (membre retire, droit expire, vault
+/// supprime) : les abonnements temps reel de ce vault sont reverifies, ceux
+/// qui n'ont plus le droit sont sortis de leurs groupes (revue du 14/11, M7).
+/// </summary>
+public class HubSubscriptionsMembershipHandler(HubSubscriptions subscriptions)
+    : INotificationHandler<VaultMembershipChangedNotification>
+{
+    public Task Handle(VaultMembershipChangedNotification n, CancellationToken ct) =>
+        subscriptions.RecheckVaultAsync(n.VaultId, ct);
+}
+
+/// <summary>Un droit sur un document est retire : ses abonnements sont reverifies.</summary>
+public class HubSubscriptionsDocumentHandler(HubSubscriptions subscriptions)
+    : INotificationHandler<AccessRevokedNotification>
+{
+    public Task Handle(AccessRevokedNotification n, CancellationToken ct) =>
+        subscriptions.RecheckDocumentAsync(n.DocId, ct);
+}
+
+/// <summary>Compte bloque ou supprime : tous ses abonnements sont reverifies.</summary>
+public class HubSubscriptionsAccountHandler(HubSubscriptions subscriptions)
+    : INotificationHandler<AccountAccessChangedNotification>
+{
+    public Task Handle(AccountAccessChangedNotification n, CancellationToken ct) =>
+        subscriptions.RecheckCallerAsync(n.UserId, ct);
+}
+
+/// <summary>Lien de partage revoque : les abonnements ouverts par lui sont reverifies.</summary>
+public class HubSubscriptionsShareLinkHandler(HubSubscriptions subscriptions)
+    : INotificationHandler<ShareLinkRevokedNotification>
+{
+    public Task Handle(ShareLinkRevokedNotification n, CancellationToken ct) =>
+        subscriptions.RecheckCallerAsync("share:" + n.LinkId, ct);
+}

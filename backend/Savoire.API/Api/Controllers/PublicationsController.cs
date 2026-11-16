@@ -4,7 +4,9 @@
 // Routes :
 //   GET    /api/v1/vaults/{vaultId}/documents/{docId}/publication
 //   PUT    /api/v1/vaults/{vaultId}/documents/{docId}/publication   { title, description, html, indexable }
+//   PUT    /api/v1/vaults/{vaultId}/documents/{docId}/publication/content   { title, description, html }  (page deja publiee)
 //   DELETE /api/v1/vaults/{vaultId}/documents/{docId}/publication
+//   Publier, changer la visibilite, retirer : administrateurs du vault. Mettre a jour le contenu : redacteurs.
 //   GET    /p/{slug}                                                 [AllowAnonymous] page HTML
 using System.Net;
 using MediatR;
@@ -33,6 +35,13 @@ public class PublicationsController(IMediator mediator) : AppControllerBase(medi
     [RequestSizeLimit(32 * 1024 * 1024)]
     public async Task<IActionResult> Publish(string vaultId, string docId, [FromBody] PublishRequest req, CancellationToken ct)
         => Ok(await Mediator.Send(new PublishDocumentCommand(vaultId, docId, GetCallerId(), req.Title ?? "", req.Description ?? "", req.Html ?? "", req.Indexable), ct));
+
+    /// <summary>Contenu d'une page deja publiee (la page suit la note) : redacteurs du vault.</summary>
+    [HttpPut("api/v1/vaults/{vaultId}/documents/{docId}/publication/content")]
+    [RateLimited(RatePolicies.Publish)]
+    [RequestSizeLimit(32 * 1024 * 1024)]
+    public async Task<IActionResult> Refresh(string vaultId, string docId, [FromBody] PublishRequest req, CancellationToken ct)
+        => Ok(await Mediator.Send(new RefreshPublicationCommand(vaultId, docId, GetCallerId(), req.Title ?? "", req.Description ?? "", req.Html ?? ""), ct));
 
     [HttpDelete("api/v1/vaults/{vaultId}/documents/{docId}/publication")]
     public async Task<IActionResult> Unpublish(string vaultId, string docId, CancellationToken ct)

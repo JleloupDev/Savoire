@@ -12,7 +12,8 @@ public sealed record DisableUserCommand(string UserId) : IRequest;
 
 public sealed class DisableUserCommandHandler(
     UserManager<AppUser> userManager,
-    IAccountCache accounts) : IRequestHandler<DisableUserCommand>
+    IAccountCache accounts,
+    MediatR.IPublisher publisher) : IRequestHandler<DisableUserCommand>
 {
     public async Task Handle(DisableUserCommand request, CancellationToken ct)
     {
@@ -23,5 +24,7 @@ public sealed class DisableUserCommandHandler(
         await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
         // Ses jetons, encore valides chez l'IdP, sont refuses des maintenant.
         accounts.Forget(request.UserId);
+        // Ses connexions ouvertes ne recoivent plus rien.
+        await publisher.Publish(new Savoire.Application.Notifications.AccountAccessChangedNotification(request.UserId), ct);
     }
 }

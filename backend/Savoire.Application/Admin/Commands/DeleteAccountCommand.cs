@@ -26,6 +26,7 @@ public sealed class DeleteAccountCommandHandler(IAccountEraser eraser, IPublishe
         // Les sessions ouvertes sur ces vaults constatent le changement.
         foreach (string vaultId in done.DeletedVaultIds.Concat(done.LeftVaultIds))
             await publisher.Publish(new VaultMembershipChangedNotification(vaultId), ct);
+        await publisher.Publish(new AccountAccessChangedNotification(cmd.UserId), ct);
     }
 }
 

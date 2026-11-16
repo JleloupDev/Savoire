@@ -67,7 +67,7 @@ export function PublishWebTab({ service, docId, path, canWrite }: { service: Pub
             </button>
           )}
         </div>
-      ) : <div style={{ color: 'var(--text-faint)' }}>Seuls les éditeurs du vault publient.</div>}
+      ) : <div data-testid="publish-admin-only" style={{ color: 'var(--text-faint)' }}>Publier sur le web est réservé aux administrateurs du vault.{info ? ' La page suit la note : vos modifications y apparaissent.' : ''}</div>}
       {error && <div style={{ color: 'var(--color-danger)' }}>{error}</div>}
     </div>
   )

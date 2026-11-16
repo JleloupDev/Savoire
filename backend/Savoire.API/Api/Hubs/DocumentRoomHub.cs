@@ -30,7 +30,8 @@ namespace Savoire.Server.Hubs;
 [Authorize]
 public class DocumentRoomHub(
     IMediator mediator,
-    ILogger<DocumentRoomHub> logger) : Hub
+    ILogger<DocumentRoomHub> logger,
+    HubSubscriptions subscriptions) : Hub
 {
     private const string JoinedRoomsKey = "joined-rooms";
 
@@ -41,6 +42,7 @@ public class DocumentRoomHub(
         string? snapshot = await mediator.Send(new JoinRoomQuery(GetUserId(), vaultId, docId));
 
         await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(docId));
+        subscriptions.Add(HubKind.Room, Context.ConnectionId, GetUserId(), vaultId, docId, RoomGroup(docId));
         JoinedRooms().Add(docId);
 
         logger.LogInformation(
@@ -53,6 +55,7 @@ public class DocumentRoomHub(
     public async Task LeaveRoom(string vaultId, string docId)
     {
         JoinedRooms().Remove(docId);
+        subscriptions.Remove(Context.ConnectionId, RoomGroup(docId));
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, RoomGroup(docId));
     }
 
@@ -85,6 +88,7 @@ public class DocumentRoomHub(
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
+        subscriptions.Forget(Context.ConnectionId);
         logger.LogInformation("[DocumentRoom] Client disconnected: {Id}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
