@@ -12,12 +12,13 @@ map $request_uri $savoire_frame_ancestors {
 }
 
 # Politique de securite de l'appli (M3). Seuls ses propres scripts tournent,
-# plus le WebAssembly (index local, OCR, LaTeX). Styles en ligne : React.
+# plus le WebAssembly (index local, OCR, LaTeX) et les plugins du store (code
+# signe, verifie puis evalue depuis une adresse blob:). Styles en ligne : React.
 # Reseau ouvert en https (fournisseurs d'IA, connexion, langues de l'OCR) et
 # vers le poste (Ollama). Images et videos des notes : https, donnees, blob.
 # Boards et plugins du store : dans /frame.html, qui a sa propre politique.
 map $request_uri $savoire_csp {
-    default "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: ws://localhost:* http://localhost:* http://127.0.0.1:* http://*.localhost:*; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors $savoire_frame_ancestors";
+    default "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: ws://localhost:* http://localhost:* http://127.0.0.1:* http://*.localhost:*; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors $savoire_frame_ancestors";
 }
 
 server {

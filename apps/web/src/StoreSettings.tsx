@@ -68,7 +68,8 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
     <div data-testid="store-settings" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={small}>
         Plugins, modèles de notes, modules et paquets de notes publiés sur le Savoire Store. Chaque paquet est signé par le store et vérifié avant
-        l’installation. Le code d’un plugin tourne à part, isolé de Savoire : il ne fait que ce que ses droits permettent.
+        l’installation. Comme dans Obsidian, un plugin installé vaut pour tout le vault : chaque membre le reçoit, sur tous ses appareils. Il
+        tourne dans Savoire, sur l’appareil seulement (jamais sur le serveur), et ne fait que ce que ses droits permettent.
       </div>
       {error && <div data-testid="store-error" style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
       {done && <div data-testid="store-done" style={{ color: 'var(--green, #16a34a)', fontSize: '0.75rem' }}>{done}</div>}
@@ -81,7 +82,8 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{p.name}</div>
               <div style={small}>
-                {p.state === 'running' ? 'En marche' : p.state === 'failed' ? `En échec : ${p.error ?? ''}` : 'Arrêté'}
+                {p.state === 'running' ? 'Prêt' : p.state === 'failed' ? `En échec : ${p.error ?? ''}` : 'Arrêté'}
+                {' · '}{p.scope === 'vault' ? `Pour tout le vault${p.installedBy ? `, installé par ${p.installedBy}` : ''}` : 'Pour vous seulement'}
                 {p.permissions.length > 0 && ` · ${p.permissions.map(permissionLabel).join(', ')}`}
               </div>
             </div>
@@ -141,7 +143,7 @@ export function StoreSettings({ store }: { store: SavoireStoreService }) {
                       </ul>
                     )}
                     <div style={{ ...small, marginBottom: 8 }}>
-                      Code source : github.com/{confirming.repo}{confirming.license ? ` · licence ${confirming.license}` : ''}. Le plugin est installé pour vous, dans ce navigateur.
+                      Code source : github.com/{confirming.repo}{confirming.license ? ` · licence ${confirming.license}` : ''}. Il sera installé pour tout le vault ouvert : chaque membre le recevra (sauf un plugin personnel, installé pour vous seulement).
                     </div>
                   </>
                 ) : (

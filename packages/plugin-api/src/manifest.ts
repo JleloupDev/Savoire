@@ -69,6 +69,17 @@ export interface PluginManifest {
    * il n'est pas desactivable.
    */
   essential?: boolean
+  /**
+   * Systemes de Savoire avec lesquels le plugin annonce fonctionner (voir
+   * capabilities.ts : 'search', 'revision', 'realtime'...). Affiche par le
+   * store. L'application verifie au chargement ce qu'il implemente vraiment.
+   */
+  capabilities?: string[]
+  /**
+   * Plugin du store : ou il tourne. 'page' (defaut) : dans la page, avec
+   * toute l'API ; 'frame' : dans une iframe cachee isolee, API reduite.
+   */
+  runtime?: 'page' | 'frame'
 }
 
 export type PluginScope = 'vault' | 'personal'

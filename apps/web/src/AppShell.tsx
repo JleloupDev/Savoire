@@ -20,7 +20,7 @@ import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
-import { STORE_CATALOG } from './pluginStore'
+import { catalogEntries } from './pluginStore'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
@@ -553,7 +553,7 @@ export function AppShell() {
       .map(e => e.plugin?.manifest)
       .filter((m): m is PluginManifest => !!m)
       .map(m => [m.id, m]))
-    return STORE_CATALOG.flatMap(e => {
+    return catalogEntries().flatMap(e => {
       const manifest = loaded.get(e.id) ?? e.manifest
       return manifest ? [{ manifest, preinstalled: e.preinstalled, core: e.core, formerIds: e.formerIds }] : []
     })
@@ -570,10 +570,19 @@ export function AppShell() {
 
   // Savoire Store : plugins tiers (iframe isolee), modeles et modules.
   const savoireStoreRef = useRef<SavoireStoreService | null>(null)
+  // Un paquet du store entre dans le catalogue : il se charge s'il est installe.
+  const syncInstalledPluginsRef = useRef<(() => Promise<void>) | null>(null)
   savoireStoreRef.current ??= new SavoireStoreService({
     userId: () => appAccountRef.current?.userId,
+    userName: () => appAccountRef.current?.displayName,
     api: () => pluginAPIRef.current,
     notify: (level, title, message) => notify(level, title, message),
+    libraries: sharedLibraries,
+    settings: () => pluginSettingsRef.current,
+    onCatalogChange: () => {
+      void syncInstalledPluginsRef.current?.()
+      window.dispatchEvent(new Event('savoire-plugins-changed'))
+    },
   })
   useEffect(() => {
     let cancelled = false
@@ -639,6 +648,7 @@ export function AppShell() {
     }
     if (loaded) refreshPluginUI()
   }, [whenPluginsReady, loadStoreEntry, refreshPluginUI])
+  syncInstalledPluginsRef.current = syncInstalledPlugins
   useEffect(() => {
     void syncInstalledPlugins()
     return pluginSettingsRef.current?.onChange(() => { void syncInstalledPlugins() })
@@ -657,7 +667,7 @@ export function AppShell() {
     // Desinstalle (preinstalle ou non), ou jamais installe : il est dans le store.
     const name = owner
       ? pluginLoaderRef.current.getAll().find(e => e.id === owner)?.plugin?.manifest.name ?? owner
-      : STORE_CATALOG.find(e => e.extensions?.includes(ext))?.manifest?.name
+      : catalogEntries().find(e => e.extensions?.includes(ext))?.manifest?.name
     if (!name) return undefined
     return `Les fichiers .${ext} s'ouvrent avec le plugin « ${name} », disponible dans le store. `
       + `Le fichier est intact : installez le plugin dans Réglages › Plugins pour l'ouvrir.`
@@ -761,6 +771,8 @@ export function AppShell() {
       // note, l'index qui lit un lot partagent le meme document sans se le fermer.
       vaultSessionRef.current = active.session ? withDocumentRefCount(active.session) : undefined
       pluginSettingsRef.current?.attachVault(active.session)
+      // Les plugins du store installes dans ce vault (telecharges si besoin).
+      savoireStoreRef.current?.attachVault(active.session)
       onChanged()
       // La nature des documents anciens est recopiee depuis leur type, quand
       // son plugin est la : un membre sans ce plugin les relira correctement.
@@ -1647,7 +1659,12 @@ export function AppShell() {
         <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current}
-              layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} ai={aiService} store={savoireStoreRef.current ?? undefined}
+              layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} pluginCapabilities={id => {
+                const report = pluginLoaderRef.current.capabilitiesOf(id)
+                if (!report) return null
+                const manifest = pluginLoaderRef.current.getAll().find(e => e.id === id)?.plugin?.manifest
+                return { report, declared: manifest?.capabilities }
+              }} ai={aiService} store={savoireStoreRef.current ?? undefined}
               api={activeProfile.name === 'server' && tokenRef.current ? { token: () => tokenRef.current ?? '', vaults: vaults.map(v => ({ id: v.id, name: v.name })) } : undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>

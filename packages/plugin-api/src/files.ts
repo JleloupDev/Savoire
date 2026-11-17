@@ -123,6 +123,12 @@ export interface FileTypeSpec {
    * and pushes the result to the server for indexing.
    */
   contentExtractor?: ContentExtractor
+  /**
+   * Revision et comparaison (voir capabilities.ts) : type de proposition,
+   * differences par element. Facultatif : sans lui, la comparaison ouvre la
+   * vue deux fois en lecture seule.
+   */
+  review?: import('./capabilities').FileTypeReview
 }
 
 export interface FileTypeRegistry {

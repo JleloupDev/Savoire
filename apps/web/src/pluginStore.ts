@@ -43,6 +43,8 @@ export interface StoreEntry {
   extensions?: string[]
   /** Anciens ids (plugin renomme) : leur reglage de vault est repris. */
   formerIds?: string[]
+  /** Paquet du Savoire Store (code signe, telecharge), pas livre avec Savoire. */
+  fromStore?: boolean
   load(ctx: PluginLoadContext): Promise<VaultPlugin>
 }
 
@@ -451,6 +453,38 @@ export const STORE_CATALOG: StoreEntry[] = [
   },
 ]
 
+// ── Paquets du Savoire Store ─────────────────────────────────────────────────
+// Un paquet installe (savoireStore.ts) entre dans le catalogue comme les
+// plugins livres avec Savoire : memes reglages (pour tout le vault ou pour
+// soi), meme activation, meme API.
+
+const packageEntries = new Map<string, StoreEntry>()
+const catalogListeners = new Set<() => void>()
+
+/** Ajoute ou remplace l'entree d'un paquet du store. */
+export function setPackageEntry(entry: StoreEntry): void {
+  packageEntries.set(entry.id, { ...entry, fromStore: true })
+  for (const cb of catalogListeners) cb()
+}
+
+export function removePackageEntry(id: string): void {
+  if (packageEntries.delete(id)) for (const cb of catalogListeners) cb()
+}
+
+/** Tout le catalogue : les plugins de Savoire, puis les paquets du store. */
+export function catalogEntries(): StoreEntry[] {
+  return [...STORE_CATALOG, ...[...packageEntries.values()].filter(e => !STORE_CATALOG.some(s => s.id === e.id))]
+}
+
+export function findCatalogEntry(id: string): StoreEntry | undefined {
+  return STORE_CATALOG.find(e => e.id === id) ?? packageEntries.get(id)
+}
+
+export function onCatalogChange(cb: () => void): () => void {
+  catalogListeners.add(cb)
+  return () => { catalogListeners.delete(cb) }
+}
+
 /**
  * Les plugins d'un module (une note affichee seule : integree dans une autre
  * note, sur un site, dans un lien de partage). Seulement ceux du document :
@@ -459,7 +493,7 @@ export const STORE_CATALOG: StoreEntry[] = [
  */
 export function modulePluginEntries(path: string): StoreEntry[] {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  return STORE_CATALOG.filter(e => e.editorDefault || (e.extensions?.includes(ext) ?? false))
+  return catalogEntries().filter(e => e.editorDefault || (e.extensions?.includes(ext) ?? false))
 }
 
 /** Charge les plugins d'un module (ceux qui ne demandent aucun contexte du poste de travail). */

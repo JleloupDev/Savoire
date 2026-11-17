@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultPlugin, PluginAPI, IPluginLoader } from '@savoire/plugin-api'
+import { analyzeCapabilities, type VaultPlugin, type PluginAPI, type IPluginLoader, type CapabilityReport, type PluginRegistrations } from '@savoire/plugin-api'
+import { recordRegistrations } from './RegistrationRecorder'
 import { PluginSandbox } from './PluginSandbox'
 import { BlockRegistryImpl } from './PluginRegistries'
 import type { PluginActivation } from './PluginActivation'
@@ -10,6 +11,8 @@ export interface PluginEntry {
   sandbox: PluginSandbox | null
   plugin: VaultPlugin | null
   api: PluginAPI | null
+  /** Ce que le plugin a enregistre a son chargement (plugins charges par loadInternal). */
+  registrations?: PluginRegistrations
 }
 
 // see ADR-014
@@ -57,15 +60,23 @@ export class PluginLoader implements IPluginLoader {
     if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = id
     api.views._setCurrentPlugin?.(id)
     if (activation) activation.currentPluginId = id
+    // Ce qu'il enregistre est releve : avec quels systemes de Savoire il marche.
+    const recorded = recordRegistrations(api)
     try {
-      await plugin.onload(api)
+      await plugin.onload(recorded.api)
     } finally {
       if (api.blocks instanceof BlockRegistryImpl) api.blocks._currentPluginId = undefined
       api.views._setCurrentPlugin?.(undefined)
       if (activation) activation.currentPluginId = undefined
     }
-    this.loaded.set(id, { id, sandbox: null, plugin, api })
+    this.loaded.set(id, { id, sandbox: null, plugin, api, registrations: recorded.registrations })
     console.log(`[PluginLoader] Internal plugin loaded: ${id}`)
+  }
+
+  /** Avec quels systemes de Savoire marche ce plugin (charge). Null s'il ne l'est pas. */
+  capabilitiesOf(id: string): CapabilityReport[] | null {
+    const r = this.loaded.get(id)?.registrations
+    return r ? analyzeCapabilities(r) : null
   }
 
   async unload(id: string): Promise<void> {

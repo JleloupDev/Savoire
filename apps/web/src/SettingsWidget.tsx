@@ -15,6 +15,7 @@ import type { Widget } from '@savoire/plugin-api'
 import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } from '@savoire/plugin-api'
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
+import { capabilityInfo, overclaimedCapabilities, type CapabilityReport } from '@savoire/plugin-api'
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
@@ -58,6 +59,7 @@ export function SettingsPanel({
   loader,
   triggers,
   pluginSettings,
+  pluginCapabilities,
   hotkeys,
   commands,
   vaultIndexer,
@@ -73,6 +75,8 @@ export function SettingsPanel({
   commands?: { getAll(): PluginCommand[] }
   /** Catalogue et activation. Absent : simple liste des plugins charges. */
   pluginSettings?: PluginSettingsService
+  /** Avec quels systemes de Savoire marche un plugin charge (analyse a son chargement). */
+  pluginCapabilities?: (id: string) => { report: CapabilityReport[]; declared?: string[] } | null
   /** Pair indexeur du vault ouvert (profil serveur) : onglet Vault. */
   vaultIndexer?: { indexer: IVaultIndexer; isOwner: boolean; vaultName: string }
   /** L'IA de la personne : onglet IA. */
@@ -137,7 +141,7 @@ export function SettingsPanel({
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px' }}>
         {tab === 'plugins'  && (pluginSettings
-          ? <PluginStore service={pluginSettings} />
+          ? <PluginStore service={pluginSettings} capabilities={pluginCapabilities} />
           : <PluginsTab plugins={plugins} />)}
         {tab === 'store' && store && <StoreSettings store={store} />}
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
@@ -164,8 +168,35 @@ const badge = (bg: string, fg: string): React.CSSProperties => ({
   fontSize: '0.7rem', padding: '2px 7px', borderRadius: 10, background: bg, color: fg, fontWeight: 600, whiteSpace: 'nowrap',
 })
 
-function PluginStore({ service }: { service: PluginSettingsService }) {
+/** Les systemes de Savoire avec lesquels marche un plugin charge : natifs en plein, generiques en clair. */
+function CapabilityChips({ report, declared }: { report: CapabilityReport[]; declared?: string[] }) {
+  const shown = report.filter(c => c.level !== 'none')
+  const over = overclaimedCapabilities(declared, report)
+  if (!shown.length && !over.length) return null
+  return (
+    <div data-testid="plugin-capabilities" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+      {shown.map(c => (
+        <span key={c.id} data-capability={c.id} data-level={c.level} title={c.via}
+          style={c.level === 'native' ? badge('rgba(34,197,94,0.12)', '#16a34a') : badge('transparent', 'var(--text-faint)')}>
+          {capabilityInfo(c.id)?.label ?? c.id}{c.level === 'generic' ? ' (générique)' : ''}
+        </span>
+      ))}
+      {over.map(id => (
+        <span key={id} data-overclaimed={id} title="Annoncé par le plugin, mais il ne l’implémente pas"
+          style={badge('rgba(234,179,8,0.12)', '#ca8a04')}>⚠ {capabilityInfo(id)?.label ?? id}</span>
+      ))}
+    </div>
+  )
+}
+
+function PluginStore({ service, capabilities }: { service: PluginSettingsService; capabilities?: (id: string) => { report: CapabilityReport[]; declared?: string[] } | null }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>(() => service.list())
+  // Un paquet du store entre dans le catalogue, un plugin se charge : la liste suit.
+  useEffect(() => {
+    const onPlugins = () => setPlugins(service.list())
+    window.addEventListener('savoire-plugins-changed', onPlugins)
+    return () => window.removeEventListener('savoire-plugins-changed', onPlugins)
+  }, [service])
   // Action en attente de confirmation : « id:disable » ou « id:uninstall ».
   const [confirming, setConfirming] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -217,6 +248,7 @@ function PluginStore({ service }: { service: PluginSettingsService }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.name}</div>
             {p.description && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem', marginTop: 2 }}>{p.description}</div>}
+            {p.installed && (() => { const c = capabilities?.(p.id); return c ? <CapabilityChips report={c.report} declared={c.declared} /> : null })()}
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
             <span style={badge('var(--bg-elevated)', 'var(--text-muted)')}>v{p.version}</span>

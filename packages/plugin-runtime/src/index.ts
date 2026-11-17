@@ -32,3 +32,7 @@ export { FramedPlugin, buildPluginSrcdoc, framedPluginCsp, checkExtracted, idAft
 export type { FramedPluginOptions } from './FramedPlugin'
 export { verifyStorePackage, sha256Hex, storeKeyId, StorePackageError, notesOfPackage, NOTES_PREFIX } from './StorePackage'
 export type { StorePackage, StoreItemKind } from './StorePackage'
+export { recordRegistrations } from './RegistrationRecorder'
+export type { RecordedAPI } from './RegistrationRecorder'
+export { storePlugin, manifestOfPackage, runtimeOf, evaluateCommonJs } from './StorePlugin'
+export type { StorePluginRuntime, StorePluginOptions } from './StorePlugin'

@@ -135,3 +135,10 @@ export * from './xml'
 export * from './documentPreview'
 export { sanitizeHtml, setSanitizedHtml, sanitizerKind } from './sanitize'
 export * from './review'
+export {
+  SAVOIRE_CAPABILITIES, capabilityInfo, isCapabilityId, analyzeCapabilities, overclaimedCapabilities, emptyRegistrations,
+} from './capabilities'
+export type {
+  CapabilityId, CapabilityLevel, CapabilityInfo, CapabilityReport, PluginRegistrations, DiffItem, FileTypeReview,
+  ComparableView, ComparableFileView,
+} from './capabilities'

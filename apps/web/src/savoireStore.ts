@@ -3,9 +3,15 @@
 //
 // Le Savoire Store vu de l'application : chercher, installer, desinstaller.
 //
-//  - plugins : le paquet signe est garde dans ce navigateur (IndexedDB), pour
-//    chaque compte ; sa signature est reverifiee a chaque demarrage. Le code
-//    tourne dans une iframe isolee (FramedPlugin), jamais dans la page ;
+//  - plugins : comme dans Obsidian, un plugin installe vaut pour tout le
+//    vault. Le vault retient le paquet (id, version, empreinte, signature)
+//    dans ses reglages partages (« store-packages ») ; chaque appareil le
+//    telecharge une fois, le garde (IndexedDB), et reverifie sa signature a
+//    chaque demarrage. Le plugin entre alors dans le catalogue comme ceux
+//    livres avec Savoire : meme API complete dans la page (vues, editeurs de
+//    fichiers, CRDT, revision...), meme activation. Un plugin « personnel »
+//    (manifeste scope: personal) est retenu par le compte, dans ce navigateur.
+//    Il ne tourne jamais sur le serveur ;
 //  - modeles de note et modules : ce sont des notes, ajoutees au vault ouvert
 //    (dossier des modeles, dossier Modules/) ;
 //  - paquets de notes (une Bible...) : leurs notes sont ajoutees au vault
@@ -20,9 +26,12 @@
 // d'installer.
 import type { PluginAPI } from '@savoire/plugin-api'
 import { templateFolderOf } from '@savoire/plugin-api'
-import { FramedPlugin, StorePackageError, idAfterCreate, notesOfPackage, setPluginFrameUrl, sha256Hex, verifyStorePackage, type StorePackage } from '@savoire/plugin-runtime'
+import { StorePackageError, idAfterCreate, manifestOfPackage, notesOfPackage, setPluginFrameUrl, sha256Hex, storePlugin, verifyStorePackage, type SharedLibraryRegistry, type StorePackage } from '@savoire/plugin-runtime'
+import type { IVaultSyncSession } from '@savoire/application'
+import type { IIndexChannel } from '@savoire/plugin-api'
 import { sandboxFrameUrl } from './tauriRuntime'
 import { serverUrl } from '@savoire/infrastructure-sync'
+import { removePackageEntry, setPackageEntry } from './pluginStore'
 
 // Bureau : la page cadre des boards sert aussi aux plugins (la CSP de la fenetre bloque le JS en ligne).
 setPluginFrameUrl(sandboxFrameUrl())
@@ -66,20 +75,41 @@ export interface InstalledStorePlugin {
   version: string
   permissions: string[]
   installedAt: string
-  /** En marche, en echec (message), ou arrete. */
+  /** Pour tout le vault (reglages partages) ou pour soi (ce navigateur). */
+  scope: 'vault' | 'personal'
+  /** Qui l'a installe dans le vault. */
+  installedBy?: string
+  /** Pret (dans le catalogue), en echec (message). */
   state: 'running' | 'failed' | 'stopped'
   error?: string
 }
 
-interface StoredPackage {
-  key: string
-  userId: string
+/** Ce que le vault (ou le compte) retient d'un paquet installe. */
+export interface PackageRecord {
   id: string
   version: string
-  signature: string
   sha256: string
-  bytes: Uint8Array
+  signature: string
+  name: string
   installedAt: string
+  installedBy?: string
+}
+
+/** Un paquet garde dans ce navigateur (octets signes), cle id@sha256. */
+interface CachedPackage {
+  key: string
+  id: string
+  version: string
+  sha256: string
+  signature: string
+  bytes: Uint8Array
+}
+
+/** Plugin personnel : retenu par le compte, dans ce navigateur. */
+interface StoredPackage extends PackageRecord {
+  key: string
+  userId: string
+  bytes: Uint8Array
 }
 
 /** Noms des droits, en clair (les memes que sur le site du store). */
@@ -106,25 +136,29 @@ export function storeBaseUrl(): string {
 // ── Paquets gardes dans ce navigateur ─────────────────────────────────────
 
 const DB_NAME = 'savoire-store'
+/** Plugins personnels, par compte. */
 const DB_STORE = 'packages'
+/** Paquets des vaults, gardes par appareil (id@sha256). */
+const DB_CACHE = 'cache'
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
+    const req = indexedDB.open(DB_NAME, 2)
     req.onupgradeneeded = () => {
-      const s = req.result.createObjectStore(DB_STORE, { keyPath: 'key' })
-      s.createIndex('userId', 'userId')
+      const db = req.result
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: 'key' }).createIndex('userId', 'userId')
+      if (!db.objectStoreNames.contains(DB_CACHE)) db.createObjectStore(DB_CACHE, { keyPath: 'key' })
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
 }
 
-async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+async function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await openDb()
   try {
     return await new Promise<T>((resolve, reject) => {
-      const req = run(db.transaction(DB_STORE, mode).objectStore(DB_STORE))
+      const req = run(db.transaction(store, mode).objectStore(store))
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
     })
@@ -133,28 +167,51 @@ async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRe
   }
 }
 
-const packagesOf = (userId: string) => tx<StoredPackage[]>('readonly', s => s.index('userId').getAll(userId) as IDBRequest<StoredPackage[]>)
-const savePackage = (p: StoredPackage) => tx('readwrite', s => s.put(p))
-const deletePackage = (key: string) => tx('readwrite', s => s.delete(key))
+const packagesOf = (userId: string) => tx<StoredPackage[]>(DB_STORE, 'readonly', s => s.index('userId').getAll(userId) as IDBRequest<StoredPackage[]>)
+const savePackage = (p: StoredPackage) => tx(DB_STORE, 'readwrite', s => s.put(p))
+const deletePackage = (key: string) => tx(DB_STORE, 'readwrite', s => s.delete(key))
+const cached = (key: string) => tx<CachedPackage | undefined>(DB_CACHE, 'readonly', s => s.get(key) as IDBRequest<CachedPackage | undefined>)
+const saveCached = (p: CachedPackage) => tx(DB_CACHE, 'readwrite', s => s.put(p))
+
+/** Section des reglages partages du vault ou il retient ses paquets. */
+export const VAULT_PACKAGES_SECTION = 'store-packages'
+
+const isRecord = (v: unknown): v is PackageRecord => {
+  const r = v as PackageRecord | null
+  return !!r && typeof r.id === 'string' && typeof r.version === 'string' && typeof r.sha256 === 'string' && typeof r.signature === 'string'
+}
 
 // ── Le service ────────────────────────────────────────────────────────────
 
 export interface SavoireStoreOptions {
   userId(): string | undefined
+  /** Nom de la personne (qui a installe le plugin dans le vault). */
+  userName?(): string | undefined
   /** L'API des plugins (null avant le demarrage). */
   api(): PluginAPI | null
   notify(level: 'success' | 'warn' | 'danger', title: string, message?: string): void
+  /** Bibliotheques communes (React...) fournies aux plugins. */
+  libraries?: SharedLibraryRegistry
+  /** Reglages des plugins : installer, desinstaller (pour le vault ou pour soi). */
+  settings?(): { install(id: string): void; uninstall(id: string): void; installedIds(): string[] } | null
+  /** Un paquet est entre dans le catalogue (ou en est sorti) : charger ce qui est installe. */
+  onCatalogChange?(): void
   baseUrl?: string
   publicKey?: string
 }
 
 export class SavoireStoreService {
-  private readonly running = new Map<string, FramedPlugin>()
+  /** Paquets connus (vault + personnels), par id. */
   private readonly states = new Map<string, InstalledStorePlugin>()
   private readonly listeners = new Set<() => void>()
   private key: Promise<string> | null = null
   private loadedFor: string | undefined
   private loading: Promise<void> | null = null
+  private channel: IIndexChannel | null = null
+  private unsubChannel: (() => void) | null = null
+  private vaultIds = new Set<string>()
+  private personalIds = new Set<string>()
+  private syncing: Promise<void> = Promise.resolve()
 
   constructor(private readonly opts: SavoireStoreOptions) {}
 
@@ -221,11 +278,12 @@ export class SavoireStoreService {
     return this.key
   }
 
-  /** Telecharge et verifie la derniere version d'un element. */
-  private async download(id: string): Promise<{ pkg: StorePackage; bytes: Uint8Array; signature: string; sha256: string }> {
+  /** Telecharge et verifie un element (la derniere version, ou celle demandee). */
+  private async download(id: string, version?: string): Promise<{ pkg: StorePackage; bytes: Uint8Array; signature: string; sha256: string }> {
     let res: Response
+    const query = version ? `?version=${encodeURIComponent(version)}` : ''
     try {
-      res = await fetch(`${this.baseUrl}/api/v1/items/${encodeURIComponent(id)}/download`, { credentials: 'omit' })
+      res = await fetch(`${this.baseUrl}/api/v1/items/${encodeURIComponent(id)}/download${query}`, { credentials: 'omit' })
     } catch {
       throw new Error('Le Savoire Store ne répond pas.')
     }
@@ -234,13 +292,14 @@ export class SavoireStoreService {
     const sha256 = res.headers.get('X-Savoire-Sha256') ?? ''
     if (!signature) throw new StorePackageError('Paquet non signé : refusé.')
     const bytes = new Uint8Array(await res.arrayBuffer())
-    const pkg = await verifyStorePackage(bytes, signature, await this.publicKey(), { id, sha256: sha256 || undefined })
+    const pkg = await verifyStorePackage(bytes, signature, await this.publicKey(), { id, version, sha256: sha256 || undefined })
     return { pkg, bytes, signature, sha256: sha256 || await sha256Hex(bytes) }
   }
 
   /**
-   * Installe un element. Plugin : garde et demarre. Modele ou module :
-   * ajoute la note au vault ouvert, et rend son chemin.
+   * Installe un element. Plugin : pour tout le vault (ou pour soi, s'il est
+   * personnel), puis il se charge. Modele ou module : ajoute la note au vault
+   * ouvert, et rend son chemin.
    */
   async install(id: string, onProgress?: (done: number, total: number) => void): Promise<StoreInstallResult> {
     const { pkg, bytes, signature, sha256 } = await this.download(id)
@@ -249,77 +308,142 @@ export class SavoireStoreService {
     const userId = this.opts.userId()
     if (!userId) throw new Error('Connectez-vous pour installer un plugin.')
     if (typeof pkg.files['main.js'] !== 'string') throw new StorePackageError('Paquet sans main.js.')
-    await this.stopOne(id)
-    await savePackage({ key: `${userId}|${id}`, userId, id, version: pkg.version, signature, sha256, bytes, installedAt: new Date().toISOString() })
-    await this.startOne(pkg, new Date().toISOString())
+    const manifest = manifestOfPackage(pkg)
+    const record: PackageRecord = {
+      id, version: pkg.version, sha256, signature, name: manifest.name,
+      installedAt: new Date().toISOString(), installedBy: this.opts.userName?.() ?? undefined,
+    }
+    await saveCached({ key: `${id}@${sha256}`, id, version: pkg.version, sha256, signature, bytes })
+    if (manifest.scope === 'personal') {
+      await savePackage({ ...record, key: `${userId}|${id}`, userId, bytes })
+      this.personalIds.add(id)
+    } else {
+      if (!this.channel) throw new Error('Ouvrez un vault pour y installer ce plugin.')
+      this.channel.set(id, record)
+      this.vaultIds.add(id)
+    }
+    this.enter(pkg, record, manifest.scope === 'personal' ? 'personal' : 'vault')
+    this.opts.settings?.()?.install(id)
+    this.opts.onCatalogChange?.()
     return { kind: 'plugin' }
   }
 
   async uninstall(id: string): Promise<void> {
     const userId = this.opts.userId()
-    await this.stopOne(id)
+    this.opts.settings?.()?.uninstall(id)
+    if (this.vaultIds.has(id)) { this.channel?.delete(id); this.vaultIds.delete(id) }
+    if (this.personalIds.has(id)) { if (userId) await deletePackage(`${userId}|${id}`); this.personalIds.delete(id) }
     this.states.delete(id)
-    if (userId) await deletePackage(`${userId}|${id}`)
+    removePackageEntry(id)
     this.changed()
   }
 
-  /** Demarre les plugins installes du compte courant (et arrete ceux d'un autre compte). */
+  /** Le vault ouvert : ses paquets entrent dans le catalogue (et ceux du precedent en sortent). */
+  attachVault(session: IVaultSyncSession | undefined): void {
+    this.unsubChannel?.()
+    this.unsubChannel = null
+    this.channel = session ? session.openVaultSettings(VAULT_PACKAGES_SECTION) : null
+    for (const id of this.vaultIds) if (!this.personalIds.has(id)) { removePackageEntry(id); this.states.delete(id) }
+    this.vaultIds.clear()
+    this.changed()
+    if (!this.channel) return
+    const channel = this.channel
+    this.unsubChannel = channel.onChange(() => { this.syncVault(channel) })
+    this.syncVault(channel)
+  }
+
+  /** Les paquets retenus par le vault : telecharges si besoin, verifies, dans le catalogue. */
+  private syncVault(channel: IIndexChannel): void {
+    this.syncing = this.syncing.then(async () => {
+      if (channel !== this.channel) return
+      const records = channel.getAll().map(e => e.value).filter(isRecord)
+      const wanted = new Set(records.map(r => r.id))
+      for (const id of [...this.vaultIds]) {
+        if (!wanted.has(id) && !this.personalIds.has(id)) { this.vaultIds.delete(id); this.states.delete(id); removePackageEntry(id) }
+      }
+      let entered = false
+      for (const record of records) {
+        const current = this.states.get(record.id)
+        if (current && current.version === record.version && current.state !== 'failed') { this.vaultIds.add(record.id); continue }
+        try {
+          const pkg = await this.packageOf(record)
+          if (channel !== this.channel) return
+          this.vaultIds.add(record.id)
+          this.enter(pkg, record, 'vault')
+          entered = true
+        } catch (err) {
+          this.vaultIds.add(record.id)
+          this.states.set(record.id, {
+            id: record.id, name: record.name || record.id, version: record.version, permissions: [], installedAt: record.installedAt,
+            installedBy: record.installedBy, scope: 'vault', state: 'failed', error: err instanceof Error ? err.message : String(err),
+          })
+          this.changed()
+        }
+      }
+      if (entered) this.opts.onCatalogChange?.()
+    }).catch(err => console.warn('[store] paquets du vault', err))
+  }
+
+  /** Le paquet d'un enregistrement : garde sur cet appareil, sinon telecharge (cette version), verifie. */
+  private async packageOf(record: PackageRecord): Promise<StorePackage> {
+    const key = `${record.id}@${record.sha256}`
+    const hit = await cached(key).catch(() => undefined)
+    if (hit) return verifyStorePackage(hit.bytes, hit.signature, await this.publicKey(), { id: record.id, sha256: record.sha256 })
+    const got = await this.download(record.id, record.version)
+    if (got.sha256 !== record.sha256) throw new StorePackageError('Le paquet du store ne correspond pas à celui installé dans le vault.')
+    await saveCached({ key, id: record.id, version: record.version, sha256: record.sha256, signature: got.signature, bytes: got.bytes })
+    return got.pkg
+  }
+
+  /** Le paquet entre dans le catalogue : il se charge s'il est installe (reglages). */
+  private enter(pkg: StorePackage, record: PackageRecord, scope: 'vault' | 'personal'): void {
+    const manifest = manifestOfPackage(pkg)
+    const exts = Array.isArray(pkg.manifest.extensions) ? pkg.manifest.extensions.filter((e): e is string => typeof e === 'string') : []
+    setPackageEntry({
+      id: pkg.id, preinstalled: false, manifest, extensions: exts,
+      load: async () => storePlugin(pkg, {
+        libraries: this.opts.libraries,
+        notify: m => this.opts.notify('success', manifest.name, m),
+        onError: m => console.warn(`[store] ${m}`),
+      }),
+    })
+    this.states.set(pkg.id, {
+      id: pkg.id, name: manifest.name, version: pkg.version, permissions: manifest.permissions ?? [],
+      installedAt: record.installedAt, installedBy: record.installedBy, scope, state: 'running',
+    })
+    this.changed()
+  }
+
+  /** Les plugins personnels du compte courant (et plus ceux d'un autre compte). */
   startInstalled(): Promise<void> {
     const userId = this.opts.userId()
     if (this.loadedFor === userId && this.loading) return this.loading
     this.loadedFor = userId
     this.loading = (async () => {
-      for (const id of [...this.running.keys()]) await this.stopOne(id)
-      this.states.clear()
+      for (const id of [...this.personalIds]) {
+        this.personalIds.delete(id)
+        if (!this.vaultIds.has(id)) { this.states.delete(id); removePackageEntry(id) }
+      }
       this.changed()
       if (!userId || typeof indexedDB === 'undefined') return
       let stored: StoredPackage[] = []
       try { stored = await packagesOf(userId) } catch (err) { console.warn('[store] paquets illisibles', err); return }
+      let entered = false
       for (const s of stored) {
+        this.personalIds.add(s.id)
         try {
           const pkg = await verifyStorePackage(s.bytes, s.signature, await this.publicKey(), { id: s.id, sha256: s.sha256 })
-          await this.startOne(pkg, s.installedAt)
+          this.enter(pkg, s, 'personal')
+          entered = true
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
-          this.states.set(s.id, { id: s.id, name: s.id, version: s.version, permissions: [], installedAt: s.installedAt, state: 'failed', error: message })
+          this.states.set(s.id, { id: s.id, name: s.name || s.id, version: s.version, permissions: [], installedAt: s.installedAt, scope: 'personal', state: 'failed', error: message })
           this.changed()
         }
       }
+      if (entered) this.opts.onCatalogChange?.()
     })()
     return this.loading
-  }
-
-  private async startOne(pkg: StorePackage, installedAt: string): Promise<void> {
-    const api = this.opts.api()
-    const info: InstalledStorePlugin = {
-      id: pkg.id, name: pkg.manifest.name || pkg.id, version: pkg.version,
-      permissions: (pkg.manifest.permissions ?? []).filter(p => typeof p === 'string'), installedAt, state: 'stopped',
-    }
-    this.states.set(pkg.id, info)
-    if (!api) { info.state = 'failed'; info.error = 'Application pas encore prête.'; this.changed(); return }
-    const framed = new FramedPlugin({
-      id: pkg.id, name: info.name, code: pkg.files['main.js'] ?? '', permissions: info.permissions, api,
-      notify: m => this.opts.notify('success', info.name, m),
-      onError: m => console.warn(`[store] ${m}`),
-    })
-    this.running.set(pkg.id, framed)
-    try {
-      await framed.start()
-      info.state = 'running'
-    } catch (err) {
-      this.running.delete(pkg.id)
-      info.state = 'failed'
-      info.error = err instanceof Error ? err.message : String(err)
-    }
-    this.changed()
-  }
-
-  private async stopOne(id: string): Promise<void> {
-    const framed = this.running.get(id)
-    this.running.delete(id)
-    if (framed) await framed.stop()
-    const s = this.states.get(id)
-    if (s && s.state === 'running') s.state = 'stopped'
   }
 
   /** Un paquet de notes : chaque note a son chemin, sauf celles qui existent deja. */

@@ -5,7 +5,7 @@ import { useRef, useCallback, useEffect } from 'react'
 import type { MutableRefObject } from 'react'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
-import { STORE_CATALOG, type PluginLoadContext } from './pluginStore'
+import { STORE_CATALOG, findCatalogEntry, type PluginLoadContext } from './pluginStore'
 import type { VaultAPI, VaultPlugin, IEditorHostAPI, SyncAPI, PluginCommand, PropertyMember } from '@savoire/plugin-api'
 import {
   InMemoryQueryEngine,
@@ -137,9 +137,21 @@ export function usePluginBootstrap({
     setGraphContributor: (get) => { getGraphContributorRef.current = get },
   }
 
+  // Chargements en cours : deux demandes simultanees (installation, reglages,
+  // catalogue qui change) ne chargent le plugin qu'une fois.
+  const loadingRef = useRef(new Map<string, Promise<boolean>>())
+
   /** Charge un plugin du store. Rend false s'il l'etait deja ou s'il est inconnu. */
-  const loadEntry = async (id: string, api: IEditorHostAPI): Promise<boolean> => {
-    const entry = STORE_CATALOG.find(e => e.id === id)
+  const loadEntry = (id: string, api: IEditorHostAPI): Promise<boolean> => {
+    const pending = loadingRef.current.get(id)
+    if (pending) return pending.then(() => false)
+    const run = loadEntryNow(id, api).finally(() => loadingRef.current.delete(id))
+    loadingRef.current.set(id, run)
+    return run
+  }
+
+  const loadEntryNow = async (id: string, api: IEditorHostAPI): Promise<boolean> => {
+    const entry = findCatalogEntry(id)
     if (!entry || pluginLoaderRef.current.isLoaded(id)) return false
     const plugin = await entry.load(loadContext)
     await pluginLoaderRef.current.loadInternal(plugin, api)
