@@ -81,6 +81,12 @@ export class PermissionFilteredAPI implements PluginAPI {
     return this.inner.extractors
   }
 
+  /** Proposer une modification : comme ecrire, mais en attente d'accord. */
+  get review() {
+    this.require('ui:editor')
+    return this.inner.review
+  }
+
   get ai() {
     this.require('ai')
     return this.inner.ai

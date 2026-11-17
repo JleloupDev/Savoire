@@ -27,6 +27,7 @@ import { needsFormulas, withFormulas } from './formulaEngine'
 import { fetchBaseRows } from './queryBlock'
 import { TOTAL_KINDS, computeTotal, totalText, type TotalKind } from './totals'
 import { ensureStyle } from './style'
+import { CELL_PROPOSAL, type CellProposal } from './proposals'
 
 const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
   { op: 'eq', label: 'est', needsValue: true },
@@ -182,6 +183,17 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const edit = (row: QueryRow, key: string, value: PropertyValue) => {
     // Une formule ne s'ecrit pas (carte deplacee dans un kanban groupe par formule).
     if (readOnly || isFormulaKey(key)) return
+    // Mode suggestion : la valeur est proposee (Revision), pas ecrite.
+    if (api?.review?.suggesting && baseId) {
+      const before = (row.values?.[key] ?? null) as PropertyValue | null
+      if (JSON.stringify(before) === JSON.stringify(value ?? null)) return
+      const proposal: CellProposal = {
+        row: row.path === '' ? { kind: 'light', baseId, rowId: row.id } : { kind: 'page', docId: row.id },
+        title: row.title || row.id, key, before, after: value ?? null,
+      }
+      void api.review.propose(baseId, CELL_PROPOSAL, proposal).catch(report)
+      return
+    }
     const job = row.path === ''
       ? lightRows.setCell(row.id, key, value)
       : vault ? writeNoteProperty(vault, row.id, key, value) : Promise.reject(new Error('Aucun vault.'))

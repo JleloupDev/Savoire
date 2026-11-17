@@ -443,6 +443,7 @@ export class PluginAPIImpl implements PluginAPI, IEditorHostAPI {
   public ai?: import('@savoire/plugin-api').AIAPI
   public network?: import('@savoire/plugin-api').NetworkAPI
   public extractors?: import('@savoire/plugin-api').ExtractorRegistry
+  public review?: import('@savoire/plugin-api').ReviewAPI
 
   constructor(
     public readonly blocks: BlockRegistryImpl,

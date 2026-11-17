@@ -170,6 +170,22 @@ export class SceneBinding {
     this.unsub = this.opts.tree.onChange((changes, info) => this.onTreeChange(changes, info))
   }
 
+  /**
+   * Mode suggestion : ce que la vue a change sans l'ecrire (elements
+   * nouveaux, modifies, supprimes), et la version de chacun dans l'arbre au
+   * moment de la proposition (null : il n'y etait pas).
+   */
+  pendingChanges(): ScenePatch {
+    const elements = this.opts.getElements() ?? []
+    const changed = elements.filter(el => {
+      const k = this.known.get(el.id)
+      return !k ? !el.isDeleted : k.version !== el.version || k.versionNonce !== el.versionNonce
+    })
+    const base: ScenePatch['base'] = {}
+    for (const el of changed) base[el.id] = this.known.get(el.id) ?? null
+    return { elements: changed.map(e => ({ ...e })), base }
+  }
+
   /** Elements de l'arbre, dans l'ordre d'affichage. */
   readElements(): SceneElement[] {
     const root = this.opts.tree.root
@@ -384,4 +400,39 @@ function parseStoredFile(v: unknown): StoredFile | null {
   } catch {
     return null
   }
+}
+
+/** Des elements changes d'une scene, avec la version de depart de chacun (proposition). */
+export interface ScenePatch {
+  elements: SceneElement[]
+  base: Record<string, { version: number; versionNonce: number } | null>
+}
+
+/**
+ * Applique une proposition a l'arbre d'une scene. Refuse (rend les elements
+ * en conflit) si un element a change depuis la proposition. Un element
+ * applique recoit une version plus haute que celle de l'arbre : il gagne la
+ * fusion chez tous les membres.
+ */
+export function applyScenePatch(tree: ISharedTree, patch: ScenePatch): { conflicts: string[] } {
+  const root = tree.root
+  const conflicts: string[] = []
+  for (const el of patch.elements) {
+    const current = parseElement(root.get(EL + el.id))
+    const base = patch.base[el.id] ?? null
+    const moved = base === null ? current !== null && !current.isDeleted : !current || current.version !== base.version || current.versionNonce !== base.versionNonce
+    if (moved) conflicts.push(el.id)
+  }
+  if (conflicts.length) return { conflicts }
+  let top = 0
+  for (const key of root.keys()) if (key.startsWith(Z)) { const z = root.get(key); if (typeof z === 'number' && z > top) top = z }
+  tree.transact(() => {
+    for (const el of patch.elements) {
+      const current = parseElement(root.get(EL + el.id))
+      const version = Math.max(el.version, current?.version ?? 0) + 1
+      root.set(EL + el.id, JSON.stringify({ ...el, version, versionNonce: Math.floor(Math.random() * 2 ** 31) }))
+      if (!current && root.get(Z + el.id) === undefined) root.set(Z + el.id, ++top)
+    }
+  })
+  return { conflicts: [] }
 }

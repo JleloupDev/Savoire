@@ -42,6 +42,7 @@ import { aiService } from './aiService'
 import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
+import { createReviewAPI, isSuggesting, setSuggesting, setSuggestionEditor } from './reviewProposals'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -207,8 +208,19 @@ export function usePluginBootstrap({
   // Reassigned each render so it always closes over fresh refs.
   const onControllerReadyRef = useRef<(ctrl: EditorController | null) => void>(() => {})
   onControllerReadyRef.current = (ctrl: EditorController | null) => {
-    // La revision surligne ses passages dans l'editeur actif.
+    // La revision surligne ses passages dans l'editeur actif ; en mode
+    // suggestion, l'editeur actif propose au lieu d'ecrire.
     setReviewEditor(ctrl)
+    setSuggestionEditor({
+      editor: ctrl,
+      docId: () => ctrl?.getDocId?.(),
+      session: () => vaultSessionRef.current,
+      actor: () => {
+        const account = editorAreaRefsHolder.current?.activeAccount.current
+        return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
+      },
+      readOnly: () => !!editorAreaRefsHolder.current?.isReadOnly.current,
+    })
     if (!managerRef.current) return
     const activeEditorPlugins: Array<{ id: string; source: 'default' | 'extension' | 'frontmatter' }> =
       ctrl?.getActivePlugins?.() ?? []
@@ -330,6 +342,20 @@ export function usePluginBootstrap({
       pluginApi.network = desktopNetwork()
       // Extracteurs (Word, HTML, images...) : index et apercus.
       pluginApi.extractors = extractorRegistry
+      // Revision : propositions de modification des plugins, mode suggestion.
+      pluginApi.review = createReviewAPI({
+        session: () => vaultSessionRef.current,
+        editText: (documentId, edit) => noteEditorRef.current!.edit(documentId, edit),
+        actor: () => {
+          const account = editorAreaRefs.activeAccount.current
+          return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
+        },
+      })
+      pluginApi.commands.register({
+        id: 'review:toggle-suggest',
+        label: 'Mode suggestion (suivi des modifications)',
+        run: () => setSuggesting(!isSuggesting()),
+      })
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
         onEdited: (docId, text) => {

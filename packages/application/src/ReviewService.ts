@@ -48,6 +48,9 @@ export interface ReviewText extends ICollaborativeText {
 
 export class ReviewConflictError extends Error {}
 
+/** Taille maximale du payload d'une proposition (JSON), comme MAX_PROPOSAL_BYTES de plugin-api. */
+const MAX_PAYLOAD_BYTES = 256 * 1024
+
 /** Longueur maximale d'un passage cite. */
 const MAX_QUOTE = 2000
 
@@ -58,7 +61,7 @@ export interface ReviewEntry {
    * 'comment' : un commentaire. 'suggestion' : une modification proposee du
    * passage ancre. 'edit' : la trace d'une ecriture d'agent.
    */
-  kind: 'comment' | 'edit' | 'suggestion'
+  kind: 'comment' | 'edit' | 'suggestion' | 'proposal'
   text: string
   author: Actor
   /** Date ISO. */
@@ -69,6 +72,12 @@ export interface ReviewEntry {
   anchor?: ReviewAnchor
   /** Suggestion : le texte qui remplacerait le passage ('' : le supprimer). */
   replacement?: string
+  /**
+   * Proposition d'un plugin (autre type de document : base, dessin...) : son
+   * type (« base.cell ») et ce qu'il faut appliquer. Voir ReviewAPI.
+   */
+  proposalType?: string
+  payload?: unknown
   /** Statut d'un fil de commentaires (sur la racine seulement). */
   status?: ReviewStatus
   statusBy?: Actor
@@ -118,6 +127,35 @@ export class ReviewService {
       { docId, kind: 'suggestion', text: note.trim() || 'Suggestion', author, status: 'open', anchor, replacement },
       { allowEmpty: true },
     )
+  }
+
+  /**
+   * Propose une modification d'un autre type de document (voir ReviewAPI) :
+   * `type` dit quel plugin sait l'appliquer, `payload` quoi appliquer (JSON).
+   */
+  propose(docId: string, type: string, payload: unknown, author: Actor, note = ''): ReviewEntry {
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(type)) throw new Error('type de proposition invalide')
+    let json: string
+    try { json = JSON.stringify(payload) } catch { throw new Error('proposition illisible (JSON attendu)') }
+    if (json === undefined) throw new Error('proposition vide')
+    if (new TextEncoder().encode(json).length > MAX_PAYLOAD_BYTES) throw new Error('proposition trop grosse')
+    return this.add(
+      { docId, kind: 'proposal', text: note.trim() || 'Proposition', author, status: 'open', proposalType: type, payload: JSON.parse(json) },
+      { allowEmpty: true },
+    )
+  }
+
+  /**
+   * Une proposition a ete appliquee au document (par le plugin de son type) :
+   * elle passe a « acceptee ». Refuse une proposition deja traitee.
+   */
+  markApplied(rootId: string, by: Actor): ReviewEntry {
+    const root = this.root(rootId)
+    if (root.kind !== 'proposal') throw new Error('ce fil n\'est pas une proposition')
+    if (root.status && root.status !== 'open') throw new Error('proposition deja traitee')
+    const next: ReviewEntry = { ...root, status: 'accepted', statusBy: by, statusAt: this.now().toISOString() }
+    this.map.set(root.id, next)
+    return next
   }
 
   /** Ancre le passage [from, to) du texte : il suivra les modifications. */

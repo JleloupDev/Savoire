@@ -647,3 +647,8 @@ button:active { filter: brightness(0.84); }
 /* ─── Revision : passages vises par un commentaire ou une suggestion ─────────── */
 .review-mark { background: rgba(234, 179, 8, 0.22); border-bottom: 2px solid rgba(234, 179, 8, 0.8); border-radius: 2px; }
 .review-mark-suggestion { background: rgba(239, 68, 68, 0.12); border-bottom-color: rgba(239, 68, 68, 0.7); }
+/* Suggestion (suivi des modifications) : texte remplace barre, texte propose en vert. */
+.review-mark-suggestion { text-decoration: line-through; text-decoration-color: rgba(220, 38, 38, 0.8); }
+.review-insert { color: var(--color-success, #15803d); background: rgba(21, 128, 61, 0.12); border-bottom: 2px solid rgba(21, 128, 61, 0.6); border-radius: 2px; text-decoration: none; white-space: pre-wrap; }
+.review-delete { text-decoration: line-through; text-decoration-color: rgba(220, 38, 38, 0.8); background: rgba(239, 68, 68, 0.10); }
+.review-insert-pending, .review-delete-pending { opacity: 0.8; border-bottom-style: dashed; }

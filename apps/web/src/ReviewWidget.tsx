@@ -11,24 +11,22 @@
 // debloque des droits (lecture, relecture, redaction), toujours bornes par
 // ceux de la personne qui le lance. Ce qu'il fait porte « agent, pour Jean ».
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ICRDT, Widget } from '@savoire/plugin-api'
+import type { Widget } from '@savoire/plugin-api'
 import type { EditorController } from '@savoire/editor-core'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
   AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
-  type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus, type ReviewText,
+  type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus,
   type ReviewThread, type UserActor,
 } from '@savoire/application'
 import { aiService } from './aiService'
 import type { EditorAreaRefs } from './EditorAreaWidget'
+import {
+  acceptProposal, isSuggesting, onProposalTypesChange, onProposeError, onSuggestingChange, proposalType,
+  reviewFor, setSuggesting, withReviewText,
+} from './reviewProposals'
 
-// Un service par session de vault : la carte partagee est ouverte une fois.
-const services = new WeakMap<IVaultSyncSession, ReviewService>()
-function reviewFor(session: IVaultSyncSession): ReviewService {
-  let service = services.get(session)
-  if (!service) { service = new ReviewService(session); services.set(session, service) }
-  return service
-}
+export { withReviewText } from './reviewProposals'
 
 // ── Editeur actif : selection, passages surlignes ─────────────────────────
 
@@ -39,34 +37,6 @@ const editorListeners = new Set<() => void>()
 export function setReviewEditor(ctrl: EditorController | null): void {
   activeEditor = ctrl
   for (const cb of editorListeners) cb()
-}
-
-/**
- * Le texte d'une note pour la revision : positions relatives (ancres) et
- * remplacement. La note est ouverte le temps de `use`, puis rendue.
- */
-export function withReviewText<T>(session: IVaultSyncSession, docId: string, use: (text: ReviewText) => T): T | null {
-  const crdt = session.openDocument(docId) as ICRDT
-  try {
-    const collab = crdt.collaborativeText?.()
-    const shared = crdt.sharedText?.()
-    if (!collab || !shared) return null
-    const text: ReviewText = {
-      toString: () => collab.toString(),
-      get length() { return collab.length },
-      createRelPos: (i, assoc) => collab.createRelPos(i, assoc),
-      resolveRelPos: rp => collab.resolveRelPos(rp),
-      slice: (a, b) => collab.slice(a, b),
-      replace: (from, to, insert) => shared.applyDelta([
-        ...(from > 0 ? [{ retain: from }] : []),
-        ...(to > from ? [{ delete: to - from }] : []),
-        ...(insert ? [{ insert }] : []),
-      ]),
-    }
-    return use(text)
-  } finally {
-    session.closeDocument(docId)
-  }
 }
 
 // ── Brouillons demandes depuis l'editeur ──────────────────────────────────
@@ -120,6 +90,13 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const [run, setRun] = useState<AgentRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Mode suggestion (suivi des modifications) : la frappe devient des propositions.
+  const [suggestMode, setSuggestMode] = useState(isSuggesting)
+  useEffect(() => onSuggestingChange(setSuggestMode), [])
+  useEffect(() => onProposeError(setError), [])
+  // Un plugin declare ou retire un type de proposition.
+  useEffect(() => onProposalTypesChange(() => setTick(t => t + 1)), [])
+
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
     const take = (d: ReviewDraft) => {
@@ -166,10 +143,13 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
       .filter(t => t.root.anchor && (t.root.status ?? 'open') === 'open')
       .flatMap(t => {
         const at = ReviewService.locate(t.root.anchor!, text)
-        return at && at.to > at.from ? [{
+        const isSuggestion = t.root.kind === 'suggestion'
+        // Une suggestion d'ajout n'a pas de texte remplace : plage vide, texte propose seul.
+        return at && (at.to > at.from || (isSuggestion && t.root.replacement)) ? [{
           from: at.from, to: at.to, id: t.root.id,
-          className: t.root.kind === 'suggestion' ? 'review-mark review-mark-suggestion' : 'review-mark',
-          title: t.root.kind === 'suggestion' ? 'Suggestion (panneau Révision)' : `Commentaire : ${t.root.text.slice(0, 80)}`,
+          className: isSuggestion ? 'review-mark review-mark-suggestion' : 'review-mark',
+          title: isSuggestion ? `Suggestion de ${describeActor(t.root.author)} (panneau Révision)` : `Commentaire : ${t.root.text.slice(0, 80)}`,
+          ...(isSuggestion && t.root.replacement ? { insert: t.root.replacement } : {}),
         }] : []
       })) ?? []
     activeEditor.setHighlights(ranges)
@@ -188,6 +168,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   // Agents proposes par les plugins actifs.
   const agents = refs.pluginAPI.current?.agents?.getAll() ?? []
   const threads = review.threads(docId)
+  const openProposals = threads.filter(t => (t.root.kind === 'suggestion' || t.root.kind === 'proposal') && (t.root.status ?? 'open') === 'open').length
 
   function act(action: () => void) {
     setError(null)
@@ -219,11 +200,32 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     activeEditor?.selectRange?.(at.from, at.to)
   }
 
-  function accept(rootId: string) {
+  function accept(root: ReviewEntry) {
+    if (root.kind === 'proposal') {
+      setError(null)
+      void acceptProposal(session!, root, me).catch(err => setError(err instanceof Error ? err.message : String(err)))
+      return
+    }
     act(() => {
-      const done = withReviewText(session!, docId!, text => review!.accept(rootId, text, me))
+      const done = withReviewText(session!, docId!, text => review!.accept(root.id, text, me))
       if (!done) throw new Error('Note indisponible : ouvrez-la pour accepter la suggestion.')
     })
+  }
+
+  /** Tout accepter ou tout refuser (suggestions et propositions ouvertes de la note). */
+  async function all(decision: 'accept' | 'reject') {
+    setError(null)
+    const open = threads.filter(t => (t.root.kind === 'suggestion' || t.root.kind === 'proposal') && (t.root.status ?? 'open') === 'open')
+    // Du bas vers le haut : accepter un passage ne decale pas les suivants.
+    for (const t of open.reverse()) {
+      try {
+        if (decision === 'reject') review!.setStatus(t.root.id, 'rejected', me)
+        else if (t.root.kind === 'proposal') await acceptProposal(session!, t.root, me)
+        else withReviewText(session!, docId!, text => review!.accept(t.root.id, text, me))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    }
   }
 
   async function launch(agentId: string) {
@@ -253,6 +255,26 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
         )}
       </div>
 
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10, padding: '6px 8px', borderRadius: 6, background: suggestMode ? 'rgba(21,128,61,0.10)' : 'transparent', border: '1px solid var(--border)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 100%', cursor: canWrite ? 'pointer' : 'default', fontSize: 12 }}>
+          <input type="checkbox" data-testid="review-suggest-mode" checked={suggestMode} disabled={!canWrite}
+            onChange={e => setSuggesting(e.target.checked)} />
+          <span>
+            <b>Mode suggestion</b>
+            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)' }}>
+              {suggestMode ? 'Vos modifications deviennent des propositions à accepter.' : 'Vous modifiez directement.'}
+            </span>
+          </span>
+        </label>
+        {canWrite && openProposals > 0 && (
+          <>
+            <button data-testid="review-accept-all" onClick={() => void all('accept')} style={{ ...SMALL, color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>Tout accepter</button>
+            <button data-testid="review-reject-all" onClick={() => void all('reject')} style={SMALL}>Tout refuser</button>
+          </>
+        )}
+      </div>
+      {error && <div data-testid="review-error" style={{ color: 'var(--color-danger, #ef4444)', fontSize: 12, marginBottom: 8 }}>{error}</div>}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {threads.length === 0 && <Muted>Aucun commentaire.</Muted>}
         {threads.map(t => (
@@ -263,7 +285,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             onReply={text => act(() => review.reply(t.root.id, text, me))}
             onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
             onReveal={() => reveal(t.root)}
-            onAccept={() => accept(t.root.id)}
+            onAccept={() => accept(t.root)}
           />
         ))}
       </div>
@@ -344,7 +366,7 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept }: {
   const [draft, setDraft] = useState('')
   const { root, replies } = thread
   const isComment = root.kind === 'comment'
-  const isSuggestion = root.kind === 'suggestion'
+  const isSuggestion = root.kind === 'suggestion' || root.kind === 'proposal'
   const open = (root.status ?? 'open') === 'open'
   return (
     <div data-testid="review-thread" data-kind={root.kind} data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
@@ -446,11 +468,36 @@ function Entry({ entry, onReveal }: { entry: ReviewEntry; onReveal?: () => void 
           {entry.replacement || <i style={{ color: 'var(--text-faint)' }}>(supprimer le passage)</i>}
         </div>
       )}
-      {!(entry.kind === 'suggestion' && entry.text === 'Suggestion') && (
+      {entry.kind === 'proposal' && <ProposalBody entry={entry} />}
+      {!(entry.kind === 'suggestion' && entry.text === 'Suggestion') && !(entry.kind === 'proposal' && entry.text === 'Proposition') && (
         <div style={{ marginTop: 4, fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--text)' }}>
           {entry.kind === 'edit' ? `✎ ${entry.text}` : entry.text}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Proposition d'un plugin : son type la decrit (et la dessine, s'il sait). */
+function ProposalBody({ entry }: { entry: ReviewEntry }) {
+  const spec = proposalType(entry.proposalType)
+  const box = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el || !spec?.render) return
+    el.replaceChildren()
+    let cleanup: void | (() => void)
+    try { cleanup = spec.render(entry.payload, el) } catch (err) { el.textContent = `Aperçu impossible : ${String(err)}` }
+    return () => { if (typeof cleanup === 'function') cleanup() }
+  }, [spec, entry.payload])
+  let description: string
+  try { description = spec ? spec.describe(entry.payload) : `Proposition « ${entry.proposalType} » (son plugin n’est pas actif).` }
+  catch { description = 'Proposition illisible.' }
+  return (
+    <div data-testid="review-proposal" data-type={entry.proposalType} style={{ marginTop: 4, fontSize: 12, padding: '3px 8px', borderLeft: '3px solid rgba(34,197,94,.6)', background: 'rgba(34,197,94,.07)', borderRadius: 3 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{spec?.label ?? 'Proposition'}</div>
+      <div data-testid="review-proposal-text" style={{ whiteSpace: 'pre-wrap' }}>{description}</div>
+      {spec?.render && <div ref={box} style={{ marginTop: 4 }} />}
     </div>
   )
 }

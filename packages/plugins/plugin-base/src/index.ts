@@ -15,6 +15,7 @@ import { activeBaseView, createBaseView } from './view'
 import { BASE_QUERY_FENCE_RE, renderBaseQueryBlock } from './queryBlock'
 import { ensureStyle } from './style'
 import { parseBaseEmbed, renderBaseEmbed } from './embed'
+import { cellProposalType } from './proposals'
 
 export { createBaseView } from './view'
 export { ManifestStore, readManifest, defaultManifest, TITLE_COLUMN } from './manifest'
@@ -27,6 +28,8 @@ export type { BaseQuery, BaseQueryResult } from './queryBlock'
 export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './embed'
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
+export { CELL_PROPOSAL, cellProposalType } from './proposals'
+export type { CellProposal } from './proposals'
 export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere } from './formulaEngine'
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
 export type { TotalKind } from './totals'
@@ -47,6 +50,8 @@ export function createBasePlugin(): VaultPlugin {
 
     async onload(pluginApi: PluginAPI) {
       api = pluginApi
+      // Revision : une valeur de cellule proposee (mode suggestion), appliquee a l'acceptation.
+      pluginApi.review?.registerProposalType(cellProposalType(pluginApi))
       pluginApi.files.register({
         extension: 'base',
         label: 'Base',

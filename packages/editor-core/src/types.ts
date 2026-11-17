@@ -77,6 +77,10 @@ export interface EditorController {
   selectRange?(from: number, to: number): void
   /** Passages surlignes par l'application (revision). */
   setHighlights?(ranges: readonly import('./Highlights').EditorHighlight[]): void
+  /** Le document ouvert dans cet editeur. */
+  getDocId?(): string | undefined
+  /** Mode suggestion (suivi des modifications) : la frappe devient des propositions. Null : le couper. */
+  setSuggestionMode?(sink: import('./SuggestionMode').SuggestionSink | null): void
 }
 
 import type { Extension } from '@codemirror/state'

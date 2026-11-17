@@ -60,6 +60,8 @@ export interface IPluginAPI {
   extractors?: import('./extractors').ExtractorRegistry
   /** IA de la personne : reponses et fournisseurs (voir ai.ts). Permission 'ai'. */
   ai?: import('./ai').AIAPI
+  /** Revision : propositions de modification, mode suggestion. Voir review.ts. */
+  review?: import('./review').ReviewAPI
   /** Lire une page https (application bureau seulement). Permission 'network:*'
    *  ou 'network:<site>'. Voir network.ts. */
   network?: import('./network').NetworkAPI

@@ -36,8 +36,12 @@ export interface AgentTarget {
 /** Une entree de la revision, telle qu'un agent la voit. */
 export interface AgentReviewEntry {
   id: string
-  /** 'suggestion' : une modification proposee d'un passage (voir `quote` et `replacement`). */
-  kind: 'comment' | 'edit' | 'suggestion'
+  /**
+   * 'suggestion' : une modification proposee d'un passage (voir `quote` et
+   * `replacement`). 'proposal' : une modification proposee d'un autre type de
+   * document (base, dessin...), voir ReviewAPI.
+   */
+  kind: 'comment' | 'edit' | 'suggestion' | 'proposal'
   text: string
   /** Passage vise, s'il y en a un. */
   quote?: string

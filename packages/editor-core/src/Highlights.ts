@@ -8,7 +8,7 @@
 // sans cela, la ligne rendue (un widget) masquerait le surlignage.
 
 import { StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state'
-import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
+import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 
 export interface EditorHighlight {
   from: number
@@ -19,20 +19,42 @@ export interface EditorHighlight {
   title?: string
   /** Identifiant rendu en data-highlight-id (clic, tests). */
   id?: string
+  /**
+   * Suggestion : le texte propose, affiche (en vert) juste apres le passage.
+   * Avec lui, une plage vide est permise (proposition d'ajout).
+   */
+  insert?: string
+}
+
+class ProposedInsert extends WidgetType {
+  constructor(private readonly text: string, private readonly id?: string, private readonly title?: string) { super() }
+  eq(other: ProposedInsert): boolean { return other.text === this.text && other.id === this.id }
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'review-insert'
+    span.textContent = this.text
+    if (this.id) span.dataset.highlightId = this.id
+    if (this.title) span.title = this.title
+    return span
+  }
+  ignoreEvent(): boolean { return false }
 }
 
 const setHighlights = StateEffect.define<readonly EditorHighlight[]>()
 
 function build(ranges: readonly EditorHighlight[], length: number): DecorationSet {
-  const marks = ranges
+  const clamped = ranges
     .map(r => ({ ...r, from: Math.max(0, Math.min(r.from, length)), to: Math.max(0, Math.min(r.to, length)) }))
+  const marks = clamped
     .filter(r => r.to > r.from)
-    .sort((a, b) => a.from - b.from || a.to - b.to)
     .map(r => Decoration.mark({
       class: r.className,
       attributes: { ...(r.title ? { title: r.title } : {}), ...(r.id ? { 'data-highlight-id': r.id } : {}) },
     }).range(r.from, r.to))
-  return Decoration.set(marks, true)
+  const inserts = clamped
+    .filter(r => r.insert)
+    .map(r => Decoration.widget({ widget: new ProposedInsert(r.insert!, r.id, r.title), side: 1 }).range(r.to))
+  return Decoration.set([...marks, ...inserts], true)
 }
 
 const field = StateField.define<DecorationSet>({

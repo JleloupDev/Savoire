@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
+import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
@@ -359,6 +360,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).
         highlightsExtension(),
+        suggestionModeExtension(),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
@@ -835,6 +837,16 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Remplace les passages surlignes par l'application. */
   setHighlights(ranges: readonly EditorHighlight[]): void {
     applyHighlights(this.view, ranges)
+  }
+
+  /** Le document ouvert dans cet editeur. */
+  getDocId(): string | undefined {
+    return this.options.docId
+  }
+
+  /** Mode suggestion : la frappe devient des propositions (null : on ecrit directement). */
+  setSuggestionMode(sink: SuggestionSink | null): void {
+    setSuggestionSink(this.view, sink)
   }
 
   // ── Generic trigger system ────────────────────────────────────────────────

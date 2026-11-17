@@ -144,6 +144,9 @@ export function createLatexView(path: string, ctx: FileContext, api: PluginAPI |
       }
 
       const binding = ctx.text ? bindSharedText(ctx.text) : null
+      // Revision : en mode suggestion, la frappe devient des propositions de texte.
+      const docId = api?.vault.resolveDocumentId(path)
+      const suggestions = docId ? api?.review?.textSuggestions?.(docId) as import('@codemirror/state').Extension | undefined : undefined
       const readOnlyFacet = EditorState.readOnly.of(readOnly || !ctx.text)
       view = new EditorView({
         parent: source,
@@ -157,6 +160,7 @@ export function createLatexView(path: string, ctx: FileContext, api: PluginAPI |
             latexLanguage(),
             readOnlyFacet,
             EditorView.updateListener.of(u => { if (u.docChanged) schedule(u.state.doc.toString()) }),
+            ...(suggestions ? [suggestions] : []),
             ...(binding ? [binding.extension] : []),
           ],
         }),

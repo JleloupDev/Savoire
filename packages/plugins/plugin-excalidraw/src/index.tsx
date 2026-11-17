@@ -19,7 +19,7 @@ import { createRoot } from 'react-dom/client'
 import { Excalidraw, restoreElements } from '@excalidraw/excalidraw'
 import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, ISharedTree } from '@savoire/plugin-api'
 import { excalidrawContentExtractor } from './content-extractor'
-import { SceneBinding, type SceneElement, type SceneFile, type StoredFile } from './binding'
+import { SceneBinding, applyScenePatch, type ScenePatch, type SceneElement, type SceneFile, type StoredFile } from './binding'
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>
 type ExcalidrawInitialDataState = NonNullable<ExcalidrawProps['initialData']>
@@ -32,8 +32,11 @@ type Collaborators = NonNullable<Parameters<ExcalidrawImperativeAPI['updateScene
 type Collaborator = Collaborators extends Map<string, infer C> ? C : never
 
 export { excalidrawContentExtractor } from './content-extractor'
-export { SceneBinding, assignOrder, isBetter } from './binding'
-export type { SceneElement, SceneFile, StoredFile, SceneBindingOptions } from './binding'
+export { SceneBinding, assignOrder, isBetter, applyScenePatch } from './binding'
+export type { SceneElement, SceneFile, StoredFile, SceneBindingOptions, ScenePatch } from './binding'
+
+/** Type de proposition d'un dessin (Revision) : des elements changes. */
+export const SCENE_PROPOSAL = 'excalidraw.scene'
 
 const EMPTY_SCENE = { elements: [], appState: { viewBackgroundColor: '#1e1e2e' }, files: {} }
 const STABILIZE_MS = 1000
@@ -119,6 +122,11 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
   let generation = 0
 
   let readOnly = !!ctx.readOnly
+  // Mode suggestion (Revision) : on dessine sans ecrire ; « Proposer » envoie
+  // les changements en proposition, et la scene revient a celle du document.
+  let suggesting = !!api?.review?.suggesting
+  let setSuggestView: ((v: boolean) => void) | null = null
+  let offSuggesting: (() => void) | null = null
   /** Lecture seule imposee : pas d'arbre, ou migration en cours. */
   let blocked = !tree
   let setViewMode: ((v: boolean) => void) | null = null
@@ -128,7 +136,19 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
   function applyEditable(): void {
     const view = readOnly || blocked
     setViewMode?.(view)
-    binding?.setWritable(!view)
+    binding?.setWritable(!view && !suggesting)
+    setSuggestView?.(suggesting && !view)
+  }
+
+  /** Mode suggestion : les changements de la vue partent en proposition. */
+  async function proposeChanges(note?: string): Promise<number> {
+    if (!binding || !api?.review) return 0
+    const docId = vault?.resolveDocumentId(path)
+    const patch = binding.pendingChanges()
+    if (!docId || patch.elements.length === 0) return 0
+    await api.review.propose(docId, SCENE_PROPOSAL, patch, note)
+    binding.resetFromTree()
+    return patch.elements.length
   }
 
   function sceneElements(): SceneElement[] | null {
@@ -282,9 +302,26 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
 
   function ExcalidrawEditor({ initialData }: { initialData: unknown }) {
     const [view, setView] = useState(readOnly || blocked)
+    const [suggest, setSuggest] = useState(suggesting && !(readOnly || blocked))
+    const [message, setMessage] = useState<string | null>(null)
     setViewMode = setView
+    setSuggestView = setSuggest
+    const bar: React.CSSProperties = {
+      position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 8, alignItems: 'center',
+      padding: '6px 10px', borderRadius: 8, background: 'rgba(21,128,61,0.92)', color: '#fff', fontSize: 12, fontFamily: 'var(--font-ui, sans-serif)',
+    }
+    const btn: React.CSSProperties = { border: '1px solid rgba(255,255,255,.6)', background: 'transparent', color: '#fff', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontSize: 12 }
     return (
-      <div style={{ height: '100%', width: '100%' }} data-testid="excalidraw-view" data-readonly={view ? 'true' : 'false'}>
+      <div style={{ height: '100%', width: '100%', position: 'relative' }} data-testid="excalidraw-view" data-readonly={view ? 'true' : 'false'}>
+        {suggest && (
+          <div style={bar} data-testid="excalidraw-suggest-bar">
+            <span>{message ?? 'Mode suggestion : vos changements restent sur votre écran.'}</span>
+            <button style={btn} data-testid="excalidraw-propose" onClick={() => {
+              void proposeChanges().then(n => setMessage(n ? `${n} changement(s) proposé(s).` : 'Rien à proposer.'), err => setMessage(String(err?.message ?? err)))
+            }}>Proposer</button>
+            <button style={btn} data-testid="excalidraw-discard" onClick={() => { binding?.resetFromTree(); setMessage(null) }}>Annuler</button>
+          </div>
+        )}
         <Excalidraw
           initialData={initialData as ExcalidrawInitialDataState}
           onChange={onChange}
@@ -325,6 +362,7 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
     room?.close().catch(() => {}); room = null
     excalidrawAPI = null
     onApiReady = null
+    offSuggesting?.(); offSuggesting = null
     collaborators.clear()
   }
 
@@ -373,12 +411,14 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
         onRemoteApplied: scheduleStabilize,
       })
       binding.start()
+      // Le mode suggestion peut changer pendant que le dessin est ouvert.
+      offSuggesting = api?.review?.onSuggestingChange(on => { suggesting = on; applyEditable() }) ?? null
 
       // L'ancien contenu eventuel est lu avant d'autoriser l'ecriture : sans
       // cela, un premier trait ecrirait une scene vide par-dessus.
       const docId = vault?.resolveDocumentId(path)
       blocked = !!(sync && docId)
-      binding.setWritable(!blocked && !readOnly)
+      binding.setWritable(!blocked && !readOnly && !suggesting)
       root.render(<ExcalidrawEditor initialData={EMPTY_SCENE} />)
       if (!blocked) return
 
@@ -434,6 +474,28 @@ const plugin: VaultPlugin = {
 
   async onload(api: PluginAPI) {
     pluginAPI = api
+    // Revision : des changements de dessin proposes, appliques a l'acceptation.
+    api.review?.registerProposalType({
+      type: SCENE_PROPOSAL,
+      label: 'Dessin',
+      describe(payload) {
+        const patch = payload as ScenePatch
+        const added = patch.elements.filter(e => !patch.base[e.id] && !e.isDeleted).length
+        const removed = patch.elements.filter(e => e.isDeleted).length
+        const changed = patch.elements.length - added - removed
+        return [added && `${added} ajouté(s)`, changed && `${changed} modifié(s)`, removed && `${removed} supprimé(s)`].filter(Boolean).join(', ') || 'Aucun changement'
+      },
+      async apply(docId, payload) {
+        if (!api.vault.openTree) throw new Error('Dessin indisponible sans synchronisation du vault.')
+        const tree = await api.vault.openTree(docId)
+        try {
+          const { conflicts } = applyScenePatch(tree, payload as ScenePatch)
+          if (conflicts.length) throw new Error(`Le dessin a changé depuis la proposition (${conflicts.length} élément(s)).`)
+        } finally {
+          api.vault.closeTree?.(docId)
+        }
+      },
+    })
     api.files.register({
       extension: 'excalidraw',
       label: 'Dessin Excalidraw',
