@@ -106,22 +106,23 @@ groups:
   - name: sauvegardes
     rules:
       - alert: SauvegardeManquee
-        expr: time() - savoire_backup_last_success_timestamp_seconds > 26 * 3600
+        # Quatre sauvegardes par jour (BACKUP_TIMES) : une manquee, c'est 6 h.
+        expr: time() - savoire_backup_last_success_timestamp_seconds > 8 * 3600
         labels: { severity: critical }
         annotations:
-          summary: "Pas de sauvegarde locale depuis plus de 26 heures"
+          summary: "Pas de sauvegarde locale depuis plus de 8 heures"
           description: "Voir les journaux du service backup."
       - alert: SauvegardeJamaisFaite
         expr: absent(savoire_backup_last_success_timestamp_seconds)
-        for: 26h
+        for: 8h
         labels: { severity: critical }
         annotations:
           summary: "Aucune sauvegarde locale depuis l'installation"
       - alert: CopieHorsMachineManquee
-        expr: time() - savoire_offsite_last_success_timestamp_seconds > 30 * 3600
+        expr: time() - savoire_offsite_last_success_timestamp_seconds > 10 * 3600
         labels: { severity: critical }
         annotations:
-          summary: "Pas de copie hors de la machine depuis plus de 30 heures"
+          summary: "Pas de copie hors de la machine depuis plus de 10 heures"
           description: "Voir les journaux du service offsite (restic)."
       - alert: CopieHorsMachineJamaisFaite
         expr: absent(savoire_offsite_last_success_timestamp_seconds)

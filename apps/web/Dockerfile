@@ -5,7 +5,7 @@
 # DECISION: nginx proxifie /api et /hubs vers API_URL à l'exécution
 #           (pas de rebuild nécessaire si l'URL de l'API change).
 
-FROM node:24-alpine AS build
+FROM node:24.22.1-alpine AS build
 WORKDIR /repo
 
 # Meme pnpm que le pair indexeur (apps/indexer/Dockerfile) : version figee,
@@ -29,9 +29,9 @@ COPY packages/ ./packages/
 RUN cd frontend && pnpm --filter @savoire/web build
 
 # ── Image finale : nginx ─────────────────────────────────────────────
-FROM nginx:alpine AS final
-
-RUN apk add --no-cache gettext  # fournit envsubst
+# nginx sans root (M9), version figee. L'image traite deja les modeles
+# /etc/nginx/templates/*.template (envsubst) au demarrage.
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine AS final
 
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template

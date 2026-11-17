@@ -65,6 +65,7 @@ services:
       - ./offsite/offsite.sh:/offsite.sh:ro
       - ${BACKUP_DIR:-./backups}:/backups:ro
       - savoire-data:/data:ro
+      - zitadel-bootstrap:/bootstrap:ro
       - ./.env:/config/savoire.env:ro
       - offsite-state:/state
       - ${METRICS_DIR:-./metrics}:/metrics

@@ -6,10 +6,13 @@
 # neuve ou sur celle-ci. A lancer en root, apres install.sh --restore (qui
 # l'appelle) ou seul.
 #
-#  1. Lit la derniere copie : export des bases, fichiers des vaults, .env.
+#  1. Lit la derniere copie : export des bases, fichiers des vaults, .env,
+#     jetons de service de Zitadel.
 #  2. Remet le .env d'origine (ses secrets ouvrent les donnees).
 #  3. Demarre PostgreSQL seul, y recharge les bases.
-#  4. Remet les fichiers des vaults, puis demarre tout.
+#  4. Remet les fichiers des vaults et les jetons de Zitadel (il ne les ecrit
+#     qu'a sa premiere installation : avec une base restauree, il ne les
+#     recree pas, et la connexion ne demarrerait pas), puis demarre tout.
 #
 # Il faut : l'adresse du depot, ses cles S3 et RESTIC_PASSWORD (gardes hors de
 # la machine). Questions posees si les variables ne sont pas exportees.
@@ -79,7 +82,23 @@ project="$(docker compose config --format json | jq -r .name)"
 docker run --rm -v "${project}_savoire-data:/data" -v "$work/data:/from:ro" alpine:3.22 \
   sh -c 'rm -rf /data/* /data/.[!.]* 2>/dev/null; cp -a /from/. /data/'
 
+echo "== Jetons de service de Zitadel"
+if [ -s "$work/bootstrap/admin.pat" ] && [ -s "$work/bootstrap/login-client.pat" ]; then
+  docker run --rm -v "${project}_zitadel-bootstrap:/bootstrap" -v "$work/bootstrap:/from:ro" alpine:3.22 \
+    sh -c 'rm -rf /bootstrap/* 2>/dev/null; cp -a /from/. /bootstrap/'
+else
+  echo "La copie n'a pas les jetons de Zitadel (copie d'avant le 17/11/2026) :" >&2
+  echo "la page de connexion et le bootstrap ne demarreront pas. Voir SELF_HOSTING.md, « Restaurer »." >&2
+  exit 1
+fi
+
 echo "== Demarrage"
-docker compose up -d
+docker compose up -d --wait --wait-timeout 600 || true
 docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
-echo "Restauration terminee."
+# Verification : l'API repond et sa base est joignable.
+if docker compose exec -T api bash -c "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 && grep -q ' 200 ' <&3"; then
+  echo "Restauration terminee : l'API repond."
+else
+  echo "Restauration faite, mais l'API ne repond pas : docker compose logs api zitadel-bootstrap" >&2
+  exit 1
+fi

@@ -21,11 +21,11 @@
 import type { PluginAPI } from '@savoire/plugin-api'
 import { templateFolderOf } from '@savoire/plugin-api'
 import { FramedPlugin, StorePackageError, idAfterCreate, notesOfPackage, setPluginFrameUrl, sha256Hex, verifyStorePackage, type StorePackage } from '@savoire/plugin-runtime'
-import { boardFrameUrl } from './tauriRuntime'
+import { sandboxFrameUrl } from './tauriRuntime'
 import { serverUrl } from '@savoire/infrastructure-sync'
 
 // Bureau : la page cadre des boards sert aussi aux plugins (la CSP de la fenetre bloque le JS en ligne).
-setPluginFrameUrl(boardFrameUrl())
+setPluginFrameUrl(sandboxFrameUrl())
 
 export interface StoreItem {
   id: string

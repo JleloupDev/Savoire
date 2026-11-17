@@ -192,13 +192,18 @@ Générer un secret : `openssl rand -base64 48 | tr -d '/+=' | cut -c1-32`.
 
 ## Sauvegardes
 
-Le service `backup` sauvegarde chaque nuit (heure `BACKUP_AT`, UTC) dans
-`BACKUP_DIR` :
+Le service `backup` sauvegarde quatre fois par jour (heures `BACKUP_TIMES`,
+UTC : par défaut 03:30, 09:30, 15:30 et 21:30, donc au pire 6 heures
+perdues) dans `BACKUP_DIR` :
 
-- `savoire-<date>-db.sql.gz` : les deux bases (Savoire et Zitadel) ;
-- `savoire-<date>-files.tar.gz` : les fichiers des vaults (pièces jointes).
+- `savoire-<date>-db.sql.gz` : les bases (Savoire, Zitadel, store) ;
+- `savoire-<date>-files.tar.gz` : les fichiers des vaults (pièces jointes) ;
+- `savoire-<date>-zitadel.tar.gz` : les jetons de service de Zitadel. Il ne
+  les écrit qu'à sa toute première installation : sans eux, une base
+  restaurée sur une autre machine ne redémarre pas.
 
-Il garde `BACKUP_KEEP_DAYS` jours. Une sauvegarde sur le même disque ne
+Une sauvegarde n'est comptée réussie que si l'export est complet et relu.
+Les fichiers ne sont lisibles que par root. Il garde `BACKUP_KEEP_DAYS` jours. Une sauvegarde sur le même disque ne
 protège pas d'une panne de disque : avec `docker-compose.ops.yml`, le
 service `offsite` en fait une copie hors de la machine (voir plus bas).
 
@@ -206,7 +211,7 @@ service `offsite` en fait une copie hors de la machine (voir plus bas).
 
 Après chaque sauvegarde locale, `offsite` (restic) envoie vers un stockage
 S3 en Europe (Scaleway, OVH, Hetzner…) l'export des bases, les fichiers des
-vaults et le `.env`. La copie est chiffrée avec `RESTIC_PASSWORD` et
+vaults, le `.env` et les jetons de Zitadel. La copie est chiffrée avec `RESTIC_PASSWORD` et
 dédoublonnée : seules les différences partent. Il garde 7 jours, 4 semaines
 et 6 mois, et vérifie le dépôt chaque dimanche.
 
@@ -242,11 +247,25 @@ L'index du pair n'est pas sauvegardé : il se reconstruit tout seul.
 
 ### Restaurer
 
+**Sur une machine neuve, depuis la copie hors machine** (le cas d'une panne
+totale) : `sudo deploy/vps/install.sh --restore`, ou `sudo deploy/vps/restore.sh`
+si Docker est déjà là. Il demande l'adresse du dépôt, ses clés S3 et
+`RESTIC_PASSWORD` (gardés hors de la machine), remet le `.env`, les bases,
+les fichiers des vaults et les jetons de Zitadel, démarre tout et vérifie que
+l'API répond. Les comptes, les mots de passe et les vaults reviennent tels
+quels. Répété le 17/11/2026 : machine effacée, restaurée, connexion et notes
+retrouvées.
+
+Une copie faite avant le 17/11/2026 n'a pas les jetons de Zitadel :
+`restore.sh` s'arrête et le dit.
+
+**Sur la même machine, depuis une sauvegarde locale** :
+
 ```bash
 docker compose --env-file .env stop api indexer zitadel zitadel-login
 gunzip -c backups/savoire-<date>-db.sql.gz \
   | docker compose --env-file .env exec -T postgres psql -U postgres -d postgres
-docker run --rm -v savoire_savoire-data:/data -v "$PWD/backups:/b:ro" alpine:3 \
+docker run --rm -v savoire_savoire-data:/data -v "$PWD/backups:/b:ro" alpine:3.22 \
   sh -c 'rm -rf /data/* && tar -C /data -xzf /b/savoire-<date>-files.tar.gz'
 docker compose --env-file .env up -d
 ```

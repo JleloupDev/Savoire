@@ -16,3 +16,7 @@ allowBuilds:
   esbuild: true
   # Son postinstall ne fait qu une annonce (opencollective) : inutile.
   tesseract.js: false
+# Une seule version de DOMPurify, la plus recente (M9) : Mermaid demandait
+# encore une 3.3. Le meme assainisseur partout (plugin-api, sanitize.ts).
+overrides:
+  dompurify: 3.4.17

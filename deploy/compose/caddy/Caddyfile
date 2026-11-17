@@ -5,7 +5,14 @@
 }
 
 # L'appli : le conteneur web sert la page et relaie /api et /hubs (WebSocket).
+# HTTPS obligatoire pour les navigateurs, un an (M3). Sans includeSubDomains :
+# les autres sous-domaines de l'organisation ne sont pas concernes.
+(hsts) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
 {$SAVOIRE_DOMAIN} {
+	import hsts
 	encode zstd gzip
 	# Savoire Store (docker-compose.store.yml), sous l'adresse de Savoire
 	# tant qu'il n'a pas de domaine. Sans le store, ces adresses repondent 502.
@@ -19,6 +26,7 @@
 
 # La connexion : Zitadel et sa page de connexion (login v2).
 {$AUTH_DOMAIN} {
+	import hsts
 	handle /ui/v2/login* {
 		reverse_proxy zitadel-login:3000
 	}

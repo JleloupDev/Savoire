@@ -8,7 +8,7 @@
 # Configuration : variables SAVOIRE_INDEXER_* (apps/indexer/README.md).
 # Jamais expose : reseau prive avec le backend seulement.
 
-FROM node:24-slim AS build
+FROM node:24.22.1-slim AS build
 WORKDIR /repo
 RUN npm install -g pnpm@11
 
@@ -22,7 +22,7 @@ COPY apps/indexer/ ./apps/indexer/
 RUN cd frontend && pnpm --filter @savoire/indexer build
 
 # ── Image finale : Node 24 seul, le paquet construit, utilisateur non root ──
-FROM node:24-slim AS final
+FROM node:24.22.1-slim AS final
 ENV NODE_ENV=production \
     SAVOIRE_INDEXER_DATA_DIR=/data \
     SAVOIRE_INDEXER_HOST=0.0.0.0 \

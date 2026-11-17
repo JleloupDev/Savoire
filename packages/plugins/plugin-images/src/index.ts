@@ -103,6 +103,18 @@ export function configureOcr(settings: { enabled?: boolean; cachePath?: string }
   Object.assign(ocrSettings, settings)
 }
 
+/**
+ * Dans le navigateur : le worker et le moteur servis par l'app (/vendor/tesseract,
+ * copies au build par apps/web/vite.config.ts), pas par le CDN jsdelivr que
+ * tesseract.js charge par defaut. La CSP de l'appli n'admet que ses propres
+ * scripts. Worker charge par son adresse (pas de blob:), memes raisons.
+ */
+function browserAssets(): Record<string, unknown> {
+  if (typeof window === 'undefined' || typeof location === 'undefined') return {}
+  const base = new URL('/vendor/tesseract/', location.href).href
+  return { workerPath: `${base}worker.min.js`, corePath: base, workerBlobURL: false }
+}
+
 type TesseractWorker = { recognize(image: unknown): Promise<{ data: { text: string } }>; terminate(): Promise<unknown> }
 let worker: Promise<TesseractWorker> | null = null
 
@@ -110,7 +122,7 @@ let worker: Promise<TesseractWorker> | null = null
 export const tesseractOcr: Ocr = async bytes => {
   worker ??= (async () => {
     const { createWorker } = await import('tesseract.js')
-    return createWorker(OCR_LANGUAGES, 1, ocrSettings.cachePath ? { cachePath: ocrSettings.cachePath } : {}) as unknown as Promise<TesseractWorker>
+    return createWorker(OCR_LANGUAGES, 1, { ...browserAssets(), ...(ocrSettings.cachePath ? { cachePath: ocrSettings.cachePath } : {}) }) as unknown as Promise<TesseractWorker>
   })().catch(err => { worker = null; throw err })
   const w = await worker
   // Navigateur : un Blob ; Node (pair indexeur) : un Buffer.

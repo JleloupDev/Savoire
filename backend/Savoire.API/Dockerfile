@@ -3,11 +3,12 @@
 # DECISION: Multi-stage build pour image minimale (~100 MB).
 # Context : racine du repo (azure.yaml context: .)
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# Versions figees (M9) : une image ne change pas sous nos pieds ; on les monte a la main.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.14 AS base
 WORKDIR /app
 EXPOSE 8080
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 WORKDIR /src
 
 # Restauration des dépendances (layer cache) — copier tous les csproj d'abord
@@ -29,5 +30,9 @@ WORKDIR /app
 # DECISION: Volume /data pour le vault storage (monté par Docker Compose ou ACA)
 ENV Storage__Root=/data
 COPY --from=publish /app/publish .
+# Pas root (M9) : l'utilisateur « app » de l'image (uid 1654). Le dossier
+# /data lui appartient ; un volume neuf monte dessus en herite.
+RUN mkdir -p /data && chown app:app /data
+USER app
 ENTRYPOINT ["dotnet", "Savoire.Server.dll"]
 

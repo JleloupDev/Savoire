@@ -29,6 +29,9 @@ dump="$work/tmp/db/savoire-db.sql.gz"
 [ -s "$dump" ] || { echo "ECHEC : pas d'export des bases dans la copie." >&2; exit 1; }
 [ -d "$work/data" ] || { echo "ECHEC : pas de fichiers des vaults dans la copie." >&2; exit 1; }
 [ -s "$work/config/savoire.env" ] || { echo "ECHEC : pas de .env dans la copie." >&2; exit 1; }
+# Sans les jetons de Zitadel, une base restauree ailleurs ne redemarre pas.
+[ -s "$work/bootstrap/admin.pat" ] && [ -s "$work/bootstrap/login-client.pat" ] \
+  || { echo "ECHEC : pas de jetons de service de Zitadel dans la copie." >&2; exit 1; }
 gunzip -t "$dump"
 
 echo "== Rechargement dans un PostgreSQL jetable"

@@ -145,7 +145,7 @@ services:
   # identifiants dans le volume savoire-config, puis s'arrete. Relance sans
   # risque a chaque demarrage.
   zitadel-bootstrap:
-    image: node:24-alpine
+    image: node:24.22.1-alpine
     restart: "no"
     command: ["node", "/bootstrap/bootstrap.mjs"]
     environment:
@@ -165,8 +165,10 @@ services:
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-common}
-      # Le pair tourne sous l'utilisateur « node » (1000) ; l'API sous root.
+      # Lecteurs des fichiers de secrets : le pair (« node », 1000), l'API et
+      # le store (« app », 1654). Aucun ne tourne en root.
       INDEXER_FILE_OWNER: "1000:1000"
+      API_FILE_OWNER: "1654:1654"
     volumes:
       - ./zitadel/bootstrap.mjs:/bootstrap/bootstrap.mjs:ro
       - ./zitadel/branding:/bootstrap/branding:ro
@@ -178,6 +180,20 @@ services:
         condition: service_healthy
 
   # ── Savoire ────────────────────────────────────────────────────────────────
+  # L'API tourne sans root (utilisateur « app », 1654) : les fichiers des vaults
+  # et son fichier de configuration doivent lui appartenir. Rapide quand c'est
+  # deja le cas (installation d'avant le 17/11/2026, ou restauration).
+  data-perms:
+    image: alpine:3.22
+    command: ["sh", "-c", "find /data \\! -user 1654 -exec chown 1654:1654 {} + ; [ -f /config/savoire-oidc.json ] && chown 1654:1654 /config/savoire-oidc.json; true"]
+    volumes:
+      - savoire-data:/data
+      - savoire-config:/config
+    network_mode: none
+    depends_on:
+      zitadel-bootstrap:
+        condition: service_completed_successfully
+
   api:
     <<: *restart
     image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-api:${SAVOIRE_VERSION:-latest}
@@ -212,6 +228,8 @@ services:
         condition: service_healthy
       zitadel-bootstrap:
         condition: service_completed_successfully
+      data-perms:
+        condition: service_completed_successfully
 
   # Pair indexeur (ADR-027) : jamais expose, reseau interne seulement.
   indexer:
@@ -241,10 +259,10 @@ services:
       api:
         condition: service_healthy
 
-  # ── Sauvegardes : chaque nuit, gardees BACKUP_KEEP_DAYS jours ──────────────
-  # Les deux bases (Savoire, Zitadel) et les fichiers des vaults. A recopier
-  # hors de la machine (voir SELF_HOSTING.md). L'index du pair n'est pas
-  # sauvegarde : il se reconstruit.
+  # ── Sauvegardes : plusieurs fois par jour (BACKUP_TIMES), gardees ─────────
+  # BACKUP_KEEP_DAYS jours. Les bases, les fichiers des vaults et les jetons
+  # de service de Zitadel. Recopiees hors de la machine (docker-compose.ops.yml).
+  # L'index du pair n'est pas sauvegarde : il se reconstruit.
   backup:
     <<: *restart
     image: postgres:17.10-alpine
@@ -253,11 +271,12 @@ services:
       PGUSER: postgres
       PGPASSWORD: ${POSTGRES_PASSWORD:?}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
-      BACKUP_AT: ${BACKUP_AT:-03:30}
+      BACKUP_TIMES: ${BACKUP_TIMES:-03:30,09:30,15:30,21:30}
     entrypoint: ["/bin/sh", "/backup.sh"]
     volumes:
       - ./backup/backup.sh:/backup.sh:ro
       - savoire-data:/data:ro
+      - zitadel-bootstrap:/bootstrap:ro
       - ${BACKUP_DIR:-./backups}:/backups
     networks: [backend]
     depends_on:

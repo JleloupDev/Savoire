@@ -126,7 +126,7 @@ services:
   # Projet, applis et comptes de service dans Zitadel (zitadel/bootstrap.mjs).
   # Ecrit .local/zitadel/savoire-oidc.json, lu par le backend de dev.
   zitadel-bootstrap:
-    image: node:24-alpine
+    image: node:24.22.1-alpine
     restart: "no"
     command: ["node", "/bootstrap/bootstrap.mjs"]
     environment:

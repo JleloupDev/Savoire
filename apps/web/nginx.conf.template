@@ -4,6 +4,22 @@ map $http_x_forwarded_proto $savoire_proto {
     ""      $scheme;
 }
 
+# Integrable ailleurs : les vues de modules (/view, code d'integration du
+# partage). Le reste de l'appli ne s'affiche que dans Savoire.
+map $request_uri $savoire_frame_ancestors {
+    ~^/view     "*";
+    default     "'self'";
+}
+
+# Politique de securite de l'appli (M3). Seuls ses propres scripts tournent,
+# plus le WebAssembly (index local, OCR, LaTeX). Styles en ligne : React.
+# Reseau ouvert en https (fournisseurs d'IA, connexion, langues de l'OCR) et
+# vers le poste (Ollama). Images et videos des notes : https, donnees, blob.
+# Boards et plugins du store : dans /frame.html, qui a sa propre politique.
+map $request_uri $savoire_csp {
+    default "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: ws://localhost:* http://localhost:* http://127.0.0.1:* http://*.localhost:*; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors $savoire_frame_ancestors";
+}
+
 server {
     listen 8080;
     root /usr/share/nginx/html;
@@ -68,7 +84,21 @@ server {
     }
 
     location / {
+        add_header Content-Security-Policy $savoire_csp always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Permissions-Policy "camera=(), geolocation=(), payment=(), usb=()" always;
         try_files $uri $uri/ /index.html;
+    }
+
+    # Cadre des boards et des plugins du store : sa propre politique (scripts
+    # en ligne permis, aucun acces a l'appli : iframe isolee, origine opaque).
+    # Le document ecrit dedans resserre encore (sa balise meta : pas de reseau
+    # sans la permission network du plugin).
+    location = /frame.html {
+        add_header Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src https:; form-action 'none'; base-uri 'none'" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "no-store" always;
     }
 
     # Polices : servies ici (aucun appel a un autre domaine), nom au contenu.

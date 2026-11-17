@@ -34,13 +34,43 @@ function excalidrawAssets(): Plugin {
   }
 }
 
+// Le moteur d'OCR (tesseract.js, plugin-images) : son worker et ses noyaux
+// WebAssembly, servis par l'app au lieu du CDN jsdelivr. La CSP de l'appli
+// n'admet que ses propres scripts. Voir plugin-images, tesseractOcr.
+function tesseractAssets(): Plugin {
+  const req = createRequire(resolve(__dirname, '../../packages/plugins/plugin-images/package.json'))
+  const jsDir = resolve(req.resolve('tesseract.js/package.json'), '..')
+  const coreReq = createRequire(join(jsDir, 'package.json'))
+  const coreDir = resolve(coreReq.resolve('tesseract.js-core/package.json'), '..')
+  const files: Record<string, string> = { 'worker.min.js': join(jsDir, 'dist', 'worker.min.js') }
+  for (const v of ['', '-lstm', '-simd', '-simd-lstm', '-relaxedsimd', '-relaxedsimd-lstm']) {
+    files[`tesseract-core${v}.wasm.js`] = join(coreDir, `tesseract-core${v}.wasm.js`)
+  }
+  let outDir = 'dist'
+  return {
+    name: 'savoire-tesseract-assets',
+    configResolved(config) { outDir = resolve(config.root, config.build.outDir) },
+    configureServer(server) {
+      server.middlewares.use('/vendor/tesseract', (req, res, next) => {
+        const file = files[decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\//, '')]
+        if (!file) return next()
+        res.setHeader('Content-Type', 'text/javascript')
+        createReadStream(file).pipe(res)
+      })
+    },
+    closeBundle() {
+      for (const [name, file] of Object.entries(files)) cpSync(file, join(outDir, 'vendor', 'tesseract', name))
+    },
+  }
+}
+
 // Dossier du paquet SQLite WebAssembly (index local) : son .wasm est servi en
 // dev depuis node_modules (hors des dossiers que Vite sert par defaut).
 const sqliteWasmDir = realpathSync(resolve(
   createRequire(resolve(__dirname, '../../packages/indexer-core/package.json')).resolve('@sqlite.org/sqlite-wasm/package.json'), '..'))
 
 export default defineConfig({
-  plugins: [react(), excalidrawAssets()],
+  plugins: [react(), excalidrawAssets(), tesseractAssets()],
   build: {
     rollupOptions: {
       input: {

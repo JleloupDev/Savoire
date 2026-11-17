@@ -36,6 +36,19 @@ export function boardFrameUrl(scope: unknown = globalThis, userAgent: string = t
 }
 
 /**
+ * Cadre des boards et des plugins du store : celui du bureau, sinon la page
+ * /frame.html de l'appli (sa propre CSP, voir nginx.conf.template). Une iframe
+ * srcdoc heriterait de la CSP de l'appli, qui interdit le JavaScript en ligne.
+ */
+export function sandboxFrameUrl(scope: unknown = globalThis, userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): string | null {
+  const desktop = boardFrameUrl(scope, userAgent)
+  if (desktop) return desktop
+  const loc = (scope as { location?: { href?: string; protocol?: string } }).location
+  if (!loc?.href || !/^https?:$/.test(loc.protocol ?? '')) return null
+  return new URL('/frame.html', loc.href).href
+}
+
+/**
  * Lecture de pages web pour les plugins (api.network) : version bureau
  * seulement, par la commande native web_fetch_text (liste fermee de sites).
  * Undefined ailleurs : sur le web, le navigateur ne lit pas les autres sites.

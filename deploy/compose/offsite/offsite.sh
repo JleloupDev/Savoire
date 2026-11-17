@@ -8,7 +8,9 @@
 #  - les fichiers des vaults tels quels (/data) : restic n'envoie que ce qui
 #    a change depuis la fois precedente ;
 #  - le fichier .env (/config/savoire.env) : ses secrets (cle de Zitadel...)
-#    sont indispensables pour relancer Savoire ailleurs. Le depot est chiffre.
+#    sont indispensables pour relancer Savoire ailleurs. Le depot est chiffre ;
+#  - les jetons de service de Zitadel (/bootstrap) : il ne les ecrit qu'a sa
+#    premiere installation, et sans eux une base restauree ne redemarre pas.
 # Sans depot configure (RESTIC_REPOSITORY vide), le service attend et le dit ;
 # l'alerte « copie hors machine jamais faite » le rappelle.
 # Garde 7 jours, 4 semaines, 6 mois. Verifie le depot chaque dimanche.
@@ -45,6 +47,7 @@ copy() {
   rm -rf /tmp/db && mkdir -p /tmp/db && cp "$dump" /tmp/db/savoire-db.sql.gz
   set -- /tmp/db /data
   [ -f /config/savoire.env ] && set -- "$@" /config
+  [ -d /bootstrap ] && set -- "$@" /bootstrap
   restic backup --host savoire --tag savoire "$@"
   restic forget --host savoire --tag savoire --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
   if [ "$(date -u +%u)" = "7" ]; then
@@ -74,7 +77,7 @@ case "${1:-loop}" in
     target="${2:?dossier de destination}"
     mkdir -p "$target"
     restic restore latest --host savoire --tag savoire --target "$target"
-    echo "offsite : restaure dans $target (tmp/db/savoire-db.sql.gz, data/, config/savoire.env)"
+    echo "offsite : restaure dans $target (tmp/db/savoire-db.sql.gz, data/, config/savoire.env, bootstrap/)"
     ;;
   loop)
     while true; do

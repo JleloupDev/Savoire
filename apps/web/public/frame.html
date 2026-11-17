@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><script>
+// Cadre des boards et des plugins du store (version web). Meme role que le
+// protocole savoire-board de la version bureau (board_frame.rs) : une iframe
+// srcdoc heriterait de la CSP de l'appli, qui interdit le JavaScript en ligne.
+// Cette page a sa propre CSP (nginx.conf.template), attend le document envoye
+// par Savoire (postMessage) et l'ecrit. L'iframe reste isolee
+// (sandbox="allow-scripts", origine opaque).
+(function(){
+  function boot(e){
+    if (e.source !== parent) return;
+    var m = e.data;
+    if (!m || m.t !== 'savoire-board-boot' || typeof m.html !== 'string') return;
+    removeEventListener('message', boot);
+    document.open(); document.write(m.html); document.close();
+  }
+  addEventListener('message', boot);
+  parent.postMessage({ t: 'savoire-board-ready' }, '*');
+})();
+</script></head><body></body></html>
