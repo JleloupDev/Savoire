@@ -17,6 +17,7 @@ import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
+import { bubbles } from './bubbles'
 
 /** Document ouvert par un chemin ou un lien (nom seul, .md facultatif), comme Obsidian. */
 function findByLink<T extends { path: string }>(docs: readonly T[], target: string): T | undefined {
@@ -81,6 +82,14 @@ function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
       style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', height: '100%' }}
     >
       <span className="dv-default-tab-content">{showExt && doc ? displayFileName(doc.path, true) : props.api.title}</span>
+      {doc && (
+        <span
+          data-testid="editor-tab-bubble"
+          onClick={(e) => { e.stopPropagation(); bubbles.add(doc.id, doc.path); props.api.close() }}
+          style={{ cursor: 'pointer', opacity: 0.45, display: 'inline-flex' }}
+          title="Mettre en bulle : ouvrir d'un clic, dans une petite fenêtre"
+        ><Icon name="message-circle" size={12} /></span>
+      )}
       <span
         onClick={(e) => { e.stopPropagation(); props.api.close() }}
         style={{ cursor: 'pointer', opacity: 0.6, display: 'inline-flex' }}
@@ -97,7 +106,7 @@ interface EditorPanelParams {
   userId: string
 }
 
-function DocumentPanelHost({
+export function DocumentPanelHost({
   doc,
   refs,
   vaultId,

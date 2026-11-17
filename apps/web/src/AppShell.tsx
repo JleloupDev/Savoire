@@ -45,6 +45,8 @@ import { SettingsPanel, initTheme } from './SettingsWidget'
 import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { CommandPaletteModal } from './CommandPaletteModal'
+import { BubbleDock } from './BubbleDock'
+import { bubbles } from './bubbles'
 import { usePluginBootstrap } from './usePluginBootstrap'
 import { RibbonIcon, SettingsIcon, RailLogoSvg } from './icons'
 import { t, getLocale, setLocale, subscribeLocale } from '@savoire/i18n'
@@ -506,10 +508,11 @@ export function AppShell() {
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
   // comme celles des plugins. Le ref garde les gestionnaires a jour.
   // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
-  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {} })
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {}, bubble: () => {} })
   const appCommands = useMemo<PluginCommand[]>(() => [
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
+    { id: 'app:bubble-active', label: 'Mettre le document actif en bulle', run: () => appActionsRef.current.bubble() },
     { id: 'app:command-palette', label: 'Palette de commandes', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'p' }], run: () => appActionsRef.current.palette() },
     { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
     { id: 'app:toggle-editor-toolbar', label: 'Afficher ou masquer la barre d\'édition', run: () => setShowEditorToolbar(!showEditorToolbar()) },
@@ -1367,6 +1370,7 @@ export function AppShell() {
     quickOpen: () => setQuickOpenVisible(true),
     openSettings: () => setSettingsOpen(true),
     palette: () => setPaletteVisible(true),
+    bubble: () => { if (activeDoc) bubbles.add(activeDoc.id, activeDoc.path, true) },
   }
 
   // Raccourcis personnalises de la personne connectee : charges a la
@@ -1697,6 +1701,15 @@ export function AppShell() {
           onClose={() => setKeyDebugOpen(false)}
         />
       )}
+
+      {/* ── Bulles : documents ouverts d'un clic, dans une petite fenetre ── */}
+      <BubbleDock
+        refs={editorAreaRefsHolder.current}
+        documents={documents}
+        vaultId={selectedVault?.id}
+        userId={activeAccount?.userId}
+        onOpenInTab={path => { void managerRef.current?.openFile(path) }}
+      />
 
       {/* ── Palette de commandes (Ctrl+Maj+P) ── */}
       {paletteVisible && pluginAPIRef.current && (
