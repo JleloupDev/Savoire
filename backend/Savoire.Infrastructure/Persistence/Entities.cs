@@ -184,6 +184,7 @@ public class ShareLinkEntity
     public DateTime  CreatedAt    { get; set; }
     public DateTime? ExpiresAt    { get; set; }
     public DateTime? RevokedAt    { get; set; }
+    public string?   Path         { get; set; }
 
     public ShareLink ToDomain() =>
         ShareLink.Rehydrate(
@@ -191,7 +192,7 @@ public class ShareLinkEntity
             ResourceType.ParseResourceType(),
             ResourceId,
             Permission.ParsePermission(),
-            CreatedBy, CreatedAt, ExpiresAt, RevokedAt);
+            CreatedBy, CreatedAt, ExpiresAt, RevokedAt, Path);
 }
 
 public class PublicationEntity

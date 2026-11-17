@@ -475,7 +475,7 @@ export interface ISharingBackend {
   grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
   revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
   lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
   openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
@@ -490,7 +490,7 @@ export interface ISharingAPI {
   grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
   revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
   lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
   openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle>

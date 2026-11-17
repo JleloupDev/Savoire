@@ -59,10 +59,10 @@ export class HttpSharingBackend implements ISharingBackend {
     return res.json() as Promise<AppUserLookup>
   }
 
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string): Promise<AppShareLink> {
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink> {
     return this.fetch(`${this.resourcePath(resourceType, id)}/sharing/links`, token, {
       method: 'POST',
-      body: JSON.stringify({ permission }),
+      body: JSON.stringify(resourceType === 'document' && path ? { permission, path } : { permission }),
     })
   }
 

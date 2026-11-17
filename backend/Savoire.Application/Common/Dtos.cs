@@ -68,7 +68,7 @@ public record PatchVaultRequest(string Name);
 public record AddMemberRequest(string UserId, string Role);
 public record RegisterVaultMemberIdentityRequest(string SignPubBase64);
 public record GrantPermissionRequest(string SubjectId, string Permission, DateTime? ExpiresAt);
-public record CreateShareLinkRequest(string Permission, DateTime? ExpiresAt);
+public record CreateShareLinkRequest(string Permission, DateTime? ExpiresAt, string? Path = null);
 
 // ── Sharing ────────────────────────────────────────────────────────────────
 

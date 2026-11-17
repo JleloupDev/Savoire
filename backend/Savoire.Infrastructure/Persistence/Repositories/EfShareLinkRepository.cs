@@ -49,7 +49,8 @@ public class EfShareLinkRepository(AppDbContext db) : IShareLinkRepository
             CreatedBy    = link.CreatedBy,
             CreatedAt    = link.CreatedAt,
             ExpiresAt    = link.ExpiresAt,
-            RevokedAt    = link.RevokedAt
+            RevokedAt    = link.RevokedAt,
+            Path         = link.Path,
         });
         await db.SaveChangesAsync(ct);
     }

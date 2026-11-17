@@ -801,6 +801,11 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<string>("Path")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("path");
+
                     b.Property<string>("Permission")
                         .IsRequired()
                         .HasColumnType("text")

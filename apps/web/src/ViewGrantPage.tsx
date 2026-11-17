@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+import { createIconElement } from '@savoire/ui-components'
 import { useEffect, useRef, useState } from 'react'
 import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
@@ -9,6 +10,7 @@ import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import { pluginRegistry } from './pluginRegistry'
 import { loadModulePlugins } from './pluginStore'
+import { crdtViewsOf, GUEST_NAME } from './ShareAccessPage'
 
 interface ViewAccessDto {
   accessToken: string
@@ -94,6 +96,8 @@ export function ViewGrantPage() {
 
       const vault = createViewVault(access)
       const pluginApi = PluginAPIImpl.create(vault, sync)
+      // Les icones des plugins (sinon leur nom s'affiche en texte).
+      pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
       loader = new PluginLoader()
       const plugins = await loadModulePlugins(access.path)
       const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
@@ -110,8 +114,10 @@ export function ViewGrantPage() {
         vaultId: access.vaultId,
         docId: access.docId,
         userId: access.userId ?? 'view',
+        userName: access.userId && !access.userId.startsWith('share:') ? undefined : GUEST_NAME,
         readOnly: ro,
         crdt,
+        ...crdtViewsOf(crdt),
         getTransportState: () => transport!.getState(),
         pluginAPI: pluginApi,
         defaultPlugins,

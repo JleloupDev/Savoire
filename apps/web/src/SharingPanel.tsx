@@ -218,7 +218,7 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
     if (!resourceId) return
     setLinkBusy(true)
     try {
-      await sharingApi.createShareLink(target, resourceId, linkPermission, token)
+      await sharingApi.createShareLink(target, resourceId, linkPermission, token, target === 'document' ? doc?.path : undefined)
       await reload()
       notify('success', t('app', 'notify.sharing.linkCreated'))
     } catch (e) {

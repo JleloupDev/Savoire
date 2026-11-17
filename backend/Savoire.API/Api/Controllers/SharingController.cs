@@ -97,7 +97,7 @@ public class SharingController(IMediator mediator) : AppControllerBase(mediator)
         string docId, [FromBody] CreateShareLinkRequest req, CancellationToken ct)
     {
         ShareLinkDto dto = await Mediator.Send(
-            new CreateShareLinkCommand(GetCallerId(), "document", docId, req.Permission, req.ExpiresAt), ct);
+            new CreateShareLinkCommand(GetCallerId(), "document", docId, req.Permission, req.ExpiresAt, req.Path), ct);
         return Ok(dto);
     }
 

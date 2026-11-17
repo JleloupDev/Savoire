@@ -30,7 +30,8 @@ public sealed class CreateShareLinkCommandHandler(
 
         ShareLink link = ShareLink.Create(
             resourceType, cmd.ResourceId,
-            permission, cmd.CallerId, cmd.ExpiresAt);
+            permission, cmd.CallerId, cmd.ExpiresAt,
+            resourceType == ResourceType.Document ? cmd.Path : null);
 
         await shareLinks.AddAsync(link, ct);
 

@@ -10,5 +10,7 @@ public sealed record CreateShareLinkCommand(
     string    ResourceType,
     string    ResourceId,
     string    Permission,   // "read" | "write"
-    DateTime? ExpiresAt
+    DateTime? ExpiresAt,
+    /// <summary>Chemin du document (lien vers un document) : type de fichier et nom pour la page du lien.</summary>
+    string?   Path = null
 ) : IRequest<ShareLinkDto>;

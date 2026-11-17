@@ -42,10 +42,17 @@ export function ModuleShareDialog({ docId, path, publications, sharing, token, c
     setMode(m); setUrl(null); setError(null); setBusy(true)
     try {
       if (m === 'read') {
-        const info = (await publications.status(docId)) ?? await publications.publish(docId, path, false)
-        setUrl(`${publications.publicUrl(info)}?embed=1`)
+        // Une page deja publiee sert telle quelle. Sinon : publier est reserve
+        // aux administrateurs du vault ; pour les autres, un lien en lecture.
+        let info = await publications.status(docId)
+        if (!info) info = await publications.publish(docId, path, false).catch(() => null)
+        if (info) setUrl(`${publications.publicUrl(info)}?embed=1`)
+        else {
+          const link = await sharing.createShareLink('document', docId, 'read', token, path)
+          setUrl(`${window.location.origin}/share/${link.token}?embed=1`)
+        }
       } else {
-        const link = await sharing.createShareLink('document', docId, 'write', token)
+        const link = await sharing.createShareLink('document', docId, 'write', token, path)
         setUrl(`${window.location.origin}/share/${link.token}?embed=1`)
       }
     } catch (e) {

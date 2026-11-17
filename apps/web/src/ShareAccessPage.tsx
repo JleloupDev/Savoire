@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom'
 import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
+import { createIconElement } from '@savoire/ui-components'
 import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
@@ -31,6 +32,27 @@ const basePlugins: SharePluginLoader = async () => ({
   editor: [mermaidPlugin, calloutPlugin, codeBlockPlugin, noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin],
   fileTypes: [excalidrawPlugin, mindmapPlugin],
 })
+
+/**
+ * Le texte et l'arbre partages du document, pour les editeurs CRDT des
+ * plugins (discussion, base, page, plan...) : le meme document que celui que
+ * le lien synchronise. Sans eux, ces editeurs ne s'ouvraient pas par un lien.
+ */
+export function crdtViewsOf(crdt: unknown): { openText?: () => import('@savoire/plugin-api').ISharedText; openTree?: () => import('@savoire/plugin-api').ISharedTree } {
+  const c = crdt as { sharedText?: () => import('@savoire/plugin-api').ISharedText; sharedTree?: () => import('@savoire/plugin-api').ISharedTree }
+  return {
+    openText: typeof c.sharedText === 'function' ? () => c.sharedText!() : undefined,
+    openTree: typeof c.sharedTree === 'function' ? () => c.sharedTree!() : undefined,
+  }
+}
+
+/** Nom d'un invite (lien de partage, sans compte) : dans les discussions, les versions... */
+export const GUEST_NAME = 'Invité'
+
+/** Identifiant d'un invite : stable pour un lien (le meme invite d'un message a l'autre). */
+function guestId(handle: SharedDocumentHandle): string {
+  return `share:${handle.docId.slice(0, 8)}`
+}
 
 function createShareVault(handle: SharedDocumentHandle): VaultAPI {
   return {
@@ -65,6 +87,8 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
 
     const start = async () => {
       const pluginApi = PluginAPIImpl.create(vault, handle.sync)
+      // Les icones des plugins (sinon leur nom s'affiche en texte).
+      pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
       loader = new PluginLoader()
       const plugins = await loadPlugins(handle.path)
       const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
@@ -78,9 +102,11 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
         fileTypeRegistry: pluginApi.files,
         vaultId: handle.vaultId,
         docId: handle.docId,
-        userId: 'share',
+        userId: guestId(handle),
+        userName: GUEST_NAME,
         readOnly: ro,
         crdt: handle.crdt,
+        ...crdtViewsOf(handle.crdt),
         getTransportState: () => handle.transport.getState(),
         pluginAPI: pluginApi,
         defaultPlugins,

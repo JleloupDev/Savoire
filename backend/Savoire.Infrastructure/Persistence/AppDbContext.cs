@@ -333,6 +333,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
             e.Property(x => x.ExpiresAt).HasColumnName("expires_at");
             e.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+            e.Property(x => x.Path).HasColumnName("path").HasMaxLength(512);
             e.HasIndex(x => x.Token).IsUnique().HasDatabaseName("IX_share_links_token");
             e.HasIndex(x => new { x.ResourceType, x.ResourceId })
              .HasDatabaseName("idx_sl_resource");

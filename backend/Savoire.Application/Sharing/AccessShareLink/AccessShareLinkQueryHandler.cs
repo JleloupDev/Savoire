@@ -33,6 +33,6 @@ public sealed class AccessShareLinkQueryHandler(
             : await vaultDocuments.GetVaultIdAsync(link.ResourceId, ct);
         return new ShareLinkAccessDto(
             jwt, link.ResourceType.ToApiString(), link.ResourceId,
-            link.Permission.ToApiString(), link.ExpiresAt, vaultId, null);
+            link.Permission.ToApiString(), link.ExpiresAt, vaultId, link.Path);
     }
 }
