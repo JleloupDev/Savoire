@@ -53,6 +53,7 @@ export class VaultClient implements VaultAPI {
 
   addDocument(doc: IDocumentMeta): void {
     this.directory.add(doc)
+    this.scheduleFolder(doc.id)
   }
 
   removeDocument(id: string): void {
@@ -405,6 +406,64 @@ export class VaultClient implements VaultAPI {
     }))
   }
 
+  // ── Dossier de chaque document (droits herites des dossiers) ─────────────
+
+  private readonly foldersToAnnounce = new Set<string>()
+  private folderTimer: ReturnType<typeof setTimeout> | null = null
+  private allFoldersAnnounced = false
+
+  /** Un document a ete cree ou deplace : son dossier sera annonce au serveur. */
+  private scheduleFolder(docId: string): void {
+    if (!this.session?.files?.placeFolders) return
+    this.foldersToAnnounce.add(docId)
+    if (this.folderTimer) clearTimeout(this.folderTimer)
+    this.folderTimer = setTimeout(() => void this.flushFolders(), 500)
+  }
+
+  /**
+   * Annonce le dossier de tous les documents (une fois par ouverture du vault) :
+   * les documents d'avant les droits par dossier, ou deplaces par un autre
+   * appareil. Le serveur ignore ceux qui n'ont pas change.
+   */
+  announceAllFolders(): void {
+    if (this.allFoldersAnnounced || !this.session?.files?.placeFolders) return
+    const all = this.directory.getAll()
+    if (all.length === 0) return
+    this.allFoldersAnnounced = true
+    for (const d of all) this.foldersToAnnounce.add(d.id)
+    if (this.folderTimer) clearTimeout(this.folderTimer)
+    this.folderTimer = setTimeout(() => void this.flushFolders(), 500)
+  }
+
+  /** Envoie les dossiers en attente. Rend quand c'est fait (tests). */
+  async flushFolders(): Promise<void> {
+    if (this.folderTimer) { clearTimeout(this.folderTimer); this.folderTimer = null }
+    const place = this.session?.files?.placeFolders
+    if (!place) return
+    const docs = [...this.foldersToAnnounce].flatMap(id => {
+      const meta = this.directory.getById(id)
+      if (!meta) return []
+      const slash = meta.path.lastIndexOf('/')
+      return [{ docId: id, folder: slash < 0 ? '' : meta.path.slice(0, slash) }]
+    })
+    this.foldersToAnnounce.clear()
+    if (docs.length === 0) return
+    try {
+      await place.call(this.session!.files, docs)
+    } catch (err) {
+      // Les droits restent ceux de l'ancien dossier ; un prochain envoi rattrapera.
+      console.warn('[VaultClient] dossiers des documents non annonces', err)
+    }
+  }
+
+  /** Un dossier va etre deplace : ses droits le suivent (VaultAPI.folderMoved). */
+  async folderMoved(from: string, to: string): Promise<void> {
+    const move = this.session?.files?.moveFolderRights
+    if (!move) return
+    const clean = (p: string) => p.replace(/^\/+|\/+$/g, '')
+    await move.call(this.session!.files, clean(from), clean(to))
+  }
+
   /** Texte a mettre dans `![[...]]` : le nom seul s'il est unique, sinon le chemin. */
   linkTarget(path: string): string {
     return linkTargetFor(path, this.documents.map(d => d.path))
@@ -451,6 +510,7 @@ export class VaultClient implements VaultAPI {
     const normalizedNewPath = withNoteExtension(newPath)
     this.renameDocumentInCache(documentId, normalizedNewPath)
     if (isAttachmentPath(normalizedNewPath)) this.schedulePlacement(documentId)
+    this.scheduleFolder(documentId)
   }
 
   async deleteDocument(documentId: string): Promise<void> {

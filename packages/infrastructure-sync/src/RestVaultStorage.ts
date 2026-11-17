@@ -144,6 +144,28 @@ export class RestVaultStorage implements IVaultStorage {
     if (!res.ok) throw new Error(`${res.status}`)
   }
 
+  /** Dossier de documents (PUT .../documents/folders), par lots de 500. */
+  async placeDocumentFolders(vaultId: string, documents: { docId: string; folder: string }[], token: string): Promise<void> {
+    for (let i = 0; i < documents.length; i += 500) {
+      const res = await this.fetchFn(this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/folders`), {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(documents.slice(i, i + 500)),
+      })
+      if (!res.ok) throw new Error(`${res.status}`)
+    }
+  }
+
+  /** Un dossier deplace : ses droits le suivent (POST .../acl/folders/rename). */
+  async renameAclFolder(vaultId: string, from: string, to: string, token: string): Promise<void> {
+    const res = await this.fetchFn(this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/acl/folders/rename`), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to }),
+    })
+    if (!res.ok) throw new Error(`${res.status}`)
+  }
+
   /** Pieces jointes rangees dans le dossier d'une note (page de partage). */
   async listNoteAttachments(vaultId: string, docId: string, token: string): Promise<{ id: string; name: string | null }[]> {
     const res = await this.fetchFn(

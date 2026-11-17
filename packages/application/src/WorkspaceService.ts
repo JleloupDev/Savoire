@@ -25,6 +25,7 @@ export class WorkspaceService implements IWorkspaceAPI {
       renameFile: (documentId: string, newPath: string) => getClient()?.renameFile?.(documentId, newPath) ?? Promise.resolve(),
       deleteFile: (documentId: string) => getClient()?.deleteFile?.(documentId) ?? Promise.resolve(),
       deleteFolder: (path: string) => getClient()?.deleteFolder?.(path) ?? Promise.resolve(),
+      folderMoved: (from: string, to: string) => getClient()?.folderMoved?.(from, to) ?? Promise.resolve(),
       listTrash: () => getClient()?.listTrash() ?? [],
       isTrashed: (documentId: string) => getClient()?.isTrashed(documentId) ?? false,
       restoreFromTrash: (documentId: string) => getClient()?.restoreFromTrash(documentId) ?? Promise.reject(new Error('No active vault')),

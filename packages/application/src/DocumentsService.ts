@@ -54,11 +54,16 @@ export class DocumentsService implements IDocumentsAPI {
       params.syncKindOf,
     )
 
+    // Droits herites des dossiers : le dossier de chaque document est annonce
+    // une fois le repertoire arrive (puis a chaque creation ou deplacement).
+    client.announceAllFolders()
+    const stopAnnounce = session.directory?.onChange?.(() => client.announceAllFolders()) ?? (() => {})
+
     const active: ActivatedVault = {
       vaultId: params.vaultId,
       client,
       session,
-      dispose: async () => { await session.dispose() },
+      dispose: async () => { stopAnnounce(); await session.dispose() },
     }
     this.active = active
     return active

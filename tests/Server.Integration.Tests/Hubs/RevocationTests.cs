@@ -76,7 +76,7 @@ public class RevocationTests : IClassFixture<AppFactory>
         var received = new List<string>();
         var revoked = new List<string>();
         guestVault.On<string, string>("VaultOperationReceived", (_, op) => received.Add("vault:" + op));
-        guestDoc.On<string, string, string>("ReceiveOperation", (_, _, op) => received.Add("doc:" + op));
+        guestDoc.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (_, _, op, _) => received.Add("doc:" + op));
         guestVault.On<string, string>("AccessRevoked", (id, _) => revoked.Add(id));
         guestDoc.On<string, string>("AccessRevoked", (id, _) => revoked.Add(id));
         await guestVault.StartAsync(); await guestDoc.StartAsync();
@@ -89,8 +89,9 @@ public class RevocationTests : IClassFixture<AppFactory>
         await owner.InvokeAsync("JoinVault", s.VaultId);
         await ownerDoc.InvokeAsync("JoinDocument", s.VaultId, s.DocId);
         await owner.InvokeAsync("PushVaultOperation", s.VaultId, B64("avant"));
-        await Eventually(() => received.Count >= 1);
-        received.Should().Contain("vault:" + B64("avant"), "temoin : avant le retrait, la diffusion arrive");
+        await ownerDoc.InvokeAsync("PushOperation", s.VaultId, s.DocId, "o", B64("avant-doc"));
+        await Eventually(() => received.Count >= 2);
+        received.Should().Contain(["vault:" + B64("avant"), "doc:" + B64("avant-doc")], "temoin : avant le retrait, la diffusion arrive");
 
         (await Authed(s.OwnerToken).DeleteAsync($"/api/v1/vaults/{s.VaultId}/sharing/permissions/{s.GuestId}"))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -152,7 +153,7 @@ public class RevocationTests : IClassFixture<AppFactory>
         await using var viaLink = Connect("sync", access!.AccessToken);
         var received = new List<string>();
         var revoked = new List<string>();
-        viaLink.On<string, string, string>("ReceiveOperation", (_, _, op) => received.Add(op));
+        viaLink.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (_, _, op, _) => received.Add(op));
         viaLink.On<string, string>("AccessRevoked", (id, _) => revoked.Add(id));
         await viaLink.StartAsync();
         await viaLink.InvokeAsync("JoinDocument", s.VaultId, s.DocId);

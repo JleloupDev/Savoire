@@ -56,6 +56,7 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   }
   deleteFile(documentId: string): Promise<void> { return this.inner.deleteFile?.(documentId) ?? Promise.resolve() }
   deleteFolder(path: string): Promise<void> { return this.inner.deleteFolder?.(path) ?? Promise.resolve() }
+  folderMoved(from: string, to: string): Promise<void> { return this.inner.folderMoved?.(from, to) ?? Promise.resolve() }
   listTrash(): TrashEntry[] { return this.inner.listTrash?.() ?? [] }
   isTrashed(documentId: string): boolean { return this.inner.isTrashed?.(documentId) ?? false }
   restoreFromTrash(documentId: string): Promise<string> {

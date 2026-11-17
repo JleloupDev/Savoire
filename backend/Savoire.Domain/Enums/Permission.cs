@@ -7,7 +7,12 @@ public enum Permission
 {
     Read,
     Write,
-    Admin
+    Admin,
+    /// <summary>
+    /// Aucun acces : surcharge un droit herite (un membre du vault exclu d'un
+    /// dossier ou d'une note). Seulement sur un dossier ou un document.
+    /// </summary>
+    None
 }
 
 public static class PermissionExtensions
@@ -17,6 +22,7 @@ public static class PermissionExtensions
         Permission.Read  => "read",
         Permission.Write => "write",
         Permission.Admin => "admin",
+        Permission.None  => "none",
         _                => throw new ArgumentOutOfRangeException(nameof(p), p, null)
     };
 
@@ -25,6 +31,7 @@ public static class PermissionExtensions
         "read"  => Permission.Read,
         "write" => Permission.Write,
         "admin" => Permission.Admin,
+        "none"  => Permission.None,
         _       => throw new ArgumentException($"Unknown Permission: '{s}'")
     };
 }

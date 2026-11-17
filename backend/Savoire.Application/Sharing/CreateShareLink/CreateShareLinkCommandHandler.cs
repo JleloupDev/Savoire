@@ -21,6 +21,8 @@ public sealed class CreateShareLinkCommandHandler(
         Permission   permission   = cmd.Permission.ParsePermission();
         ResourceType resourceType = cmd.ResourceType.ParseResourceType();
 
+        if (permission == Permission.None)
+            throw new ArgumentException("Permission invalide : un lien de partage donne un acces.");
         if (permission == Permission.Admin)
             throw new ArgumentException("Permission invalide : 'admin' n'est pas autorise sur un lien de partage.");
 

@@ -78,6 +78,7 @@ public static class ServiceCollectionExtensions
 
         // Existing repositories (scoped — depend on DbContext)
         services.AddScoped<IVaultRepository,     EfVaultRepository>();
+        services.AddScoped<IAclSettingRepository, EfAclSettingRepository>();
         services.AddScoped<Savoire.Application.Abstractions.IOrphanPurger, VaultEraser>();
         // Suppression d'un compte : chez le fournisseur d'identite, puis ici.
         services.AddHttpClient(Savoire.Infrastructure.Auth.ZitadelUserAdmin.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));

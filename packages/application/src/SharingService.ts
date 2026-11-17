@@ -28,7 +28,9 @@ export class SharingService implements ISharingAPI {
 
   /** `path` : chemin du document (lien vers un document) ; la page du lien en tire l'editeur et le nom. */
   createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink> {
-    return this.backend.createShareLink(resourceType, id, permission, token, path)
+    return path === undefined
+      ? this.backend.createShareLink(resourceType, id, permission, token)
+      : this.backend.createShareLink(resourceType, id, permission, token, path)
   }
 
   revokeShareLink(linkId: string, token: string): Promise<void> {

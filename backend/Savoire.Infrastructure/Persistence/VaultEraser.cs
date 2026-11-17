@@ -55,6 +55,8 @@ public sealed class VaultEraser(AppDbContext db, IContentStore files) : IOrphanP
             WHERE (resource_type = 'vault' AND resource_id = {vaultId})
                OR (resource_type = 'document' AND resource_id IN (SELECT doc_id FROM vault_documents WHERE vault_id = {vaultId}))
             """, ct);
+        string folderPrefix = vaultId + ":";
+        await db.Database.ExecuteSqlAsync($"DELETE FROM resource_permissions WHERE resource_type = 'folder' AND starts_with(resource_id, {folderPrefix})", ct);
         await db.Database.ExecuteSqlAsync($"DELETE FROM publications WHERE vault_id = {vaultId}", ct);
         await db.Database.ExecuteSqlAsync($"DELETE FROM edgesync_blobs WHERE vault_id = {vaultId}", ct);
         await db.Database.ExecuteSqlAsync($"DELETE FROM vault_key_wraps WHERE vault_id = {vaultId}", ct);
@@ -109,6 +111,7 @@ public sealed class VaultEraser(AppDbContext db, IContentStore files) : IOrphanP
             """;
         await Run("shareLinks", noResource, "share_links");
         await Run("permissions", noResource, "resource_permissions");
+        await Run("permissions", "resource_type = 'folder' AND split_part(resource_id, ':', 1) NOT IN (SELECT id FROM vaults)", "resource_permissions");
         const string noVault = "vault_id NOT IN (SELECT id FROM vaults)";
         await Run("publications", noVault, "publications");
         await Run("edgesyncBlobs", noVault, "edgesync_blobs");

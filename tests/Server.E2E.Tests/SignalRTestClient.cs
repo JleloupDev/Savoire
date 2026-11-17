@@ -70,7 +70,7 @@ public sealed class SignalRTestClient : IAsyncDisposable
             }
         });
 
-        _connection.On<string, string, string>("ReceiveOperation", (docId, clientId, opBase64) =>
+        _connection.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (docId, clientId, opBase64, _) =>
         {
             byte[] op = Convert.FromBase64String(opBase64);
             lock (_gate)

@@ -300,6 +300,43 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.ToTable("access_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.AclSettingEntity", b =>
+                {
+                    b.Property<string>("ResourceType")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("resource_type");
+
+                    b.Property<string>("ResourceId")
+                        .HasMaxLength(1100)
+                        .HasColumnType("character varying(1100)")
+                        .HasColumnName("resource_id");
+
+                    b.Property<bool>("Inherit")
+                        .HasColumnType("boolean")
+                        .HasColumnName("inherit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("VaultId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("vault_id");
+
+                    b.HasKey("ResourceType", "ResourceId");
+
+                    b.HasIndex("VaultId");
+
+                    b.ToTable("acl_settings", (string)null);
+                });
+
             modelBuilder.Entity("Savoire.Infrastructure.Persistence.EdgesyncBlobEntity", b =>
                 {
                     b.Property<string>("VaultId")
@@ -597,6 +634,11 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         {
                             Value = "admin",
                             Description = "Full control, including sharing the resource."
+                        },
+                        new
+                        {
+                            Value = "none",
+                            Description = "No access: overrides an inherited permission."
                         });
                 });
 
@@ -625,6 +667,11 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         {
                             Value = "document",
                             Description = "A single document within a vault."
+                        },
+                        new
+                        {
+                            Value = "folder",
+                            Description = "A folder of a vault: its content inherits its permissions."
                         });
                 });
 
@@ -874,6 +921,11 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("doc_id");
 
+                    b.Property<string>("Folder")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("folder");
+
                     b.Property<string>("Name")
                         .HasColumnType("text")
                         .HasColumnName("name");
@@ -1082,6 +1134,15 @@ namespace Savoire.Infrastructure.Persistence.Migrations
                     b.HasOne("Savoire.Domain.Entities.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Savoire.Infrastructure.Persistence.AclSettingEntity", b =>
+                {
+                    b.HasOne("Savoire.Infrastructure.Persistence.VaultEntity", null)
+                        .WithMany()
+                        .HasForeignKey("VaultId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

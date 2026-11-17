@@ -38,6 +38,13 @@ public interface IVaultDocumentRepository
     /// </summary>
     Task SetPlacementAsync(string docId, string? parentDocId, string? name, CancellationToken ct = default);
 
+    /// <summary>
+    /// Dossier du document dans le vault (« A/B », vide : a la racine), annonce
+    /// par le client a la creation et a chaque deplacement : les droits d'un
+    /// dossier s'appliquent a son contenu. Ne touche que les documents inscrits.
+    /// </summary>
+    Task SetFolderAsync(string docId, string folder, CancellationToken ct = default);
+
     /// <summary>Pieces jointes rangees dans le dossier de cette note.</summary>
     Task<IReadOnlyList<VaultDocumentRecord>> ListChildrenAsync(string vaultId, string parentDocId, CancellationToken ct = default);
 }

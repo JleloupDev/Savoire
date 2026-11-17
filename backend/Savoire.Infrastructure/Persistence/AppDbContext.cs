@@ -33,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<VaultIndexerSettingEntity> VaultIndexerSettings  => Set<VaultIndexerSettingEntity>();
     public DbSet<PublicationEntity>         Publications          => Set<PublicationEntity>();
     public DbSet<AccessTokenEntity>         AccessTokens          => Set<AccessTokenEntity>();
+    public DbSet<AclSettingEntity>          AclSettings           => Set<AclSettingEntity>();
     public DbSet<FeedbackReportEntity>      FeedbackReports       => Set<FeedbackReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -48,12 +49,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         modelBuilder.Entity<RefResourceTypeEntity>().HasData(
             new() { Value = "vault",    Description = "A vault — contains documents and folders." },
-            new() { Value = "document", Description = "A single document within a vault." });
+            new() { Value = "document", Description = "A single document within a vault." },
+            new() { Value = "folder",   Description = "A folder of a vault: its content inherits its permissions." });
 
         modelBuilder.Entity<RefPermissionEntity>().HasData(
             new() { Value = "read",  Description = "Read-only access to the resource." },
             new() { Value = "write", Description = "Read and write access to the resource." },
-            new() { Value = "admin", Description = "Full control, including sharing the resource." });
+            new() { Value = "admin", Description = "Full control, including sharing the resource." },
+            new() { Value = "none",  Description = "No access: overrides an inherited permission." });
 
         modelBuilder.Entity<RefVaultRoleEntity>().HasData(
             new() { Value = "owner",  Description = "Vault creator — cannot be removed, has all permissions." },
@@ -160,6 +163,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(d => d.RegisteredAt).HasColumnName("registered_at").IsRequired();
             e.Property(d => d.ParentDocId).HasColumnName("parent_doc_id");
             e.Property(d => d.Name).HasColumnName("name");
+            e.Property(d => d.Folder).HasColumnName("folder").HasMaxLength(1024);
             e.HasIndex(d => d.VaultId);
             e.HasIndex(d => d.ParentDocId);
             e.HasOne<VaultEntity>()
@@ -212,6 +216,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasKey(k => k.Key);
             e.Property(k => k.Key).HasColumnName("key");
             e.Property(k => k.Value).HasColumnName("value").IsRequired();
+        });
+
+        modelBuilder.Entity<AclSettingEntity>(e =>
+        {
+            e.ToTable("acl_settings");
+            e.HasKey(s => new { s.ResourceType, s.ResourceId });
+            e.Property(s => s.ResourceType).HasColumnName("resource_type").HasMaxLength(16);
+            e.Property(s => s.ResourceId).HasColumnName("resource_id").HasMaxLength(1100);
+            e.Property(s => s.VaultId).HasColumnName("vault_id").IsRequired();
+            e.Property(s => s.Inherit).HasColumnName("inherit").IsRequired();
+            e.Property(s => s.UpdatedBy).HasColumnName("updated_by").IsRequired();
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            e.HasIndex(s => s.VaultId);
+            e.HasOne<VaultEntity>()
+             .WithMany()
+             .HasForeignKey(s => s.VaultId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<VaultIndexerSettingEntity>(e =>

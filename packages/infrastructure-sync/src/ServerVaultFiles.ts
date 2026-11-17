@@ -29,6 +29,16 @@ export class ServerVaultFiles implements IVaultFiles {
     return this.storage.placeAttachment(this.vaultId, fileId, placement, this.token())
   }
 
+  /** Le serveur apprend le dossier de chaque document (droits herites des dossiers). */
+  placeFolders(documents: { docId: string; folder: string }[]): Promise<void> {
+    return this.storage.placeDocumentFolders(this.vaultId, documents, this.token())
+  }
+
+  /** Un dossier deplace : ses droits le suivent. */
+  moveFolderRights(from: string, to: string): Promise<void> {
+    return this.storage.renameAclFolder(this.vaultId, from, to, this.token())
+  }
+
   url(fileId: string): Promise<string> {
     let url = this.urls.get(fileId)
     if (!url) {

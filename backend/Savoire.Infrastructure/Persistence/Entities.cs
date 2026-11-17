@@ -85,6 +85,19 @@ public class VaultDocumentEntity
     public string?  ParentDocId  { get; set; }
     /// <summary>Nom affiche d'une piece jointe (« Photo.png »), pour la page de partage.</summary>
     public string?  Name         { get; set; }
+    /// <summary>Dossier du document (« A/B », vide : racine ; null : pas encore annonce).</summary>
+    public string?  Folder       { get; set; }
+}
+
+/// <summary>Reglage d'heritage des droits d'un dossier ou d'un document (voir AclSetting).</summary>
+public class AclSettingEntity
+{
+    public string   ResourceType { get; set; } = null!;
+    public string   ResourceId   { get; set; } = null!;
+    public string   VaultId      { get; set; } = null!;
+    public bool     Inherit      { get; set; }
+    public string   UpdatedBy    { get; set; } = null!;
+    public DateTime UpdatedAt    { get; set; }
 }
 
 /// <summary>

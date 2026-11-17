@@ -54,6 +54,7 @@ builder.Services.AddMediatR(cfg =>
     cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(VaultStorageQuotaBehavior<,>));
 });
 builder.Services.AddScoped<IVaultAccessGuard, VaultAccessGuard>();
+builder.Services.AddScoped<AclResolver>();
 builder.Services.AddValidatorsFromAssembly(appAssembly);
 
 // Pair indexeur (ADR-027) : configuration « Indexer » et limitation de debit

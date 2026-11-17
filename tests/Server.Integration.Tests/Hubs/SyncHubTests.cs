@@ -118,7 +118,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await using var receiver = CreateConnection("receiver-user");
 
         var tcs = new TaskCompletionSource<(string docId, string clientId, string opBase64)>();
-        receiver.On<string, string, string>("ReceiveOperation", (did, cid, op) =>
+        receiver.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (did, cid, op, _) =>
             tcs.TrySetResult((did, cid, op)));
 
         await sender.StartAsync();
@@ -142,7 +142,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await using var conn = CreateConnection("solo-user");
 
         bool senderReceived = false;
-        conn.On<string, string, string>("ReceiveOperation", (_, _, _) => senderReceived = true);
+        conn.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (_, _, _, _) => senderReceived = true);
 
         await conn.StartAsync();
         await conn.InvokeAsync("JoinDocument", _vaultId, _docId);
@@ -314,7 +314,7 @@ public class SyncHubTests : IClassFixture<AppFactory>, IAsyncLifetime
         await using var outsider = CreateConnection("group-outsider");
 
         bool outsiderReceived = false;
-        outsider.On<string, string, string>("ReceiveOperation", (_, _, _) => outsiderReceived = true);
+        outsider.On<string, string, string, System.Text.Json.JsonElement>("ReceiveOperation", (_, _, _, _) => outsiderReceived = true);
 
         await sender.StartAsync();
         await outsider.StartAsync();

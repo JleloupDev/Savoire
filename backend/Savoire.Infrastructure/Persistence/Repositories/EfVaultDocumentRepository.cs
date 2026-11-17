@@ -58,7 +58,7 @@ public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentReposito
     public async Task<VaultDocumentRecord?> GetAsync(string docId, CancellationToken ct = default) =>
         await db.VaultDocuments
             .Where(d => d.DocId == docId)
-            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name))
+            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name, d.Folder))
             .FirstOrDefaultAsync(ct);
 
     public async Task SetPlacementAsync(string docId, string? parentDocId, string? name, CancellationToken ct = default)
@@ -70,10 +70,16 @@ public class EfVaultDocumentRepository(AppDbContext db) : IVaultDocumentReposito
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task SetFolderAsync(string docId, string folder, CancellationToken ct = default)
+    {
+        await db.VaultDocuments.Where(d => d.DocId == docId)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.Folder, folder), ct);
+    }
+
     public async Task<IReadOnlyList<VaultDocumentRecord>> ListChildrenAsync(
         string vaultId, string parentDocId, CancellationToken ct = default) =>
         await db.VaultDocuments
             .Where(d => d.VaultId == vaultId && d.ParentDocId == parentDocId)
-            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name))
+            .Select(d => new VaultDocumentRecord(d.DocId, d.VaultId, d.ParentDocId, d.Name, d.Folder))
             .ToListAsync(ct);
 }

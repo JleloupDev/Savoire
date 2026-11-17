@@ -168,6 +168,13 @@ export interface IVaultFiles {
    */
   place?(fileId: string, placement: AttachmentPlacement): Promise<void>
   /**
+   * Annonce le dossier de documents (« A/B », vide : racine) : les droits
+   * d'un dossier s'appliquent a son contenu. Profil serveur seulement.
+   */
+  placeFolders?(documents: { docId: string; folder: string }[]): Promise<void>
+  /** Un dossier est deplace : ses droits le suivent. Profil serveur seulement. */
+  moveFolderRights?(from: string, to: string): Promise<void>
+  /**
    * URL affichable (balise <img>), apres une lecture autorisee : une URL
    * blob: le plus souvent. Rejette si le fichier est introuvable.
    */

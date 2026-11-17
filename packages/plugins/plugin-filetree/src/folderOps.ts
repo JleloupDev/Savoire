@@ -56,6 +56,9 @@ export async function moveFolder(vault: VaultAPI, from: string, to: string): Pro
       throw new Error(`Un fichier existe deja : ${rebasePath(file, from, to)}`)
     }
   }
+  // Les droits du dossier le suivent, avant ses documents (sinon chacun serait
+  // juge sous les droits de sa nouvelle place, encore vides).
+  await vault.folderMoved?.(from, to)
   const moves: Move[] = []
   for (const file of files) {
     await vault.renameFile(requireId(vault, file), rebasePath(file, from, to))

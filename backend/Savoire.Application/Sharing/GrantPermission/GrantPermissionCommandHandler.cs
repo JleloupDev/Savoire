@@ -24,6 +24,11 @@ public sealed class GrantPermissionCommandHandler(
     {
         ResourceType resourceType = cmd.ResourceType.ParseResourceType();
         Permission   permission   = cmd.Permission.ParsePermission();
+        // « Aucun acces » surcharge un droit herite : sur un dossier ou une note, jamais sur le vault.
+        if (permission == Permission.None && resourceType == ResourceType.Vault)
+            throw new ArgumentException("Permission invalide : « none » s'emploie sur un dossier ou une note.");
+        if (resourceType == ResourceType.Folder)
+            throw new ArgumentException("Les droits d'un dossier se donnent par /api/v1/vaults/{vaultId}/acl.");
 
         await RequireShareRightAsync(cmd.CallerId, resourceType, cmd.ResourceId, vaults, permissions, vaultDocuments, ct);
 

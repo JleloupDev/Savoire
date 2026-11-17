@@ -46,6 +46,12 @@ export interface VaultAPI {
    * retire ses entrees de dossier (les dossiers vides ne sont pas gardes).
    */
   deleteFolder?(path: string): Promise<void>
+  /**
+   * Un dossier va etre deplace ou renomme (« A/B/ » -> « C/B/ ») : ses droits
+   * (et ceux de ce qu'il contient) le suivent. A appeler avant de deplacer
+   * ses documents. Sans droits par dossier (profil local), sans effet.
+   */
+  folderMoved?(from: string, to: string): Promise<void>
   /** Documents de la corbeille. */
   listTrash?(): TrashEntry[]
   /** Vrai si le document est dans la corbeille. */

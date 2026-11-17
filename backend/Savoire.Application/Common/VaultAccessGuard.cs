@@ -10,7 +10,8 @@ namespace Savoire.Application.Common;
 public sealed class VaultAccessGuard(
     IVaultRepository vaults,
     IResourcePermissionRepository permissions,
-    IVaultDocumentRepository vaultDocuments) : IVaultAccessGuard
+    IVaultDocumentRepository vaultDocuments,
+    AclResolver acl) : IVaultAccessGuard
 {
     /// <summary>
     /// Le document doit etre inscrit dans le vault annonce. Sans ce controle,
@@ -56,52 +57,27 @@ public sealed class VaultAccessGuard(
             throw new AccessDeniedException("Vault viewers cannot modify this vault.");
     }
 
+    /// <summary>
+    /// Lire un document : le droit effectif, herite du vault et des dossiers,
+    /// ou surcharge (voir AclResolver).
+    /// </summary>
     public async Task RequireDocumentReadAsync(string callerId, string vaultId, string docId, CancellationToken ct = default)
     {
         await RequireDocumentInVaultAsync(vaultId, docId, ct);
-        Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
-        if (vault is null) throw new VaultNotFoundException(vaultId);
-        if (vault.IsOwner(callerId)) return;
-
-        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
-        if (member is not null) return;
-
-        // Not a vault member — check for a document-level permission.
-        ResourcePermission? perm = await permissions.GetAsync(
-            ResourceType.Document, docId,
-            SubjectType.User, callerId,
-            ct);
-
-        if (perm is null || perm.IsExpired())
-            throw new VaultNotFoundException(vaultId);
+        Vault vault = await vaults.GetByIdAsync(vaultId, ct) ?? throw new VaultNotFoundException(vaultId);
+        AclDecision decision = await acl.ForDocumentAsync(callerId, vault, docId, ct);
+        if (decision.Permission is null) throw new VaultNotFoundException(vaultId);
     }
 
+    /// <summary>Ecrire un document : droit effectif d'ecriture (redacteur, admin), herite ou surcharge.</summary>
     public async Task RequireDocumentWriteAsync(string callerId, string vaultId, string docId, CancellationToken ct = default)
     {
         await RequireDocumentInVaultAsync(vaultId, docId, ct);
-        Vault? vault = await vaults.GetByIdAsync(vaultId, ct);
-        if (vault is null) throw new VaultNotFoundException(vaultId);
-        if (vault.IsOwner(callerId)) return;
-
-        VaultMember? member = await ActiveMemberAsync(vaultId, callerId, ct);
-        if (member is not null)
-        {
-            if (member.Role == VaultRole.Viewer)
-                throw new AccessDeniedException("Vault viewers cannot modify this document.");
-            return;
-        }
-
-        // Not a vault member — require write or admin document-level permission.
-        ResourcePermission? perm = await permissions.GetAsync(
-            ResourceType.Document, docId,
-            SubjectType.User, callerId,
-            ct);
-
-        if (perm is null || perm.IsExpired())
-            throw new VaultNotFoundException(vaultId);
-
-        if (perm.Permission == Permission.Read)
-            throw new AccessDeniedException("Read-only permission is insufficient to modify this document.");
+        Vault vault = await vaults.GetByIdAsync(vaultId, ct) ?? throw new VaultNotFoundException(vaultId);
+        AclDecision decision = await acl.ForDocumentAsync(callerId, vault, docId, ct);
+        if (decision.Permission is null) throw new VaultNotFoundException(vaultId);
+        if (decision.Permission == Permission.Read)
+            throw new AccessDeniedException("Lecture seule sur ce document.");
     }
 
     public async Task RequireAdminAsync(string callerId, string vaultId, CancellationToken ct = default)
