@@ -201,7 +201,7 @@ export const STORE_CATALOG: StoreEntry[] = [
       version: '0.0.1',
       description: 'Des discussions en direct entre les membres du vault (fichiers .chat)',
       scope: 'vault',
-      permissions: ['ui:editor'],
+      permissions: ['ui:editor', 'vault:read'],
     },
     extensions: ['chat'],
     load: async () => (await import('@savoire/plugin-chat')).default,
