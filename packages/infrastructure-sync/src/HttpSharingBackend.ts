@@ -5,6 +5,7 @@ import { fetchWithRenewal } from './http'
 import type {
   ISharingBackend, SharedDocumentHandle,
   AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
+  AppAclTarget, AppAclView, IAclApi,
 } from '@savoire/application'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
 import { SignalRTransport } from './SignalRTransport'
@@ -12,7 +13,7 @@ import { DocumentRoomClient } from './DocumentRoomClient'
 import { RestVaultStorage } from './RestVaultStorage'
 import { SharedNoteAttachments } from './SharedNoteAttachments'
 
-export class HttpSharingBackend implements ISharingBackend {
+export class HttpSharingBackend implements ISharingBackend, IAclApi {
   constructor(private readonly baseUrl: string = '') {}
 
   private resourcePath(resourceType: 'vault' | 'document', id: string): string {
@@ -31,6 +32,37 @@ export class HttpSharingBackend implements ISharingBackend {
     if (!res.ok) throw new Error(`${res.status}`)
     if (res.status === 204) return undefined as T
     return res.json() as Promise<T>
+  }
+
+  // ── Droits herites (ACL) ────────────────────────────────────────────────
+
+  private aclPath(vaultId: string, suffix = ''): string {
+    return serverUrl(`/api/v1/vaults/${encodeURIComponent(vaultId)}/acl${suffix}`, this.baseUrl)
+  }
+
+  private static aclQuery(target: AppAclTarget): string {
+    const q = new URLSearchParams()
+    if (target.docId) q.set('docId', target.docId)
+    if (target.folder !== undefined) q.set('folder', target.folder)
+    return q.toString()
+  }
+
+  getAcl(vaultId: string, target: AppAclTarget, token: string): Promise<AppAclView> {
+    return this.fetch(`${this.aclPath(vaultId)}?${HttpSharingBackend.aclQuery(target)}`, token)
+  }
+
+  setAclInherit(vaultId: string, target: AppAclTarget, inherit: boolean, token: string): Promise<void> {
+    return this.fetch(this.aclPath(vaultId, '/inherit'), token, { method: 'PUT', body: JSON.stringify({ ...target, inherit }) })
+  }
+
+  setAclEntry(vaultId: string, target: AppAclTarget, subjectId: string, permission: string, token: string): Promise<void> {
+    return this.fetch(this.aclPath(vaultId, '/entries'), token, { method: 'PUT', body: JSON.stringify({ ...target, subjectId, permission }) })
+  }
+
+  removeAclEntry(vaultId: string, target: AppAclTarget, subjectId: string, token: string): Promise<void> {
+    const q = new URLSearchParams(HttpSharingBackend.aclQuery(target))
+    q.set('subjectId', subjectId)
+    return this.fetch(`${this.aclPath(vaultId, '/entries')}?${q}`, token, { method: 'DELETE' })
   }
 
   getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing> {

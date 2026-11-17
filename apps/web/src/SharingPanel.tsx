@@ -4,6 +4,7 @@
 // d'un vault ou d'un document.
 
 import { PublishWebTab } from './PublishWebTab'
+import { AclTab } from './AclTab'
 import type { PublicationService } from './publication'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
@@ -133,8 +134,13 @@ interface Props {
 }
 
 export function SharingPanel({ token, vault, document: doc, sharingApi, onClose, publications }: Props) {
-  // Which resource to manage: vault or document
-  const [target, setTarget] = useState<'vault' | 'document'>(doc ? 'document' : 'vault')
+  // Which resource to manage: the vault, the note, or one of the note's folders
+  // (« folder:A/B ») : droits herites, surchargeables (AclTab).
+  const [targetKey, setTarget] = useState<string>(doc ? 'document' : 'vault')
+  const target: 'vault' | 'document' = targetKey === 'vault' ? 'vault' : 'document'
+  const folderTarget = targetKey.startsWith('folder:') ? targetKey.slice(7) : null
+  const docFolders = doc ? doc.path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/')).reverse() : []
+  const aclAvailable = !!sharingApi.getAcl && !!vault
   const [tab, setTab] = useState<'permissions' | 'links' | 'web'>('permissions')
   const [sharing, setSharing] = useState<AppResourceSharing | null>(null)
   const [loading, setLoading] = useState(false)
@@ -153,8 +159,10 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
   const [linkPermission, setLinkPermission] = useState('read')
   const [linkBusy, setLinkBusy] = useState(false)
 
-  const resourceId = target === 'vault' ? vault?.id : doc?.id
-  const resourceName = target === 'vault' ? vault?.name : doc?.path
+  const resourceId = folderTarget !== null ? undefined : target === 'vault' ? vault?.id : doc?.id
+  const resourceName = folderTarget !== null ? `${folderTarget}/` : target === 'vault' ? vault?.name : doc?.path
+  /** Ce dont le niveau choisi herite : son dossier parent, ou le vault. */
+  const parentOf = (folder: string) => folder.includes('/') ? `dossier « ${folder.slice(0, folder.lastIndexOf('/'))} »` : 'vault'
 
   const reload = useCallback(async () => {
     if (!resourceId) return
@@ -252,8 +260,9 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* Resource selector */}
             {vault && doc && (
-              <select style={sel} value={target} onChange={e => setTarget(e.target.value as 'vault' | 'document')}>
+              <select data-testid="sharing-target" style={sel} value={targetKey} onChange={e => { setTarget(e.target.value); setTab('permissions') }}>
                 <option value="document">{t('app', 'sharing.resource.note')}</option>
+                {aclAvailable && docFolders.map(f => <option key={f} value={`folder:${f}`}>Dossier {f}</option>)}
                 <option value="vault">{t('app', 'sharing.resource.vault')}</option>
               </select>
             )}
@@ -263,15 +272,15 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {publications && target === 'document' && doc && (
+          {publications && targetKey === 'document' && doc && (
             <button data-testid="sharing-tab-web" onClick={() => setTab('web')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === 'web' ? '2px solid var(--accent)' : '2px solid transparent', color: tab === 'web' ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === 'web' ? 600 : 400, order: 3 }}>
               Web
             </button>
           )}
-          {(['permissions', 'links'] as const).map(tabKey => (
+          {(folderTarget !== null ? ['permissions'] as const : ['permissions', 'links'] as const).map(tabKey => (
             <button key={tabKey} onClick={() => setTab(tabKey)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tab === tabKey ? '2px solid var(--accent)' : '2px solid transparent', color: tab === tabKey ? 'var(--text)' : 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: tab === tabKey ? 600 : 400 }}>
               {tabKey === 'permissions'
-                ? (sharing ? ti('app', 'sharing.tab.users', { count: String(sharing.permissions.length) }) : t('app', 'sharing.tab.usersEmpty'))
+                ? (aclAvailable && target === 'document' ? 'Droits' : sharing ? ti('app', 'sharing.tab.users', { count: String(sharing.permissions.length) }) : t('app', 'sharing.tab.usersEmpty'))
                 : (sharing ? ti('app', 'sharing.tab.links', { count: String(activeLinks.length) }) : t('app', 'sharing.tab.linksEmpty'))}
             </button>
           ))}
@@ -282,11 +291,21 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
           {error && <div style={{ color: 'var(--color-danger)', fontSize: '0.78rem' }}>{error}</div>}
           {loading && <div style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>{t('app', 'sharing.loading')}</div>}
 
-          {tab === 'web' && publications && doc && target === 'document' && (
+          {tab === 'permissions' && aclAvailable && vault && (folderTarget !== null || (targetKey === 'document' && doc)) && (
+            <AclTab
+              sharing={sharingApi}
+              vaultId={vault.id}
+              token={token}
+              target={folderTarget !== null ? { folder: folderTarget } : { docId: doc!.id }}
+              parentName={folderTarget !== null ? parentOf(folderTarget) : docFolders[0] ? `dossier « ${docFolders[0]} »` : 'vault'}
+            />
+          )}
+
+          {tab === 'web' && publications && doc && targetKey === 'document' && (
             <PublishWebTab service={publications} docId={doc.id} path={doc.path} canWrite={vault?.role === 'owner'} />
           )}
 
-          {tab === 'permissions' && (
+          {tab === 'permissions' && !(aclAvailable && target === 'document') && (
             <>
               {/* Add user form */}
               <div>

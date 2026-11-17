@@ -470,6 +470,32 @@ export interface AppUserLookup {
   displayName: string
 }
 
+/**
+ * Droits herites (ACL) d'un dossier ou d'une note. Un niveau herite des
+ * droits d'au-dessus (dossier parent, vault) ; il peut en donner d'autres a
+ * une personne, ou cesser d'heriter.
+ */
+export interface AppAclTarget { docId?: string; folder?: string }
+export interface AppAclEntry { subjectId: string; displayName: string | null; permission: string; expiresAt: string | null }
+export interface AppAclInherited { subjectId: string; displayName: string | null; permission: string; /** « owner », « vault », « folder:A/B » */ source: string }
+export interface AppAclView {
+  level: 'document' | 'folder'
+  docId: string | null
+  folder: string | null
+  inherit: boolean
+  entries: AppAclEntry[]
+  inherited: AppAclInherited[]
+}
+
+/** Les droits herites, cote serveur. Absent : le profil n'a pas de droits par dossier. */
+export interface IAclApi {
+  getAcl(vaultId: string, target: AppAclTarget, token: string): Promise<AppAclView>
+  setAclInherit(vaultId: string, target: AppAclTarget, inherit: boolean, token: string): Promise<void>
+  /** permission : read, write, admin, none (aucun acces). */
+  setAclEntry(vaultId: string, target: AppAclTarget, subjectId: string, permission: string, token: string): Promise<void>
+  removeAclEntry(vaultId: string, target: AppAclTarget, subjectId: string, token: string): Promise<void>
+}
+
 export interface ISharingBackend {
   getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing>
   grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
@@ -483,7 +509,7 @@ export interface ISharingBackend {
 
 /** La part du partage qui depend du profil de synchro. Voir IVaultSyncSession.sharing. */
 export type IVaultSharing = Pick<ISharingAPI,
-  'getSharing' | 'grantPermission' | 'revokePermission' | 'lookupUserByEmail' | 'createShareLink' | 'revokeShareLink'>
+  'getSharing' | 'grantPermission' | 'revokePermission' | 'lookupUserByEmail' | 'createShareLink' | 'revokeShareLink'> & Partial<IAclApi>
 
 export interface ISharingAPI {
   getSharing(resourceType: 'vault' | 'document', id: string, token: string): Promise<AppResourceSharing>
