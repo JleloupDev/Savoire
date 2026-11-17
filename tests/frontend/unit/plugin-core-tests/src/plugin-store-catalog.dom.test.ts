@@ -4,11 +4,18 @@
 // Le store contient TOUS les plugins du projet. Pour un plugin non
 // preinstalle, l'entree recopie son manifeste (afficher sans charger le
 // code) : la copie doit rester fidele, extensions comprises.
+// En .dom : certains plugins (Excalidraw, Mind Map) demandent un DOM pour s'importer.
 import { describe, it, expect } from 'vitest'
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import type { FileTypeSpec, PluginAPI } from '@savoire/plugin-api'
 import { STORE_CATALOG } from '../../../../../apps/web/src/pluginStore'
+
+// Excalidraw est remplace par un bouchon (vitest.config) : il charge ses morceaux depuis le web.
+// Son plugin dessine aussi (Path2D, absent de happy-dom).
+globalThis.Path2D ??= class {} as unknown as typeof Path2D
+// mind-elixir lit, a son chargement, une balise <script> de la page.
+document.head.appendChild(document.createElement('script'))
 
 const PLUGINS_DIR = path.resolve(__dirname, '../../../../../packages/plugins')
 
@@ -36,7 +43,9 @@ describe('catalogue du store', () => {
       expect(entry.manifest).toEqual(plugin.manifest)
 
       const registered: FileTypeSpec[] = []
-      await plugin.onload({ files: { register: (s: FileTypeSpec) => registered.push(s) } } as unknown as PluginAPI)
+      // Seuls les types de fichiers comptent ici ; le reste de l'API ne fait rien.
+      const noop = { register: () => () => {} }
+      await plugin.onload({ files: { register: (s: FileTypeSpec) => registered.push(s) }, blocks: noop } as unknown as PluginAPI)
       expect(registered.map(s => s.extension).sort()).toEqual([...(entry.extensions ?? [])].sort())
     })
   }

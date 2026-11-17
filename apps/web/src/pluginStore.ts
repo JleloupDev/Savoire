@@ -94,14 +94,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-search')).createSearchPlugin({ container: 'left', ribbon: true }).plugin,
   },
 
-  // ── Communaute, installes par defaut : types de fichiers ───────────────────
-  { id: 'plugin-excalidraw', preinstalled: true, extensions: ['excalidraw'], load: async () => (await import('@savoire/plugin-excalidraw')).default },
-  { id: 'plugin-mindmap', preinstalled: true, extensions: ['mm'], load: async () => (await import('@savoire/plugin-mindmap')).default },
-
-  // Communaute, installe par defaut : diagrammes dans les notes.
-  { id: 'plugin-mermaid', preinstalled: true, editorDefault: true, load: async () => (await import('@savoire/plugin-mermaid')).default },
-
-  // ── Coeur : edition (blocs, actifs dans toutes les notes) ──────────────────
+  // ── Coeur : edition et outils (blocs actifs dans toutes les notes) ───────
   { id: 'plugin-callout', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-callout')).default },
   { id: 'plugin-code-block', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-code-block')).default },
   { id: 'plugin-note-embed', preinstalled: true, core: true, editorDefault: true, load: async () => (await import('@savoire/plugin-note-embed')).default },
@@ -111,20 +104,227 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-templates', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-templates')).default },
   { id: 'plugin-agenda', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-agenda')).createAgendaPlugin() },
   { id: 'plugin-history', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-history')).createHistoryPlugin() },
+
+  // ── Coeur : types Savoire ──────────────────────────────────────────────────
+  {
+    // editorDefault : ses blocs (requete ```base, ![[x.base]]) vivent dans les notes.
+    id: 'plugin-base', preinstalled: true, core: true, editorDefault: true,
+    manifest: {
+      id: 'plugin-base',
+      name: 'Bases',
+      version: '0.0.1',
+      description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: true,
+    },
+    extensions: ['base'],
+    load: async () => (await import('@savoire/plugin-base')).default,
+  },
+  {
+    // editorDefault : ![[x.board]] s'affiche dans les notes.
+    id: 'plugin-board', preinstalled: true, core: true, editorDefault: true,
+    manifest: {
+      id: 'plugin-board',
+      name: 'Boards',
+      version: '0.0.1',
+      description: 'Des mini applis en HTML, CSS et JavaScript qui interrogent les bases (fichiers .board)',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: true,
+    },
+    extensions: ['board'],
+    load: async () => {
+      const mod = await import('@savoire/plugin-board')
+      // Bureau : le cadre du board a sa propre CSP (celle de la fenetre bloque le JS en ligne).
+      mod.setBoardFrameUrl(boardFrameUrl())
+      return mod.default
+    },
+  },
+
+  // ── Store : a installer ────────────────────────────────────────────────────
   // Documents existants : un plugin par type (son indexeur se desactive avec lui).
   // Verifies par l'equipe Savoire (official) : ils tournent aussi sur le pair indexeur.
-  { id: 'plugin-word', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-word')).default },
-  { id: 'plugin-powerpoint', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-powerpoint')).default },
-  { id: 'plugin-excel', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-excel')).default },
-  { id: 'plugin-opendocument', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-opendocument')).default },
-  { id: 'plugin-pdf', preinstalled: true, core: true, extensions: ['pdf'], load: async () => (await import('@savoire/plugin-pdf')).default },
-  { id: 'plugin-images', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-images')).default },
-  // Videos et sons : lecteur, et ![[x.mp4]] dans les notes.
-  { id: 'plugin-video', preinstalled: true, core: true, editorDefault: true, extensions: ['mp4', 'm4v', 'webm', 'mov', 'ogv', 'mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac'], load: async () => (await import('@savoire/plugin-video')).default },
-  { id: 'plugin-webpage', preinstalled: true, core: true, extensions: ['html', 'htm'], load: async () => (await import('@savoire/plugin-webpage')).default },
-  { id: 'plugin-csv', preinstalled: true, core: true, extensions: ['csv', 'tsv'], load: async () => (await import('@savoire/plugin-csv')).default },
-
-  // ── Disponibles ────────────────────────────────────────────────────────────
+  {
+    id: 'plugin-word', preinstalled: false,
+    manifest: {
+      id: 'plugin-word',
+      name: 'Documents Word',
+      version: '0.0.1',
+      description: 'Le texte des documents Word (.docx) dans la recherche, et leur aperçu',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-word')).default,
+  },
+  {
+    id: 'plugin-powerpoint', preinstalled: false,
+    manifest: {
+      id: 'plugin-powerpoint',
+      name: 'Présentations PowerPoint',
+      version: '0.0.1',
+      description: 'Le texte des présentations PowerPoint (.pptx) dans la recherche, et leur aperçu',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-powerpoint')).default,
+  },
+  {
+    id: 'plugin-excel', preinstalled: false,
+    manifest: {
+      id: 'plugin-excel',
+      name: 'Classeurs Excel',
+      version: '0.0.1',
+      description: 'Le contenu des classeurs Excel (.xlsx) dans la recherche, et leur aperçu en tableaux',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-excel')).default,
+  },
+  {
+    id: 'plugin-opendocument', preinstalled: false,
+    manifest: {
+      id: 'plugin-opendocument',
+      name: 'Documents LibreOffice',
+      version: '0.0.1',
+      description: 'Le contenu des documents LibreOffice (.odt, .ods, .odp) dans la recherche, et leur aperçu',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-opendocument')).default,
+  },
+  {
+    id: 'plugin-pdf', preinstalled: false,
+    manifest: {
+      id: 'plugin-pdf',
+      name: 'PDF',
+      version: '0.0.1',
+      description: 'Le texte des PDF dans la recherche, et leur aperçu',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: ['pdf'],
+    load: async () => (await import('@savoire/plugin-pdf')).default,
+  },
+  {
+    id: 'plugin-images', preinstalled: false,
+    manifest: {
+      id: 'plugin-images',
+      name: 'Images',
+      version: '0.0.1',
+      description: 'Les images dans la recherche : dimensions, date, appareil, et le texte qu’elles contiennent (OCR)',
+      scope: 'vault',
+      permissions: ['vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-images')).default,
+  },
+  {
+    // Videos et sons : lecteur, et ![[x.mp4]] dans les notes.
+    id: 'plugin-video', preinstalled: false, editorDefault: true,
+    manifest: {
+      id: 'plugin-video',
+      name: 'Vidéos et sons',
+      version: '0.0.1',
+      description: 'Lire les vidéos et les sons du vault, et les intégrer dans les notes : ![[Démo.mp4]]',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+    },
+    extensions: ['mp4', 'm4v', 'webm', 'mov', 'ogv', 'mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac'],
+    load: async () => (await import('@savoire/plugin-video')).default,
+  },
+  {
+    id: 'plugin-webpage', preinstalled: false,
+    manifest: {
+      id: 'plugin-webpage',
+      name: 'Pages web',
+      version: '0.0.1',
+      description: 'Les pages web (.html) : leur texte dans la recherche, un aperçu sans script',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: ['html', 'htm'],
+    load: async () => (await import('@savoire/plugin-webpage')).default,
+  },
+  {
+    id: 'plugin-csv', preinstalled: false,
+    manifest: {
+      id: 'plugin-csv',
+      name: 'Tableaux CSV',
+      version: '0.0.1',
+      description: 'Les fichiers CSV : leur contenu dans la recherche, un aperçu en tableau',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: ['csv', 'tsv'],
+    load: async () => (await import('@savoire/plugin-csv')).default,
+  },
+  // Communaute : dessins, cartes mentales, diagrammes.
+  {
+    id: 'plugin-excalidraw', preinstalled: false,
+    manifest: {
+      id: 'plugin-excalidraw',
+      name: 'Excalidraw',
+      version: '0.0.2',
+      description: 'Éditeur de dessin vectoriel Excalidraw pour les fichiers .excalidraw',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: false,
+    },
+    extensions: ['excalidraw'],
+    load: async () => (await import('@savoire/plugin-excalidraw')).default,
+  },
+  {
+    id: 'plugin-mindmap', preinstalled: false,
+    manifest: {
+      id: 'plugin-mindmap',
+      name: 'Mind Map',
+      version: '0.0.2',
+      description: 'Éditeur de mind maps interactif pour les fichiers .mm',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      defaultActive: false,
+    },
+    extensions: ['mm'],
+    load: async () => (await import('@savoire/plugin-mindmap')).default,
+  },
+  {
+    // editorDefault : une fois installe, actif dans toutes les notes.
+    id: 'plugin-mermaid', preinstalled: false, editorDefault: true,
+    manifest: {
+      id: 'plugin-mermaid',
+      name: 'Mermaid Diagrams',
+      version: '0.0.1',
+      description: 'Rendu de diagrammes Mermaid dans l\'éditeur',
+      scope: 'personal',
+      permissions: ['ui:editor'],
+      defaultActive: true,
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-mermaid')).default,
+  },
+  // Communaute : le reste.
   {
     id: 'plugin-office', preinstalled: false,
     manifest: {
@@ -181,19 +381,6 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-ai-mistral')).default,
   },
   {
-    id: 'plugin-plaintext', preinstalled: false,
-    manifest: {
-      id: 'plugin-plaintext',
-      scope: 'vault',
-      name: 'Plaintext Editor',
-      version: '0.0.1',
-      description: 'Éditeur textarea simple pour les fichiers .txt — POC FileTypeSpec',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
-    },
-    extensions: ['txt'],
-    load: async () => (await import('@savoire/plugin-plaintext')).default,
-  },
-  {
     id: 'plugin-chat', preinstalled: false,
     manifest: {
       id: 'plugin-chat',
@@ -233,41 +420,6 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-page')).default,
   },
   {
-    // editorDefault : ses blocs (requete ```base, ![[x.base]]) vivent dans les notes.
-    id: 'plugin-base', preinstalled: true, core: true, editorDefault: true,
-    manifest: {
-      id: 'plugin-base',
-      name: 'Bases',
-      version: '0.0.1',
-      description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
-      scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
-      defaultActive: true,
-    },
-    extensions: ['base'],
-    load: async () => (await import('@savoire/plugin-base')).default,
-  },
-  {
-    // editorDefault : ![[x.board]] s'affiche dans les notes.
-    id: 'plugin-board', preinstalled: true, core: true, editorDefault: true,
-    manifest: {
-      id: 'plugin-board',
-      name: 'Boards',
-      version: '0.0.1',
-      description: 'Des mini applis en HTML, CSS et JavaScript qui interrogent les bases (fichiers .board)',
-      scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
-      defaultActive: true,
-    },
-    extensions: ['board'],
-    load: async () => {
-      const mod = await import('@savoire/plugin-board')
-      // Bureau : le cadre du board a sa propre CSP (celle de la fenetre bloque le JS en ligne).
-      mod.setBoardFrameUrl(boardFrameUrl())
-      return mod.default
-    },
-  },
-  {
     // Ancien « QuickRef » : un vault qui l'avait installe garde le plugin.
     id: 'plugin-bible', preinstalled: false, formerIds: ['plugin-quickref'],
     manifest: {
@@ -296,20 +448,6 @@ export const STORE_CATALOG: StoreEntry[] = [
     },
     extensions: ['tex'],
     load: async () => (await import('@savoire/plugin-latex')).default,
-  },
-  {
-    id: 'plugin-wtf', preinstalled: false,
-    manifest: {
-      id: 'plugin-wtf',
-      name: 'WTF (test)',
-      version: '0.0.1',
-      description: 'Plugin de test : des fichiers .wtf qui sont du simple Markdown',
-      scope: 'vault',
-      permissions: ['ui:editor'],
-      defaultActive: true,
-    },
-    extensions: ['wtf'],
-    load: async () => (await import('@savoire/plugin-wtf')).default,
   },
 ]
 

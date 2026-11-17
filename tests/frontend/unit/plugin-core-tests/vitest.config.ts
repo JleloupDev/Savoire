@@ -14,6 +14,8 @@ export default defineConfig({
     // (condition 'source' des paquets), pas des builds qui n'existent pas.
     conditions: ['source'],
     alias: {
+      // Excalidraw charge ses morceaux depuis le web : un bouchon suffit (catalogue du store).
+      '@excalidraw/excalidraw': path.resolve(__dirname, 'src/__mocks__/excalidraw.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
       '@savoire/plugin-callout': src('plugin-callout'),
@@ -22,14 +24,12 @@ export default defineConfig({
       '@savoire/plugin-note-embed': src('plugin-note-embed'),
       '@savoire/plugin-module': src('plugin-module'),
       '@savoire/plugin-office': src('plugin-office'),
-      '@savoire/plugin-wtf': src('plugin-wtf'),
       '@savoire/plugin-video': src('plugin-video'),
       '@savoire/plugin-bible': src('plugin-bible'),
       '@savoire/plugin-templates': src('plugin-templates'),
       '@savoire/plugin-agenda': src('plugin-agenda'),
       '@savoire/plugin-history': src('plugin-history'),
       '@savoire/plugin-chat': src('plugin-chat'),
-      '@savoire/plugin-plaintext': src('plugin-plaintext'),
       '@savoire/plugin-backlinks': src('plugin-backlinks'),
       // Panneaux branches sur api.search et api.indexer (pair indexeur).
       '@savoire/plugin-search': src('plugin-search'),

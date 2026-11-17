@@ -281,9 +281,6 @@ importers:
       '@savoire/plugin-pdf':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-pdf
-      '@savoire/plugin-plaintext':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-plaintext
       '@savoire/plugin-powerpoint':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-powerpoint
@@ -317,9 +314,6 @@ importers:
       '@savoire/plugin-word':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-word
-      '@savoire/plugin-wtf':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-wtf
       '@savoire/ui-components':
         specifier: workspace:*
         version: link:../../packages/ui-components
@@ -1081,16 +1075,6 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
-  ../packages/plugins/plugin-plaintext:
-    dependencies:
-      '@savoire/plugin-api':
-        specifier: workspace:*
-        version: link:../../plugin-api
-    devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
   ../packages/plugins/plugin-powerpoint:
     dependencies:
       '@savoire/plugin-api':
@@ -1230,16 +1214,6 @@ importers:
         version: 5.9.3
 
   ../packages/plugins/plugin-word:
-    dependencies:
-      '@savoire/plugin-api':
-        specifier: workspace:*
-        version: link:../../plugin-api
-    devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  ../packages/plugins/plugin-wtf:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*
@@ -1563,9 +1537,6 @@ importers:
       '@savoire/plugin-wikilinks':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-wikilinks
-      '@savoire/plugin-wtf':
-        specifier: workspace:*
-        version: link:../../../../packages/plugins/plugin-wtf
     devDependencies:
       '@types/react':
         specifier: ^18.2.0

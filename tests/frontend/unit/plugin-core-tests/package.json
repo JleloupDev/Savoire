@@ -24,8 +24,7 @@
     "@savoire/plugin-page": "workspace:*",
     "@savoire/plugin-templates": "workspace:*",
     "@savoire/plugin-video": "workspace:*",
-    "@savoire/plugin-wikilinks": "workspace:*",
-    "@savoire/plugin-wtf": "workspace:*"
+    "@savoire/plugin-wikilinks": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
