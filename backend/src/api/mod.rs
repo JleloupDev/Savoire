@@ -5,6 +5,7 @@
 // reponses que le serveur .NET.
 
 pub mod account;
+pub mod agents;
 pub mod admin;
 pub mod attachments;
 pub mod indexer;

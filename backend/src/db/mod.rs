@@ -11,6 +11,7 @@
 // `Connection::begin`, qui devient un point de sauvegarde si l'appelant en a
 // deja une (comme BeginIfNone cote .NET).
 
+pub mod agents;
 pub mod indexer_feed;
 pub mod migrate;
 pub mod repos;

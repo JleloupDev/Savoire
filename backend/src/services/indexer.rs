@@ -159,8 +159,10 @@ pub fn is_not_owner(r: &PeerResponse) -> bool {
 }
 
 /// Corps de POST /v1/vaults/{id}/call. L'appelant vient du jeton, jamais du client.
-pub fn call_body(capability: &str, method: &str, params: &Value, caller: &str) -> Vec<u8> {
-    json!({ "capability": capability, "method": method, "params": params, "caller": { "userId": caller } })
+/// Corps d'un appel au pair. `access` : les regles d'acces de l'appelant dans
+/// ce vault (access::peer_rules), que le pair applique a ses resultats.
+pub fn call_body(capability: &str, method: &str, params: &Value, caller: &str, access: &Value) -> Vec<u8> {
+    json!({ "capability": capability, "method": method, "params": params, "caller": { "userId": caller, "access": access } })
         .to_string()
         .into_bytes()
 }

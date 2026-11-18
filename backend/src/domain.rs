@@ -130,9 +130,17 @@ pub struct Operation {
     pub produced_at: Ts,
     pub received_at: Ts,
     pub op_bytes: Vec<u8>,
+    /// Qui l'a produite : une personne, ou un agent pour elle (ADR-033). Absent : inconnu (operations anciennes, compactions).
+    pub author: Option<serde_json::Value>,
 }
 
 impl Operation {
+    /// La meme operation, avec son auteur.
+    pub fn by(mut self, author: serde_json::Value) -> Operation {
+        self.author = Some(author);
+        self
+    }
+
     pub fn create(resource_type: &str, resource_id: &str, client_id: &str, produced_at: Ts, op_bytes: Vec<u8>) -> Operation {
         Operation {
             id: new_id(),
@@ -142,6 +150,7 @@ impl Operation {
             produced_at,
             received_at: now(),
             op_bytes,
+            author: None,
         }
     }
 }
@@ -303,6 +312,8 @@ pub struct AccessToken {
     pub expires_at: Option<Ts>,
     pub last_used_at: Option<Ts>,
     pub revoked_at: Option<Ts>,
+    /// L'agent que porte ce jeton (ADR-033). Absent : lecture seule.
+    pub agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -18,11 +18,10 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "baseline",
-    sql: include_str!("../../migrations/0001_baseline.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration { version: 1, name: "baseline", sql: include_str!("../../migrations/0001_baseline.sql") },
+    Migration { version: 2, name: "agents", sql: include_str!("../../migrations/0002_agents.sql") },
+];
 
 /// Cle du verrou des migrations (pg_advisory_lock) : deux instances qui
 /// demarrent ensemble ne migrent pas en meme temps.

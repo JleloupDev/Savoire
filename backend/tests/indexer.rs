@@ -81,7 +81,8 @@ async fn calls_are_relayed_with_the_caller() {
     let call = peer.calls.lock().unwrap()[0].clone();
     assert_eq!(call["capability"], "query");
     assert_eq!(call["params"], json!({ "limit": 1 }));
-    assert_eq!(call["caller"], json!({ "userId": alice }));
+    // L'appelant, et ses regles d'acces (ACL) : proprietaire, aucun filtre.
+    assert_eq!(call["caller"], json!({ "userId": alice, "access": { "base": "admin" } }));
     assert_eq!(call["auth"], format!("Bearer {SERVICE_TOKEN}"));
     // Non membre : refuse ; lien de partage : refuse.
     assert_eq!(app.post(&tb, &format!("/api/v1/vaults/{v}/index/query/run"), json!({})).await.0, 404);

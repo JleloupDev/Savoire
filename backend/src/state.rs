@@ -3,7 +3,10 @@
 //
 // L'etat partage du serveur : base, configuration, services, temps reel.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+use dashmap::DashMap;
 
 use crate::auth::Authenticator;
 use crate::config::{Config, Settings};
@@ -28,6 +31,10 @@ pub struct Inner {
     pub peer: PeerClient,
     pub limiter: RateLimiter,
     pub realtime: Realtime,
+    /// Tickets d'ecriture des outils d'agents en cours (ADR-033), par id.
+    pub agent_tickets: DashMap<String, crate::api::agents::AgentTicket>,
+    /// Catalogue des outils du pair, et quand il a ete lu.
+    pub agent_catalog: Mutex<Option<(Instant, Vec<serde_json::Value>)>>,
 }
 
 impl std::ops::Deref for AppState {
@@ -53,6 +60,8 @@ impl AppState {
             auth: Authenticator::new(),
             limiter: RateLimiter::new(),
             realtime: Realtime::new(),
+            agent_tickets: DashMap::new(),
+            agent_catalog: Mutex::new(None),
         }))
     }
 

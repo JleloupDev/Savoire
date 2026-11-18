@@ -5,9 +5,13 @@
 // un jeton personnel (Bearer svp_...). Deux portes, la meme logique derriere :
 //  - REST : /api/open/v1/... (decrite dans open-api.yaml) ;
 //  - MCP  : /api/mcp (JSON-RPC, transport « Streamable HTTP » sans SSE).
-// Lecture seule : lister les vaults, chercher, lister les notes, lire une
-// note. Tout passe par le pair indexeur, avec les droits de la personne et le
-// filtre des vaults du jeton.
+// REST : lecture seule (lister les vaults, chercher, lister les notes, lire
+// une note, requetes).
+// MCP (ADR-033) : les outils du catalogue du pair indexeur (tools.list), ceux
+// que l'agent du jeton a le droit d'utiliser. Un jeton sans agent garde la
+// lecture seule. Chaque appel est verifie ici (agent, vault, mode), puis
+// execute par le pair avec un ticket d'ecriture ; « demander » met l'appel en
+// attente de l'accord de la personne, dans Savoire.
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, header};
@@ -17,7 +21,9 @@ use serde_json::{Map, Value, json};
 
 use super::{ReqParts, indexer_rate, ok, public_base, raw_json_ok, reply, status};
 use crate::api::indexer::call_indexer;
+use crate::api::agents;
 use crate::auth::{OpenAuth, Principal};
+use crate::db::agents::AgentRow;
 use crate::error::{AppError, AppResult};
 use crate::services::indexer::{IndexerReply, codes};
 use crate::state::AppState;
@@ -171,7 +177,8 @@ pub const LATEST_PROTOCOL: &str = "2025-06-18";
 const PROTOCOLS: [&str; 3] = [LATEST_PROTOCOL, "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS: &str = "Savoire : les notes Markdown de la personne, rangees dans des vaults. \
 Commencez par list_vaults, puis search pour trouver des notes et read_note pour les lire. \
-Un vault se designe par son id ou par son nom.";
+Un vault se designe par son id ou par son nom (parametre vault de chaque outil). \
+Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas.";
 pub const MAX_MCP_BYTES: usize = 256 * 1024;
 
 pub fn rpc_error(id: Value, code: i64, message: &str) -> Value {
@@ -223,7 +230,7 @@ pub async fn handle(st: &AppState, p: &Principal, message: Value) -> Option<Valu
             }))
         }
         "ping" => rpc_result(id, json!({})),
-        "tools/list" => rpc_result(id, json!({ "tools": tools() })),
+        "tools/list" => rpc_result(id, json!({ "tools": list_tools(st, p).await })),
         "tools/call" => match call_tool(st, p, params).await {
             Ok(r) => rpc_result(id, r),
             Err(InvalidParams(m)) => rpc_error(id, -32602, &m),
@@ -267,6 +274,93 @@ fn tools() -> Value {
     ])
 }
 
+// ── Outils des agents (ADR-033) ──────────────────────────────────────────────
+
+/// L'agent que porte le jeton ; sans agent (ou agent supprime), lecture seule.
+async fn token_agent(st: &AppState, p: &Principal) -> AppResult<AgentRow> {
+    if let Some(id) = &p.token_agent {
+        let mut c = st.db.acquire().await?;
+        if let Some(a) = crate::db::agents::get(&mut c, id).await?
+            && agents::can_use(&mut c, &p.sub, &a).await?
+        {
+            return Ok(a);
+        }
+    }
+    let at = crate::domain::now();
+    Ok(AgentRow { id: "api-token".into(), owner_id: p.sub.clone(), vault_id: None, name: "Jeton API".into(), definition: agents::read_only_definition(), created_at: at, updated_at: at })
+}
+
+/// Un vault ou demander le catalogue au pair : le premier accessible a l'agent.
+async fn catalog_for(st: &AppState, p: &Principal, agent: &AgentRow) -> Vec<Value> {
+    let Ok(list) = vaults(st, p).await else { return vec![] };
+    for v in list.iter().filter(|v| agents::vault_in_scope(&agent.definition, &v.id)) {
+        if let Ok(cat) = agents::catalog(st, &p.sub, &v.id).await
+            && !cat.is_empty()
+        {
+            return cat;
+        }
+    }
+    vec![]
+}
+
+/// Les outils de l'agent : list_vaults, puis ceux du catalogue qu'il a le droit d'utiliser.
+async fn list_tools(st: &AppState, p: &Principal) -> Value {
+    let Ok(agent) = token_agent(st, p).await else { return tools() };
+    let cat = catalog_for(st, p, &agent).await;
+    if cat.is_empty() {
+        return tools();
+    }
+    let mut out = vec![tools()[0].clone()];
+    for t in cat {
+        let action = t.get("action").and_then(Value::as_str).unwrap_or("read");
+        if agents::mode_for(&agent.definition, action) == "deny" {
+            continue;
+        }
+        let mut schema = t.get("inputSchema").cloned().unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+        schema["properties"]["vault"] = s("Id ou nom du vault.");
+        let mut required: Vec<Value> = schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default();
+        required.insert(0, json!("vault"));
+        schema["required"] = json!(required);
+        out.push(json!({
+            "name": t.get("name"), "title": t.get("title"), "description": t.get("description"), "inputSchema": schema,
+            "annotations": {
+                "readOnlyHint": action == "read",
+                "destructiveHint": action == "delete" || action == "organize",
+                "openWorldHint": false,
+            },
+        }));
+    }
+    json!(out)
+}
+
+/// Un outil du catalogue. None : catalogue indisponible (l'appelant se rabat sur la lecture d'avant).
+async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String, Value>) -> Result<Option<Value>, ToolFailure> {
+    let agent = token_agent(st, p).await?;
+    let vault = vault_arg(st, p, args).await?;
+    let cat = agents::catalog(st, &p.sub, &vault.id).await?;
+    if cat.is_empty() {
+        return Ok(None);
+    }
+    let mut rest = args.clone();
+    rest.remove("vault");
+    let rest = Value::Object(rest);
+    let display = p.display_name.clone().unwrap_or_else(|| p.sub.clone());
+    let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &rest };
+    Ok(Some(match agents::plan(st, &call).await? {
+        agents::Plan::Deny(m) => tool_error(&m),
+        agents::Plan::Ask { action } => {
+            let id = agents::hold(st, &call, &action).await?;
+            tool_text(&format!(
+                "Action en attente de validation dans Savoire (accord {id}). Elle sera faite quand la personne l'acceptera, dans le panneau Agents > Activité. Ne la refaites pas."
+            ))
+        }
+        agents::Plan::Run { action, mode } => {
+            let r = agents::execute(st, &call, &action, &mode).await?;
+            if r.is_error { tool_error(&r.text) } else { tool_text(&r.text) }
+        }
+    }))
+}
+
 struct InvalidParams(String);
 
 fn tool_text(text: &str) -> Value {
@@ -305,10 +399,17 @@ async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Valu
     let args = params.as_ref().and_then(|p| p.get("arguments")).and_then(Value::as_object).cloned().unwrap_or_default();
     let r = match name.as_str() {
         "list_vaults" => list_vaults_tool(st, p).await,
-        "search" => search_tool(st, p, &args).await,
-        "list_notes" => list_notes_tool(st, p, &args).await,
-        "read_note" => read_note_tool(st, p, &args).await,
-        other => return Err(InvalidParams(format!("Outil inconnu : {other}."))),
+        _ => match agent_tool(st, p, &name, &args).await {
+            // Pas de catalogue (pair absent, ancien pair) : les outils de lecture d'avant.
+            Ok(None) => match name.as_str() {
+                "search" => search_tool(st, p, &args).await,
+                "list_notes" => list_notes_tool(st, p, &args).await,
+                "read_note" => read_note_tool(st, p, &args).await,
+                other => return Err(InvalidParams(format!("Outil inconnu : {other}."))),
+            },
+            Ok(Some(v)) => Ok(v),
+            Err(e) => Err(e),
+        },
     };
     match r {
         Ok(v) => Ok(v),

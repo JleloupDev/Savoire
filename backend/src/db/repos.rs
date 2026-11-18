@@ -200,6 +200,7 @@ fn op_row(r: &sqlx::postgres::PgRow) -> Operation {
         produced_at: r.get("produced_at"),
         received_at: r.get("received_at"),
         op_bytes: r.get("op_bytes"),
+        author: None,
     }
 }
 
@@ -221,8 +222,8 @@ pub async fn op_append(c: &mut PgConnection, op: &Operation) -> AppResult<()> {
 
 async fn insert_op(c: &mut PgConnection, op: &Operation) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO operations_log (id, resource_type, resource_id, client_id, produced_at, received_at, op_bytes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO operations_log (id, resource_type, resource_id, client_id, produced_at, received_at, op_bytes, author)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(&op.id)
     .bind(&op.resource_type)
@@ -231,6 +232,7 @@ async fn insert_op(c: &mut PgConnection, op: &Operation) -> AppResult<()> {
     .bind(op.produced_at)
     .bind(op.received_at)
     .bind(&op.op_bytes)
+    .bind(&op.author)
     .execute(&mut *c)
     .await?;
     Ok(())
@@ -280,6 +282,7 @@ fn snapshot_op(resource_type: &str, resource_id: &str, bytes: Vec<u8>) -> Operat
         produced_at: t,
         received_at: t,
         op_bytes: bytes,
+        author: None,
     }
 }
 
@@ -932,7 +935,7 @@ pub async fn publication_delete(c: &mut PgConnection, doc_id: &str) -> AppResult
 
 // ── Jetons personnels ────────────────────────────────────────────────────────
 
-const TOKEN_COLS: &str = "id, user_id, name, prefix, token_hash, scope, vault_ids, created_at, expires_at, last_used_at, revoked_at";
+const TOKEN_COLS: &str = "id, user_id, name, prefix, token_hash, scope, vault_ids, created_at, expires_at, last_used_at, revoked_at, agent_id";
 
 fn token_row(r: &sqlx::postgres::PgRow) -> AccessToken {
     let vaults: Option<String> = r.get("vault_ids");
@@ -950,11 +953,12 @@ fn token_row(r: &sqlx::postgres::PgRow) -> AccessToken {
         expires_at: r.get("expires_at"),
         last_used_at: r.get("last_used_at"),
         revoked_at: r.get("revoked_at"),
+        agent_id: r.get("agent_id"),
     }
 }
 
 pub async fn token_add(c: &mut PgConnection, t: &AccessToken) -> AppResult<()> {
-    sqlx::query(sqlx::AssertSqlSafe(format!("INSERT INTO access_tokens ({TOKEN_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)")))
+    sqlx::query(sqlx::AssertSqlSafe(format!("INSERT INTO access_tokens ({TOKEN_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)")))
         .bind(&t.id)
         .bind(&t.user_id)
         .bind(&t.name)
@@ -966,6 +970,7 @@ pub async fn token_add(c: &mut PgConnection, t: &AccessToken) -> AppResult<()> {
         .bind(t.expires_at)
         .bind(t.last_used_at)
         .bind(t.revoked_at)
+        .bind(&t.agent_id)
         .execute(&mut *c)
         .await?;
     Ok(())

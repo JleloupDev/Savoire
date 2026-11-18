@@ -49,6 +49,8 @@ pub struct Principal {
     pub expires_at: Option<Ts>,
     /// Jeton personnel : ses vaults (None : tous ceux de la personne).
     pub token_vaults: Option<Vec<String>>,
+    /// Jeton personnel rattache a un agent (ADR-033) : l'IA externe agit sous son nom.
+    pub token_agent: Option<String>,
 }
 
 // ── Jetons signes par Savoire ────────────────────────────────────────────────
@@ -558,6 +560,7 @@ pub async fn authenticate_access_token(st: &AppState, token: &str) -> AppResult<
         sub: t.user_id,
         display_name: Some(user.display_name),
         token_vaults: t.vault_ids,
+        token_agent: t.agent_id,
         ..Default::default()
     }))
 }

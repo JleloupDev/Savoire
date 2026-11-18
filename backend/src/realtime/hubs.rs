@@ -101,7 +101,7 @@ async fn vault_hub(st: &AppState, conn_id: &str, conn: &Arc<Conn>, caller: &str,
             access::check_vault(&mut c, caller, &vault_id, Level::Write).await?;
             ensure_room(st, &vault_id, bytes.len()).await?;
             let n = bytes.len();
-            let op = Operation::create(crdt::VAULT, &format!("vault:{vault_id}"), "vault-client", now(), bytes);
+            let op = Operation::create(crdt::VAULT, &format!("vault:{vault_id}"), "vault-client", now(), bytes).by(author_of(conn, caller));
             repos::op_append(&mut c, &op).await?;
             st.quota.added(&vault_id, n as i64);
             hub.send_group(&vault_id, Some(conn_id), &event("VaultOperationReceived", vec![json!(vault_id), json!(op64)]));
@@ -146,7 +146,7 @@ async fn vault_hub(st: &AppState, conn_id: &str, conn: &Arc<Conn>, caller: &str,
             ensure_room(st, &vault_id, bytes.len()).await?;
             let n = bytes.len();
             // Le serveur est un passe-plat : il empile des octets opaques.
-            let op = Operation::create(crdt::INDEX, &index_id(&vault_id, &ns), "server-relay", now(), bytes);
+            let op = Operation::create(crdt::INDEX, &index_id(&vault_id, &ns), "server-relay", now(), bytes).by(author_of(conn, caller));
             repos::op_append(&mut c, &op).await?;
             st.quota.added(&vault_id, n as i64);
             hub.send_group(&format!("idx:{vault_id}:{ns}"), Some(conn_id), &event("IndexUpdateReceived", vec![json!(vault_id), json!(ns), json!(update)]));
@@ -306,7 +306,7 @@ async fn sync_hub(st: &AppState, conn_id: &str, conn: &Arc<Conn>, caller: &str, 
             access::check_document(&mut c, caller, &vault_id, &doc_id, Level::Write).await?;
             ensure_room(st, &vault_id, bytes.len()).await?;
             let n = bytes.len();
-            let op = Operation::create(crdt::DOCUMENT, &doc_id, &client_id, now(), bytes);
+            let op = Operation::create(crdt::DOCUMENT, &doc_id, &client_id, now(), bytes).by(author_of(conn, caller));
             repos::op_append(&mut c, &op).await?;
             st.quota.added(&vault_id, n as i64);
             hub.send_group(

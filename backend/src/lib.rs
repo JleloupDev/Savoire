@@ -102,6 +102,13 @@ pub fn router(st: AppState) -> Router {
         .route("/api/v1/auth/me/usage", get(account::usage))
         .route("/api/v1/me/access-tokens", get(account::list_tokens).post(account::create_token))
         .route("/api/v1/me/access-tokens/{id}", delete(account::revoke_token))
+        .route("/api/v1/agents", get(agents::list).post(agents::create))
+        .route("/api/v1/agents/usage", get(agents::usage))
+        .route("/api/v1/agents/approvals", get(agents::approvals))
+        .route("/api/v1/agents/approvals/{id}/decide", post(agents::decide))
+        .route("/api/v1/agents/actions", get(agents::actions))
+        .route("/api/v1/agents/{id}", put(agents::update).delete(agents::delete))
+        .route("/api/v1/agents/{id}/usage", post(agents::report_usage))
         .route("/api/v1/feedback", post(account::submit_feedback).layer(DefaultBodyLimit::max(account::MAX_FEEDBACK_REQUEST)))
         .route("/api/v1/identity/key", get(sync::identity_key))
         // Administration
@@ -155,6 +162,7 @@ pub fn router(st: AppState) -> Router {
         .route("/internal/indexer/vaults/{vaultId}/documents/{docId}", get(indexer::internal_document))
         .route("/internal/indexer/vaults/{vaultId}/files/{fileId}", get(indexer::internal_file))
         .route("/internal/indexer/vaults/{vaultId}/settings/{section}", get(indexer::internal_settings))
+        .route("/internal/indexer/vaults/{vaultId}/write", post(agents::internal_write).layer(DefaultBodyLimit::max(4 * 1024 * 1024)))
         // API ouverte
         .route("/api/open/v1/openapi.yaml", get(open::description))
         .route("/api/open/v1/vaults", get(open::rest_vaults))

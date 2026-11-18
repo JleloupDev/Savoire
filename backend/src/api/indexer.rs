@@ -37,6 +37,9 @@ use crate::services::indexer::{self as idx, IndexerReply, Outcome, codes};
 use crate::services::search;
 use crate::state::AppState;
 
+/// Pouvoir du pair qui execute les outils des agents (ADR-033).
+pub const TOOLS_CAPABILITY: &str = "tools";
+
 static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z][a-z0-9_-]{0,63}$").unwrap());
 
 fn require_account(caller: &str) -> AppResult<()> {
@@ -60,11 +63,13 @@ pub async fn call_indexer(st: &AppState, caller: &str, vault_id: &str, capabilit
         return Ok(none_configured(&opts));
     }
     let setting = repos::indexer_setting(&mut c, vault_id).await?;
-    drop(c);
     if setting.mode != IndexerMode::Managed {
         return Ok(IndexerReply::not_managed(&setting, opts.retry_after_seconds));
     }
-    let body = idx::call_body(capability, method, params, caller);
+    // Le pair filtre ce que la personne ne peut pas voir (ACL par dossier, par note).
+    let rules = access::peer_rules(&mut c, caller, vault_id).await?;
+    drop(c);
+    let body = idx::call_body(capability, method, params, caller, &rules);
     let owner = idx::owner_of(vault_id, &opts.instances).cloned().expect("au moins une instance");
     let mut response = st.peer.call(&opts, &owner, vault_id, body.clone()).await;
     // 409 not_owner : la liste des instances a change. Recalculer et reessayer une fois.
@@ -107,6 +112,10 @@ pub async fn call(
     }
     if !NAME.is_match(&capability) || !NAME.is_match(&method) {
         return Ok(reply(IndexerReply::error(400, codes::INVALID_QUERY, "Nom de pouvoir ou de methode invalide.", None)));
+    }
+    // Les outils des agents ne s'appellent que par le serveur (MCP, accords), avec un ticket (ADR-033).
+    if capability == TOOLS_CAPABILITY {
+        return Ok(reply(IndexerReply::error(404, "unknown_capability", "Pouvoir inconnu : tools.", None)));
     }
     let opts = IndexerOptions::from(&st.settings());
     let json = match read_json_body(&body, opts.max_body_bytes, Some("{}")) {
@@ -177,6 +186,11 @@ pub async fn search_all(st: &AppState, caller: &str, body: &str) -> AppResult<In
         .filter(|id| seen.insert(id.clone()))
         .collect();
     let modes = repos::indexer_settings_many(&mut c, &candidates).await?;
+    // Regles d'acces par vault (ACL) : le pair filtre ses resultats avec elles.
+    let mut access_by_vault = serde_json::Map::new();
+    for id in candidates.iter().filter(|id| modes[*id].mode == IndexerMode::Managed) {
+        access_by_vault.insert(id.clone(), access::peer_rules(&mut c, caller, id).await?);
+    }
     drop(c);
     let mut groups: BTreeMap<String, (crate::options::IndexerInstance, Vec<String>)> = BTreeMap::new();
     for id in candidates.iter().filter(|id| modes[*id].mode == IndexerMode::Managed) {
@@ -211,7 +225,8 @@ pub async fn search_all(st: &AppState, caller: &str, body: &str) -> AppResult<In
         if let Some(cur) = &part.cursor {
             instance_query["cursor"] = json!(cur);
         }
-        let body = json!({ "vaultIds": ids, "query": instance_query, "caller": { "userId": caller } }).to_string().into_bytes();
+        let access: serde_json::Map<String, Value> = ids.iter().filter_map(|v| access_by_vault.get(v).map(|a| (v.clone(), a.clone()))).collect();
+        let body = json!({ "vaultIds": ids, "query": instance_query, "caller": { "userId": caller, "accessByVault": access } }).to_string().into_bytes();
         let gate = gate.clone();
         let st = st.clone();
         let opts = opts.clone();

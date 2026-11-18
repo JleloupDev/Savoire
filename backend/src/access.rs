@@ -126,6 +126,63 @@ pub async fn for_levels(c: &mut PgConnection, caller: &str, vault: &Vault, level
     Ok(base)
 }
 
+/// Les regles d'acces d'une personne dans un vault, pour le pair indexeur
+/// (ADR-033) : il filtre ses resultats avec elles, comme for_levels.
+///   { base: "admin" | "write" | "read" | "none",
+///     rules: [{ folder | doc, permission }],   droits donnes a la personne
+///     closed: [{ folder | doc }] }             niveaux qui n'heritent plus
+/// Proprietaire ou administrateur : { base: "admin" } seul (aucun filtre).
+pub async fn peer_rules(c: &mut PgConnection, caller: &str, vault_id: &str) -> AppResult<serde_json::Value> {
+    use serde_json::json;
+    use sqlx::Row;
+    let Some(vault) = repos::vault_get(c, vault_id).await? else { return Ok(json!({ "base": "none" })) };
+    let base = vault_level(c, caller, &vault).await?;
+    let base_text = base.permission.map(|p| p.as_str()).unwrap_or("none");
+    if base.permission == Some(Permission::Admin) {
+        return Ok(json!({ "base": "admin" }));
+    }
+    let prefix = format!("{vault_id}:");
+    let rows = sqlx::query(
+        "SELECT resource_type, resource_id, permission FROM resource_permissions
+          WHERE subject_id = $1 AND (expires_at IS NULL OR expires_at > now())
+            AND ((resource_type = 'folder' AND starts_with(resource_id, $2))
+              OR (resource_type = 'document' AND resource_id IN (SELECT doc_id FROM vault_documents WHERE vault_id = $3)))",
+    )
+    .bind(caller)
+    .bind(&prefix)
+    .bind(vault_id)
+    .fetch_all(&mut *c)
+    .await?;
+    let mut rules = vec![];
+    for r in rows {
+        let rt: String = r.get("resource_type");
+        let id: String = r.get("resource_id");
+        let perm: String = r.get("permission");
+        if rt == "folder" {
+            rules.push(json!({ "folder": id[prefix.len()..], "permission": perm }));
+        } else {
+            rules.push(json!({ "doc": id, "permission": perm }));
+        }
+    }
+    let closed_rows = sqlx::query("SELECT resource_type, resource_id FROM acl_settings WHERE vault_id = $1 AND inherit = false")
+        .bind(vault_id)
+        .fetch_all(&mut *c)
+        .await?;
+    let mut closed = vec![];
+    for r in closed_rows {
+        let rt: String = r.get("resource_type");
+        let id: String = r.get("resource_id");
+        if rt == "folder" {
+            if let Some(f) = id.strip_prefix(&prefix) {
+                closed.push(json!({ "folder": f }));
+            }
+        } else if rt == "document" {
+            closed.push(json!({ "doc": id }));
+        }
+    }
+    Ok(json!({ "base": base_text, "rules": rules, "closed": closed }))
+}
+
 // ── Comptes ──────────────────────────────────────────────────────────────────
 
 /// Le document doit etre inscrit dans le vault annonce.

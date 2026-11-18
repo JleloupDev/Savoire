@@ -2,10 +2,13 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
 // Parametres → API : les jetons personnels de l'API ouverte. Un jeton laisse
-// ChatGPT, Claude, un script ou n8n lire vos notes en votre nom (lecture
-// seule), sur tous vos vaults ou ceux choisis. Montre une seule fois.
+// ChatGPT, Claude, un script ou n8n agir en votre nom, sur tous vos vaults ou
+// ceux choisis. Sans agent : lecture seule. Rattache a un agent (ADR-033) :
+// les droits et le nom de cet agent. Montre une seule fois.
 import { useEffect, useState } from 'react'
 import { serverUrl } from '@savoire/infrastructure-sync'
+import type { AgentDefinition } from '@savoire/plugin-api'
+import { agentDirectory } from './agents/agentDirectory'
 
 const INPUT: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6,
@@ -30,9 +33,10 @@ interface AccessToken {
   expiresAt: string | null
   lastUsedAt: string | null
   revoked: boolean
+  agentId?: string | null
 }
 
-interface Draft { name: string; all: boolean; vaultIds: string[]; days: string }
+interface Draft { name: string; all: boolean; vaultIds: string[]; days: string; agentId: string }
 
 export function ApiTokenSettings({ token, vaults }: { token: () => string; vaults: { id: string; name: string }[] }) {
   const [list, setList] = useState<AccessToken[] | null>(null)
@@ -40,6 +44,8 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
   const [created, setCreated] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [agents, setAgents] = useState<AgentDefinition[]>([])
+  useEffect(() => { void agentDirectory()?.list().then(setAgents, () => setAgents([])) }, [])
 
   const call = async (method: string, path: string, body?: unknown): Promise<Response> => {
     const res = await fetch(serverUrl(`/api/v1/me/access-tokens${path}`), {
@@ -67,6 +73,7 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
         name: draft.name.trim(),
         vaultIds: draft.all ? null : draft.vaultIds,
         expiresInDays: draft.days && days > 0 ? days : null,
+        ...(draft.agentId ? { agentId: draft.agentId } : {}),
       })
       const body = await res.json() as { token: string }
       setCreated(body.token)
@@ -92,8 +99,9 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
   return (
     <div data-testid="api-settings" style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 12 }}>
       <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        Un jeton laisse un outil externe (ChatGPT, Claude, un script, n8n…) <strong>lire</strong> vos notes en votre nom :
-        chercher, lister, lire. Il n’ouvre que les vaults choisis et se révoque à tout moment.
+        Un jeton laisse un outil externe (ChatGPT, Claude, un script, n8n…) agir en votre nom. Sans agent, il ne fait que <strong>lire</strong> :
+        chercher, lister, lire. Rattaché à un agent (Paramètres → Agents), il en a les droits et signe de son nom.
+        Il n’ouvre que les vaults choisis et se révoque à tout moment.
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 10px', alignItems: 'center' }}>
@@ -125,7 +133,7 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{t.name} <code style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{t.prefix}…</code></div>
               <div style={{ color: 'var(--text-muted)' }}>
-                {t.vaultIds ? t.vaultIds.map(vaultName).join(', ') : 'Tous vos vaults'} · lecture
+                {t.vaultIds ? t.vaultIds.map(vaultName).join(', ') : 'Tous vos vaults'} · {t.agentId ? `agent « ${agents.find(a => a.id === t.agentId)?.name ?? 'supprimé'} »` : 'lecture'}
                 {' · '}{t.lastUsedAt ? `utilisé le ${new Date(t.lastUsedAt).toLocaleDateString()}` : 'jamais utilisé'}
                 {t.expiresAt ? ` · expire le ${new Date(t.expiresAt).toLocaleDateString()}` : ''}
               </div>
@@ -152,6 +160,12 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
               ))}
             </div>
           )}
+          <label>Agent porté par l’outil
+            <select data-testid="api-token-agent" style={INPUT} value={draft.agentId} onChange={e => setDraft({ ...draft, agentId: e.target.value })}>
+              <option value="">Aucun : lecture seule</option>
+              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
           <label>Expire dans (jours, vide : jamais)<input style={INPUT} inputMode="numeric" value={draft.days} onChange={e => setDraft({ ...draft, days: e.target.value.replace(/\D/g, '') })} /></label>
           <div style={{ display: 'flex', gap: 6 }}>
             <button data-testid="api-token-create" style={PRIMARY} disabled={busy || !draft.name.trim() || (!draft.all && draft.vaultIds.length === 0)} onClick={() => void create()}>Créer le jeton</button>
@@ -159,7 +173,7 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
           </div>
         </div>
       ) : (
-        <button data-testid="api-token-new" style={{ ...BTN, alignSelf: 'flex-start' }} onClick={() => { setCreated(null); setDraft({ name: '', all: true, vaultIds: [], days: '90' }) }}>+ Nouveau jeton</button>
+        <button data-testid="api-token-new" style={{ ...BTN, alignSelf: 'flex-start' }} onClick={() => { setCreated(null); setDraft({ name: '', all: true, vaultIds: [], days: '90', agentId: '' }) }}>+ Nouveau jeton</button>
       )}
     </div>
   )

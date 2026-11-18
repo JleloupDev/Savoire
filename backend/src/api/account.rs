@@ -79,6 +79,7 @@ fn token_dto(t: &AccessToken) -> Value {
     json!({
         "id": t.id, "name": t.name, "prefix": t.prefix, "scope": t.scope, "vaultIds": t.vault_ids,
         "createdAt": t.created_at, "expiresAt": t.expires_at, "lastUsedAt": t.last_used_at, "revoked": t.revoked_at.is_some(),
+        "agentId": t.agent_id,
     })
 }
 
@@ -101,6 +102,8 @@ pub struct CreateTokenRequest {
     name: Option<String>,
     vault_ids: Option<Vec<String>>,
     expires_in_days: Option<i64>,
+    /// L'agent que portera l'IA externe (ADR-033). Absent : lecture seule.
+    agent_id: Option<String>,
 }
 
 pub async fn create_token(State(st): State<AppState>, Auth(p): Auth, Body(req): Body<CreateTokenRequest>) -> AppResult<Response> {
@@ -140,6 +143,17 @@ pub async fn create_token(State(st): State<AppState>, Auth(p): Auth, Body(req): 
             Some(ids)
         }
     };
+    // Un agent que la personne peut utiliser : le sien, ou un agent d'un de ses vaults.
+    let agent_id = match req.agent_id.filter(|a| !a.is_empty()) {
+        None => None,
+        Some(id) => {
+            let agent = crate::db::agents::get(&mut c, &id).await?.ok_or_else(|| AppError::validation("Agent inconnu."))?;
+            if !crate::api::agents::can_use(&mut c, &p.sub, &agent).await? {
+                return Err(AppError::validation("Cet agent ne vous est pas accessible."));
+            }
+            Some(id)
+        }
+    };
     let token = access_token::generate();
     let record = AccessToken {
         id: new_id_n(),
@@ -153,6 +167,7 @@ pub async fn create_token(State(st): State<AppState>, Auth(p): Auth, Body(req): 
         expires_at: req.expires_in_days.map(|d| at + chrono::Duration::days(d)),
         last_used_at: None,
         revoked_at: None,
+        agent_id,
     };
     repos::token_add(&mut c, &record).await?;
     Ok(ok(&json!({ "token": token, "info": token_dto(&record) })))
