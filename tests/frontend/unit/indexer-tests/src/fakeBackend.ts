@@ -40,7 +40,16 @@ interface FakeVault {
   docs: Map<string, Journaled>
   /** Canal « settings/properties » : types des proprietes (carte 'entries'). */
   types: Journaled
+  /** Canal « map/review » : la Revision (carte 'entries'). */
+  review: Journaled
   managed: boolean
+}
+
+/** Une ecriture d'outil d'agent recue (POST .../write), et sa reponse. */
+export interface ReceivedWrite {
+  vaultId: string
+  body: { ticket?: string; register?: string[]; folders?: { docId: string; folder: string }[]; ops?: { target: string; docId?: string; ns?: string; update: string }[] }
+  status: number
 }
 
 export interface FakeBackendOptions {
@@ -63,6 +72,10 @@ export class FakeBackend {
   readonly hits = { vaults: 0, changes: 0, tree: 0, document: 0 }
   /** Documents lus, par id. */
   readonly docReads = new Map<string, number>()
+  /** Ecritures des outils d'agents (ADR-033). */
+  readonly writes: ReceivedWrite[] = []
+  /** Tickets valides ; vide : tout ticket est accepte. Un ticket « propose » refuse notes et arbre. */
+  readonly tickets = new Map<string, 'direct' | 'propose'>()
   private server?: Server
   instances: string[]
   owner: (vaultId: string) => string
@@ -125,6 +138,25 @@ export class FakeBackend {
         if (!v || !v.managed) return send(404, { error: { code: 'not_found', message: '' } })
         return send(200, { updates: [...v.types.log], format: 'yjs' })
       }
+      m = /^\/internal\/indexer\/vaults\/([^/]+)\/review$/.exec(p)
+      if (m) {
+        const v = this.vaults.get(decodeURIComponent(m[1]!))
+        if (!v || !v.managed) return send(404, { error: { code: 'not_found', message: '' } })
+        return send(200, { updates: [...v.review.log], format: 'yjs' })
+      }
+      m = /^\/internal\/indexer\/vaults\/([^/]+)\/write$/.exec(p)
+      if (m && req.method === 'POST') {
+        const vaultId = decodeURIComponent(m[1]!)
+        let raw = ''
+        req.on('data', c => { raw += c })
+        req.on('end', () => {
+          const body = JSON.parse(raw || '{}') as ReceivedWrite['body']
+          const status = this.applyWrite(vaultId, body)
+          this.writes.push({ vaultId, body, status })
+          send(status, status === 200 ? { written: body.ops?.length ?? 0 } : { error: { code: 'denied', message: 'Écriture refusée (test).' } })
+        })
+        return
+      }
       m = /^\/internal\/indexer\/vaults\/([^/]+)\/documents\/([^/]+)$/.exec(p)
       if (m) {
         this.hits.document++
@@ -148,6 +180,42 @@ export class FakeBackend {
     await new Promise<void>(resolve => this.server ? this.server.close(() => resolve()) : resolve())
   }
 
+  /** Applique une ecriture d'outil d'agent comme le serveur (ticket, mode proposition). */
+  private applyWrite(vaultId: string, body: ReceivedWrite['body']): number {
+    const v = this.vaults.get(vaultId)
+    if (!v) return 404
+    const mode = this.tickets.size ? this.tickets.get(body.ticket ?? '') : 'direct'
+    if (!mode) return 403
+    for (const op of body.ops ?? []) {
+      if (mode === 'propose' && op.target !== 'index') return 403
+      if (op.target === 'index' && op.ns !== 'map/review') return 403
+    }
+    for (const op of body.ops ?? []) {
+      const u = Buffer.from(op.update, 'base64')
+      if (op.target === 'document') { Y.applyUpdate(this.docOf(v, op.docId!).doc, u); this.touch(vaultId, 'document', op.docId) }
+      else if (op.target === 'vault') { Y.applyUpdate(v.tree.doc, u); this.touch(vaultId, 'vault') }
+      else Y.applyUpdate(v.review.doc, u)
+    }
+    return 200
+  }
+
+  /** Le texte d'une note. */
+  text(vaultId: string, docId: string): string {
+    return this.vaults.get(vaultId)?.docs.get(docId)?.doc.getText('codemirror').toString() ?? ''
+  }
+
+  /** Les entrees de la Revision. */
+  reviewEntries(vaultId: string): Record<string, unknown>[] {
+    const out: Record<string, unknown>[] = []
+    this.vaults.get(vaultId)?.review.doc.getMap('entries').forEach(v => out.push(v as Record<string, unknown>))
+    return out
+  }
+
+  /** Chemin d'un document dans l'arbre. */
+  pathOf(vaultId: string, docId: string): string | undefined {
+    return (this.vaults.get(vaultId)?.tree.doc.getMap('vault').get(docId) as { path?: string } | undefined)?.path
+  }
+
   // ── Ecritures (comme le feraient les clients) ────────────────────────────
 
   private touch(vaultId: string, kind: Row['kind'], docId?: string): void {
@@ -159,7 +227,7 @@ export class FakeBackend {
   vault(id: string): FakeVault {
     let v = this.vaults.get(id)
     if (!v) {
-      v = { id, tree: new Journaled(), docs: new Map(), types: new Journaled(), managed: true }
+      v = { id, tree: new Journaled(), docs: new Map(), types: new Journaled(), review: new Journaled(), managed: true }
       this.vaults.set(id, v)
       this.touch(id, 'vault')
     }

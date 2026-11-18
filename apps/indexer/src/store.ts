@@ -44,6 +44,8 @@ import { BASE_LOT_COUNT, baseLotOf } from '@savoire/plugin-api'
 import type { IndexState, PropertySchema } from '@savoire/plugin-api'
 import type { BackendClient, FeedChange, UpdatesLog } from './backend'
 import { BackendError } from './backend'
+import { HostError } from '@savoire/agent-core'
+import { TOOLS_CAPABILITY, callTools, type PeerVaultFacade } from './agentTools'
 import { HttpError, notOwner, unavailable } from './errors'
 import type { Logger } from './log'
 import { Counter, Histogram, gauge } from './metrics'
@@ -442,6 +444,7 @@ export class VaultStore {
     }
     this.m.calls.inc({ capability })
     if (capability === DOCUMENTS_CAPABILITY) return this.callDocuments(v, method, params, signal)
+    if (capability === TOOLS_CAPABILITY) return { result: await callTools(this.facade(v, signal), method, params), gen: v.gen }
     return this.slot.run(INTERACTIVE, async () => {
       if (signal.aborted) throw unavailable('Delai depasse.', this.opts.unavailableRetryAfterS)
       if (!v.owned) throw notOwner(vaultId)
@@ -479,6 +482,28 @@ export class VaultStore {
     return {
       result: { id: found.id, path: found.path, title: stemOf(found.path), content: truncated ? input.content.slice(0, MAX_READ_CHARS) : input.content, truncated },
       gen: v.gen,
+    }
+  }
+
+  /** Ce que les outils des agents voient du vault (agentTools.ts). */
+  private facade(v: Vault, signal: AbortSignal): PeerVaultFacade {
+    return {
+      paths: () => this.slot.run(INTERACTIVE, async () => (await this.handleFor(v, 'query')).paths(), signal),
+      readText: async (id, path) => {
+        try { return (await this.readText(v, id, path, signal))?.content ?? null } catch { return null }
+      },
+      call: (capability, method, params) => this.slot.run(INTERACTIVE, async () => (await this.handleFor(v, capability)).call(capability, method, params, { signal }), signal),
+      docLog: id => this.fetch(() => this.readDoc(v, id, signal)),
+      treeLog: () => this.fetch(() => this.backend.tree(v.id, signal)),
+      reviewLog: () => this.fetch(() => this.backend.review(v.id, signal)),
+      write: async body => {
+        try {
+          await this.backend.write(v.id, body, signal)
+        } catch (err) {
+          if (err instanceof BackendError) throw new HostError(err.message, err.status === 403 ? 'denied' : 'unavailable')
+          throw err
+        }
+      },
     }
   }
 

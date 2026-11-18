@@ -66,7 +66,15 @@ export interface BackendMetrics {
   duration: Histogram
 }
 
-type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings' | 'file'
+type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings' | 'file' | 'review' | 'write'
+
+/** Ecritures d'un outil d'agent (ADR-033), avec le ticket du serveur. */
+export interface WriteBody {
+  ticket: string
+  register?: string[]
+  folders?: { docId: string; folder: string }[]
+  ops: ({ target: 'document'; docId: string; update: string } | { target: 'vault'; update: string } | { target: 'index'; ns: string; update: string })[]
+}
 
 export class BackendClient {
   constructor(
@@ -107,6 +115,44 @@ export class BackendClient {
    */
   settings(vaultId: string, section: string, signal?: AbortSignal): Promise<UpdatesLog | null> {
     return this.log('settings', `/internal/indexer/vaults/${encodeURIComponent(vaultId)}/settings/${encodeURIComponent(section)}`, signal)
+  }
+
+  /** Journal de la Revision du vault (canal « map/review ») ; null si le vault n'est pas servi. */
+  review(vaultId: string, signal?: AbortSignal): Promise<UpdatesLog | null> {
+    return this.log('review', `/internal/indexer/vaults/${encodeURIComponent(vaultId)}/review`, signal)
+  }
+
+  /**
+   * Ecrit pour un outil d'agent : le serveur verifie le ticket et les droits
+   * de la personne, enregistre et diffuse. Jamais de nouvel essai (effet de
+   * bord) ; un refus rejette avec son message.
+   */
+  async write(vaultId: string, body: WriteBody, signal?: AbortSignal): Promise<void> {
+    const t0 = performance.now()
+    const timeout = AbortSignal.timeout(this.opts.timeoutMs)
+    let status = 0
+    try {
+      const res = await fetch(`${this.opts.url}/internal/indexer/vaults/${encodeURIComponent(vaultId)}/write`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await this.opts.token.get()}`, 'content-type': 'application/json', 'user-agent': this.opts.userAgent },
+        body: JSON.stringify(body),
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      })
+      status = res.status
+      const text = await readCapped(res, 64 * 1024)
+      if (res.ok) return
+      if (res.status === 401) this.opts.token.invalidate?.()
+      let message = `Le serveur a refusé l'écriture (${res.status}).`
+      try {
+        const j = JSON.parse(text) as { error?: { message?: unknown }; detail?: unknown; title?: unknown }
+        const m = j.error?.message ?? j.detail ?? j.title
+        if (typeof m === 'string') message = m
+      } catch { /* corps non JSON */ }
+      throw new BackendError(res.status, 'write_refused', message, false)
+    } finally {
+      this.metrics?.requests.inc({ route: 'write', status: String(status || 'error') })
+      this.metrics?.duration.observe({ route: 'write' }, (performance.now() - t0) / 1000)
+    }
   }
 
   /**

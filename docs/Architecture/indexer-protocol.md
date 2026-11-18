@@ -57,6 +57,9 @@ Préfixe `/internal/indexer`, jeton de service obligatoire, lecture seule. Sans 
 | `GET /internal/indexer/vaults/{vaultId}/documents/{docId}` | `{ updates: [base64…], format }` : le journal du document. 404 si le document n'est pas inscrit dans ce vault, ou si le vault n'est pas servi par le pair géré. Inscrit mais encore vide : `updates: []`. |
 | `GET /internal/indexer/vaults/{vaultId}/settings/{section}` | `{ updates: [base64…], format: 'yjs' }` : le journal du canal de réglages `settings/{section}` (seule section lue : `properties`, les types des propriétés, carte Yjs `entries`). 404 pour une autre section, ou si le vault n'est pas servi par le pair géré. Le pair type les valeurs comme les clients ; quand les types changent (ligne `settings`), il reconstruit l'index à côté (raison `types`). Un backend plus ancien répond 404 : le pair indexe sans types. |
 
+| `GET /internal/indexer/vaults/{vaultId}/review` | `{ updates: [base64…], format: 'yjs' }` : le journal de la Révision du vault (canal `map/review`, carte Yjs `entries`). Lu par les outils des agents (ADR-033). 404 si le vault n'est pas servi par le pair géré. |
+| `POST /internal/indexer/vaults/{vaultId}/write` | Écritures d'un outil d'agent (ADR-033). Corps `{ ticket, register?: [docId…], folders?: [{ docId, folder }], ops: [{ target: 'document', docId, update } \| { target: 'vault', update } \| { target: 'index', ns: 'map/review', update }] }` (`update` : mise à jour Yjs en base64, la différence seulement). Le serveur vérifie le **ticket** (émis pour UN appel `tools.call`, 60 s, lié à la personne, l'agent, le vault et le mode), puis les droits de la personne : inscription et dossiers (`register`, `folders`), écriture sur chaque note, écriture dans le vault. Ticket en mode `propose` : seul `index` `map/review` est accepté. Chaque opération est enregistrée avec son auteur (`operations_log.author` : la personne et l'agent) et diffusée aux clients connectés. Refus : 403 `invalid_ticket` ou `denied` ; jamais rejoué par le pair. |
+
 Précisions sur le flux :
 - **Une ligne par ressource** (l'arborescence d'un vault, un document) : chaque écriture la déplace en fin de flux avec une nouvelle `seq`. Le flux ne grossit donc pas sans fin ; un pair qui reprend de loin voit chaque ressource une seule fois, avec sa dernière séquence. Plus une ligne `vault-deleted` par vault supprimé.
 - Chaque écriture compte, quel que soit le chemin : opérations et compactions des documents (`SyncHub`), de l'arborescence (`VaultHub`), instantanés des rooms (`DocumentRoomHub`). Le changement est écrit dans la même transaction que l'écriture.
@@ -74,6 +77,8 @@ Le pair rejoue ces mises à jour dans un `Y.Doc` avec le même code que les clie
 ## API du pair (servie par le pair, appelée par le backend)
 
 Jeton de service obligatoire, sauf pour la santé.
+
+**Règles d'accès de l'appelant (ADR-033).** Le backend joint à chaque appel `caller.access` (et `caller.accessByVault` à la recherche globale) : `{ base: 'admin' | 'write' | 'read' | 'none', rules: [{ folder | doc, permission }], closed: [{ folder | doc }] }` (`access::peer_rules`). Le pair retire de ses résultats ce que la personne ne peut pas voir, avec la même règle que le backend (`for_levels`) : la note, puis ses dossiers du plus profond à la racine ; un droit donné à la personne gagne (`none` : aucun accès), sinon un niveau qui n'hérite plus ferme ; à la fin, le droit de base. `base: 'admin'` : aucun filtre. Le cache des résultats reste partagé : le filtre s'applique après. Limites : les compteurs (`total`, nombre de notes par tag) ne sont pas corrigés ; une ligne légère de base suit les droits de la racine.
 
 | Route | Rôle |
 |---|---|
@@ -138,7 +143,7 @@ Précisions (backend) :
 
 ### API ouverte (jetons personnels)
 
-Pour les outils externes (GPT, Claude, n8n, scripts). Jeton personnel `svp_…` (Paramètres → API), schéma d'authentification `access-token`, accepté **seulement** sur ces routes. Le jeton agit au nom de la personne ; il peut être limité à des vaults (403 `forbidden_vault` sinon). Lecture seule. Mêmes limites de débit que les routes publiques.
+Pour les outils externes (GPT, Claude, n8n, scripts). Jeton personnel `svp_…` (Paramètres → API), schéma d'authentification `access-token`, accepté **seulement** sur ces routes. Le jeton agit au nom de la personne ; il peut être limité à des vaults (403 `forbidden_vault` sinon). REST : lecture seule. MCP : les droits de l'agent rattaché au jeton (`agentId`, ADR-033), lecture seule sans agent. Mêmes limites de débit que les routes publiques.
 
 | Route | Rôle |
 |---|---|
@@ -149,7 +154,7 @@ Pour les outils externes (GPT, Claude, n8n, scripts). Jeton personnel `svp_…` 
 | `GET /api/open/v1/vaults/{id}/notes` | `?folder&limit&cursor` → `query.run` sur les notes, par chemin. |
 | `GET /api/open/v1/vaults/{id}/notes/read` | `?path` ou `?id` → `documents.read`. |
 | `POST /api/open/v1/vaults/{id}/query` | Corps = `Query` → `query.run`. |
-| `POST /api/mcp` | Serveur MCP (transport HTTP, un message JSON-RPC par requête, réponse JSON ; pas de flux SSE). Outils : `list_vaults`, `search`, `list_notes`, `read_note` ; un vault se désigne par id ou par nom. |
+| `POST /api/mcp` | Serveur MCP (transport HTTP, un message JSON-RPC par requête, réponse JSON ; pas de flux SSE). Outils : `list_vaults`, puis ceux du catalogue du pair (`tools.list`) que l'agent du jeton a le droit d'utiliser, chacun avec un paramètre `vault` (id ou nom). Jeton sans agent : lecture seule. Chaque appel : portée de l'agent, mode de l'action (`deny` : refusé ; `ask` : mis en attente dans `agent_approvals`, la personne accepte dans Savoire ; sinon relayé au pair avec un ticket). Sans catalogue (pair absent) : `search`, `list_notes`, `read_note` comme avant. |
 
 ## Index partagé compacté (canaux d'index du profil serveur)
 
@@ -175,6 +180,9 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 | `tags` | `notes` | `{ tag, limit? }` → `{ items: [{ id, path, title }] }` : notes du tag, sous-tags compris (`a` donne aussi `a/b`) ; `limit` 500 par défaut, 5 000 au plus. |
 | `index` | `status` | `{}` → `IndexState` + `{ seq, docs, bytes }` |
 | `documents` | `read` | `{ id }` ou `{ path }` (casse ignorée) → `{ id, path, title, content, truncated }` : le texte d'une note en Markdown, relu dans son CRDT chez le backend (pas dans l'index) ; pour un fichier, le texte extrait ou publié. 512 Ki caractères au plus. 404 `not_found` si absent ou à la corbeille. Pouvoir du pair, hors index : sert l'API ouverte. |
+
+| `tools` | `list` | `{}` → `{ tools: ToolSpec[] }` : le catalogue des outils du socle (`@savoire/agent-core`, `coreCatalog('server')`). Le serveur le lit pour le MCP. |
+| `tools` | `call` | `{ name, args, mode: 'direct' \| 'propose', agent, actor, ticket }` (+ `access` ajouté par le pair) → `{ text, isError, sources? }`. Exécute un outil pour une IA externe (ADR-033) ; ses écritures partent au backend par `…/write` avec le ticket. **Jamais en cache. Appelé par le backend seul** : la route publique `/index/{capacité}/{méthode}` refuse `tools` (404). |
 
 Résolution des liens (pouvoir `links`, façon Obsidian) : chemin exact (avec ou sans extension ; relatif au dossier de la note d'abord pour un lien « ./ », « ../ » ou Markdown), sinon nom de fichier sans extension (casse ignorée ; « a/b » exige un chemin qui finit par « /a/b » ; en cas d'ambiguïté le `.md`, puis le plus court chemin, puis l'ordre alphabétique), sinon alias du frontmatter.
 

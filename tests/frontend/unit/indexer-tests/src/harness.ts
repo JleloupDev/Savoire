@@ -67,8 +67,8 @@ export class Peer {
     return { status: res.status, body: parsed as T, headers: res.headers }
   }
 
-  call<T = unknown>(vaultId: string, capability: string, method: string, params: unknown = {}): Promise<Reply<{ result: T; error?: { code: string; message: string } }>> {
-    return this.request('POST', `/v1/vaults/${encodeURIComponent(vaultId)}/call`, { capability, method, params, caller: { userId: 'u1' } })
+  call<T = unknown>(vaultId: string, capability: string, method: string, params: unknown = {}, access?: unknown): Promise<Reply<{ result: T; error?: { code: string; message: string } }>> {
+    return this.request('POST', `/v1/vaults/${encodeURIComponent(vaultId)}/call`, { capability, method, params, caller: { userId: 'u1', ...(access ? { access } : {}) } })
   }
 
   /** Ids des notes trouvees par la recherche. */

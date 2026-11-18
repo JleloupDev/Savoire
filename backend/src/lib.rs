@@ -162,6 +162,7 @@ pub fn router(st: AppState) -> Router {
         .route("/internal/indexer/vaults/{vaultId}/documents/{docId}", get(indexer::internal_document))
         .route("/internal/indexer/vaults/{vaultId}/files/{fileId}", get(indexer::internal_file))
         .route("/internal/indexer/vaults/{vaultId}/settings/{section}", get(indexer::internal_settings))
+        .route("/internal/indexer/vaults/{vaultId}/review", get(indexer::internal_review))
         .route("/internal/indexer/vaults/{vaultId}/write", post(agents::internal_write).layer(DefaultBodyLimit::max(4 * 1024 * 1024)))
         // API ouverte
         .route("/api/open/v1/openapi.yaml", get(open::description))

@@ -109,6 +109,9 @@ importers:
 
   ../apps/indexer:
     dependencies:
+      '@savoire/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@savoire/indexer-core':
         specifier: workspace:*
         version: link:../../packages/indexer-core

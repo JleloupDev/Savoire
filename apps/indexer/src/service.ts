@@ -22,6 +22,8 @@ import type { IndexState, SearchHit, SearchResult } from '@savoire/plugin-api'
 import { BackendClient } from './backend'
 import { ResultCache } from './cache'
 import type { IndexerConfig } from './config'
+import { canRead, filterResult, parseAccess, restricts } from './access'
+import { TOOLS_CAPABILITY } from './agentTools'
 import { HttpError, notOwner, unavailable } from './errors'
 import { Feed } from './feed'
 import { decodeCursor, encodeCursor, mergePages, worstIndex } from './globalSearch'
@@ -222,10 +224,24 @@ export class IndexerService {
         const json = await this.callCached(vaultId, 'index', 'status', {}, ac.signal)
         return sendJson(res, 200, json)
       }
-      const body = parseJson(await readBody(req, c.maxBodyBytes)) as { capability?: unknown; method?: unknown; params?: unknown }
+      const body = parseJson(await readBody(req, c.maxBodyBytes)) as { capability?: unknown; method?: unknown; params?: unknown; caller?: { access?: unknown } }
       if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400, 'invalid_query', 'Corps : objet attendu.')
       if (!isName(body.capability) || !isName(body.method)) throw new HttpError(400, 'invalid_query', 'capability et method : ^[a-z][a-z0-9_-]{0,63}$.')
-      const json = await this.callCached(vaultId, body.capability, body.method, body.params ?? {}, ac.signal)
+      // Regles d'acces de l'appelant (ACL, ADR-033) : jointes par le serveur.
+      const access = parseAccess(body.caller?.access)
+      if (body.capability === TOOLS_CAPABILITY) {
+        // Outils des agents : jamais en cache (ils ecrivent), avec les regles d'acces pour l'hote.
+        const params = { ...((body.params ?? {}) as Record<string, unknown>), access: access ?? null }
+        if (!this.feed!.owned.has(vaultId) && !(await this.feed!.ensureOwned(vaultId, 2000))) throw this.reject('not_owner', notOwner(vaultId))
+        const r = await this.pool!.call(vaultId, TOOLS_CAPABILITY, body.method, params, c.callTimeoutMs, ac.signal)
+        return sendJson(res, 200, `{"result":${JSON.stringify(r.result ?? null)}}`)
+      }
+      let json = await this.callCached(vaultId, body.capability, body.method, body.params ?? {}, ac.signal)
+      if (restricts(access)) {
+        const filtered = filterResult(access, body.capability, body.method, JSON.parse(json))
+        if (filtered === null) throw new HttpError(404, 'not_found', 'Document introuvable dans ce vault.')
+        json = JSON.stringify(filtered)
+      }
       sendJson(res, 200, `{"result":${json}}`)
     } catch (err) {
       sendError(res, err instanceof HttpError ? err : this.internal(err))
@@ -293,7 +309,7 @@ export class IndexerService {
   private async search(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
     const c = this.opts.config
     const t0 = Date.now()
-    const body = parseJson(await readBody(req, c.maxBodyBytes)) as { vaultIds?: unknown; query?: unknown }
+    const body = parseJson(await readBody(req, c.maxBodyBytes)) as { vaultIds?: unknown; query?: unknown; caller?: { accessByVault?: Record<string, unknown> } }
     if (typeof body !== 'object' || body === null || !Array.isArray(body.vaultIds)) throw new HttpError(400, 'invalid_query', 'vaultIds : liste attendue.')
     if (typeof body.query !== 'object' || body.query === null || Array.isArray(body.query)) throw new HttpError(400, 'invalid_query', 'query : objet attendu.')
     const ids = [...new Set(body.vaultIds)]
@@ -341,7 +357,14 @@ export class IndexerService {
     if (parts.length && !ok.length) throw overloaded ?? unavailable('Aucun vault n\'a pu repondre.', c.unavailableRetryAfterS)
     if (failures) partial = true
     const pages: VaultPage[] = ok.map(x => ({ vaultId: x.vaultId, part: x.part, hits: x.r.hits as SearchHit[], ...(x.r.next ? { next: x.r.next } : {}) }))
-    const { hits, remaining } = mergePages(pages, limit)
+    const merged = mergePages(pages, limit)
+    const remaining = merged.remaining
+    // ACL : une page filtree peut etre plus courte que `limit` (les curseurs restent ceux du pair).
+    const accessBy = body.caller?.accessByVault ?? {}
+    const hits = merged.hits.filter(h => {
+      const a = parseAccess(accessBy[h.vaultId ?? ''])
+      return !restricts(a) || canRead(a, h.id, h.path)
+    })
     const index: IndexState = worstIndex(ok.map(x => x.r.index))
     const result: SearchResult = {
       hits,

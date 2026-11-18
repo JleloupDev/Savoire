@@ -14,6 +14,7 @@
 //   GET /internal/indexer/vaults/{vaultId}/documents/{docId}
 //   GET /internal/indexer/vaults/{vaultId}/files/{fileId}
 //   GET /internal/indexer/vaults/{vaultId}/settings/{section}
+//   GET /internal/indexer/vaults/{vaultId}/review               (Revision, outils des agents)
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, LazyLock};
@@ -539,6 +540,19 @@ pub async fn internal_settings(State(st): State<AppState>, ReqParts(parts): ReqP
         return Ok(internal_error(404, "not_found", "Vault inconnu, non servi par le pair gere, ou section de reglages inconnue."));
     }
     let ops = repos::ops_all(&mut c, crdt::INDEX, &format!("index:{vault_id}:settings/{section}")).await?;
+    Ok(ok(&updates(&ops, "yjs")))
+}
+
+/// Le journal de la Revision du vault (canal « map/review ») : les outils des agents la lisent (ADR-033).
+pub async fn internal_review(State(st): State<AppState>, ReqParts(parts): ReqParts, Path(vault_id): Path<String>) -> AppResult<Response> {
+    if let Err(r) = indexer_peer_allowed(&st, &parts).await {
+        return Ok(r);
+    }
+    let mut c = st.db.acquire().await?;
+    if repos::vault_get(&mut c, &vault_id).await?.is_none() || !managed(&mut c, &vault_id).await? {
+        return Ok(internal_error(404, "not_found", "Vault inconnu ou non servi par le pair gere."));
+    }
+    let ops = repos::ops_all(&mut c, crdt::INDEX, &format!("index:{vault_id}:map/review")).await?;
     Ok(ok(&updates(&ops, "yjs")))
 }
 

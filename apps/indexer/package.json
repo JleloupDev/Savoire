@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@savoire/agent-core": "workspace:*",
     "@savoire/indexer-core": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",

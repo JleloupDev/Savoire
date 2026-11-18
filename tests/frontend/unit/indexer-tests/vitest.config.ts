@@ -9,6 +9,7 @@ export const alias = [
   { find: /^@savoire\/indexer-core\/node$/, replacement: pkg('indexer-core/src/node/index.ts') },
   { find: /^@savoire\/indexer-core$/, replacement: pkg('indexer-core/src/index.ts') },
   { find: /^@savoire\/plugin-api$/, replacement: pkg('plugin-api/src/index.ts') },
+  { find: /^@savoire\/agent-core$/, replacement: pkg('agent-core/src/index.ts') },
   { find: /^@savoire\/domain-index$/, replacement: pkg('domain-index/src/index.ts') },
   // Plugins officiels dont le pair fait tourner les extracteurs (PDF, Word...).
   { find: /^@savoire\/plugin-(word|powerpoint|excel|opendocument|pdf|images|webpage|csv)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },
