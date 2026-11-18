@@ -5,4 +5,9 @@ export const layoutFr = {
   'pane.left.expand': 'Développer le panneau gauche',
   'pane.right.collapse': 'Réduire le panneau droit',
   'pane.right.expand': 'Développer le panneau droit',
+  'mobile.note': 'Note',
+  'mobile.more': 'Plus',
+  'mobile.back': 'Retour',
+  'mobile.panels': 'Outils de la note',
+  'mobile.tabs': 'Navigation',
 } as const

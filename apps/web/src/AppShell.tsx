@@ -27,7 +27,9 @@ import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
 import { SavoireStoreService } from './savoireStore'
 import { loadCustomHotkeys, saveCustomHotkeys } from './hotkeyPreferences'
-import { WorkspaceRoot } from '@savoire/workspace'
+import { WorkspaceRoot, MobileWorkspaceRoot } from '@savoire/workspace'
+import { layoutMode } from './layoutMode'
+import { MobileMore } from './MobileMore'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
@@ -357,6 +359,14 @@ export function AppShell() {
   const [vaults, setVaults] = useState<VaultSummary[]>([])
   // Fenetre d'une seule note (« Nouvelle fenetre », « Epingler ») : voir noteWindow.ts.
   const noteWindow = useMemo(() => readNoteWindow(), [])
+  // Telephone, tablette sans pave tactile : l'interface mobile (layoutMode.ts).
+  const mobile = useMemo(() => !noteWindow && layoutMode() === 'mobile', [noteWindow])
+  // Sur la page entiere : les boutons flottants (hors de l'AppShell) s'y reperent.
+  useEffect(() => {
+    if (!mobile) return
+    document.documentElement.dataset.layout = 'mobile'
+    return () => { delete document.documentElement.dataset.layout }
+  }, [mobile])
   const noteWindowOpenedRef = useRef(false)
   // Navigateur et appli de bureau (pas Android : une seule fenetre).
   const windowActions = !isTauriRuntime() || desktopWindows()
@@ -608,17 +618,22 @@ export function AppShell() {
   // ── Disposition : panneaux presents et volets ouverts (vue par defaut) ─────
   // Les panneaux retires sont filtres avant la pose des panneaux, puis a
   // chaque changement dans les options.
+  // Mobile : l'inspecteur des plugins reste un outil du bureau.
+  const hiddenPanels = useCallback(() => {
+    const hidden = layoutPreferences().config.hidden
+    return mobile ? [...hidden, 'plugin-inspector'] : hidden
+  }, [mobile])
   const onBeforeReadyWithLayout = useCallback(async (m: WorkspaceManagerImpl) => {
-    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    m.views.setHiddenIds(hiddenPanels())
     await onBeforeReady(m)
-  }, [onBeforeReady])
+  }, [onBeforeReady, hiddenPanels])
   useEffect(() => subscribeLayoutPreferences(() => {
     const m = managerRef.current
     if (!m) return
-    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    m.views.setHiddenIds(hiddenPanels())
     m.syncPanels()
     setRibbonItems(m.getRibbonItems())
-  }), [])
+  }), [hiddenPanels])
   /** Volets du demarrage : maintenant (vue choisie dans les options) ou a l'ouverture. */
   const applyLayoutPanes = useCallback((m: WorkspaceManagerImpl, startup: boolean) => {
     const { config } = layoutPreferences()
@@ -1490,16 +1505,35 @@ export function AppShell() {
   // activation provoque toujours un rendu (liste des documents).
   const vaultSharing = vaultSessionRef.current?.sharing
 
+  /** L'espace de travail est pret (bureau ou mobile). */
+  const handleWorkspaceReady = (m: WorkspaceManagerImpl) => {
+    managerRef.current = m
+    m.notifyVaultChange()
+    setRibbonItems(m.getRibbonItems())
+    m.subscribeActiveView(setActiveViewId)
+    // Fenetre d'une note : rien que l'editeur.
+    if (noteWindow) { m.collapsePane('left'); m.collapsePane('right') }
+    // Onglet deja ouvert rendu actif (clic sur un onglet, lien vers une
+    // note ouverte) : le fil d'Ariane suit, pas seulement a l'ouverture.
+    m.subscribeActiveDocument(path => {
+      const doc = documentsRef.current.find(d => d.path === path)
+      if (doc) setActiveDoc(cur => cur?.id === doc.id ? cur : doc)
+    })
+    // Mobile : pas de volets ; on demarre sur l'explorateur.
+    if (!noteWindow && !mobile) applyLayoutPanes(m, true)
+  }
+
   return (
     <div
       data-testid="app-shell"
       data-profile={activeProfile.name}
       data-requires-user-key={requiresUserKey() ? 'true' : 'false'}
-      style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
+      data-layout={mobile ? 'mobile' : 'desktop'}
+      style={{ display: 'flex', height: mobile ? '100dvh' : '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
     >
 
       {/* ── Icon rail (pas dans la fenetre d'une note) ── */}
-      {!noteWindow && <IconRail
+      {!noteWindow && !mobile && <IconRail
         ribbonItems={ribbonItems}
         activeViewId={activeViewId}
         onRibbonClick={(item) => {
@@ -1528,8 +1562,8 @@ export function AppShell() {
       {/* ── Main area (topbar + workspace stacked) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
 
-      {/* ── Breadcrumb bar ── */}
-      <div style={{ height: 42, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 6, flexShrink: 0 }}>
+      {/* ── Breadcrumb bar (bureau ; le mobile a sa propre barre) ── */}
+      {!mobile && <div style={{ height: 42, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 6, flexShrink: 0 }}>
 
         {/* Bureau : le bouton serveur, toujours visible (serveur et compte, ou hors ligne) */}
         {activeProfile.desktop && (
@@ -1628,30 +1662,46 @@ export function AppShell() {
             {locale === 'fr' ? 'EN' : 'FR'}
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Workspace — always rendered, never remounts ── */}
+      {mobile ? (
+      <MobileWorkspaceRoot
+        vault={vaultProxy}
+        fileTypesRef={fileTypeRegistryRef}
+        onBeforeReady={onBeforeReadyWithLayout}
+        onReady={handleWorkspaceReady}
+        renderIcon={name => <RibbonIcon name={name} />}
+        tabPriority={['search']}
+        startScreen="explorer"
+        editorTitle={activeDoc ? (showExt ? activeDoc.path : activeDoc.path.replace(/\.md$/i, '')).split('/').pop() : selectedVault?.name}
+        editorActions={selectedVault ? <IndexStatusIndicator services={indexerServices} /> : undefined}
+        more={
+          <MobileMore
+            onQuickOpen={() => setQuickOpenVisible(true)}
+            onSettings={() => setSettingsOpen(true)}
+            onShare={selectedVault && vaultSharing ? () => setSharingOpen(true) : undefined}
+            locale={locale}
+            onToggleLocale={() => setLocale(locale === 'fr' ? 'en' : 'fr')}
+            accounts={accounts}
+            activeAccount={activeAccount}
+            onSwitchAccount={acc => void handleSwitchAccount(acc)}
+            onManageKey={requiresUserKey() ? () => setKeyModalRequest({ kind: 'manage' }) : undefined}
+            onOpenServer={activeProfile.desktop ? () => setServerDialogOpen(true) : undefined}
+            onLogout={(auth.token || !offline) && !activeProfile.desktop ? () => void handleLogout() : undefined}
+          />
+        }
+        style={{ flex: 1, overflow: 'hidden' }}
+      />
+      ) : (
       <WorkspaceRoot
         vault={vaultProxy}
         fileTypesRef={fileTypeRegistryRef}
         onBeforeReady={onBeforeReadyWithLayout}
-        onReady={(m) => {
-          managerRef.current = m
-          m.notifyVaultChange()
-          setRibbonItems(m.getRibbonItems())
-          m.subscribeActiveView(setActiveViewId)
-          // Fenetre d'une note : rien que l'editeur.
-          if (noteWindow) { m.collapsePane('left'); m.collapsePane('right') }
-          // Onglet deja ouvert rendu actif (clic sur un onglet, lien vers une
-          // note ouverte) : le fil d'Ariane suit, pas seulement a l'ouverture.
-          m.subscribeActiveDocument(path => {
-            const doc = documentsRef.current.find(d => d.path === path)
-            if (doc) setActiveDoc(cur => cur?.id === doc.id ? cur : doc)
-          })
-          if (!noteWindow) applyLayoutPanes(m, true)
-        }}
+        onReady={handleWorkspaceReady}
         style={{ flex: 1, overflow: 'hidden' }}
       />
+      )}
 
       {/* ── Bureau : choix du serveur, connexion, deconnexion. Le vault ouvert reste ouvert. ── */}
       {activeProfile.desktop && serverDialogOpen && (

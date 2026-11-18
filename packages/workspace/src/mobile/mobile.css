@@ -1,0 +1,275 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* SPDX-FileCopyrightText: 2026 Jean Leloup */
+/* Disposition mobile : barre du haut, un ecran, barre du bas, volet du bas.
+   Cibles tactiles de 44 px au moins ; marges des encoches (safe-area). */
+
+.mobile-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-root [hidden] { display: none !important; }
+
+/* ── Barre du haut ───────────────────────────────────────────────────────── */
+
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: env(safe-area-inset-top) max(4px, env(safe-area-inset-right)) 0 max(4px, env(safe-area-inset-left));
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-topbar-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-topbar-spacer { width: 8px; flex-shrink: 0; }
+
+.mobile-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mobile-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobile-icon-btn:active { background: var(--bg-elevated); }
+
+/* ── Ecrans ──────────────────────────────────────────────────────────────── */
+
+.mobile-screens {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.mobile-screen {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+/* L'editeur gere son propre defilement. */
+.mobile-screen[data-screen-id="editor-area"] { overflow: hidden; }
+
+.mobile-view-host { height: 100%; }
+
+.mobile-panel-stack { display: flex; flex-direction: column; }
+.mobile-panel-stack .mobile-view-host { height: auto; }
+
+.mobile-panel-section + .mobile-panel-section { border-top: 1px solid var(--border); }
+
+
+/* ── Barre du bas ────────────────────────────────────────────────────────── */
+
+.mobile-tabbar {
+  display: flex;
+  flex-shrink: 0;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+
+/* Clavier ouvert : la barre laisse la place a l'edition. */
+.mobile-root--keyboard .mobile-tabbar { display: none; }
+
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 6px 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobile-tab--active { color: var(--accent); }
+
+.mobile-tab-icon { display: flex; height: 22px; align-items: center; }
+
+.mobile-tab-label {
+  max-width: 100%;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Ecran « Plus » ──────────────────────────────────────────────────────── */
+
+.mobile-more { padding-bottom: 16px; }
+
+.mobile-list { display: flex; flex-direction: column; }
+
+.mobile-list-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-list-item:active { background: var(--bg-elevated); }
+.mobile-list-item--danger { color: var(--color-danger); }
+
+.mobile-list-icon { display: flex; width: 22px; justify-content: center; color: var(--text-muted); }
+
+.mobile-list-head {
+  padding: 18px 16px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mobile-list-note {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* ── Volet du bas ────────────────────────────────────────────────────────── */
+
+.mobile-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.mobile-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  height: 75%;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-surface);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  transform: translateY(105%);
+  transition: transform 0.22s ease;
+  visibility: hidden;
+}
+
+.mobile-sheet--open { transform: translateY(0); visibility: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-sheet { transition: none; }
+}
+
+.mobile-sheet-grip {
+  flex-shrink: 0;
+  height: 24px;
+  cursor: pointer;
+}
+
+.mobile-sheet-grip::after {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 10px auto 0;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.mobile-chips {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 12px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-chip {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mobile-chip--active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.mobile-sheet-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.mobile-sheet-panel {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Champs a 16 px : sinon iOS zoome la page au focus. */
+.mobile-root input,
+.mobile-root textarea,
+.mobile-root select { font-size: 16px; }
