@@ -84,4 +84,16 @@ describe('ReviewService : ancres et suggestions', () => {
     expect(c.anchor?.quote).toBe('def')
     expect(() => review.suggest('d1', ReviewService.anchor(note.text, 0, 3), 'abc', alice)).toThrow()
   })
+
+  it('une suggestion sur plusieurs lignes s accepte ligne par ligne', async () => {
+    const review = await service()
+    const body = 'Ligne un\nLigne deux\nLigne trois'
+    const note = noteText(`# Note\n${body}\nFin`)
+    const from = note.text.toString().indexOf(body)
+    const s = review.suggest('d1', ReviewService.anchor(note.text, from, from + body.length), 'Ligne 1\nLigne deux\nLigne 3', alice)
+    // Deux blocs : « un » -> « 1 », « trois » -> « 3 ». Seul le second est accepte.
+    review.accept(s.id, note.text, alice, [1])
+    expect(note.text.toString()).toBe('# Note\nLigne un\nLigne deux\nLigne 3\nFin')
+    expect(review.threads('d1')[0].root).toMatchObject({ status: 'accepted', partial: true })
+  })
 })

@@ -18,13 +18,14 @@ import {
   AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
   type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus,
   type ReviewThread, type UserActor,
+  lineHunks, type LineHunk,
 } from '@savoire/application'
 import { aiService } from './aiService'
 import { openCompare } from './CompareView'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import {
   acceptProposal, isSuggesting, onProposalTypesChange, onProposeError, onSuggestingChange, proposalType,
-  reviewFor, setSuggesting, withReviewText,
+  reviewFor, setSuggesting, textOfProposal, withReviewText,
 } from './reviewProposals'
 
 export { withReviewText } from './reviewProposals'
@@ -201,14 +202,15 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     activeEditor?.selectRange?.(at.from, at.to)
   }
 
-  function accept(root: ReviewEntry) {
+  /** Accepte une suggestion ou une proposition ; `hunks` : seulement ces blocs de lignes. */
+  function accept(root: ReviewEntry, hunks?: number[]) {
     if (root.kind === 'proposal') {
       setError(null)
-      void acceptProposal(session!, root, me).catch(err => setError(err instanceof Error ? err.message : String(err)))
+      void acceptProposal(session!, root, me, hunks).catch(err => setError(err instanceof Error ? err.message : String(err)))
       return
     }
     act(() => {
-      const done = withReviewText(session!, docId!, text => review!.accept(root.id, text, me))
+      const done = withReviewText(session!, docId!, text => review!.accept(root.id, text, me, hunks))
       if (!done) throw new Error('Note indisponible : ouvrez-la pour accepter la suggestion.')
     })
   }
@@ -309,7 +311,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             onReply={text => act(() => review.reply(t.root.id, text, me))}
             onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
             onReveal={() => reveal(t.root)}
-            onAccept={() => accept(t.root)}
+            onAccept={hunks => accept(t.root, hunks)}
             onCompare={compareHandler(t.root)}
           />
         ))}
@@ -386,7 +388,8 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCom
   onReply: (text: string) => void
   onStatus: (status: ReviewStatus) => void
   onReveal: () => void
-  onAccept: () => void
+  /** `hunks` : seulement ces blocs de lignes (acceptation ligne par ligne). */
+  onAccept: (hunks?: number[]) => void
   /** Ouvre l'ecran Comparer (propositions des plugins qui savent se comparer). */
   onCompare?: () => void
 }) {
@@ -395,6 +398,12 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCom
   const isComment = root.kind === 'comment'
   const isSuggestion = root.kind === 'suggestion' || root.kind === 'proposal'
   const open = (root.status ?? 'open') === 'open'
+  // Texte sur plusieurs lignes : on peut n'en accepter qu'une partie.
+  const pair = root.kind === 'suggestion' && root.anchor && root.replacement !== undefined
+    ? { before: root.anchor.quote, after: root.replacement }
+    : root.kind === 'proposal' ? textOfProposal(root) : null
+  const hunks = pair && open && canWrite ? lineHunks(pair.before, pair.after) : []
+  const [choosing, setChoosing] = useState(false)
   return (
     <div data-testid="review-thread" data-kind={root.kind} data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
       <Entry entry={root} onReveal={onReveal} />
@@ -403,13 +412,15 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCom
           {onCompare && <button data-testid="review-compare" onClick={onCompare} style={SMALL}>Comparer</button>}
           {open && canWrite && (
             <>
-              <button data-testid="review-accept" onClick={onAccept} style={{ ...SMALL, color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>Accepter</button>
+              <button data-testid="review-accept" onClick={() => onAccept()} style={{ ...SMALL, color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>Accepter</button>
+              {hunks.length > 1 && <button data-testid="review-choose-lines" onClick={() => setChoosing(v => !v)} style={SMALL}>{choosing ? 'Fermer' : 'Choisir les lignes'}</button>}
               <button data-testid="review-reject" onClick={() => onStatus('rejected')} style={SMALL}>Refuser</button>
             </>
           )}
-          {!open && <span data-testid="review-suggestion-status">{SUGGESTION_STATUS[root.status!] ?? root.status}{root.statusBy ? ` par ${describeActor(root.statusBy)}` : ''}</span>}
+          {!open && <span data-testid="review-suggestion-status">{SUGGESTION_STATUS[root.status!] ?? root.status}{root.partial ? ' en partie' : ''}{root.statusBy ? ` par ${describeActor(root.statusBy)}` : ''}</span>}
         </div>
       )}
+      {choosing && hunks.length > 1 && <LineChooser hunks={hunks} onAccept={chosen => { setChoosing(false); onAccept(chosen) }} />}
       {isComment && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
           <select
@@ -448,6 +459,35 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCom
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Les blocs de lignes d'une suggestion, a cocher : seuls ceux-la seront acceptes. */
+function LineChooser({ hunks, onAccept }: { hunks: LineHunk[]; onAccept: (chosen: number[]) => void }) {
+  const [chosen, setChosen] = useState<Set<number>>(() => new Set(hunks.map(h => h.index)))
+  const flip = (i: number) => setChosen(prev => { const next = new Set(prev); if (next.has(i)) next.delete(i); else next.add(i); return next })
+  const line = (text: string, kind: 'removed' | 'added', key: string) => (
+    <div key={key} style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono, monospace)', fontSize: 11, padding: '0 4px',
+      background: kind === 'removed' ? 'rgba(239,68,68,.08)' : 'rgba(34,197,94,.09)', textDecoration: kind === 'removed' ? 'line-through' : 'none' }}>
+      {kind === 'removed' ? '− ' : '+ '}{text || ' '}
+    </div>
+  )
+  return (
+    <div data-testid="review-line-chooser" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 14, padding: 6, border: '1px solid var(--border)', borderRadius: 6 }}>
+      {hunks.map(h => (
+        <label key={h.index} data-testid="review-hunk" style={{ display: 'flex', gap: 6, alignItems: 'flex-start', cursor: 'pointer' }}>
+          <input type="checkbox" data-testid="review-hunk-check" checked={chosen.has(h.index)} onChange={() => flip(h.index)} style={{ marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {h.removed.map((l, i) => line(l, 'removed', `r${i}`))}
+            {h.added.map((l, i) => line(l, 'added', `a${i}`))}
+          </div>
+        </label>
+      ))}
+      <button data-testid="review-accept-lines" disabled={chosen.size === 0} onClick={() => onAccept([...chosen].sort((a, b) => a - b))}
+        style={{ ...SMALL, alignSelf: 'flex-start', color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>
+        Accepter {chosen.size} bloc{chosen.size > 1 ? 's' : ''} sur {hunks.length}
+      </button>
     </div>
   )
 }

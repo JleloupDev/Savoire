@@ -17,7 +17,7 @@
 import { TEXT_PROPOSAL, type ICRDT, type ProposalInfo, type ProposalTypeSpec, type ReviewAPI, type TextProposalPayload } from '@savoire/plugin-api'
 import { suggestionModeExtension } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { ReviewService, SuggestionModeStore, type IVaultSyncSession, type ReviewEntry, type ReviewText, type UserActor } from '@savoire/application'
+import { ReviewService, SuggestionModeStore, mergeHunks, type IVaultSyncSession, type ReviewEntry, type ReviewText, type UserActor } from '@savoire/application'
 
 // ── Un service par session de vault ────────────────────────────────────────
 
@@ -297,9 +297,22 @@ export function createReviewAPI(deps: {
  * elle passe a « acceptee ». Si le plugin n'est pas la, ou si l'application
  * echoue, elle reste ouverte.
  */
-export async function acceptProposal(session: IVaultSyncSession, entry: ReviewEntry, me: UserActor): Promise<void> {
+/** Le texte avant et apres d'une proposition de texte (« savoire.text »), sinon null. */
+export function textOfProposal(entry: ReviewEntry): { before: string; after: string } | null {
+  if (entry.proposalType !== TEXT_PROPOSAL) return null
+  const p = entry.payload as TextProposalPayload | null
+  return p && typeof p.before === 'string' && typeof p.after === 'string' ? { before: p.before, after: p.after } : null
+}
+
+/**
+ * Accepte une proposition. `hunks` (proposition de texte) : seulement ces
+ * blocs de lignes (voir lineHunks), le reste du passage est garde.
+ */
+export async function acceptProposal(session: IVaultSyncSession, entry: ReviewEntry, me: UserActor, hunks?: number[]): Promise<void> {
   const spec = proposalType(entry.proposalType)
   if (!spec) throw new Error(`Le plugin qui sait appliquer cette proposition (${entry.proposalType}) n’est pas actif.`)
-  await spec.apply(entry.docId, entry.payload)
+  const text = hunks ? textOfProposal(entry) : null
+  const payload = text ? { ...(entry.payload as TextProposalPayload), after: mergeHunks(text.before, text.after, hunks!) } : entry.payload
+  await spec.apply(entry.docId, payload)
   reviewFor(session).markApplied(entry.id, me)
 }

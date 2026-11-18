@@ -19,6 +19,7 @@
 // la racine de son fil : deux personnes qui repondent en meme temps ne
 // s'ecrasent pas. Le statut vit sur la racine ; deux changements simultanes
 // de statut se departagent par le dernier ecrivain.
+import { lineHunks, mergeHunks } from './lineDiff'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import type { ICollaborativeText, RelPosJSON } from '@savoire/domain-index'
 import type { Actor } from './Actor'
@@ -82,6 +83,8 @@ export interface ReviewEntry {
   status?: ReviewStatus
   statusBy?: Actor
   statusAt?: string
+  /** Suggestion acceptee en partie (certaines lignes seulement). */
+  partial?: boolean
 }
 
 export interface ReviewThread {
@@ -180,15 +183,23 @@ export class ReviewService {
    * Accepte une suggestion : le passage est remplace dans la note, puis la
    * suggestion passe a « acceptee ». Refuse si le passage a change depuis.
    */
-  accept(rootId: string, text: ReviewText, by: Actor): ReviewEntry {
+  /**
+   * Accepte une suggestion. `hunks` : seulement ces blocs de lignes (voir
+   * lineHunks), le reste du passage est garde ; la suggestion est alors
+   * acceptee en partie.
+   */
+  accept(rootId: string, text: ReviewText, by: Actor, hunks?: number[]): ReviewEntry {
     const root = this.root(rootId)
     if (root.kind !== 'suggestion' || !root.anchor || root.replacement === undefined) throw new Error('ce fil n\'est pas une suggestion')
     if (root.status && root.status !== 'open') throw new Error('suggestion deja traitee')
     const at = ReviewService.locate(root.anchor, text)
     if (!at) throw new ReviewConflictError('Le passage a disparu de la note.')
     if (at.current !== root.anchor.quote) throw new ReviewConflictError('Le passage a changé depuis la suggestion.')
-    text.replace(at.from, at.to, root.replacement)
-    const next: ReviewEntry = { ...root, status: 'accepted', statusBy: by, statusAt: this.now().toISOString() }
+    const total = hunks ? lineHunks(root.anchor.quote, root.replacement).length : 0
+    const partial = !!hunks && hunks.length < total
+    if (hunks && hunks.length === 0) throw new Error('aucune ligne choisie')
+    text.replace(at.from, at.to, partial ? mergeHunks(root.anchor.quote, root.replacement, hunks!) : root.replacement)
+    const next: ReviewEntry = { ...root, status: 'accepted', statusBy: by, statusAt: this.now().toISOString(), ...(partial ? { partial: true } : {}) }
     this.map.set(root.id, next)
     return next
   }
