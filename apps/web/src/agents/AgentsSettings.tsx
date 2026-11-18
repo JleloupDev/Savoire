@@ -156,7 +156,7 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
     <div data-testid="agents-settings" style={{ padding: '16px 24px', overflowY: 'auto' }}>
       <div style={MUTED}>
         Un agent est une identité : un nom, des consignes et des droits. Une IA (la vôtre dans l’appli, ou ChatGPT par l’API) le porte.
-        Ce qu’il fait est signé « {'{'}agent{'}'} (IA), pour vous ».{dir.kind === 'local' ? ' Profil local : les agents restent sur ce poste.' : ''}
+        Ce qu’il fait est signé de son nom : « Archiviste (IA), pour vous ».{dir.kind === 'local' ? ' Profil local : les agents restent sur ce poste.' : ''}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button data-testid="agent-new" style={PRIMARY} onClick={() => setDraft(blank())}>Nouvel agent</button>

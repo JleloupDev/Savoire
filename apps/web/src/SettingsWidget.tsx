@@ -125,7 +125,8 @@ export function SettingsPanel({
       {/* Header */}
       <div style={{ padding: '16px 24px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
-        <div style={{ display: 'flex', gap: 0 }}>
+        {/* Les onglets passent a la ligne : la fenetre est etroite (560 px). */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0 }}>
           <button style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
           {store && <button data-testid="settings-tab-store" style={tabStyle(tab === 'store')} onClick={() => setTab('store')}>Store</button>}
           {hotkeys && commands && (
