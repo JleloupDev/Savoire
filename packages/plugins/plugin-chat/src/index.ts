@@ -16,6 +16,7 @@
 
 import { BLOCK_DESTROY_EVENT, createIcon } from '@savoire/plugin-api'
 import type { FileContext, FileView, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
+import { chatAgentTools } from './agentTools'
 import { mergedMessageMap, postMessage, readMessages, treeMessageMap, type ChatMessage } from './messages'
 
 export { postMessage, readMessages, treeMessageMap, mergedMessageMap, type ChatMessage } from './messages'
@@ -231,10 +232,12 @@ const plugin: VaultPlugin = {
     version: '0.0.1',
     description: 'Des discussions en direct entre les membres du vault (fichiers .chat)',
     scope: 'vault',
-    permissions: ['ui:editor', 'vault:read'],
+    permissions: ['ui:editor', 'vault:read', 'agents'],
   },
 
   async onload(api: PluginAPI) {
+    // Agents (ADR-033) : lire une discussion, y ecrire.
+    for (const tool of chatAgentTools(api)) api.agents?.registerTool(tool)
     api.files.register({
       extension: 'chat',
       label: 'Discussion',

@@ -9,6 +9,7 @@ import type { PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { renderTemplate } from '@savoire/plugin-api'
 import { AgendaWidget, type AgendaHost } from './AgendaWidget'
 import { dailyNotePath, dailyTemplatePath, dateOfKey, dayKey } from './daily'
+import { agendaAgentTools } from './agentTools'
 
 async function allFiles(api: PluginAPI): Promise<string[]> {
   const files: string[] = []
@@ -48,7 +49,7 @@ export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribb
       version: '0.0.1',
       description: 'Un calendrier et une note par jour (Journal/AAAA-MM-JJ.md), avec le modèle « Note du jour »',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
       defaultActive: true,
     },
 
@@ -57,6 +58,8 @@ export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribb
         api.workspace?.notify?.('danger', 'Note du jour', err instanceof Error ? err.message : String(err))
       })
       const host: AgendaHost = { files: () => allFiles(api), openDay: open }
+      // Agents (ADR-033) : lire la note du jour, y ecrire.
+      for (const tool of agendaAgentTools(api, () => allFiles(api))) api.agents?.registerTool(tool)
 
       api.views.register({
         id: 'agenda',

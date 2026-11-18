@@ -3,6 +3,9 @@
 import { sanitizeHtml } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI, BlockLine, BlockContext } from '@savoire/plugin-api'
 import { marked } from 'marked'
+import { taskAgentTools } from './agentTools'
+
+export { taskAgentTools, parseTasks, addTask, setTaskDone } from './agentTools'
 
 // Détecte les listes Markdown bullet ou ordonnées
 const LIST_RE = /^(\s*[-*+]|\s*\d+\.) /m
@@ -132,11 +135,13 @@ const plugin: VaultPlugin = {
     scope: 'personal',
     name: 'Task & Multi-level Lists',
     version: '1.0.0',
-    permissions: ['ui:editor'],
+    permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
     defaultActive: true,
   },
 
   async onload(api: PluginAPI) {
+    // Agents (ADR-033) : lister, ajouter, cocher des taches.
+    for (const tool of taskAgentTools(api)) api.agents?.registerTool(tool)
     api.blocks.register({
       type: 'task-list',
 

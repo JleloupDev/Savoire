@@ -6,6 +6,7 @@
 //
 
 import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
+import { mermaidAgentTools } from './agentTools'
 import mermaid from 'mermaid'
 
 let initialized = false
@@ -44,11 +45,13 @@ const plugin: VaultPlugin = {
     name: 'Mermaid Diagrams',
     version: '0.0.1',
     description: 'Rendu de diagrammes Mermaid dans l\'éditeur',
-    permissions: ['ui:editor'],
+    permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
     defaultActive: true,
   },
 
   async onload(api: PluginAPI) {
+    // Agents (ADR-033) : ajouter un schema a une note.
+    for (const tool of mermaidAgentTools(api)) api.agents?.registerTool(tool)
     api.blocks.register({
       type: 'mermaid',
 

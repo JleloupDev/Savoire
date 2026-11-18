@@ -11,6 +11,7 @@
 // menu / est immediate.
 import type { PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { noteTitleOf, renderTemplate, templateFolderOf } from '@savoire/plugin-api'
+import { templateAgentTools } from './agentTools'
 
 async function allFiles(api: PluginAPI): Promise<string[]> {
   const files: string[] = []
@@ -41,11 +42,15 @@ const plugin: VaultPlugin = {
     version: '0.0.1',
     description: 'Les notes du dossier « Modèles » s\'insèrent par le menu /, avec {{title}}, {{date}} et {{time}}',
     scope: 'vault',
-    permissions: ['ui:editor', 'vault:read'],
+    permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
     defaultActive: true,
   },
 
   async onload(api: PluginAPI) {
+    // Agents (ADR-033) : lister les modeles, creer une note depuis un modele.
+    if (typeof api.vault?.list === 'function') {
+      for (const tool of templateAgentTools(api, async () => templatePaths(await allFiles(api)))) api.agents?.registerTool(tool)
+    }
     if (!api.slash || typeof api.vault?.list !== 'function') return
     const texts = new Map<string, string>()
     let generation = 0

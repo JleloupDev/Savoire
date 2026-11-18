@@ -6,6 +6,7 @@
 import type { ISharedMap, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { HISTORY_MAP, VersionRecorder, type NoteVersion } from './history'
 import { HistoryWidget, type HistoryHost } from './HistoryWidget'
+import { historyAgentTools } from './agentTools'
 
 export { VersionRecorder, listVersions, diffLines, diffStats, HISTORY_MAP, VERSION_INTERVAL_MS, MAX_VERSIONS, GUEST_SETTLE_MS } from './history'
 export type { NoteVersion, VersionAuthor, DiffLine, RemoteEditor } from './history'
@@ -21,7 +22,7 @@ export function createHistoryPlugin(): VaultPlugin {
       version: '0.0.1',
       description: 'Une version de chaque note toutes les 5 minutes pendant qu\'on écrit, avec son auteur ; comparer et restaurer',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
       defaultActive: true,
     },
 
@@ -53,6 +54,9 @@ export function createHistoryPlugin(): VaultPlugin {
           await recorder.restore(keyOf(docId), version, (_key, text) => api.vault.editText!(docId, () => text))
         },
       }
+
+      // Agents (ADR-033) : versions, differences, restauration.
+      for (const tool of historyAgentTools(api, { openMap: host.openMap, flush: host.flush })) api.agents?.registerTool(tool)
 
       api.views.register({
         id: 'history',
