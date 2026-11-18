@@ -66,6 +66,11 @@ function dedentListLine(view: EditorView): boolean {
  * raccourcis courants ont une touche par defaut ; les autres commandes
  * existent pour qu'on puisse leur en donner une.
  */
+/** Marques de debut de ligne qu'insere le menu « / ». */
+const LINE_PREFIX_RE = /^(#{1,6} |[-*+] \[[ xX]\] |[-*+] |\d+[.)] |> )$/
+/** Retrait et marque deja presents en tete d'une ligne. */
+const EXISTING_PREFIX_RE = /^(\s*)(#{1,6}[ \t]+|[-*+] \[[ xX]\] |[-*+] |\d+[.)] |> )?/
+
 export function plumeCommands(): PluginCommand[] {
   const on = (act: (view: EditorView) => void) => (ctx: PluginCommandContext) => {
     const view = viewOf(ctx)
@@ -631,9 +636,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     })
 
     const builtins = [
-      { id: 'builtin-h1',         label: 'Titre 1',         description: 'Grand titre (# )',         icon: 'heading-1', category: 'Titres',  insert: '# '   },
-      { id: 'builtin-h2',         label: 'Titre 2',         description: 'Titre moyen (## )',         icon: 'heading-2', category: 'Titres',  insert: '## '  },
-      { id: 'builtin-h3',         label: 'Titre 3',         description: 'Petit titre (### )',        icon: 'heading-3', category: 'Titres',  insert: '### ' },
+      { id: 'builtin-h1',         label: 'Titre 1',         description: 'H1 · Grand titre (# )',         icon: 'heading-1', category: 'Titres',  insert: '# '   },
+      { id: 'builtin-h2',         label: 'Titre 2',         description: 'H2 · Titre moyen (## )',         icon: 'heading-2', category: 'Titres',  insert: '## '  },
+      { id: 'builtin-h3',         label: 'Titre 3',         description: 'H3 · Petit titre (### )',        icon: 'heading-3', category: 'Titres',  insert: '### ' },
+      { id: 'builtin-h4',         label: 'Titre 4',         description: 'H4 · Sous-titre (#### )',        icon: 'heading-4', category: 'Titres',  insert: '#### ' },
       { id: 'builtin-ul',         label: 'Liste à puces',   description: 'Liste non ordonnée (- )',   icon: 'list',         category: 'Listes',  insert: '- '   },
       { id: 'builtin-ol',         label: 'Liste numérotée', description: 'Liste ordonnée (1. )',      icon: 'list-ordered', category: 'Listes',  insert: '1. '  },
       { id: 'builtin-todo',       label: 'Case à cocher',   description: 'Liste de tâches (- [ ] )', icon: 'list-checks',  category: 'Listes',  insert: '- [ ] ' },
@@ -901,6 +907,28 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
   commitTriggerInsert(from: number, triggerCharLen: number, query: string, insert: string, cursor?: number): void {
     let to = from + triggerCharLen + query.length
+    // Un style de ligne (titre, liste, citation) choisi au milieu d'une ligne
+    // s'applique a la ligne : la marque va au debut, a la place de l'ancienne.
+    if (LINE_PREFIX_RE.test(insert)) {
+      const line = this.view.state.doc.lineAt(from)
+      const rest = line.text.slice(0, from - line.from) + line.text.slice(to - line.from)
+      if (rest.trim()) {
+        // « Mon titre /h2 » : l'espace avant le « / » part avec lui.
+        if (to === line.to && from > line.from && this.view.state.sliceDoc(from - 1, from) === ' ') from--
+        const current = EXISTING_PREFIX_RE.exec(line.text)!
+        const at = line.from + current[1].length
+        const old = current[2] ?? ''
+        const keepIndent = !/^#/.test(insert)
+        const start = keepIndent ? at : line.from
+        this.view.dispatch({
+          changes: [{ from: start, to: at + old.length, insert }, { from, to, insert: '' }],
+          selection: { anchor: from - (at + old.length - start) + insert.length },
+          userEvent: 'input',
+        })
+        this.view.focus()
+        return
+      }
+    }
     // Un lien complet tape dans des crochets deja fermes (« /page » puis
     // [[nom]]) : les crochets fermants en place ne se doublent pas.
     if (insert.endsWith(']]') && this.view.state.sliceDoc(to, to + 2) === ']]') to += 2

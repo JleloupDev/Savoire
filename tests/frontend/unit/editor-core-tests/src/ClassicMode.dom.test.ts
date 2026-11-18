@@ -116,4 +116,15 @@ describe('Mode classique', () => {
     expect(view.state.doc.toString()).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |\nz')
     view.destroy()
   })
+
+  it('cache les # du titre sous le curseur, et Retour arriere au debut le rend texte', () => {
+    const view = setup('classic', 'intro\n## Mon titre')
+    const start = view.state.doc.toString().indexOf('Mon')
+    view.dispatch({ selection: EditorSelection.cursor(start) })
+    const line = Array.from(view.dom.querySelectorAll('.cm-line')).find(l => l.textContent?.includes('Mon titre'))!
+    expect(line.textContent).toBe('Mon titre')
+    expect(view.state.doc.toString()).toBe('intro\n## Mon titre')
+    view.destroy()
+  })
 })
+

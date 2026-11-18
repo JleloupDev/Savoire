@@ -364,6 +364,25 @@ interface PreviewDecorations {
   decorations: DecorationSet
   /** Objets du mode classique : le curseur les saute d'un bloc. */
   objects: DecorationSet
+  /** Marques cachees du mode classique (les # d'un titre) : le curseur ne s'y arrete pas. */
+  hidden: DecorationSet
+}
+
+const HEADING_LABELS: Record<string, string> = {
+  ATXHeading1: 'Titre 1', ATXHeading2: 'Titre 2', ATXHeading3: 'Titre 3',
+  ATXHeading4: 'Titre 4', ATXHeading5: 'Titre 5', ATXHeading6: 'Titre 6',
+}
+
+/** Titre vide en mode classique : son nom en filigrane. */
+class HeadingPlaceholder extends WidgetType {
+  constructor(private readonly label: string) { super() }
+  eq(other: HeadingPlaceholder): boolean { return other.label === this.label }
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'plume-heading-placeholder'
+    span.textContent = this.label
+    return span
+  }
 }
 
 function overlaps(a: { from: number; to: number }, from: number, to: number): boolean {
@@ -375,6 +394,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   const classic = env.mode === 'classic'
   const decorations: Range<Decoration>[] = []
   const objects: Range<Decoration>[] = []
+  const hidden: Range<Decoration>[] = []
   const { from: cursorFrom } = state.selection.main
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
   // Passages surlignes par la revision : leurs lignes restent en texte brut.
@@ -601,6 +621,16 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
           // Line decoration for line-height on the cm-line wrapper.
           const lineStart = state.doc.lineAt(node.from).from
           decorations.push(Decoration.line({ class: headingClass }).range(lineStart))
+          // Mode classique : pas de # sous le curseur, le titre reste un titre.
+          const mark = classic ? /^(#{1,6})(?:[ \t]+|$)/.exec(state.doc.lineAt(node.from).text) : null
+          if (mark && mark[0].length > 0) {
+            const hide = Decoration.replace({}).range(lineStart, lineStart + mark[0].length)
+            decorations.push(hide)
+            hidden.push(hide)
+            if (lineStart + mark[0].length === state.doc.lineAt(node.from).to) {
+              decorations.push(Decoration.widget({ widget: new HeadingPlaceholder(HEADING_LABELS[node.type.name] ?? 'Titre'), side: 1 }).range(lineStart + mark[0].length))
+            }
+          }
         }
         return false
       } else if (!isSingleLine) {
@@ -688,7 +718,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   if (fmDeco) decorations.unshift(fmDeco)
   if (panelDecos) decorations.unshift(...panelDecos)
 
-  return { decorations: Decoration.set(decorations, true), objects: Decoration.set(objects, true) }
+  return { decorations: Decoration.set(decorations, true), objects: Decoration.set(objects, true), hidden: Decoration.set(hidden, true) }
 }
 
 // see ADR-005
@@ -934,6 +964,13 @@ function classicExtensions(
       run: view => {
         const sel = view.state.selection.main
         if (!sel.empty) return false
+        // Au debut d'un titre (ses # sont caches) : il redevient du texte.
+        const line = view.state.doc.lineAt(sel.head)
+        const mark = /^#{1,6}(?:[ \t]+|$)/.exec(line.text)
+        if (mark && sel.head === line.from + mark[0].length) {
+          view.dispatch({ changes: { from: line.from, to: line.from + mark[0].length }, userEvent: 'delete' })
+          return true
+        }
         // Juste apres un objet : ne pas l'effacer d'un coup (le menu sert a ca).
         if (objectEndingAt(view.state, sel.head)) return true
         const obj = objectStartingAt(view.state, sel.head)
@@ -1004,6 +1041,7 @@ function classicExtensions(
         padding: '1px 6px', borderRadius: '4px', fontSize: '11px', lineHeight: '1.5',
         background: 'var(--bg-elevated, #252535)', color: 'var(--text, #cdd6f4)', pointerEvents: 'none', opacity: '1',
       },
+      '.plume-heading-placeholder': { color: 'var(--text-faint, #6c7086)', opacity: '0.6', pointerEvents: 'none' },
       '.plume-column-empty': { color: 'var(--text-faint, #6c7086)', fontStyle: 'italic', padding: '0 6px', userSelect: 'none' },
       '.plume-column-editor': {
         width: '100%', boxSizing: 'border-box', resize: 'none', overflow: 'hidden',
@@ -1045,12 +1083,13 @@ export function createLivePreviewExtension(
       if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
         return buildDecorations(tr.state, env)
       }
-      return { decorations: value.decorations.map(tr.changes), objects: value.objects.map(tr.changes) }
+      return { decorations: value.decorations.map(tr.changes), objects: value.objects.map(tr.changes), hidden: value.hidden.map(tr.changes) }
     },
     provide: (f) => [
       EditorView.decorations.from(f, v => v.decorations),
       // Mode classique : le curseur saute un objet d'un coup.
       EditorView.atomicRanges.of(view => view.state.field(f).objects),
+      EditorView.atomicRanges.of(view => view.state.field(f).hidden),
     ],
   })
 
