@@ -12,7 +12,7 @@ import { StateEffect, StateField, type EditorState, type Range } from '@codemirr
 import { marked } from 'marked'
 import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
 import type { BlockContext, BlockEditContext, BlockMenuItem, HookRegistry } from '@savoire/plugin-api'
-import { findColumnsBlocks, linesOf, modelOf, serializeModel, setColumnText, type ColumnsBlock } from './Columns'
+import { findColumnsBlocks, linesOf, markdownUnits, modelOf, serializeModel, setColumnText, type ColumnsBlock } from './Columns'
 import { columnContent, columnsElement, type FragmentOptions } from './NoteFragment'
 
 export interface BlockRange { from: number; to: number }
@@ -515,6 +515,7 @@ export function editableColumns(view: EditorView, block: ColumnsBlock, ctx: Bloc
   }
 
   const cols = Array.from(root.querySelectorAll<HTMLElement>('.plume-column'))
+  columnResizers(view, root, ctx)
   cols.forEach(col => {
     if (col.childElementCount === 0) {
       const hint = document.createElement('div')
@@ -542,4 +543,113 @@ export function editableColumns(view: EditorView, block: ColumnsBlock, ctx: Bloc
 
 export function isClassicEffect(e: StateEffect<unknown>): boolean {
   return e.is(openSourceEffect) || e.is(closeSourceEffect) || e.is(refreshObjectsEffect)
+}
+
+// ── Rendus dans une colonne ─────────────────────────────────────────────────
+
+/**
+ * Le texte d'ou vient un rendu place dans une colonne (une image qu'on
+ * redimensionne) : son bloc dans la colonne, en positions de la note.
+ */
+export function locateInColumns(view: EditorView, el: HTMLElement): { from: number; to: number; text: string } | null {
+  if (view.state.readOnly) return null
+  const wrap = el.closest('.plume-columns-wrap') as HTMLElement | null
+  const colEl = el.closest('.plume-column') as HTMLElement | null
+  const unitEl = el.closest('.plume-column-unit') as HTMLElement | null
+  if (!wrap || !colEl || !unitEl) return null
+  let pos: number
+  try { pos = view.posAtDOM(wrap) } catch { return null }
+  const block = findColumnsBlocks(view.state.doc).find(b => b.from === pos)
+  const column = block?.columns[Number(colEl.dataset.col)]
+  if (!column) return null
+  const raw = view.state.sliceDoc(column.from, column.to)
+  const unit = markdownUnits(raw)[Number(unitEl.dataset.unit)]
+  if (!unit) return null
+  const from = column.from + unit.from
+  const to = column.from + unit.to
+  return { from, to, text: view.state.sliceDoc(from, to) }
+}
+
+// ── Largeur des colonnes ────────────────────────────────────────────────────
+
+/** Des largeurs relatives en pourcentages entiers, qui font 100. */
+export function toPercents(widths: readonly number[]): number[] {
+  const total = widths.reduce((a, b) => a + b, 0) || 1
+  const raw = widths.map(w => (w / total) * 100)
+  const out = raw.map(Math.floor)
+  // Le reste va aux colonnes les plus proches de l'entier superieur.
+  let rest = 100 - out.reduce((a, b) => a + b, 0)
+  const order = raw.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac)
+  for (const { i } of order) { if (rest <= 0) break; out[i]++; rest-- }
+  return out
+}
+
+/** Le bloc avec de nouvelles largeurs (en %), colonnes vides comprises. */
+export function withColumnWidths(source: string, percents: readonly number[]): string {
+  const block = findColumnsBlocks(linesOf(source))[0]
+  if (!block) return source
+  const model = modelOf(block)
+  while (model.columns.length < percents.length) model.columns.push([])
+  model.header = percents.map(p => `${p}%`).join(' ')
+  return serializeModel(model)
+}
+
+/**
+ * Poignees entre les colonnes : on tire, les deux colonnes voisines
+ * changent de largeur ; au lacher, l'en-tete du bloc prend les
+ * pourcentages (`::: colonnes 30% 70%`).
+ */
+function columnResizers(view: EditorView, root: HTMLElement, ctx: BlockEditContext): void {
+  const grid = root.querySelector('.plume-columns') as HTMLElement | null
+  if (!grid) return
+  const cols = Array.from(grid.querySelectorAll<HTMLElement>(':scope > .plume-column'))
+  if (cols.length < 2) return
+  cols.slice(0, -1).forEach((col, i) => {
+    const bar = document.createElement('div')
+    bar.className = 'plume-column-resizer'
+    bar.dataset.testid = 'column-resizer'
+    bar.title = 'Glisser pour changer la largeur'
+    col.appendChild(bar)
+    bar.addEventListener('mousedown', e => e.stopPropagation())
+    bar.addEventListener('pointerdown', down => {
+      if (down.button !== 0) return
+      down.preventDefault()
+      down.stopPropagation()
+      bar.setPointerCapture(down.pointerId)
+      const rects = cols.map(c => c.getBoundingClientRect().width)
+      const pair = rects[i] + rects[i + 1]
+      const startX = down.clientX
+      const label = document.createElement('div')
+      label.className = 'plume-column-width'
+      col.appendChild(label)
+      root.dataset.plumeEditing = '1'
+      let percents = toPercents(rects)
+      const show = () => {
+        grid.style.gridTemplateColumns = percents.map(p => `minmax(0, ${p}fr)`).join(' ')
+        label.textContent = percents.map(p => `${p} %`).join(' · ')
+      }
+      show()
+      const move = (ev: PointerEvent) => {
+        const min = pair * 0.1
+        const left = Math.max(min, Math.min(pair - min, rects[i] + ev.clientX - startX))
+        const next = [...rects]
+        next[i] = left
+        next[i + 1] = pair - left
+        percents = toPercents(next)
+        show()
+      }
+      const up = () => {
+        bar.removeEventListener('pointermove', move)
+        bar.removeEventListener('pointerup', up)
+        bar.removeEventListener('pointercancel', up)
+        label.remove()
+        root.dataset.plumeStale = '1'
+        ctx.replace(withColumnWidths(ctx.source(), percents))
+        endEditing(view, root)
+      }
+      bar.addEventListener('pointermove', move)
+      bar.addEventListener('pointerup', up)
+      bar.addEventListener('pointercancel', up)
+    })
+  })
 }

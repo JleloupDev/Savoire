@@ -131,5 +131,5 @@ export const COLUMNS_CSS = `
 .plume-columns { display: grid; gap: 1.25em; align-items: start; margin: 4px 0; }
 .plume-column { min-width: 0; }
 .plume-column img, .plume-column video { max-width: 100%; height: auto; }
-@container (max-width: 480px) { .plume-columns { grid-template-columns: 1fr !important; } }
+@container (max-width: 480px) { .plume-columns { grid-template-columns: 1fr !important; } .plume-column-resizer { display: none; } }
 `

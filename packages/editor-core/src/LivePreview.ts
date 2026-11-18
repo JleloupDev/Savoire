@@ -30,7 +30,7 @@ import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, type FragmentO
 import { findColumnsBlocks } from './Columns'
 import {
   ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
-  isClassicEffect, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
+  isClassicEffect, locateInColumns, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
 } from './ClassicMode'
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
@@ -428,7 +428,15 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
 
   // Les blocs rendus dans une colonne n'ecrivent pas dans la note par leur
   // ligne : elle serait celle du bloc de colonnes.
-  const innerCtx: BlockContext = { get editorView() { return ctx?.editorView ?? null }, locate: () => null }
+  // Elles ecrivent dans leur bloc de la colonne (redimensionner une image).
+  const innerCtx: BlockContext = {
+    get editorView() { return ctx?.editorView ?? null },
+    edit: ctx?.edit,
+    locate: (el: HTMLElement) => {
+      const view = ctx?.editorView as EditorView | null | undefined
+      return view instanceof EditorView ? locateInColumns(view, el) : null
+    },
+  }
   const fragmentOptions = (): FragmentOptions => ({ registry, hooks, activeIds: getActiveScopeIds?.() ?? null, ctx: innerCtx })
 
   // ── Colonnes ──
@@ -984,8 +992,18 @@ function classicExtensions(
       '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
       '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
       '.plume-table-actions': { display: 'flex', gap: '6px' },
-      '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em' },
+      '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em', position: 'relative' },
       '.plume-column:hover': { background: 'var(--bg-hover, rgba(127,127,127,0.06))' },
+      '.plume-column-resizer': {
+        position: 'absolute', top: '0', bottom: '0', right: 'calc(-0.625em - 4px)', width: '8px',
+        cursor: 'col-resize', zIndex: '2', borderRadius: '4px',
+      },
+      '.plume-column-resizer:hover, .plume-column-resizer:active': { background: 'var(--accent, #7c3aed)', opacity: '0.35' },
+      '.plume-column-width': {
+        position: 'absolute', top: '-1.6em', right: '0', transform: 'translateX(50%)', whiteSpace: 'nowrap', zIndex: '3',
+        padding: '1px 6px', borderRadius: '4px', fontSize: '11px', lineHeight: '1.5',
+        background: 'var(--bg-elevated, #252535)', color: 'var(--text, #cdd6f4)', pointerEvents: 'none', opacity: '1',
+      },
       '.plume-column-empty': { color: 'var(--text-faint, #6c7086)', fontStyle: 'italic', padding: '0 6px', userSelect: 'none' },
       '.plume-column-editor': {
         width: '100%', boxSizing: 'border-box', resize: 'none', overflow: 'hidden',
