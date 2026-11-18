@@ -11,7 +11,7 @@
 //    couleur choisie, la fleche ouvre la palette.
 //  - Barre etroite : les derniers groupes passent dans « ⋯ ».
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { EditorCommandContext, ToolbarCommand } from '@savoire/plugin-api'
 import { useEditorContext } from './EditorContext'
 import { EditorIcon } from './IconContext'
@@ -51,9 +51,13 @@ export interface ToolbarProps {
    * menus s'ouvrent alors vers le haut et les boutons sont plus grands.
    */
   placement?: 'top' | 'bottom'
+  /** Contenu de l'hote a droite de la barre, avant ⋯ (le choix du mode d'edition). */
+  trailing?: ReactNode
+  /** Largeur reservee a `trailing`, pour le repli des groupes. */
+  trailingWidth?: number
 }
 
-export function Toolbar({ onHide, placement = 'top' }: ToolbarProps = {}) {
+export function Toolbar({ onHide, placement = 'top', trailing, trailingWidth = 0 }: ToolbarProps = {}) {
   ensureToolbarStyles()
   const ctrl = useEditorContext()
   useEditorTick(ctrl)
@@ -76,7 +80,7 @@ export function Toolbar({ onHide, placement = 'top' }: ToolbarProps = {}) {
 
   const commands = ctrl?.getToolbarCommands?.() ?? []
   const barClass = placement === 'bottom' ? 'sv-tb sv-tb--bottom' : 'sv-tb'
-  if (commands.length === 0) return <div className={barClass} ref={barRef} />
+  if (commands.length === 0) return <div className={barClass} ref={barRef}><span className="sv-tb-spacer" />{trailing}</div>
 
   const insertCmds = commands.filter(c => c.menu === 'insert')
   const moreCmds = commands.filter(c => c.menu === 'more')
@@ -98,7 +102,7 @@ export function Toolbar({ onHide, placement = 'top' }: ToolbarProps = {}) {
 
   // Repli : on garde les groupes tant qu'ils tiennent, le reste va dans ⋯.
   const insertInline = insertCmds.length > 0 && width >= 560
-  let budget = width - PADDING - (bottom ? 44 : W_MORE) - (insertInline ? W_INSERT : 0)
+  let budget = width - PADDING - (bottom ? 44 : W_MORE) - (insertInline ? W_INSERT : 0) - trailingWidth
   const visible: string[] = []
   const folded: string[] = []
   for (const [i, g] of ordered.entries()) {
@@ -138,6 +142,7 @@ export function Toolbar({ onHide, placement = 'top' }: ToolbarProps = {}) {
           </>
         )}
         <span className="sv-tb-spacer" />
+        {trailing}
         {showMore && (
           <MenuButton
             id="__more" title="Plus d'options" icon="ellipsis" testId="toolbar-more" align="right" chevron={false}
