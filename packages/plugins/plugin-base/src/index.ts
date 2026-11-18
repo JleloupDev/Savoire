@@ -16,6 +16,7 @@ import { BASE_QUERY_FENCE_RE, renderBaseQueryBlock } from './queryBlock'
 import { ensureStyle } from './style'
 import { parseBaseEmbed, renderBaseEmbed } from './embed'
 import { cellProposalType } from './proposals'
+import { baseAgentTools } from './agentTools'
 
 export { createBaseView } from './view'
 export { ManifestStore, readManifest, defaultManifest, TITLE_COLUMN } from './manifest'
@@ -29,6 +30,7 @@ export { parseBaseEmbed, renderBaseEmbed, embedQuery, BASE_EMBED_RE } from './em
 export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renamePageRow } from './notes'
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
 export { CELL_PROPOSAL, cellProposalType } from './proposals'
+export { baseAgentTools } from './agentTools'
 export type { CellProposal } from './proposals'
 export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere } from './formulaEngine'
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
@@ -43,7 +45,7 @@ export function createBasePlugin(): VaultPlugin {
       version: '0.0.1',
       description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
       // Actif dans toutes les notes : blocs ```base et ![[x.base]].
       defaultActive: true,
     },
@@ -52,6 +54,8 @@ export function createBasePlugin(): VaultPlugin {
       api = pluginApi
       // Revision : une valeur de cellule proposee (mode suggestion), appliquee a l'acceptation.
       pluginApi.review?.registerProposalType(cellProposalType(pluginApi))
+      // Agents (ADR-033) : decrire une base, changer une cellule (ou le proposer).
+      for (const tool of baseAgentTools(pluginApi)) pluginApi.agents?.registerTool(tool)
       pluginApi.files.register({
         extension: 'base',
         label: 'Base',

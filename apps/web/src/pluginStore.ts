@@ -117,7 +117,7 @@ export const STORE_CATALOG: StoreEntry[] = [
       version: '0.0.1',
       description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
       defaultActive: true,
     },
     extensions: ['base'],
