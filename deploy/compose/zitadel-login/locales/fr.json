@@ -1,0 +1,53 @@
+{
+  "savoire": {
+    "code": {
+      "title": "Votre code de connexion",
+      "description": "Saisissez ce code dans la fenêtre où vous avez demandé à vous connecter.",
+      "missing": "Ce lien ne contient pas de code. Demandez-en un nouveau depuis l'écran de connexion.",
+      "notYou": "Vous n'avez rien demandé ? Ignorez ce message : sans ce code, personne ne peut entrer."
+    },
+    "passkeyUseEmail": "Recevoir un lien par mail",
+    "errors": {
+      "noEmail": "Ce compte n'a pas d'adresse mail.",
+      "couldNotSendLink": "Impossible d'envoyer le lien de connexion."
+    }
+  },
+  "loginname": {
+    "title": "Se connecter",
+    "description": "Entrez votre adresse mail. Vous recevrez un lien, ou votre clé d'accès vous sera demandée.",
+    "register": "Créer un compte",
+    "labels": { "loginname": "Adresse mail" },
+    "errors": { "userNotFound": "Aucun compte avec cette adresse. Choisissez « Créer un compte »." }
+  },
+  "otp": {
+    "verify": {
+      "title": "Vérifiez vos mails",
+      "emailDescription": "Nous vous avons envoyé un lien. Il affiche un code : saisissez-le ici.",
+      "noCodeReceived": "Rien reçu ?",
+      "resendCode": "Renvoyer le lien"
+    }
+  },
+  "verify": {
+    "verify": {
+      "title": "Vérifiez votre adresse",
+      "description": "Nous vous avons envoyé un lien. Il affiche un code : saisissez-le ici.",
+      "noCodeReceived": "Rien reçu ?",
+      "resendCode": "Renvoyer le lien",
+      "codeSent": "Un lien vient d'être envoyé à votre adresse."
+    }
+  },
+  "register": {
+    "title": "Créer un compte",
+    "description": "Aucun mot de passe : vous entrerez par un lien reçu par mail, ou par une clé d'accès."
+  },
+  "passkey": {
+    "verify": {
+      "title": "Se connecter avec une clé d'accès"
+    },
+    "set": {
+      "title": "Ajouter une clé d'accès ?",
+      "description": "La prochaine fois, vous entrerez avec votre empreinte, votre visage ou le code de votre appareil, sans attendre de mail.",
+      "skip": "Plus tard"
+    }
+  }
+}

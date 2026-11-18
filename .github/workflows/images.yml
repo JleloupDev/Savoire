@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Jean Leloup
 #
 # Images de Savoire (ADR-028, etape A) : tests du backend sur PostgreSQL, puis
-# les trois images publiees sur ghcr.io (api, web, indexer). Les memes images
+# les images publiees sur ghcr.io (api, web, indexer, login). Les memes images
 # servent partout : auto-hebergement, production (deploy/compose).
 #
 # Etiquettes : « latest » (master), « sha-<commit> », et pour une etiquette
@@ -65,6 +65,10 @@ jobs:
             dockerfile: apps/web/Dockerfile
           - name: indexer
             dockerfile: apps/indexer/Dockerfile
+          # Page de connexion (Zitadel retouche) : son dossier suffit.
+          - name: login
+            context: deploy/compose/zitadel-login
+            dockerfile: deploy/compose/zitadel-login/Dockerfile
     steps:
       - uses: actions/checkout@v7
 
@@ -92,7 +96,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context || '.' }}
           file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}

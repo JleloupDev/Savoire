@@ -6,8 +6,10 @@
 #
 # Le service zitadel-bootstrap prepare Zitadel puis s'arrete ; il ecrit
 # .local/zitadel/savoire-oidc.json (backend) et indexer-oidc.json (pair).
-# Console Zitadel : http://localhost:8090/ui/console (admin@savoire.localhost /
-# Admin-Dev-1234!), aussi administrateur de Savoire (Auth:AdminEmails).
+# Console Zitadel : http://localhost:8090/ui/console, adresse
+# admin@savoire.localhost : le lien de connexion arrive dans Mailpit (pas de
+# mot de passe, ADR-031). Aussi administrateur de Savoire (Auth:AdminEmails).
+# Admin-Dev-1234! reste valable pour l'API de sessions (tests, scripts).
 # Courriels envoyes par Zitadel : http://localhost:8025 (Mailpit).
 #
 # Tout est lie a 127.0.0.1 : rien n'est expose hors de la machine.
@@ -85,8 +87,14 @@ services:
       postgres:
         condition: service_healthy
 
+  # Page de connexion de Savoire : celle de Zitadel, retouchee pour entrer
+  # sans mot de passe (zitadel-login/README.md). Construite sur le poste.
   zitadel-login:
-    image: ghcr.io/zitadel/zitadel-login:v4.16.0
+    image: savoire-login:local
+    build:
+      context: ./zitadel-login
+      args:
+        ZITADEL_VERSION: v4.16.0
     restart: unless-stopped
     user: "0"
     environment:

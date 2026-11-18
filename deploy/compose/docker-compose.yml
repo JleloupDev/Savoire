@@ -115,9 +115,11 @@ services:
       postgres:
         condition: service_healthy
 
+  # Page de connexion : celle de Zitadel, retouchee pour entrer sans mot de
+  # passe (zitadel-login/README.md). Son image suit la version de Zitadel.
   zitadel-login:
     <<: *restart
-    image: ghcr.io/zitadel/zitadel-login:${ZITADEL_VERSION:-v4.16.0}
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-login:${SAVOIRE_VERSION:-latest}
     user: "0"
     environment:
       ZITADEL_API_URL: http://zitadel:8080

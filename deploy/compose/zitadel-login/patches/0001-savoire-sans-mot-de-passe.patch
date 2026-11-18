@@ -1,0 +1,717 @@
+diff --git a/apps/login/src/app/(login)/code/page.tsx b/apps/login/src/app/(login)/code/page.tsx
+new file mode 100644
+index 0000000..77b374e
+--- /dev/null
++++ b/apps/login/src/app/(login)/code/page.tsx
+@@ -0,0 +1,58 @@
++// Savoire : la page ouverte par le lien du mail. Elle ne connecte personne ;
++// elle montre le code a saisir dans la fenetre ou la connexion a ete demandee.
++// Un lien ouvert par un antivirus de messagerie ne consomme donc rien.
++import { CopyToClipboard } from "@/components/copy-to-clipboard";
++import { DynamicTheme } from "@/components/dynamic-theme";
++import { Translated } from "@/components/translated";
++import { getServiceConfig } from "@/lib/service-url";
++import { getBrandingSettings } from "@/lib/zitadel";
++import { Metadata } from "next";
++import { getTranslations } from "next-intl/server";
++import { headers } from "next/headers";
++
++export async function generateMetadata(): Promise<Metadata> {
++  const t = await getTranslations("savoire");
++  return { title: t("code.title") };
++}
++
++export default async function Page(props: { searchParams: Promise<Record<string | number | symbol, string | undefined>> }) {
++  const searchParams = await props.searchParams;
++  const { organization } = searchParams;
++  // Un code ne contient que des lettres et des chiffres.
++  const code = (searchParams.code ?? "").replace(/[^0-9A-Za-z]/g, "").slice(0, 32);
++
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++  const branding = await getBrandingSettings({ serviceConfig, organization });
++
++  return (
++    <DynamicTheme branding={branding}>
++      <div className="flex flex-col space-y-4">
++        <h1>
++          <Translated i18nKey="code.title" namespace="savoire" />
++        </h1>
++        <p className="ztdl-p">
++          <Translated i18nKey="code.description" namespace="savoire" />
++        </p>
++      </div>
++
++      <div className="w-full">
++        {code ? (
++          <div className="flex flex-row items-center justify-center gap-3 py-6">
++            <span className="font-mono text-3xl tracking-[0.3em]" data-testid="login-code">
++              {code}
++            </span>
++            <CopyToClipboard value={code} />
++          </div>
++        ) : (
++          <p className="ztdl-p py-6">
++            <Translated i18nKey="code.missing" namespace="savoire" />
++          </p>
++        )}
++        <p className="ztdl-p text-sm opacity-80">
++          <Translated i18nKey="code.notYou" namespace="savoire" />
++        </p>
++      </div>
++    </DynamicTheme>
++  );
++}
+diff --git a/apps/login/src/app/(login)/loginname/page.tsx b/apps/login/src/app/(login)/loginname/page.tsx
+index 1cf4960..c4161e9 100644
+--- a/apps/login/src/app/(login)/loginname/page.tsx
++++ b/apps/login/src/app/(login)/loginname/page.tsx
+@@ -57,7 +57,8 @@ export default async function Page(props: { searchParams: Promise<Record<string
+       </div>
+ 
+       <div className="w-full">
+-        {loginSettings?.allowLocalAuthentication && (
++        {/* Savoire : l'adresse sert aussi sans mot de passe (passkey, lien par mail). */}
++        {loginSettings && (
+           <UsernameForm
+             loginName={loginName}
+             requestId={requestId}
+@@ -78,7 +79,7 @@ export default async function Page(props: { searchParams: Promise<Record<string
+               requestId={requestId}
+               organization={organization}
+               postErrorRedirectUrl="/loginname"
+-              showLabel={loginSettings?.allowLocalAuthentication}
++              showLabel={true}
+             ></SignInWithIdp>
+           </div>
+         )}
+diff --git a/apps/login/src/app/(login)/passkey/page.tsx b/apps/login/src/app/(login)/passkey/page.tsx
+index c236d62..d870515 100644
+--- a/apps/login/src/app/(login)/passkey/page.tsx
++++ b/apps/login/src/app/(login)/passkey/page.tsx
+@@ -20,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
+ export default async function Page(props: { searchParams: Promise<Record<string | number | symbol, string | undefined>> }) {
+   const searchParams = await props.searchParams;
+ 
+-  const { loginName, altPassword, requestId, organization, sessionId } = searchParams;
++  const { loginName, altPassword, altEmail, requestId, organization, sessionId } = searchParams;
+ 
+   const _headers = await headers();
+   const { serviceConfig } = getServiceConfig(_headers);
+@@ -101,6 +101,7 @@ export default async function Page(props: { searchParams: Promise<Record<string
+             sessionId={sessionId}
+             requestId={requestId}
+             altPassword={altPassword === "true"}
++            altEmail={altEmail === "true"}
+             organization={organization}
+           />
+         )}
+diff --git a/apps/login/src/app/(login)/register/page.tsx b/apps/login/src/app/(login)/register/page.tsx
+index ce799e3..07122b8 100644
+--- a/apps/login/src/app/(login)/register/page.tsx
++++ b/apps/login/src/app/(login)/register/page.tsx
+@@ -1,3 +1,4 @@
++import { PasskeysType } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
+ import { Alert } from "@/components/alert";
+ import { DynamicTheme } from "@/components/dynamic-theme";
+ import { RegisterForm } from "@/components/register-form";
+@@ -100,7 +101,7 @@ export default async function Page(props: { searchParams: Promise<Record<string
+           </Alert>
+         )}
+ 
+-        {legal && passwordComplexitySettings && organization && loginSettings.allowLocalAuthentication && (
++        {legal && passwordComplexitySettings && organization && (loginSettings.allowLocalAuthentication || loginSettings.passkeysType === PasskeysType.ALLOWED) && (
+           <RegisterForm
+             idpCount={!loginSettings?.allowExternalIdp ? 0 : identityProviders.length}
+             legal={legal}
+diff --git a/apps/login/src/components/login-otp.tsx b/apps/login/src/components/login-otp.tsx
+index c6cb500..3d1ad08 100644
+--- a/apps/login/src/components/login-otp.tsx
++++ b/apps/login/src/components/login-otp.tsx
+@@ -69,8 +69,8 @@ export function LoginOTP({ host, loginName, sessionId, requestId, organization,
+             value: host
+               ? {
+                   urlTemplate:
+-                    `${host.includes("localhost") ? "http://" : "https://"}${host}${basePath}/otp/${method}?code={{.Code}}&userId={{.UserID}}&sessionId={{.SessionID}}` +
+-                    (requestId ? `&requestId=${requestId}` : ""),
++                    // Savoire : le lien du mail montre le code, il ne connecte pas.
++                    `${host.includes("localhost") ? "http://" : "https://"}${host}${basePath}/code?code={{.Code}}`,
+                 }
+               : {},
+           },
+diff --git a/apps/login/src/components/login-passkey.tsx b/apps/login/src/components/login-passkey.tsx
+index 18a884e..ee1f5f9 100644
+--- a/apps/login/src/components/login-passkey.tsx
++++ b/apps/login/src/components/login-passkey.tsx
+@@ -3,6 +3,7 @@
+ import { coerceToArrayBuffer, coerceToBase64Url } from "@/helpers/base64";
+ import { handleServerActionResponse } from "@/lib/client-utils";
+ import { sendPasskey } from "@/lib/server/passkeys";
++import { startEmailLoginForLoginName } from "@/lib/server/savoire";
+ import { updateOrCreateSession } from "@/lib/server/session";
+ import { create, JsonObject } from "@zitadel/client";
+ import { RequestChallengesSchema, UserVerificationRequirement } from "@zitadel/proto/zitadel/session/v2/challenge_pb";
+@@ -23,11 +24,21 @@ type Props = {
+   sessionId?: string;
+   requestId?: string;
+   altPassword: boolean;
++  // Savoire : proposer le lien par mail a la place de la passkey.
++  altEmail?: boolean;
+   login?: boolean;
+   organization?: string;
+ };
+ 
+-export function LoginPasskey({ loginName, sessionId, requestId, altPassword, organization, login = true }: Props) {
++export function LoginPasskey({
++  loginName,
++  sessionId,
++  requestId,
++  altPassword,
++  altEmail,
++  organization,
++  login = true,
++}: Props) {
+   const [error, setError] = useState<string>("");
+   const [loading, setLoading] = useState<boolean>(false);
+   const [samlData, setSamlData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
+@@ -194,7 +205,23 @@ export function LoginPasskey({ loginName, sessionId, requestId, altPassword, org
+         </div>
+       )}
+       <div className="mt-8 flex w-full flex-row items-center">
+-        {altPassword ? (
++        {altEmail && loginName ? (
++          <Button
++            type="button"
++            variant={ButtonVariants.Secondary}
++            disabled={loading}
++            onClick={async () => {
++              setLoading(true);
++              const response = await startEmailLoginForLoginName({ loginName, requestId, organization }).finally(() =>
++                setLoading(false),
++              );
++              handleServerActionResponse(response, router, setSamlData, setError);
++            }}
++            data-testid="email-link-button"
++          >
++            <Translated i18nKey="passkeyUseEmail" namespace="savoire" />
++          </Button>
++        ) : altPassword ? (
+           <Button
+             type="button"
+             variant={ButtonVariants.Secondary}
+diff --git a/apps/login/src/components/register-passkey.tsx b/apps/login/src/components/register-passkey.tsx
+index c2e6145..86ef43c 100644
+--- a/apps/login/src/components/register-passkey.tsx
++++ b/apps/login/src/components/register-passkey.tsx
+@@ -1,11 +1,14 @@
+ "use client";
+ 
+ import { coerceToArrayBuffer, coerceToBase64Url } from "@/helpers/base64";
++import { handleServerActionResponse } from "@/lib/client-utils";
+ import { registerPasskeyLink, verifyPasskeyRegistration } from "@/lib/server/passkeys";
++import { continueWithSessionId } from "@/lib/server/savoire";
+ import { useRouter } from "next/navigation";
+ import { useCallback, useEffect, useState } from "react";
+ import { useForm } from "react-hook-form";
+ import { Alert } from "./alert";
++import { AutoSubmitForm } from "./auto-submit-form";
+ import { BackButton } from "./back-button";
+ import { Button, ButtonVariants } from "./button";
+ import { Spinner } from "./spinner";
+@@ -44,8 +47,21 @@ export function RegisterPasskey({
+ 
+   const router = useRouter();
+ 
++  const [samlData, setSamlData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
++
+   const continueAndLogin = useCallback(
+-    (loginName?: string) => {
++    async (loginName?: string) => {
++      // Savoire : proposee juste apres la connexion (isPrompt), la passkey
++      // ne redemande rien : la session est deja valide, on termine.
++      if (isPrompt && sessionId) {
++        setLoading(true);
++        const response = await continueWithSessionId({ sessionId, requestId, organization }).catch(() => undefined);
++        setLoading(false);
++        if (response && handleServerActionResponse(response, router, setSamlData, setError)) {
++          return;
++        }
++      }
++
+       const params = new URLSearchParams();
+ 
+       if (organization) {
+@@ -70,7 +86,7 @@ export function RegisterPasskey({
+ 
+       router.push("/passkey?" + params);
+     },
+-    [organization, requestId, sessionId, userId, initialLoginName, router],
++    [organization, requestId, sessionId, userId, initialLoginName, router, isPrompt],
+   );
+ 
+   async function submitVerify(
+@@ -206,6 +222,7 @@ export function RegisterPasskey({
+ 
+   return (
+     <form className="w-full">
++      {samlData && <AutoSubmitForm url={samlData.url} fields={samlData.fields} />}
+       {error && (
+         <div className="py-4">
+           <Alert>{error}</Alert>
+diff --git a/apps/login/src/lib/mfa-helper.ts b/apps/login/src/lib/mfa-helper.ts
+index 89124be..3dc794a 100644
+--- a/apps/login/src/lib/mfa-helper.ts
++++ b/apps/login/src/lib/mfa-helper.ts
+@@ -2,7 +2,7 @@ import { timestampDate } from "@zitadel/client";
+ import { Session } from "@zitadel/proto/zitadel/session/v2/session_pb";
+ import { LoginSettings } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
+ import { AuthenticationMethodType } from "@zitadel/proto/zitadel/user/v2/user_service_pb";
+-import { getUserByID, ServiceConfig } from "./zitadel";
++import { getDefaultOrg, getUserByID, ServiceConfig } from "./zitadel";
+ 
+ export async function checkMFAFactors(
+   serviceConfig: ServiceConfig,
+@@ -12,11 +12,16 @@ export async function checkMFAFactors(
+   organization?: string,
+   requestId?: string,
+ ) {
++  // Savoire : dans l'organisation par defaut, le code par mail est une
++  // methode de connexion (le lien par mail), jamais un second facteur.
++  const defaultOrg = await getDefaultOrg({ serviceConfig });
++  const emailIsPrimary = !!defaultOrg && defaultOrg.id === session.factors?.user?.organizationId;
++
+   const availableMultiFactors = authMethods?.filter(
+     (m: AuthenticationMethodType) =>
+       m === AuthenticationMethodType.TOTP ||
+       m === AuthenticationMethodType.OTP_SMS ||
+-      m === AuthenticationMethodType.OTP_EMAIL ||
++      (m === AuthenticationMethodType.OTP_EMAIL && !emailIsPrimary) ||
+       m === AuthenticationMethodType.U2F,
+   );
+ 
+diff --git a/apps/login/src/lib/server/loginname.ts b/apps/login/src/lib/server/loginname.ts
+index 622c633..12b0c09 100644
+--- a/apps/login/src/lib/server/loginname.ts
++++ b/apps/login/src/lib/server/loginname.ts
+@@ -26,6 +26,7 @@ import {
+ } from "../zitadel";
+ import { createSessionAndUpdateCookie } from "./cookie";
+ import { getPublicHost } from "./host";
++import { isDefaultOrgUser, startEmailLogin } from "./savoire";
+ import { trySendVerification } from "./verify";
+ 
+ const logger = createLogger("loginname");
+@@ -326,6 +327,23 @@ export async function sendLoginname(command: SendLoginnameCommand) {
+       userId: session?.factors?.user?.id ?? userId,
+     });
+ 
++    // Savoire : les comptes de l'organisation par defaut entrent sans mot de
++    // passe, par leur passkey ou par un lien recu par mail. Les entreprises
++    // (autres organisations) suivent les regles de Zitadel ci-dessous.
++    if (humanUser && !userLoginSettings?.ignoreUnknownUsernames && (await isDefaultOrgUser(user.details?.resourceOwner))) {
++      const savoireLoginName = (session?.factors?.user?.loginName ?? user.preferredLoginName) as string;
++      if (
++        methods.authMethodTypes.includes(AuthenticationMethodType.PASSKEY) &&
++        userLoginSettings?.passkeysType !== PasskeysType.NOT_ALLOWED
++      ) {
++        const passkeyParams = new URLSearchParams({ loginName: savoireLoginName, altEmail: "true" });
++        if (command.requestId) passkeyParams.append("requestId", command.requestId);
++        if (organization) passkeyParams.append("organization", organization);
++        return { redirect: "/passkey?" + passkeyParams };
++      }
++      return startEmailLogin({ userId, loginName: savoireLoginName, requestId: command.requestId, organization });
++    }
++
+     const hasPrimaryMethod =
+       methods.authMethodTypes?.some(
+         (m: AuthenticationMethodType) =>
+@@ -547,7 +565,9 @@ export async function sendLoginname(command: SendLoginnameCommand) {
+   }
+ 
+   // user not found, check if IDPs are available when local auth is not allowed
+-  if (!effectiveLoginSettings?.allowLocalAuthentication) {
++  // Savoire : une adresse inconnue n'envoie vers un fournisseur que si son
++  // domaine appartient a une entreprise (organisation decouverte).
++  if (!effectiveLoginSettings?.allowLocalAuthentication && discoveredOrganization) {
+     logger.debug("redirecting to IDP (register allowed, password not allowed)");
+     const resp = await redirectUserToIDP(undefined, discoveredOrganization);
+     if (resp) {
+diff --git a/apps/login/src/lib/server/passkeys.ts b/apps/login/src/lib/server/passkeys.ts
+index 70216ee..cb86486 100644
+--- a/apps/login/src/lib/server/passkeys.ts
++++ b/apps/login/src/lib/server/passkeys.ts
+@@ -52,10 +52,12 @@ function isSessionValid(session: Partial<Session>): {
+   const validPassword = session?.factors?.password?.verifiedAt;
+   const validPasskey = session?.factors?.webAuthN?.verifiedAt;
+   const validIDP = session?.factors?.intent?.verifiedAt;
++  // Savoire : le lien par mail (code OTP) est une methode de connexion.
++  const validEmailCode = session?.factors?.otpEmail?.verifiedAt;
+   const stillValid = session.expirationDate ? timestampDate(session.expirationDate) > new Date() : true;
+ 
+-  const verifiedAt = validPassword || validPasskey || validIDP;
+-  const valid = !!((validPassword || validPasskey || validIDP) && stillValid);
++  const verifiedAt = validPassword || validPasskey || validIDP || validEmailCode;
++  const valid = !!((validPassword || validPasskey || validIDP || validEmailCode) && stillValid);
+ 
+   return { valid, verifiedAt };
+ }
+diff --git a/apps/login/src/lib/server/register.ts b/apps/login/src/lib/server/register.ts
+index 9b927c0..e0d8ba3 100644
+--- a/apps/login/src/lib/server/register.ts
++++ b/apps/login/src/lib/server/register.ts
+@@ -5,14 +5,13 @@ import { addHumanUser, addIDPLink, getLoginSettings, getUserByID, listAuthentica
+ import { Code, ConnectError, Duration, create } from "@zitadel/client";
+ import { Factors } from "@zitadel/proto/zitadel/session/v2/session_pb";
+ import { Checks, ChecksJson, ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
+-import crypto from "crypto";
+ import { getTranslations } from "next-intl/server";
+-import { cookies, headers } from "next/headers";
++import { headers } from "next/headers";
+ import { completeFlowOrGetUrl } from "../client";
+-import { getOrSetFingerprintId } from "../fingerprint";
+ import { createLogger } from "../logger";
+ import { getServiceConfig } from "../service-url";
+ import { checkEmailVerification, checkMFAFactors } from "../verify-helper";
++import { trySendVerification } from "./verify";
+ 
+ const logger = createLogger("register");
+ 
+@@ -125,8 +124,11 @@ export async function registerUser(
+   }
+ 
+   if (!command.password) {
++    // Savoire : sans mot de passe, on verifie d'abord l'adresse. Le code
++    // recu connecte aussi ; une passkey est proposee ensuite (voir verify.ts).
+     const params = new URLSearchParams({
+       loginName: session.factors.user.loginName,
++      userId: session.factors.user.id,
+       organization: session.factors.user.organizationId,
+     });
+ 
+@@ -134,22 +136,16 @@ export async function registerUser(
+       params.append("requestId", command.requestId);
+     }
+ 
+-    // Set verification cookie for users registering with passkey (no password)
+-    // This allows them to proceed with passkey registration without additional verification
+-    const cookiesList = await cookies();
+-    const userAgentId = await getOrSetFingerprintId();
+-
+-    const verificationCheck = crypto.createHash("sha256").update(`${session.factors.user.id}:${userAgentId}`).digest("hex");
+-
+-    await cookiesList.set({
+-      name: "verificationCheck",
+-      value: verificationCheck,
+-      httpOnly: true,
+-      path: "/",
+-      maxAge: 300, // 5 minutes
++    const codeSent = await trySendVerification({
++      userId: session.factors.user.id,
++      isInvite: false,
++      requestId: command.requestId,
+     });
++    if (codeSent) {
++      params.append("codeSent", "true");
++    }
+ 
+-    return { redirect: "/passkey/set?" + params };
++    return { redirect: "/verify?" + params };
+   } else {
+     const userResponse = await getUserByID({ serviceConfig, userId: session?.factors?.user?.id }).catch((error) => {
+       logger.error("Failed to get user after session creation", { error });
+diff --git a/apps/login/src/lib/server/savoire.ts b/apps/login/src/lib/server/savoire.ts
+new file mode 100644
+index 0000000..2e79b94
+--- /dev/null
++++ b/apps/login/src/lib/server/savoire.ts
+@@ -0,0 +1,193 @@
++"use server";
++
++// Savoire : connexion sans mot de passe.
++//
++// Trois facons d'entrer : un fournisseur (Google, Microsoft, une entreprise),
++// une passkey, ou un lien recu par mail. Le lien ouvre une page qui montre un
++// code ; ce code se tape dans la fenetre ou la connexion a ete demandee. Un
++// lien ouvert ailleurs ne connecte donc personne.
++//
++// Chez Zitadel, le code par mail (OTP_EMAIL) est d'ordinaire un second
++// facteur. Ici il sert de premiere methode, pour les comptes de
++// l'organisation par defaut. Les autres organisations (les entreprises)
++// gardent les regles de Zitadel.
++
++import { create } from "@zitadel/client";
++import { RequestChallengesSchema } from "@zitadel/proto/zitadel/session/v2/challenge_pb";
++import { ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
++import { AuthenticationMethodType } from "@zitadel/proto/zitadel/user/v2/user_service_pb";
++import { getTranslations } from "next-intl/server";
++import { headers } from "next/headers";
++import { completeFlowOrGetUrl } from "../client";
++import { getSessionCookieById, getSessionCookieByLoginName } from "../cookies";
++import { createLogger } from "../logger";
++import { getServiceConfig } from "../service-url";
++import {
++  addOTPEmail,
++  getDefaultOrg,
++  getLoginSettings,
++  getSession,
++  getUserByID,
++  listAuthenticationMethodTypes,
++} from "../zitadel";
++import { trySendVerification } from "./verify";
++import { updateOrCreateSession } from "./session";
++
++const logger = createLogger("savoire");
++
++/** Le compte appartient-il a l'organisation par defaut (pas a une entreprise) ? */
++export async function isDefaultOrgUser(organizationId?: string): Promise<boolean> {
++  if (!organizationId) return false;
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++  const org = await getDefaultOrg({ serviceConfig });
++  return !!org && org.id === organizationId;
++}
++
++/** Le code par mail ne marche que si la methode est inscrite sur le compte. */
++async function ensureOtpEmail(userId: string) {
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++  const methods = await listAuthenticationMethodTypes({ serviceConfig, userId });
++  if (methods.authMethodTypes?.includes(AuthenticationMethodType.OTP_EMAIL)) return;
++  await addOTPEmail({ serviceConfig, userId }).catch((error) => {
++    // 6 : deja inscrite (deux demandes en meme temps).
++    if (error?.code !== 6) throw error;
++  });
++}
++
++type EmailLoginCommand = {
++  userId: string;
++  loginName: string;
++  requestId?: string;
++  organization?: string;
++};
++
++/**
++ * Envoie le lien de connexion. Une adresse pas encore verifiee l'est d'abord :
++ * le code de verification connecte aussi (voir signInWithProvenEmail).
++ */
++export async function startEmailLogin(command: EmailLoginCommand): Promise<{ redirect: string } | { error: string }> {
++  const t = await getTranslations("savoire");
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++
++  const userResponse = await getUserByID({ serviceConfig, userId: command.userId });
++  const human = userResponse?.user?.type.case === "human" ? userResponse.user.type.value : undefined;
++  if (!human?.email?.email) {
++    return { error: t("errors.noEmail") };
++  }
++
++  const params = new URLSearchParams({ loginName: command.loginName });
++  if (command.requestId) params.set("requestId", command.requestId);
++  if (command.organization) params.set("organization", command.organization);
++
++  if (!human.email.isVerified) {
++    const codeSent = await trySendVerification({ userId: command.userId, isInvite: false, requestId: command.requestId });
++    params.set("userId", command.userId);
++    if (codeSent) params.set("codeSent", "true");
++    return { redirect: "/verify?" + params };
++  }
++
++  try {
++    await ensureOtpEmail(command.userId);
++  } catch (error) {
++    logger.error("Could not enable email login", { error });
++    return { error: t("errors.couldNotSendLink") };
++  }
++
++  // La page /otp/email demande l'envoi du mail en arrivant.
++  return { redirect: "/otp/email?" + params };
++}
++
++/** Depuis l'ecran de passkey : « Recevoir un lien par mail » a la place. */
++export async function startEmailLoginForLoginName({
++  loginName,
++  requestId,
++  organization,
++}: {
++  loginName: string;
++  requestId?: string;
++  organization?: string;
++}): Promise<{ redirect: string } | { error: string }> {
++  const t = await getTranslations("error");
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++
++  const cookie = await getSessionCookieByLoginName({ loginName, organization });
++  if (!cookie) {
++    return { error: t("couldNotContinueSession") };
++  }
++  const response = await getSession({ serviceConfig, sessionId: cookie.id, sessionToken: cookie.token });
++  const user = response?.session?.factors?.user;
++  if (!user?.id || !(await isDefaultOrgUser(user.organizationId))) {
++    return { error: t("couldNotContinueSession") };
++  }
++  return startEmailLogin({ userId: user.id, loginName: user.loginName, requestId, organization });
++}
++
++/**
++ * Appele juste apres une verification d'adresse reussie, dans ce navigateur :
++ * la personne vient de prouver qu'elle lit ce courrier, comme avec le lien de
++ * connexion. La session recoit donc le facteur « code par mail », sans
++ * second envoi.
++ */
++export async function signInWithProvenEmail({ sessionId, userId }: { sessionId: string; userId: string }) {
++  await ensureOtpEmail(userId);
++
++  const challenge = await updateOrCreateSession({
++    sessionId,
++    challenges: create(RequestChallengesSchema, {
++      otpEmail: { deliveryType: { case: "returnCode", value: {} } },
++    }),
++  });
++  if (!challenge || "error" in challenge) {
++    throw new Error("Could not request email challenge");
++  }
++  const code = challenge.challenges?.otpEmail;
++  if (!code) {
++    throw new Error("No email code returned");
++  }
++
++  const checked = await updateOrCreateSession({
++    sessionId,
++    checks: create(ChecksSchema, { otpEmail: { code } }),
++  });
++  if (!checked || "error" in checked) {
++    throw new Error("Could not check email code");
++  }
++  return checked;
++}
++
++/** Apres la proposition de passkey (acceptee ou non) : terminer la connexion. */
++export async function continueWithSessionId({
++  sessionId,
++  requestId,
++  organization,
++}: {
++  sessionId: string;
++  requestId?: string;
++  organization?: string;
++}) {
++  const t = await getTranslations("error");
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++
++  const cookie = await getSessionCookieById({ sessionId, organization });
++  if (!cookie) {
++    return { error: t("couldNotContinueSession") };
++  }
++  const response = await getSession({ serviceConfig, sessionId: cookie.id, sessionToken: cookie.token });
++  const session = response?.session;
++  if (!session?.factors?.user) {
++    return { error: t("couldNotContinueSession") };
++  }
++
++  const loginSettings = await getLoginSettings({ serviceConfig, organization: session.factors.user.organizationId });
++  return completeFlowOrGetUrl(
++    requestId
++      ? { sessionId: session.id, requestId, organization: session.factors.user.organizationId }
++      : { loginName: session.factors.user.loginName, organization: session.factors.user.organizationId },
++    loginSettings?.defaultRedirectUri,
++  );
++}
+diff --git a/apps/login/src/lib/server/verify.ts b/apps/login/src/lib/server/verify.ts
+index ec39235..8cae0f3 100644
+--- a/apps/login/src/lib/server/verify.ts
++++ b/apps/login/src/lib/server/verify.ts
+@@ -26,8 +26,10 @@ import { getOrSetFingerprintId } from "../fingerprint";
+ import { checkMFAFactors } from "../mfa-helper";
+ import { getServiceConfig } from "../service-url";
+ import { loadMostRecentSession } from "../session";
++import { PasskeysType } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
+ import { createSessionAndUpdateCookie } from "./cookie";
+ import { getPublicHostWithProtocol } from "./host";
++import { continueWithSessionId, isDefaultOrgUser, signInWithProvenEmail } from "./savoire";
+ 
+ const logger = createLogger("verify");
+ 
+@@ -110,6 +112,45 @@ export async function sendVerification(command: VerifyUserByEmailCommand) {
+       });
+   }
+ 
++  // Savoire : dans l'organisation par defaut, l'adresse vient d'etre prouvee
++  // dans ce navigateur. Cela vaut le lien de connexion : la personne est
++  // connectee, puis on lui propose une passkey (si elle n'en a pas).
++  if (await isDefaultOrgUser(user.details?.resourceOwner)) {
++    if (!session) {
++      const created = await createSessionAndUpdateCookie({
++        checks: create(ChecksSchema, { user: { search: { case: "userId", value: user.userId } } }),
++        requestId: command.requestId,
++      }).catch((error) => {
++        logger.error("Could not create session after verification", { error });
++        return undefined;
++      });
++      session = created?.session;
++    }
++    if (!session) {
++      return { error: t("errors.couldNotCreateSession") };
++    }
++    try {
++      await signInWithProvenEmail({ sessionId: session.id, userId: user.userId });
++    } catch (error) {
++      logger.error("Could not sign in after verification", { error });
++      return { error: t("errors.couldNotCreateSession") };
++    }
++
++    const methods = await listAuthenticationMethodTypes({ serviceConfig, userId: user.userId });
++    const loginSettings = await getLoginSettings({ serviceConfig, organization: user.details?.resourceOwner });
++    const organization = command.organization ?? user.details?.resourceOwner;
++    if (
++      !methods.authMethodTypes?.includes(AuthenticationMethodType.PASSKEY) &&
++      loginSettings?.passkeysType === PasskeysType.ALLOWED
++    ) {
++      const params = new URLSearchParams({ loginName: user.preferredLoginName, prompt: "true" });
++      if (organization) params.set("organization", organization);
++      if (command.requestId) params.set("requestId", command.requestId);
++      return { redirect: "/passkey/set?" + params };
++    }
++    return continueWithSessionId({ sessionId: session.id, requestId: command.requestId, organization });
++  }
++
+   // load auth methods for user
+   const authMethodResponse = await listAuthenticationMethodTypes({ serviceConfig, userId: user.userId });
+ 
+@@ -246,6 +287,13 @@ function buildVerificationUrlTemplate(
+   isInvite: boolean,
+   requestId?: string,
+ ): string {
++  // Savoire : comme pour la connexion, le lien du mail montre le code a
++  // saisir dans la fenetre d'origine ; il ne verifie rien lui-meme. Une
++  // invitation n'a pas de fenetre d'origine : son lien ouvre la verification.
++  if (!isInvite) {
++    return `${hostWithProtocol}${basePath}/code?code={{.Code}}&organization={{.OrgID}}`;
++  }
++
+   let urlTemplate = `${hostWithProtocol}${basePath}/verify?code={{.Code}}&userId={{.UserID}}&organization={{.OrgID}}`;
+ 
+   if (isInvite) {
+diff --git a/apps/login/src/lib/session.ts b/apps/login/src/lib/session.ts
+index 540fe78..9ae3dc6 100644
+--- a/apps/login/src/lib/session.ts
++++ b/apps/login/src/lib/session.ts
+@@ -56,6 +56,8 @@ export async function isSessionValid({
+   const validIDP = session?.factors?.intent?.verifiedAt;
+   const validPassword = session?.factors?.password?.verifiedAt;
+   const validPasskey = session?.factors?.webAuthN?.verifiedAt;
++  // Savoire : le lien par mail (code OTP) est une methode de connexion.
++  const validEmailCode = session?.factors?.otpEmail?.verifiedAt;
+ 
+   // Get login settings to determine if MFA is actually required by policy
+   const loginSettings = await getLoginSettings({ serviceConfig, organization: session.factors?.user?.organizationId });
+@@ -111,7 +113,7 @@ export async function isSessionValid({
+     return false;
+   }
+ 
+-  const validChecks = !!(validPassword || validPasskey || validIDP);
++  const validChecks = !!(validPassword || validPasskey || validIDP || validEmailCode);
+ 
+   if (!validChecks) {
+     return false;

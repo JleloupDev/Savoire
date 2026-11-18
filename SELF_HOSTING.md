@@ -15,7 +15,7 @@ Le choix de cette architecture est expliqué dans
 | `api` | Le backend .NET : vaults, synchro temps réel, droits |
 | `indexer` | Le pair indexeur (recherche, bases), jamais exposé |
 | `postgres` | Les données de Savoire et de Zitadel (deux bases) |
-| `zitadel`, `zitadel-login` | Les comptes : inscription, connexion, mot de passe oublié |
+| `zitadel`, `zitadel-login` | Les comptes : inscription et connexion (fournisseur, lien par mail, clé d'accès) |
 | `zitadel-bootstrap` | Prépare Zitadel pour Savoire au démarrage, puis s'arrête |
 | `backup` | Sauvegarde de nuit des bases et des fichiers |
 | `portainer` | Administration des conteneurs (interface web), sur 127.0.0.1 seulement |
@@ -95,12 +95,12 @@ publications.
   `savoire.exemple.fr` (l'appli) et `auth.exemple.fr` (la connexion).
 - Les ports 80 et 443 ouverts. Aucun autre.
 - Un service d'envoi de courriels (SMTP) : Brevo, Mailjet, Scaleway… Sans lui,
-  personne ne peut vérifier son adresse, donc personne ne peut s'inscrire.
+  personne ne peut vérifier son adresse ni recevoir de lien de connexion.
 
 ## Courriels (Brevo)
 
 Brevo envoie gratuitement jusqu'à 300 courriels par jour : vérification
-d'adresse, mot de passe oublié, invitations, alertes.
+d'adresse, liens de connexion, invitations, alertes.
 
 1. Créer un compte sur brevo.com.
 2. *Expéditeurs, domaines et IP dédiées → Domaines* : ajouter votre domaine
@@ -132,8 +132,9 @@ Au premier démarrage, Zitadel prépare sa base (une à deux minutes), puis
 service. L'API démarre ensuite.
 
 - L'appli : `https://savoire.exemple.fr`.
-- La console de Zitadel : `https://auth.exemple.fr/ui/console`, identifiant
-  `ADMIN_EMAIL`, mot de passe `ADMIN_PASSWORD`.
+- La console de Zitadel : `https://auth.exemple.fr/ui/console`, avec
+  l'adresse `ADMIN_EMAIL` : un lien de connexion arrive par mail. Aucune page
+  ne demande `ADMIN_PASSWORD` (voir l'ADR-031).
 
 Ce compte (adresse `ADMIN_EMAIL`) est aussi administrateur de Savoire.
 D'autres administrateurs : `Auth__AdminEmails__1=...` dans l'environnement de
@@ -162,10 +163,14 @@ docker compose --env-file .env logs portainer | grep setup_token | tail -1
 
 ## Les comptes
 
-- Chacun crée son compte depuis l'écran de connexion (« Créer un compte »).
-  L'adresse est vérifiée par un code envoyé par courriel.
-- Mot de passe oublié, double authentification, passkeys : sur la page de
-  connexion de Zitadel.
+- Aucun mot de passe. On entre de trois façons : un fournisseur (Google,
+  Microsoft, GitHub…), un lien reçu par mail, ou une clé d'accès (passkey).
+  Le lien ouvre une page qui montre un code, à taper dans la fenêtre où l'on
+  a demandé à se connecter.
+- Chacun crée son compte depuis l'écran de connexion (« Créer un compte ») :
+  nom et adresse, puis le code du mail. Une clé d'accès est proposée ensuite.
+- La page de connexion est celle de Zitadel, retouchée
+  (`deploy/compose/zitadel-login/`, image `savoire-login`).
 - Connexion avec Google, GitHub ou Microsoft :
   1. Déclarer une appli chez le fournisseur (quelques minutes), avec
      l'adresse de retour `https://auth.exemple.fr/idps/callback`.

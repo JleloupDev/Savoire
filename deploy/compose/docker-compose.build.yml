@@ -22,3 +22,9 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+  zitadel-login:
+    image: savoire-login:local
+    build:
+      context: ./zitadel-login
+      args:
+        ZITADEL_VERSION: ${ZITADEL_VERSION:-v4.16.0}

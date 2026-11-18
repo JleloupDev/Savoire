@@ -254,6 +254,83 @@ try {
   console.error(`bootstrap : marque des pages de connexion non appliquee (${err.message}).`)
 }
 
+// ── Connexion sans mot de passe ────────────────────────────────────────────
+// Trois facons d'entrer : un fournisseur, une cle d'acces (passkey), ou un
+// lien recu par mail. Le mot de passe est coupe dans la politique de
+// connexion ; la page de connexion de Savoire (zitadel-login/) s'y conforme.
+// La console d'administration se rejoint de la meme facon (lien par mail).
+async function ensureLoginPolicy() {
+  const { policy } = await api('GET', '/admin/v1/policies/login')
+  const { details, isDefault, idps, ...fields } = policy
+  const wanted = {
+    ...fields,
+    allowUsernamePassword: false,
+    passwordlessType: 'PASSWORDLESS_TYPE_ALLOWED',
+    allowRegister: true,
+    forceMfa: false,
+    forceMfaLocalOnly: false,
+    ignoreUnknownUsernames: false,
+  }
+  try { await api('PUT', '/admin/v1/policies/login', wanted) } catch (err) { if (!isNoChange(err)) throw err }
+}
+
+// Les mails ne contiennent qu'un lien : il ouvre une page qui montre le code,
+// a saisir dans la fenetre ou la connexion a ete demandee.
+const MESSAGE_TEXTS = {
+  fr: {
+    verifyemailotp: {
+      title: 'Savoire - Votre lien de connexion',
+      preHeader: 'Votre lien de connexion',
+      subject: 'Votre lien de connexion à Savoire',
+      greeting: 'Bonjour {{.DisplayName}},',
+      text: "Pour vous connecter à Savoire, ouvrez ce lien. Il affiche un code : saisissez-le dans la fenêtre où vous avez demandé à vous connecter. Le lien expire dans quelques minutes. Vous n'avez rien demandé ? Ignorez ce mail.",
+      buttonText: 'Obtenir mon code',
+    },
+    verifyemail: {
+      title: 'Savoire - Vérifiez votre adresse',
+      preHeader: 'Vérifiez votre adresse',
+      subject: 'Vérifiez votre adresse pour Savoire',
+      greeting: 'Bonjour {{.DisplayName}},',
+      text: "Pour vérifier votre adresse, ouvrez ce lien. Il affiche un code : saisissez-le dans la fenêtre de Savoire. Vous n'avez rien demandé ? Ignorez ce mail.",
+      buttonText: 'Obtenir mon code',
+    },
+  },
+  en: {
+    verifyemailotp: {
+      title: 'Savoire - Your sign-in link',
+      preHeader: 'Your sign-in link',
+      subject: 'Your Savoire sign-in link',
+      greeting: 'Hello {{.DisplayName}},',
+      text: "To sign in to Savoire, open this link. It shows a code: enter it in the window where you asked to sign in. The link expires in a few minutes. Didn't ask for anything? Ignore this email.",
+      buttonText: 'Get my code',
+    },
+    verifyemail: {
+      title: 'Savoire - Verify your address',
+      preHeader: 'Verify your address',
+      subject: 'Verify your address for Savoire',
+      greeting: 'Hello {{.DisplayName}},',
+      text: "To verify your address, open this link. It shows a code: enter it in the Savoire window. Didn't ask for anything? Ignore this email.",
+      buttonText: 'Get my code',
+    },
+  },
+}
+
+async function ensureMessageTexts() {
+  for (const [lang, messages] of Object.entries(MESSAGE_TEXTS)) {
+    for (const [type, text] of Object.entries(messages)) {
+      try { await api('PUT', `/admin/v1/text/message/${type}/${lang}`, text) } catch (err) { if (!isNoChange(err)) throw err }
+    }
+  }
+}
+
+await ensureLoginPolicy()
+try {
+  await ensureMessageTexts()
+} catch (err) {
+  // Des mails aux textes d'origine marchent encore (ils montrent le code).
+  console.error(`bootstrap : textes des mails non appliques (${err.message}).`)
+}
+
 // ── Connexion par Google, GitHub, Microsoft ────────────────────────────────
 // Fournisseurs de l'instance : la personne choisit « Continuer avec Google »
 // sur la page de connexion ; un compte Savoire est cree a la premiere venue,
@@ -332,7 +409,7 @@ async function ensureExternalIdps() {
 try {
   await ensureExternalIdps()
 } catch (err) {
-  // Un fournisseur refuse ne doit pas empecher la connexion par mot de passe.
+  // Un fournisseur refuse ne doit pas empecher la connexion par mail.
   console.error(`bootstrap : connexion externe non configuree (${err.message}).`)
 }
 

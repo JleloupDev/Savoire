@@ -1,0 +1,53 @@
+{
+  "savoire": {
+    "code": {
+      "title": "Your sign-in code",
+      "description": "Enter this code in the window where you asked to sign in.",
+      "missing": "This link has no code. Ask for a new one from the sign-in screen.",
+      "notYou": "Didn't ask for anything? Ignore this message: without this code, nobody can get in."
+    },
+    "passkeyUseEmail": "Get a link by email",
+    "errors": {
+      "noEmail": "This account has no email address.",
+      "couldNotSendLink": "Could not send the sign-in link."
+    }
+  },
+  "loginname": {
+    "title": "Sign in",
+    "description": "Enter your email address. You will get a link, or be asked for your passkey.",
+    "register": "Create an account",
+    "labels": { "loginname": "Email address" },
+    "errors": { "userNotFound": "No account with this address. Choose \"Create an account\"." }
+  },
+  "otp": {
+    "verify": {
+      "title": "Check your email",
+      "emailDescription": "We sent you a link. It shows a code: enter it here.",
+      "noCodeReceived": "Nothing received?",
+      "resendCode": "Send the link again"
+    }
+  },
+  "verify": {
+    "verify": {
+      "title": "Verify your address",
+      "description": "We sent you a link. It shows a code: enter it here.",
+      "noCodeReceived": "Nothing received?",
+      "resendCode": "Send the link again",
+      "codeSent": "A link was just sent to your address."
+    }
+  },
+  "register": {
+    "title": "Create an account",
+    "description": "No password: you will sign in with a link sent by email, or with a passkey."
+  },
+  "passkey": {
+    "verify": {
+      "title": "Sign in with a passkey"
+    },
+    "set": {
+      "title": "Add a passkey?",
+      "description": "Next time, sign in with your fingerprint, face or device code, without waiting for an email.",
+      "skip": "Later"
+    }
+  }
+}
