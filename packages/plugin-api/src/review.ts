@@ -31,6 +31,14 @@ export interface ProposalTypeSpec {
    * (le document a change depuis) : la proposition reste ouverte.
    */
   apply(docId: string, payload: unknown): Promise<void>
+  /**
+   * Comparaison (facultatif) : le document avant et apres la proposition, en
+   * contenu brut que la vue du type sait afficher en lecture seule
+   * (FileTypeSpec.open, sans arbre ni texte partage, contenu lu par
+   * ctx.vault.readDocumentByPath). L'ecran « Comparer » les montre cote a
+   * cote, au rideau, en alternance.
+   */
+  compare?(docId: string, payload: unknown): Promise<{ before: string; after: string }>
 }
 
 /** Une proposition, telle que le panneau la montre. */

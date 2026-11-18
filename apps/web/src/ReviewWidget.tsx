@@ -20,6 +20,7 @@ import {
   type ReviewThread, type UserActor,
 } from '@savoire/application'
 import { aiService } from './aiService'
+import { openCompare } from './CompareView'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import {
   acceptProposal, isSuggesting, onProposalTypesChange, onProposeError, onSuggestingChange, proposalType,
@@ -212,6 +213,29 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     })
   }
 
+  /**
+   * « Comparer » une proposition d'un plugin : son type rend l'etat avant et
+   * apres, la vue du type de fichier les affiche (CompareView). Undefined si
+   * le type ne sait pas se comparer.
+   */
+  function compareHandler(root: ReviewEntry): (() => void) | undefined {
+    if (root.kind !== 'proposal' || !path) return undefined
+    const spec = proposalType(root.proposalType)
+    const ext = path.split('.').pop()?.toLowerCase() ?? ''
+    const fileSpec = refs.fileTypeRegistry.current?.resolve(ext)
+    if (!spec?.compare || !fileSpec?.open) return undefined
+    const open = (root.status ?? 'open') === 'open' && canWrite
+    return () => {
+      setError(null)
+      void spec.compare!(root.docId, root.payload).then(({ before, after }) => openCompare({
+        path: path!, spec: fileSpec, before, after,
+        title: `Proposition de ${describeActor(root.author)}`,
+        onAccept: open ? () => acceptProposal(session!, root, me) : undefined,
+        onReject: open ? () => { review!.setStatus(root.id, 'rejected', me) } : undefined,
+      })).catch(err => setError(err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   /** Tout accepter ou tout refuser (suggestions et propositions ouvertes de la note). */
   async function all(decision: 'accept' | 'reject') {
     setError(null)
@@ -286,6 +310,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
             onReveal={() => reveal(t.root)}
             onAccept={() => accept(t.root)}
+            onCompare={compareHandler(t.root)}
           />
         ))}
       </div>
@@ -355,13 +380,15 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
 const SUGGESTION_STATUS: Partial<Record<ReviewStatus, string>> = { accepted: 'Acceptée', rejected: 'Refusée' }
 
-function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept }: {
+function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCompare }: {
   thread: ReviewThread
   canWrite: boolean
   onReply: (text: string) => void
   onStatus: (status: ReviewStatus) => void
   onReveal: () => void
   onAccept: () => void
+  /** Ouvre l'ecran Comparer (propositions des plugins qui savent se comparer). */
+  onCompare?: () => void
 }) {
   const [draft, setDraft] = useState('')
   const { root, replies } = thread
@@ -373,6 +400,7 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept }: {
       <Entry entry={root} onReveal={onReveal} />
       {isSuggestion && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+          {onCompare && <button data-testid="review-compare" onClick={onCompare} style={SMALL}>Comparer</button>}
           {open && canWrite && (
             <>
               <button data-testid="review-accept" onClick={onAccept} style={{ ...SMALL, color: '#16a34a', borderColor: 'rgba(22,163,74,.5)' }}>Accepter</button>

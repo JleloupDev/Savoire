@@ -20,6 +20,7 @@ import { Excalidraw, restoreElements } from '@excalidraw/excalidraw'
 import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, ISharedTree } from '@savoire/plugin-api'
 import { excalidrawContentExtractor } from './content-extractor'
 import { SceneBinding, applyScenePatch, type ScenePatch, type SceneElement, type SceneFile, type StoredFile } from './binding'
+import { applyPatchToElements, diffSceneJson, diffScenes, sceneJson } from './compare'
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>
 type ExcalidrawInitialDataState = NonNullable<ExcalidrawProps['initialData']>
@@ -485,6 +486,17 @@ const plugin: VaultPlugin = {
         const changed = patch.elements.length - added - removed
         return [added && `${added} ajouté(s)`, changed && `${changed} modifié(s)`, removed && `${removed} supprimé(s)`].filter(Boolean).join(', ') || 'Aucun changement'
       },
+      async compare(docId, payload) {
+        if (!api.vault.openTree) throw new Error('Dessin indisponible sans synchronisation du vault.')
+        const tree = await api.vault.openTree(docId)
+        try {
+          const b = new SceneBinding({ tree, getElements: () => null, applyElements: () => {}, hasFile: () => false, addFiles: () => {} })
+          const current = b.readElements() as SceneElement[]
+          return { before: sceneJson(current), after: sceneJson(applyPatchToElements(current, payload as ScenePatch)) }
+        } finally {
+          api.vault.closeTree?.(docId)
+        }
+      },
       async apply(docId, payload) {
         if (!api.vault.openTree) throw new Error('Dessin indisponible sans synchronisation du vault.')
         const tree = await api.vault.openTree(docId)
@@ -513,6 +525,9 @@ const plugin: VaultPlugin = {
       open: (path: string, ctx: FileContext) => createExcalidrawView(path, ctx, pluginAPI),
 
       contentExtractor: excalidrawContentExtractor,
+
+      // Revision : comparer deux etats (voir compare.ts).
+      review: { proposalType: SCENE_PROPOSAL, diff: diffScenes, diffContent: diffSceneJson },
 
       renderEmbed: async (path: string, ctx: FileContext): Promise<HTMLElement> => {
         const wrapper = document.createElement('div')

@@ -88,6 +88,8 @@ export interface FileTypeReview {
   proposalType?: string
   /** Les elements qui changent d'un etat (contenu brut) a l'autre. */
   diff?(before: string, after: string): DiffItem[]
+  /** Un contenu qui montre les differences (elements colories), affiche par la vue. */
+  diffContent?(before: string, after: string): string
 }
 
 /**
