@@ -85,18 +85,26 @@ describe('PluginActivation', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('les agents d\'un plugin desactive disparaissent', async () => {
+  it('les modeles d\'agents et les outils d\'un plugin desactive disparaissent', async () => {
     const api = PluginAPIImpl.create()
     const activation = new PluginActivation()
     api.attachActivation(activation)
     await new PluginLoader().loadInternal({
       manifest: { id: 'p-agent', name: 'P', version: '1', permissions: ['agents'] },
-      async onload(a) { a.agents?.register({ id: 'ag', name: 'Ag', description: '', requires: [], run: async () => {} }) },
+      async onload(a) {
+        a.agents?.registerPreset({ id: 'ag', name: 'Ag', description: '', instructions: '', permissions: { read: 'direct' } })
+        a.agents?.registerTool({
+          spec: { name: 'p_tool', title: 'Outil', description: '', action: 'read', inputSchema: { type: 'object', properties: {} } },
+          run: async () => ({ text: '' }),
+        })
+      },
       async onunload() {},
     }, api)
-    expect(api.agents.getAll().map(a => a.id)).toEqual(['ag'])
+    expect(api.agents.presets().map(a => a.id)).toEqual(['ag'])
+    expect(api.agents.tools().map(t => t.spec.name)).toEqual(['p_tool'])
     activation.setDisabled(['p-agent'])
-    expect(api.agents.getAll()).toEqual([])
+    expect(api.agents.presets()).toEqual([])
+    expect(api.agents.tools()).toEqual([])
   })
 
   it('notifie seulement quand l\'ensemble change', () => {

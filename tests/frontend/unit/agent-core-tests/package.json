@@ -1,0 +1,18 @@
+{
+  "name": "@savoire/agent-core-tests",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@savoire/agent-core": "workspace:*",
+    "@savoire/plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

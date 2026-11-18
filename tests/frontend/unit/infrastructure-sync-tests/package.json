@@ -12,7 +12,6 @@
     "@savoire/domain-sync": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
-    "@savoire/plugin-agent-reviewer": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/realtime-client": "workspace:*",
     "yjs": "^13.6.0"

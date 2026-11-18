@@ -1,26 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Panneau « Revision » : les commentaires de la note active, et les agents.
+// Panneau « Revision » : les commentaires de la note active.
 //
 // Un commentaire vise la note entiere ou un passage (ancre qui suit les
 // modifications). Une suggestion propose de remplacer un passage : on
 // l'accepte (la note change) ou on la refuse. Les passages vises sont
 // surlignes dans l'editeur ; un clic sur la citation y mene.
-// Un agent se lance sur la note active, dans un mode qui
-// debloque des droits (lecture, relecture, redaction), toujours bornes par
-// ceux de la personne qui le lance. Ce qu'il fait porte « agent, pour Jean ».
+// Les agents (ADR-033) ont leur propre panneau (AssistantWidget) ; ce qu'ils
+// proposent arrive ici, sous leur nom : « Archiviste (IA), pour Jean ».
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { EditorController } from '@savoire/editor-core'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
-  AGENT_MODES, REVIEW_STATUSES, ReviewService, describeActor, runAgent,
-  type AgentRunResult, type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus,
+  REVIEW_STATUSES, ReviewService, describeActor,
+  type IVaultSyncSession, type ReviewAnchor, type ReviewEntry, type ReviewStatus,
   type ReviewThread, type UserActor,
   lineHunks, type LineHunk,
 } from '@savoire/application'
-import { aiService } from './aiService'
 import { openCompare } from './CompareView'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import {
@@ -88,8 +86,6 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const [draftAnchor, setDraftAnchor] = useState<{ docId?: string; anchor: ReviewAnchor } | null>(null)
   const [draftKind, setDraftKind] = useState<'comment' | 'suggestion'>('comment')
   const [replacement, setReplacement] = useState('')
-  const [modeId, setModeId] = useState<string>('review')
-  const [run, setRun] = useState<AgentRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Mode suggestion (suivi des modifications) : la frappe devient des propositions.
@@ -115,15 +111,9 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     draftListeners.add(take)
     return () => { draftListeners.delete(take) }
   }, [])
-  useEffect(() => manager.subscribeActiveDocument(p => { setPath(p); setRun(null) }), [manager])
+  useEffect(() => manager.subscribeActiveDocument(p => { setPath(p) }), [manager])
   // Changement de vault : nouvelle session, donc nouveau service.
   useEffect(() => manager.subscribeVaultChange(() => setTick(t => t + 1)), [manager])
-  // Un plugin qui propose des agents est installe, coupe ou retire.
-  useEffect(() => {
-    const onPlugins = () => setTick(t => t + 1)
-    window.addEventListener('savoire-plugins-changed', onPlugins)
-    return () => window.removeEventListener('savoire-plugins-changed', onPlugins)
-  }, [])
 
   const session = refs.vaultSession.current
   const client = refs.vaultAPI.current
@@ -167,8 +157,6 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   }
 
   const me: UserActor = { kind: 'user', userId: account.userId, displayName: account.displayName }
-  // Agents proposes par les plugins actifs.
-  const agents = refs.pluginAPI.current?.agents?.getAll() ?? []
   const threads = review.threads(docId)
   const openProposals = threads.filter(t => (t.root.kind === 'suggestion' || t.root.kind === 'proposal') && (t.root.status ?? 'open') === 'open').length
 
@@ -254,19 +242,6 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     }
   }
 
-  async function launch(agentId: string) {
-    const agent = agents.find(a => a.id === agentId)
-    if (!agent) return
-    const mode = AGENT_MODES.find(m => m.id === modeId)!
-    setRun(await runAgent({
-      agent, mode,
-      user: { userId: me.userId, displayName: me.displayName, canWrite },
-      target: { docId: docId!, path: path! },
-      client: client!, session: session!, review: review!,
-      // L'IA de la personne (absente si aucune connexion n'est configuree).
-      ...(aiService.connections().length ? { ai: { chat: (req: Parameters<typeof aiService.chat>[0]) => aiService.chat(req) } } : {}),
-    }))
-  }
 
   return (
     <Shell>
@@ -348,34 +323,6 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
       </button>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: 12, marginTop: 6 }}>{error}</div>}
 
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 12 }}>
-        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>Agents</div>
-        <Muted>Un agent agit en votre nom, avec au plus vos droits.</Muted>
-        <select
-          data-testid="agent-mode"
-          value={modeId}
-          onChange={e => setModeId(e.target.value)}
-          style={{ marginTop: 8, width: '100%', padding: 4, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', fontSize: 12 }}
-        >
-          {AGENT_MODES.map(m => <option key={m.id} value={m.id}>{m.label} — {m.description}</option>)}
-        </select>
-        {agents.length === 0 && <div style={{ marginTop: 8 }}><Muted>Aucun agent : installez un plugin d'agent depuis le store.</Muted></div>}
-        {agents.map(a => (
-          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-            <div style={{ flex: 1, fontSize: 12 }}>
-              <div style={{ fontWeight: 600 }}>{a.name}</div>
-              <Muted>{a.description}</Muted>
-            </div>
-            <button data-testid="agent-run" data-agent-id={a.id} style={BUTTON} onClick={() => void launch(a.id)}>Lancer</button>
-          </div>
-        ))}
-        {run && (
-          <div data-testid="agent-log" data-ok={run.ok ? 'true' : 'false'} style={{ marginTop: 10, padding: 8, borderRadius: 6, background: 'var(--bg-elevated)', fontSize: 12 }}>
-            <Muted>Droits effectifs : {run.capabilities.join(', ')}</Muted>
-            {run.log.map((line, i) => <div key={i} style={{ marginTop: 4 }}>{line}</div>)}
-          </div>
-        )}
-      </div>
     </Shell>
   )
 }

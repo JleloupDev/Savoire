@@ -342,26 +342,13 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-office')).default,
   },
   {
-    id: 'plugin-agent-reviewer', preinstalled: false,
-    manifest: {
-      id: 'plugin-agent-reviewer',
-      name: 'Agent Relecteur',
-      version: '0.0.1',
-      description: 'Un agent qui relit la note : mots, TODO, liens cassés',
-      scope: 'personal',
-      permissions: ['agents'],
-    },
-    extensions: [],
-    load: async () => (await import('@savoire/plugin-agent-reviewer')).default,
-  },
-  {
-    // Type d'agent qui utilise l'IA de la personne (cles tenues par l'application).
+    // Modele d'agent (ADR-033) : la personne en fait un agent dans Parametres → Agents.
     id: 'plugin-agent-proofreader', preinstalled: false,
     manifest: {
       id: 'plugin-agent-proofreader',
-      name: 'Agent Correcteur (IA)',
-      version: '0.0.1',
-      description: 'Un agent qui corrige la note avec votre IA, en suggestions à accepter',
+      name: 'Agent Correcteur',
+      version: '0.1.0',
+      description: 'Un modèle d’agent qui corrige une note, en suggestions à accepter',
       scope: 'personal',
       permissions: ['agents'],
     },

@@ -155,6 +155,9 @@ importers:
 
   ../apps/web:
     dependencies:
+      '@savoire/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@savoire/application':
         specifier: workspace:*
         version: link:../../packages/application
@@ -194,9 +197,6 @@ importers:
       '@savoire/plugin-agent-proofreader':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agent-proofreader
-      '@savoire/plugin-agent-reviewer':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-agent-reviewer
       '@savoire/plugin-ai-mistral':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-ai-mistral
@@ -360,6 +360,16 @@ importers:
       vite:
         specifier: ^5.1.0
         version: 5.4.21(@types/node@22.20.1)
+
+  ../packages/agent-core:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
 
   ../packages/application:
     dependencies:
@@ -630,16 +640,6 @@ importers:
         version: 5.9.3
 
   ../packages/plugins/plugin-agent-proofreader:
-    dependencies:
-      '@savoire/plugin-api':
-        specifier: workspace:*
-        version: link:../../plugin-api
-    devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  ../packages/plugins/plugin-agent-reviewer:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*
@@ -1307,6 +1307,22 @@ importers:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
 
+  ../tests/frontend/unit/agent-core-tests:
+    dependencies:
+      '@savoire/agent-core':
+        specifier: workspace:*
+        version: link:../../../../packages/agent-core
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
+
   ../tests/frontend/unit/application-tests:
     dependencies:
       '@savoire/application':
@@ -1453,9 +1469,6 @@ importers:
       '@savoire/platform':
         specifier: workspace:*
         version: link:../../../../packages/platform
-      '@savoire/plugin-agent-reviewer':
-        specifier: workspace:*
-        version: link:../../../../packages/plugins/plugin-agent-reviewer
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../../../packages/plugin-api

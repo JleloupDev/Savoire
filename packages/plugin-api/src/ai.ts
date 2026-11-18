@@ -39,8 +39,27 @@ export interface AIProviderSpec {
 }
 
 export interface AIMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  /** Message 'assistant' : les outils que le modele demande. */
+  toolCalls?: AIToolCall[]
+  /** Message 'tool' : l'appel auquel il repond. */
+  toolCallId?: string
+}
+
+/** Un outil propose au modele (format « fonction » d'OpenAI). */
+export interface AIToolDefinition {
+  name: string
+  description: string
+  /** Schema JSON des parametres. */
+  parameters: object
+}
+
+/** Un appel d'outil demande par le modele. `arguments` : du JSON, tel que le modele l'a ecrit. */
+export interface AIToolCall {
+  id: string
+  name: string
+  arguments: string
 }
 
 export interface AIChatRequest {
@@ -51,6 +70,8 @@ export interface AIChatRequest {
   maxTokens?: number
   /** Reponse au format JSON (si le fournisseur le permet). */
   json?: boolean
+  /** Outils que le modele peut demander. */
+  tools?: AIToolDefinition[]
   signal?: AbortSignal
 }
 
@@ -60,6 +81,8 @@ export interface AIChatResponse {
   /** Connexion utilisee (son nom), pour l'afficher. */
   connection: string
   usage?: { inputTokens?: number; outputTokens?: number }
+  /** Outils demandes par le modele (texte souvent vide alors). */
+  toolCalls?: AIToolCall[]
 }
 
 /** Une connexion de la personne, telle qu'un plugin peut la voir (sans cle). */

@@ -57,7 +57,7 @@ export const SAVOIRE_CAPABILITIES: readonly CapabilityInfo[] = [
   { id: 'versions', label: 'Versions', description: 'L’historique garde les versions de ses documents.', implementedBy: "Un document 'crdt', ou un type ouvert dans Savoire (instantanés)" },
   { id: 'revision', label: 'Révision', description: 'En mode suggestion, on propose des modifications au lieu d’écrire.', implementedBy: 'api.review.registerProposalType, ou FileTypeSpec.review' },
   { id: 'compare', label: 'Comparaison', description: 'Deux versions ou une proposition se comparent côte à côte, au rideau, en alternance.', implementedBy: 'FileTypeSpec.review.diff (éléments changés), sinon la vue en lecture seule' },
-  { id: 'ai-local', label: 'IA locale', description: 'L’IA de la personne lit ses documents ; il peut proposer des agents ou un fournisseur.', implementedBy: 'Texte extrait ; api.agents.register ; api.ai.registerProvider' },
+  { id: 'ai-local', label: 'IA locale', description: 'L’IA de la personne lit ses documents ; il peut proposer des modèles d’agents, des outils ou un fournisseur.', implementedBy: 'Texte extrait ; api.agents.registerPreset, api.agents.registerTool ; api.ai.registerProvider' },
   { id: 'ai-mcp', label: 'IA par MCP', description: 'Les assistants externes (ChatGPT, Claude...) lisent ses documents par l’API ouverte.', implementedBy: 'Texte extrait (contentExtractor ou extracteur)' },
   { id: 'modules', label: 'Modules intégrables', description: 'Ses documents s’intègrent dans une note, une discussion, une page publiée.', implementedBy: 'FileTypeSpec.renderEmbed' },
 ]
@@ -174,7 +174,7 @@ export function analyzeCapabilities(r: PluginRegistrations): CapabilityReport[] 
       : opened.length ? rep('compare', 'generic', `vue en lecture seule : ${opened.join(', ')}`)
         : rep('compare', 'none', 'aucun type de document'),
     r.agents || r.aiProviders
-      ? rep('ai-local', 'native', [r.agents ? `${r.agents} agent(s)` : '', r.aiProviders ? `${r.aiProviders} fournisseur(s)` : ''].filter(Boolean).join(', '))
+      ? rep('ai-local', 'native', [r.agents ? `${r.agents} modèle(s) d’agent` : '', r.aiProviders ? `${r.aiProviders} fournisseur(s)` : ''].filter(Boolean).join(', '))
       : extracted ? rep('ai-local', 'generic', 'l’IA lit le texte extrait') : rep('ai-local', 'none', 'aucun texte lisible'),
     extracted ? rep('ai-mcp', 'generic', 'texte extrait, lu par l’API ouverte') : rep('ai-mcp', 'none', 'aucun texte lisible'),
     embeds.length ? rep('modules', 'native', `intégrable : ${embeds.join(', ')}`) : rep('modules', 'none', 'pas de rendu intégré'),

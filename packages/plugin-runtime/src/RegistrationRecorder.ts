@@ -45,7 +45,7 @@ export function recordRegistrations(api: PluginAPI): RecordedAPI {
         if (typeof ns === 'string') r.indexes.push(ns)
       } catch { /* fabrique qui a besoin d'un vault : namespace inconnu */ r.indexes.push('?') }
     }],
-    agents: ['register', () => { r.agents++ }],
+    agents: ['registerPreset', () => { r.agents++ }],
     ai: ['registerProvider', () => { r.aiProviders++ }],
     review: ['registerProposalType', ([spec]) => {
       const type = (spec as { type?: unknown })?.type

@@ -79,6 +79,12 @@ export interface IVaultSyncSession extends IVaultContentSession {
   openDocument(docId: string): ICRDT
   /** Arrete la synchro d'un document dont le panneau s'est ferme. */
   closeDocument(docId: string): void
+  /**
+   * Resolue quand un document ouvert a recu son etat (profil serveur : apres
+   * l'etat initial du hub). Absente : un document ouvert est tout de suite a
+   * jour (profils locaux). Sert a ecrire a une position precise hors editeur.
+   */
+  documentLoaded?(docId: string, timeoutMs?: number): Promise<void>
   getState(): 'connected' | 'connecting' | 'disconnected'
   /**
    * Ouvre (ou reprend) le canal partage d'un namespace d'index. Un canal par

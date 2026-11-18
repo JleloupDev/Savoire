@@ -6,6 +6,7 @@
 
 import { AISettings } from './AISettings'
 import { ApiTokenSettings } from './ApiTokenSettings'
+import { AgentsSettings, type AgentsSettingsProps } from './agents/AgentsSettings'
 import { StoreSettings } from './StoreSettings'
 import type { SavoireStoreService } from './savoireStore'
 import type { AIService } from '@savoire/application'
@@ -53,7 +54,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'api'
+type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api'
 
 export function SettingsPanel({
   loader,
@@ -64,6 +65,7 @@ export function SettingsPanel({
   commands,
   vaultIndexer,
   ai,
+  agents,
   api,
   store,
   layout,
@@ -81,6 +83,8 @@ export function SettingsPanel({
   vaultIndexer?: { indexer: IVaultIndexer; isOwner: boolean; vaultName: string }
   /** L'IA de la personne : onglet IA. */
   ai?: AIService
+  /** Agents declares (ADR-033) : onglet Agents. */
+  agents?: AgentsSettingsProps
   /** Jetons de l'API ouverte (profil serveur) : onglet API. */
   api?: { token(): string; vaults: { id: string; name: string }[] }
   /** Le Savoire Store : onglet Store. */
@@ -131,6 +135,7 @@ export function SettingsPanel({
           <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
           {layout && <button data-testid="settings-tab-layout" style={tabStyle(tab === 'layout')} onClick={() => setTab('layout')}>{t('app', 'settings.tab.layout')}</button>}
           {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
+          {agents && <button data-testid="settings-tab-agents" style={tabStyle(tab === 'agents')} onClick={() => setTab('agents')}>Agents</button>}
           {api && <button data-testid="settings-tab-api" style={tabStyle(tab === 'api')} onClick={() => setTab('api')}>API</button>}
           {vaultIndexer && (
             <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
@@ -149,6 +154,7 @@ export function SettingsPanel({
         {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
         {tab === 'layout' && layout && <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />}
         {tab === 'ai' && ai && <AISettings ai={ai} />}
+        {tab === 'agents' && agents && <AgentsSettings {...agents} />}
         {tab === 'api' && api && <ApiTokenSettings token={api.token} vaults={api.vaults} />}
         {tab === 'vault' && vaultIndexer && (
           <VaultIndexerSettings indexer={vaultIndexer.indexer} isOwner={vaultIndexer.isOwner} vaultName={vaultIndexer.vaultName} />

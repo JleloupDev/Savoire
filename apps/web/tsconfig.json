@@ -5,6 +5,9 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@savoire/agent-core": [
+        "../../packages/agent-core/src/index.ts"
+      ],
       "@savoire/application": [
         "../../packages/application/src/index.ts"
       ],

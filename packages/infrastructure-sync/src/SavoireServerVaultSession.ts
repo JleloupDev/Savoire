@@ -46,6 +46,7 @@ interface OpenDoc {
   crdt: YjsCrdtAdapter
   transport: SignalRTransport
   orchestrator: CollabOrchestrator
+  loaded: Promise<void>
 }
 
 export interface SavoireServerVaultSessionOptions extends VaultSyncSessionFactoryParams {
@@ -168,9 +169,28 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       gone: this.gone,
     })
     const orchestrator = new CollabOrchestrator(crdt, transport, identity)
-    this.docs.set(docId, { crdt, transport, orchestrator })
+    // Etat initial recu : le document local est a jour (documentLoaded).
+    let markLoaded!: () => void
+    const loaded = new Promise<void>(resolve => { markLoaded = resolve })
+    const offInit = transport.onInit(() => { offInit(); markLoaded() })
+    this.docs.set(docId, { crdt, transport, orchestrator, loaded })
     void transport.join(this.opts.vaultId, docId)
     return crdt
+  }
+
+  /** Resolue quand le document ouvert a recu son etat du serveur (au plus `timeoutMs`). */
+  async documentLoaded(docId: string, timeoutMs = 10_000): Promise<void> {
+    const open = this.docs.get(docId)
+    if (!open) throw new Error(`documentLoaded : le document ${docId} n'est pas ouvert`)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        open.loaded,
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('document injoignable (délai dépassé)')), timeoutMs) }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   closeDocument(docId: string): void {

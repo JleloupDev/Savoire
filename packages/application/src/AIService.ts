@@ -9,8 +9,20 @@
 // parlent OpenAI, Mistral, OpenRouter, Ollama, LM Studio, vLLM...
 import {
   AINotConfiguredError,
-  type AIAPI, type AIChatRequest, type AIChatResponse, type AIConnectionInfo, type AIProviderSpec,
+  type AIAPI, type AIChatRequest, type AIChatResponse, type AIConnectionInfo, type AIMessage, type AIProviderSpec, type AIToolCall,
 } from '@savoire/plugin-api'
+
+/** Un message au format OpenAI (appels d'outils compris). */
+function toOpenAIMessage(m: AIMessage): Record<string, unknown> {
+  if (m.role === 'tool') return { role: 'tool', tool_call_id: m.toolCallId ?? '', content: m.content }
+  if (m.role === 'assistant' && m.toolCalls?.length) {
+    return {
+      role: 'assistant', content: m.content || null,
+      tool_calls: m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })),
+    }
+  }
+  return { role: m.role, content: m.content }
+}
 
 /** Une connexion de la personne, cle comprise. Ne sort jamais de l'application. */
 export interface AIConnection {
@@ -140,21 +152,29 @@ export class AIService {
     if (!conn) throw new AINotConfiguredError()
     const model = request.model ?? conn.model
     if (!model) throw new AIRequestError(`Choisissez un modèle pour la connexion « ${conn.name} ».`)
-    const body: Record<string, unknown> = { model, messages: request.messages }
+    const body: Record<string, unknown> = { model, messages: request.messages.map(toOpenAIMessage) }
     if (request.temperature !== undefined) body.temperature = request.temperature
     if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens
     if (request.json) body.response_format = { type: 'json_object' }
+    if (request.tools?.length) {
+      body.tools = request.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }))
+    }
     const res = await this.call(conn, '/chat/completions', { method: 'POST', body: JSON.stringify(body), signal: request.signal })
     const data = await res.json().catch(() => null) as {
       model?: string
-      choices?: { message?: { content?: string | null } }[]
+      choices?: { message?: { content?: string | null; tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[] } }[]
       usage?: { prompt_tokens?: number; completion_tokens?: number }
     } | null
-    const text = data?.choices?.[0]?.message?.content
+    const message = data?.choices?.[0]?.message
+    const toolCalls: AIToolCall[] = (message?.tool_calls ?? [])
+      .filter(c => typeof c?.function?.name === 'string')
+      .map((c, i) => ({ id: c.id || `call_${i}`, name: c.function!.name!, arguments: c.function!.arguments ?? '{}' }))
+    const text = message?.content ?? (toolCalls.length ? '' : undefined)
     if (typeof text !== 'string') throw new AIRequestError(`Réponse inattendue de « ${conn.name} ».`)
     return {
       text, model: data?.model ?? model, connection: conn.name,
       ...(data?.usage ? { usage: { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens } } : {}),
+      ...(toolCalls.length ? { toolCalls } : {}),
     }
   }
 

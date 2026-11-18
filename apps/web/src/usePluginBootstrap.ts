@@ -42,6 +42,7 @@ import { aiService } from './aiService'
 import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
+import { AssistantWidget } from './agents/AssistantWidget'
 import { createReviewAPI, isSuggesting, setSuggesting, setSuggestionEditor } from './reviewProposals'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
@@ -303,7 +304,7 @@ export function usePluginBootstrap({
       createView: (_ctx: unknown) => new PluginInspectorWidget(manager),
     })
 
-    // Revision : commentaires de la note active, et agents locaux.
+    // Revision : commentaires et propositions de la note active.
     manager.views.register({
       id: 'review',
       title: 'Révision',
@@ -311,6 +312,16 @@ export function usePluginBootstrap({
       ribbon: true,
       icon: 'message-square',
       createView: (_ctx: unknown) => new ReviewWidget(manager, editorAreaRefs),
+    })
+
+    // Agents (ADR-033) : conversation avec un agent, activite et consommation.
+    manager.views.register({
+      id: 'assistant',
+      title: 'Agents',
+      container: 'right',
+      ribbon: true,
+      icon: 'bot',
+      createView: (_ctx: unknown) => new AssistantWidget(manager, editorAreaRefs),
     })
 
     // Bootstrap plugins once per session (see ADR-012)

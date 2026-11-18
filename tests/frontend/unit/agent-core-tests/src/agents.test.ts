@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jean Leloup
+//
+// Agents (ADR-033) : droits, outils du socle, moteur, sous-agents.
+import { describe, it, expect } from 'vitest'
+import {
+  AgentEngine, ToolBox, coreCatalog, effectiveMode, narrowAgent, normalizePermissions, pathInScope, setPropertyChange,
+  type ApprovalAnswer,
+} from '@savoire/agent-core'
+import type { AIChatRequest, AIChatResponse, AgentDefinition, ToolActor } from '@savoire/plugin-api'
+import { MemoryHost } from './memoryHost'
+
+const actor: ToolActor = { agentId: 'a1', agentName: 'Archiviste', onBehalfOf: { userId: 'u1', displayName: 'Jean' } }
+
+function agent(p: Partial<AgentDefinition> = {}): AgentDefinition {
+  return { id: 'a1', name: 'Archiviste', description: '', instructions: '', ownerId: 'u1', permissions: { read: 'direct' }, ...p }
+}
+
+function box(host: MemoryHost, a: AgentDefinition, opts: { canWrite?: boolean; approve?: (r: unknown) => Promise<ApprovalAnswer>; imposedMode?: 'direct' | 'propose' } = {}): ToolBox {
+  return new ToolBox({ agent: a, person: { canWrite: opts.canWrite ?? true }, actor, runtime: 'app', host, ...(opts.approve ? { approve: opts.approve } : {}), ...(opts.imposedMode ? { imposedMode: opts.imposedMode } : {}) })
+}
+
+describe('droits', () => {
+  it('lire ne donne jamais le droit d ecrire : les outils d ecriture ne sont pas proposes', () => {
+    const names = box(new MemoryHost(), agent()).specs().map(s => s.name)
+    expect(names).toContain('search')
+    expect(names).not.toContain('edit_note')
+    expect(names).not.toContain('create_note')
+  })
+
+  it('un lecteur du vault ne fait jamais ecrire un agent, quel que soit son mode', () => {
+    const a = agent({ permissions: { read: 'direct', edit: 'direct', create: 'direct' } })
+    expect(effectiveMode(a, 'edit', { canWrite: false })).toBe('deny')
+    expect(box(new MemoryHost(), a, { canWrite: false }).specs().map(s => s.name)).not.toContain('edit_note')
+  })
+
+  it('un mode sans sens pour l action devient interdit', () => {
+    expect(normalizePermissions({ create: 'propose' as never }).create).toBe('deny')
+  })
+
+  it('la portee limite aux dossiers, sous-dossiers compris', () => {
+    expect(pathInScope({ folders: ['Projets'] }, 'Projets/2026/a.md')).toBe(true)
+    expect(pathInScope({ folders: ['Projets'] }, 'Projets2/a.md')).toBe(false)
+    expect(pathInScope(undefined, 'x.md')).toBe(true)
+  })
+
+  it('un sous-agent n a jamais plus que son parent', () => {
+    const parent = agent({ permissions: { read: 'direct', edit: 'propose', create: 'ask' }, scope: { folders: ['Projets'] } })
+    const child = agent({ id: 'c', permissions: { read: 'direct', edit: 'direct', create: 'direct', delete: 'direct' }, scope: { folders: ['Projets/A', 'Perso'] } })
+    const n = narrowAgent(parent, child)
+    expect(n.permissions).toMatchObject({ read: 'direct', edit: 'propose', create: 'ask', delete: 'deny' })
+    expect(n.scope?.folders).toEqual(['Projets/A'])
+  })
+
+  it('le catalogue du serveur contient les outils du socle', () => {
+    const names = coreCatalog('server').map(s => s.name)
+    expect(names).toEqual(expect.arrayContaining(['search', 'read_note', 'edit_note', 'create_note', 'move_note', 'trash_note']))
+  })
+})
+
+describe('outils du socle', () => {
+  it('chercher, lire : les notes lues deviennent des sources', async () => {
+    const host = new MemoryHost({ 'Projets/Facturation.md': 'On facture au mois.', 'Autre.md': 'rien' })
+    const tb = box(host, agent())
+    const found = await tb.call('search', { query: 'facture' })
+    expect(found.result.sources?.map(s => s.path)).toEqual(['Projets/Facturation.md'])
+    const read = await tb.call('read_note', { path: 'projets/facturation.md' })
+    expect(read.result.text).toContain('On facture au mois.')
+  })
+
+  it('une note cachee a la personne n existe pas pour l agent', async () => {
+    const host = new MemoryHost({ 'Secret.md': 'mot de passe' })
+    host.hidden.add('Secret.md')
+    const r = await box(host, agent()).call('read_note', { path: 'Secret.md' })
+    expect(r.result.isError).toBe(true)
+    expect((await box(host, agent()).call('search', { query: 'passe' })).result.sources ?? []).toEqual([])
+  })
+
+  it('hors de la portee : refuse, meme en lecture', async () => {
+    const host = new MemoryHost({ 'Perso/a.md': 'x', 'Projets/b.md': 'x' })
+    const tb = box(host, agent({ scope: { folders: ['Projets'] } }))
+    expect((await tb.call('read_note', { path: 'Perso/a.md' })).result.isError).toBe(true)
+    expect((await tb.call('list_notes', {})).result.data).toMatchObject({ items: [{ path: 'Projets/b.md' }] })
+  })
+
+  it('modifier en direct : la note change, la trace porte le nom de l agent', async () => {
+    const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
+    const r = await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } })).call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })
+    expect(r.result.isError).toBeFalsy()
+    expect(host.content('a.md')).toBe('Bonjour tout le monde')
+    expect(host.review.map(e => [e.kind, e.author])).toEqual([['edit', 'Archiviste (IA), pour Jean']])
+  })
+
+  it('modifier en proposition : la note ne change pas, une suggestion attend', async () => {
+    const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
+    await box(host, agent({ permissions: { read: 'direct', edit: 'propose' } })).call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })
+    expect(host.content('a.md')).toBe('Bonjour le monde')
+    expect(host.review).toMatchObject([{ kind: 'suggestion', quote: 'le monde', replacement: 'tout le monde' }])
+  })
+
+  it('le serveur peut imposer la proposition, jamais l inverse', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } }), { imposedMode: 'propose' }).call('append', { path: 'a.md', text: 'y' })
+    expect(host.content('a.md')).toBe('x')
+    expect(host.review[0]?.kind).toBe('suggestion')
+  })
+
+  it('un passage ambigu est refuse plutot que modifie au hasard', async () => {
+    const host = new MemoryHost({ 'a.md': 'oui oui' })
+    const r = await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } })).call('edit_note', { path: 'a.md', find: 'oui', replace: 'non' })
+    expect(r.result.isError).toBe(true)
+    expect(host.content('a.md')).toBe('oui oui')
+  })
+
+  it('demander avant : rien ne se fait sans l accord', async () => {
+    const host = new MemoryHost({ 'Inbox/a.md': 'x' })
+    const a = agent({ permissions: { read: 'direct', organize: 'ask' } })
+    const refused = await box(host, a, { approve: async () => 'refused' }).call('move_note', { path: 'Inbox/a.md', to: 'Archives/' })
+    expect(refused.approval).toBe('refused')
+    expect(host.writes).toEqual([])
+    const pending = await box(host, a, { approve: async () => ({ pending: 'ap-1' }) }).call('move_note', { path: 'Inbox/a.md', to: 'Archives/' })
+    expect(pending.result.pending).toEqual({ approvalId: 'ap-1' })
+    let asked = ''
+    const done = await box(host, a, { approve: async r => { asked = (r as { summary: string }).summary; return 'approved' } }).call('move_note', { path: 'Inbox/a.md', to: 'Archives/' })
+    expect(done.approval).toBe('approved')
+    expect(asked).toContain('Déplacer ou renommer')
+    expect(host.writes).toEqual(['move Archives/a.md'])
+  })
+
+  it('creer une note : refuse si elle existe deja', async () => {
+    const host = new MemoryHost({ 'Réunions/a.md': 'x' })
+    const tb = box(host, agent({ permissions: { read: 'direct', create: 'direct' } }))
+    expect((await tb.call('create_note', { path: 'Réunions/a', content: 'y' })).result.isError).toBe(true)
+    expect((await tb.call('create_note', { path: 'Réunions/b', content: 'y' })).result.text).toContain('Réunions/b.md')
+  })
+
+  it('poser une propriete dans le frontmatter', () => {
+    expect(setPropertyChange('Texte', 'statut', 'fait')).toEqual({ from: 0, to: 0, text: '---\nstatut: fait\n---\n' })
+    const c = setPropertyChange('---\nstatut: en cours\nauteur: Jean\n---\nTexte', 'statut', 'fait')!
+    expect(c.text).toBe('statut: fait\nauteur: Jean')
+    expect(setPropertyChange('---\nstatut: fait\n---\n', 'statut', 'fait')).toBeNull()
+  })
+})
+
+/** Un modele scripte : rend les reponses prevues, dans l'ordre. */
+function scripted(answers: AIChatResponse[]): { chat: (r: AIChatRequest) => Promise<AIChatResponse>; requests: AIChatRequest[] } {
+  const requests: AIChatRequest[] = []
+  return {
+    requests,
+    chat: async r => {
+      requests.push(r)
+      const a = answers.shift()
+      if (!a) throw new Error('plus de reponse prevue')
+      return a
+    },
+  }
+}
+
+const reply = (text: string, toolCalls?: { name: string; args: object }[], tokens = 10): AIChatResponse => ({
+  text, model: 'test', connection: 'Test', usage: { inputTokens: tokens, outputTokens: tokens },
+  ...(toolCalls ? { toolCalls: toolCalls.map((c, i) => ({ id: `c${i}`, name: c.name, arguments: JSON.stringify(c.args) })) } : {}),
+})
+
+describe('moteur', () => {
+  it('cherche, lit, puis repond avec ses sources ; chaque etape garde ses tokens', async () => {
+    const host = new MemoryHost({ 'Projets/Facturation.md': 'On facture au mois.' })
+    const a = agent()
+    const ai = scripted([
+      reply('', [{ name: 'search', args: { query: 'facture' } }]),
+      reply('', [{ name: 'read_note', args: { path: 'Projets/Facturation.md' } }]),
+      reply('On facture au mois, voir [[Projets/Facturation.md]].'),
+    ])
+    const engine = new AgentEngine({ agent: a, person: { canWrite: true }, actor, tools: box(host, a), chat: ai.chat })
+    const run = await engine.run('Comment facture-t-on ?')
+    expect(run.status).toBe('done')
+    expect(run.answer).toContain('[[Projets/Facturation.md]]')
+    expect(run.sources.map(s => s.path)).toEqual(['Projets/Facturation.md'])
+    expect(run.steps.map(s => `${s.kind}:${s.name ?? ''}`)).toEqual(['model:', 'tool:search', 'model:', 'tool:read_note', 'model:'])
+    expect(run.usage).toEqual({ inputTokens: 30, outputTokens: 30 })
+    // Le modele recoit les outils permis et ses consignes.
+    expect(ai.requests[0]!.tools!.map(t => t.name)).toContain('search')
+    expect(ai.requests[0]!.messages[0]!.content).toContain('Archiviste')
+    expect(ai.requests[1]!.messages.at(-1)).toMatchObject({ role: 'tool', toolCallId: 'c0' })
+  })
+
+  it('un outil interdit demande par le modele est refuse, la note ne change pas', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    const a = agent()
+    const ai = scripted([reply('', [{ name: 'append', args: { path: 'a.md', text: 'pirate' } }]), reply('Je ne peux pas.')])
+    const run = await new AgentEngine({ agent: a, person: { canWrite: true }, actor, tools: box(host, a), chat: ai.chat }).run('Ecris')
+    expect(host.content('a.md')).toBe('x')
+    expect(run.steps[1]).toMatchObject({ kind: 'tool', status: 'error' })
+  })
+
+  it('le budget arrete l execution', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    const a = agent({ budget: { maxTokensPerRun: 15 } })
+    const ai = scripted([reply('', [{ name: 'search', args: { query: 'x' } }]), reply('fin')])
+    const run = await new AgentEngine({ agent: a, person: { canWrite: true }, actor, tools: box(host, a), chat: ai.chat }).run('?')
+    expect(run.status).toBe('budget')
+    expect(ai.requests.length).toBe(1)
+  })
+
+  it('la limite d etapes arrete une boucle sans fin', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    const a = agent({ budget: { maxSteps: 2 } })
+    const ai = scripted([reply('', [{ name: 'search', args: { query: 'x' } }]), reply('', [{ name: 'search', args: { query: 'x' } }])])
+    const run = await new AgentEngine({ agent: a, person: { canWrite: true }, actor, tools: box(host, a), chat: ai.chat }).run('?')
+    expect(run.status).toBe('stopped')
+  })
+
+  it('deleguer : l execution enfant est rattachee, avec au plus les droits du parent', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    const parent = agent({ permissions: { read: 'direct' } })
+    const childAgent = agent({ id: 'c', name: 'Rédacteur', permissions: { read: 'direct', edit: 'direct' } })
+    const childAi = scripted([reply('', [{ name: 'append', args: { path: 'a.md', text: 'y' } }]), reply('fait')])
+    const engine = new AgentEngine({
+      agent: parent, person: { canWrite: true }, actor, tools: box(host, parent), chat: scripted([]).chat,
+      forChild: a => ({ agent: a, person: { canWrite: true }, actor: { ...actor, agentId: a.id, agentName: a.name }, tools: box(host, a), chat: childAi.chat }),
+    })
+    const parentRun = { id: 'p', agentId: 'a1', agentName: 'Archiviste', userId: 'u1', input: '', status: 'running' as const, startedAt: '', steps: [], usage: { inputTokens: 0, outputTokens: 0 }, sources: [] }
+    const child = await engine.delegate(parentRun, childAgent, 'Ajoute y')
+    expect(child.parentRunId).toBe('p')
+    expect(parentRun.steps[0]).toMatchObject({ kind: 'delegate', childRunId: child.id })
+    // Le parent ne peut pas ecrire : le sous-agent non plus.
+    expect(host.content('a.md')).toBe('x')
+    expect(childAi.requests[0]!.tools!.map(t => t.name)).not.toContain('append')
+  })
+})

@@ -4,8 +4,9 @@
 // Kept separate from types (plugin-api) so that package has no runtime code.
 
 import type {
+  AgentPreset,
   AgentRegistry,
-  AgentSpec,
+  PluginTool,
   BlockRegistry,
   BlockSpec,
   BlockTrigger,
@@ -37,6 +38,7 @@ import type {
   ViewRegistry,
   ViewSpec,
 } from '@savoire/plugin-api'
+import { TOOL_NAME } from '@savoire/plugin-api'
 import type { PluginActivation } from './PluginActivation'
 import { HotkeyManager } from './HotkeyManager'
 
@@ -402,18 +404,52 @@ export class ToolbarCommandRegistryImpl implements ToolbarCommandRegistry {
 }
 
 // ─── AgentRegistryImpl ────────────────────────────────────────────────────
+// Modeles d'agents et outils apportes par les plugins (ADR-033). Couper un
+// plugin les retire ; les agents deja crees a partir d'un modele restent.
 
 export class AgentRegistryImpl implements AgentRegistry {
-  private readonly specs = new Map<string, Owned<AgentSpec>>()
+  private readonly presetMap = new Map<string, Owned<AgentPreset>>()
+  private readonly toolMap = new Map<string, Owned<PluginTool>>()
+  private readonly listeners = new Set<() => void>()
   activation?: PluginActivation
 
-  register(spec: AgentSpec): void {
-    this.specs.set(spec.id, { item: spec, pluginId: ownerOf(this.activation) })
+  registerPreset(preset: AgentPreset): () => void {
+    const pluginId = ownerOf(this.activation)
+    const key = `${pluginId ?? ''}:${preset.id}`
+    this.presetMap.set(key, { item: preset, pluginId })
+    this.emit()
+    return () => { if (this.presetMap.get(key)?.item === preset) { this.presetMap.delete(key); this.emit() } }
   }
 
-  /** Agents des plugins actifs : desactiver un plugin retire ses agents. */
-  getAll(): AgentSpec[] {
-    return [...this.specs.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
+  /** Modeles des plugins actifs, avec le plugin qui les apporte. */
+  presetsWithOwner(): { preset: AgentPreset; pluginId: string }[] {
+    return [...this.presetMap.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => ({ preset: e.item, pluginId: e.pluginId ?? '' }))
+  }
+
+  presets(): AgentPreset[] {
+    return this.presetsWithOwner().map(e => e.preset)
+  }
+
+  registerTool(tool: PluginTool): () => void {
+    if (!TOOL_NAME.test(tool.spec.name)) throw new Error(`nom d'outil invalide : ${tool.spec.name}`)
+    const owned = { item: tool, pluginId: ownerOf(this.activation) }
+    this.toolMap.set(tool.spec.name, owned)
+    this.emit()
+    return () => { if (this.toolMap.get(tool.spec.name) === owned) { this.toolMap.delete(tool.spec.name); this.emit() } }
+  }
+
+  /** Outils des plugins actifs. */
+  tools(): PluginTool[] {
+    return [...this.toolMap.values()].filter(e => enabled(this.activation, e.pluginId)).map(e => e.item)
+  }
+
+  onChange(cb: () => void): () => void {
+    this.listeners.add(cb)
+    return () => { this.listeners.delete(cb) }
+  }
+
+  private emit(): void {
+    for (const cb of this.listeners) cb()
   }
 }
 

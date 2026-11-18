@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../frontend/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@savoire/agent-core": ["../../../../packages/agent-core/src/index.ts"],
+      "@savoire/plugin-api": ["../../../../packages/plugin-api/src/index.ts"],
+      "@savoire/domain-index": ["../../../../packages/domain-index/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

@@ -7,7 +7,7 @@ import { useAuth } from './AuthContext'
 import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
 import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/platform'
-import { YMapVaultDirectory } from '@savoire/infrastructure-sync'
+import { YMapVaultDirectory, serverUrl } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
@@ -18,11 +18,12 @@ import { diskSessionOptions } from './diskShapes'
 import { extractorRegistry } from './extractors'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
+import { setAgentDirectory } from './agents/agentDirectory'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { catalogEntries } from './pluginStore'
 import { attachSuggestionMode } from './reviewProposals'
-import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
+import type { AgentPreset, PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
 import { SavoireStoreService } from './savoireStore'
@@ -486,6 +487,10 @@ export function AppShell() {
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
   // L'IA est celle de la personne connectee : ses connexions, ses cles.
   setAIAccount(activeAccountRef.current?.userId)
+  // Les agents declares (ADR-033) : sur le serveur en profil serveur, sur ce poste sinon.
+  setAgentDirectory(!activeAccountRef.current ? null : activeProfile.name === 'server'
+    ? { kind: 'server', accountId: activeAccountRef.current.userId, token: () => tokenRef.current ?? '', url: serverUrl }
+    : { kind: 'local', accountId: activeAccountRef.current.userId })
   // Publication sur le web : jeton, vault, lecture et rendu de la note.
   publications.configure({
     token: () => tokenRef.current ?? '',
@@ -1722,6 +1727,12 @@ export function AppShell() {
                 const manifest = pluginLoaderRef.current.getAll().find(e => e.id === id)?.plugin?.manifest
                 return { report, declared: manifest?.capabilities }
               }} ai={aiService} store={savoireStoreRef.current ?? undefined}
+              agents={{
+                presets: (pluginAPIRef.current?.agents as { presetsWithOwner?: () => { preset: AgentPreset; pluginId: string }[] } | undefined)?.presetsWithOwner?.() ?? [],
+                connections: aiService.pluginAPI().connections(),
+                adminVaults: activeProfile.name === 'server' ? vaults.filter(v => v.role === 'owner').map(v => ({ id: v.id, name: v.name })) : [],
+                vaults: vaults.map(v => ({ id: v.id, name: v.name })),
+              }}
               api={activeProfile.name === 'server' && tokenRef.current ? { token: () => tokenRef.current ?? '', vaults: vaults.map(v => ({ id: v.id, name: v.name })) } : undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>

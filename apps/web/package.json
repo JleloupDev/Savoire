@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@savoire/agent-core": "workspace:*",
     "@savoire/application": "workspace:*",
     "@savoire/desktop": "workspace:*",
     "@savoire/domain-index": "workspace:*",
@@ -22,7 +23,6 @@
     "@savoire/platform": "workspace:*",
     "@savoire/plugin-agenda": "workspace:*",
     "@savoire/plugin-agent-proofreader": "workspace:*",
-    "@savoire/plugin-agent-reviewer": "workspace:*",
     "@savoire/plugin-ai-mistral": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-backlinks": "workspace:*",

@@ -1,7 +1,8 @@
 {
-  "name": "@savoire/plugin-agent-reviewer",
+  "name": "@savoire/agent-core",
   "version": "0.0.1",
   "type": "module",
+  "description": "Agents IA (ADR-033) : outils du socle, droits, moteur. Sans DOM : l'appli et le pair indexeur l'utilisent.",
   "exports": {
     ".": {
       "source": "./src/index.ts",
@@ -9,8 +10,11 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
