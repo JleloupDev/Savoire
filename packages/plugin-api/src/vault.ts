@@ -37,6 +37,13 @@ export interface VaultAPI {
   createFolder?(path: string): Promise<void>
   renameFile?(documentId: string, newPath: string): Promise<void>
   /**
+   * LE canal des deplacements (relink.ts) : deplace ou renomme des documents
+   * (chemins avant -> apres), puis fait suivre les liens des notes qui les
+   * citent. Rend le nombre de notes dont les liens ont change. renameFile seul
+   * ne touche pas aux liens : a reserver aux operations internes.
+   */
+  moveFiles?(moves: { from: string; to: string }[]): Promise<number>
+  /**
    * Met le document a la corbeille (`.trash/`, comme Obsidian) : rien n'est
    * efface. Voir restoreFromTrash et deleteFilePermanently.
    */

@@ -104,6 +104,16 @@ describe('tools', () => {
     expect(backend.pathOf('v1', 'a')).toBe('Archives/A.md')
   })
 
+  it('deplacer une note fait suivre les liens des notes qui la citent (meme canal que l appli)', async () => {
+    backend.writeNote('v1', 'a', 'Inbox/Idee.md', 'une idee')
+    backend.writeNote('v1', 'c', 'Journal.md', 'Voir [[Idee]] et [[Autre]].')
+    const p = await ready()
+    const r = await call(p, 'move_note', { id: 'a', to: 'Archives/Projet.md' })
+    expect(r.body.result.isError).toBe(false)
+    expect(backend.pathOf('v1', 'a')).toBe('Archives/Projet.md')
+    expect(backend.text('v1', 'c')).toBe('Voir [[Projet]] et [[Autre]].')
+  })
+
   it('ACL : une note interdite a la personne n existe pas pour l agent', async () => {
     backend.writeNote('v1', 'a', 'Public/A.md', 'plan commun')
     backend.writeNote('v1', 's', 'Secret/S.md', 'plan secret')

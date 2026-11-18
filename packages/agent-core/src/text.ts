@@ -97,3 +97,13 @@ export function titleOf(path: string): string {
   const name = path.split('/').pop() ?? path
   return name.replace(/\.[a-z0-9]{1,8}$/i, '')
 }
+
+/** La plus petite plage qui fait passer de `before` a `after` (prefixe et suffixe communs gardes). */
+export function minimalChange(before: string, after: string): TextChange {
+  let start = 0
+  const max = Math.min(before.length, after.length)
+  while (start < max && before[start] === after[start]) start++
+  let end = 0
+  while (end < max - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end++
+  return { from: start, to: before.length - end, text: after.slice(start, after.length - end) }
+}

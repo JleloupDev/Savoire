@@ -13,7 +13,7 @@ import { removeFrontmatterKey, setFrontmatterValue } from '@savoire/plugin-api'
 import type { PropertyValue, VaultAPI } from '@savoire/plugin-api'
 
 /** Ce dont les lignes-pages ont besoin du vault. */
-export type NotesVault = Pick<VaultAPI, 'resolveDocumentId' | 'createFile' | 'renameFile' | 'editText'>
+export type NotesVault = Pick<VaultAPI, 'resolveDocumentId' | 'createFile' | 'renameFile' | 'editText' | 'moveFiles'>
 
 /** Dossier d'une base : `A/Taches.base` -> `A/Taches` (sans `/` final). */
 export function folderOfBase(path: string): string {
@@ -81,6 +81,10 @@ export async function renamePageRow(vault: NotesVault, docId: string, path: stri
   const folder = slash >= 0 ? path.slice(0, slash) : ''
   const ext = path.slice(path.lastIndexOf('.'))
   const next = uniqueNotePath(folder, title, p => p !== path && !!vault.resolveDocumentId(p)).replace(/\.md$/, ext)
-  if (next !== path) await vault.renameFile(docId, next)
+  // Par le canal des deplacements : les liens vers la note suivent.
+  if (next !== path) {
+    if (vault.moveFiles) await vault.moveFiles([{ from: path, to: next }])
+    else await vault.renameFile(docId, next)
+  }
   return next
 }

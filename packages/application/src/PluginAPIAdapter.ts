@@ -54,6 +54,9 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   renameFile(documentId: string, newPath: string): Promise<void> {
     return this.inner.renameFile?.(documentId, newPath) ?? Promise.resolve()
   }
+  moveFiles(moves: { from: string; to: string }[]): Promise<number> {
+    return this.inner.moveFiles?.(moves) ?? Promise.reject(new Error('Déplacement indisponible.'))
+  }
   deleteFile(documentId: string): Promise<void> { return this.inner.deleteFile?.(documentId) ?? Promise.resolve() }
   deleteFolder(path: string): Promise<void> { return this.inner.deleteFolder?.(path) ?? Promise.resolve() }
   folderMoved(from: string, to: string): Promise<void> { return this.inner.folderMoved?.(from, to) ?? Promise.resolve() }

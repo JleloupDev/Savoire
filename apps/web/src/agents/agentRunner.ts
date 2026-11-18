@@ -20,7 +20,7 @@ export interface RunParams {
   vaultId: string
   client: VaultClient
   session: IVaultSyncSession
-  api: (Pick<PluginAPI, 'search' | 'indexer' | 'query'> & { agents?: { tools(): PluginTool[] } }) | null
+  api: (Pick<PluginAPI, 'search' | 'indexer' | 'query'> & { agents?: { tools(): PluginTool[] }; vault?: { moveFiles?(moves: { from: string; to: string }[]): Promise<number> } }) | null
   /** Demande l'accord de la personne (mode « demander »). */
   approve: (req: ApprovalRequest) => Promise<ApprovalAnswer>
   onUpdate?: (run: AgentRun) => void
@@ -36,7 +36,8 @@ export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
   if (!aiService.connections().length) throw new Error('Aucune IA configurée : ajoutez une connexion dans Paramètres → IA.')
   const actor: ToolActor = { agentId: agent.id, agentName: agent.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
   const person = { canWrite: p.person.canWrite }
-  const host = new AppToolHost({ client: p.client, session: p.session, api: p.api })
+  const moveFiles = p.api?.vault?.moveFiles?.bind(p.api.vault)
+  const host = new AppToolHost({ client: p.client, session: p.session, api: p.api, ...(moveFiles ? { moveFiles } : {}) })
   const pluginTools = p.api?.agents?.tools() ?? []
   const tools = new ToolBox({ agent, person, actor, runtime: 'app', host, pluginTools, approve: p.approve })
   const engine = new AgentEngine({

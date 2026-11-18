@@ -14,13 +14,13 @@
 // au-dessus d'un hote qui lit les journaux Yjs et renvoie au serveur ce qu'il
 // ecrit (POST /internal/indexer/vaults/{id}/write). Le serveur reverifie tout.
 import {
-  HostError, ToolBox, coreCatalog, titleOf,
+  HostError, ToolBox, coreCatalog, minimalChange, titleOf,
   type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry,
 } from '@savoire/agent-core'
 import {
   mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, textAnchor, treeFoldersUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
-import type { AgentDefinition, ToolActor } from '@savoire/plugin-api'
+import { relinkAfterMoves, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
 import { canRead, parseAccess, type AccessRules } from './access'
 import type { UpdatesLog, WriteBody } from './backend'
 import { HttpError } from './errors'
@@ -194,13 +194,69 @@ export class PeerToolHost implements AgentToolHost {
   async moveNote(docId: string, newPath: string): Promise<string> {
     const tree = await this.f.treeLog()
     const paths = await this.paths()
-    if (!paths.has(docId)) throw new HostError('Note introuvable.', 'not_found')
+    const from = paths.get(docId)
+    if (!from) throw new HostError('Note introuvable.', 'not_found')
     const folders = parentFolders(newPath)
     await this.write({
       folders: [{ docId, folder: folders.at(-1) ?? '' }],
       ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], docId, { path: newPath }, folders)) }],
     })
+    // Le canal des deplacements (plugin-api/relink.ts), le meme que dans l'appli :
+    // les liens des notes qui citent la note suivent.
+    await relinkAfterMoves(this.relinkVault(docId, newPath), [{ from, to: newPath }], async names => {
+      const r = await this.f.call('links', 'citing', { names }) as { items?: { path: string }[] }
+      return r.items ?? []
+    })
     return newPath
+  }
+
+  /** Le vault vu par le canal des deplacements : chemins d'apres, editText par difference Yjs. */
+  private relinkVault(movedId: string, movedTo: string): RelinkVault {
+    const pathsAfter = async (): Promise<Map<string, string>> => {
+      const m = new Map(await this.paths())
+      m.set(movedId, movedTo)
+      return m
+    }
+    let after: Map<string, string> | null = null
+    const byPath = async (path: string): Promise<string | undefined> => {
+      after ??= await pathsAfter()
+      for (const [id, p] of after) if (p === path) return id
+      return undefined
+    }
+    return {
+      list: async dir => {
+        after ??= await pathsAfter()
+        const prefix = dir ? (dir.endsWith('/') ? dir : `${dir}/`) : ''
+        const out = new Set<string>()
+        for (const [id, p] of after) {
+          if (!p.startsWith(prefix) || isTrash(p) || !this.visible(id, p)) continue
+          const rest = p.slice(prefix.length)
+          const i = rest.indexOf('/')
+          out.add(i < 0 ? p : `${prefix}${rest.slice(0, i)}/`)
+        }
+        return [...out].sort()
+      },
+      readDocumentByPath: async path => {
+        const id = await byPath(path)
+        if (!id) throw new HostError('Note introuvable.', 'not_found')
+        return noteText((await this.noteLog(id)).updates)
+      },
+      // Synchrone dans l'interface : les chemins d'apres sont deja lus par list().
+      resolveDocumentId: path => {
+        if (!after) return undefined
+        for (const [id, p] of after) if (p === path) return id
+        return undefined
+      },
+      editText: async (id, edit) => {
+        const log = await this.noteLog(id)
+        const current = noteText(log.updates)
+        const next = edit(current)
+        if (next === current) return false
+        const c = minimalChange(current, next)
+        await this.write({ ops: [{ target: 'document', docId: id, update: b64(replaceTextUpdate(log.updates, c.from, c.to, c.text)) }] })
+        return true
+      },
+    }
   }
 
   async trashNote(docId: string): Promise<string> {

@@ -24,6 +24,8 @@ export interface AppToolHostDeps {
   session: IVaultSyncSession
   /** La PluginAPI de l'appli : recherche, pouvoirs de l'index, requetes. */
   api: Pick<PluginAPI, 'search' | 'indexer' | 'query'> | null
+  /** Le canal des deplacements de l'appli (VaultAPI.moveFiles : renommer puis faire suivre les liens). */
+  moveFiles?: (moves: { from: string; to: string }[]) => Promise<number>
 }
 
 function agentActor(a: ToolActor): AgentActor {
@@ -159,8 +161,12 @@ export class AppToolHost implements AgentToolHost {
   }
 
   async moveNote(docId: string, newPath: string): Promise<string> {
+    const from = this.find({ id: docId })?.path
+    if (!from) throw new HostError('Note introuvable.', 'not_found')
     await this.ensureFolder(newPath)
-    await this.d.client.renameFile(docId, newPath)
+    // Le canal des deplacements, comme une personne : les liens vers la note suivent.
+    if (this.d.moveFiles) await this.d.moveFiles([{ from, to: newPath }])
+    else await this.d.client.renameFile(docId, newPath)
     return this.find({ id: docId })?.path ?? newPath
   }
 

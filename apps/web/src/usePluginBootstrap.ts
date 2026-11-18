@@ -43,6 +43,7 @@ import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
 import { AssistantWidget } from './agents/AssistantWidget'
+import { moveWithLinks } from '@savoire/plugin-api'
 import { createReviewAPI, isSuggesting, setSuggesting, setSuggestionEditor } from './reviewProposals'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
@@ -393,6 +394,15 @@ export function usePluginBootstrap({
         },
       })
       vaultProxy.editText = (documentId, edit) => noteEditorRef.current!.edit(documentId, edit)
+      // LE canal des deplacements (plugin-api/relink.ts) : renommer, puis faire suivre les liens.
+      // Arborescence, bases et agents passent par lui.
+      vaultProxy.moveFiles = moves => {
+        const indexer = pluginApi.indexer
+        const citing = indexer?.available() && typeof indexer.links.citing === 'function'
+          ? (names: string[]) => indexer.links.citing!({ names }).then(r => r.items)
+          : undefined
+        return moveWithLinks(vaultProxy, moves, citing)
+      }
       // Arbre d'un autre document : base integree dans une note (lecture seule).
       vaultProxy.openTree = async documentId => {
         const session = vaultSessionRef.current

@@ -124,6 +124,8 @@ export { BLOCK_DESTROY_EVENT } from './blocks'
 export type { LinkResolver } from './links'
 export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName, rewriteMovedLinks } from './links'
 export type { LinkMoveContext } from './links'
+export { relinkAfterMoves, moveWithLinks } from './relink'
+export type { Move, RelinkVault, CitingLookup } from './relink'
 export { TEMPLATE_FOLDERS, formatDate, renderTemplate, noteTitleOf, templateFolderOf } from './templates'
 export type { TemplateContext } from './templates'
 export {
