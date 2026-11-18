@@ -17,7 +17,7 @@
 import { TEXT_PROPOSAL, type ICRDT, type ProposalInfo, type ProposalTypeSpec, type ReviewAPI, type TextProposalPayload } from '@savoire/plugin-api'
 import { suggestionModeExtension } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { ReviewService, type IVaultSyncSession, type ReviewEntry, type ReviewText, type UserActor } from '@savoire/application'
+import { ReviewService, SuggestionModeStore, type IVaultSyncSession, type ReviewEntry, type ReviewText, type UserActor } from '@savoire/application'
 
 // ── Un service par session de vault ────────────────────────────────────────
 
@@ -83,11 +83,37 @@ export function onSuggestingChange(cb: (on: boolean) => void): () => void {
   return () => { modeListeners.delete(cb) }
 }
 
+/** Change le mode, et le retient pour le compte dans le vault ouvert. */
 export function setSuggesting(on: boolean): void {
+  applySuggesting(on)
+  modeStore?.set(on)
+}
+
+function applySuggesting(on: boolean): void {
   if (on === suggesting) return
   suggesting = on
   applyEditorMode()
   for (const cb of modeListeners) cb(on)
+}
+
+// Le mode est retenu par le compte, par vault (SuggestionModeStore : un
+// canal d'index du vault). Il suit la personne d'un appareil a l'autre.
+let modeStore: SuggestionModeStore | null = null
+let modeOff: (() => void) | null = null
+
+/**
+ * Le vault ouvert et le compte : le mode retenu s'applique, et suit les
+ * changements faits sur un autre appareil. `canWrite` faux (lecteur) : pas
+ * de mode suggestion, une proposition est une ecriture.
+ */
+export function attachSuggestionMode(session: IVaultSyncSession | undefined, userId: string | undefined, canWrite: () => boolean = () => true): void {
+  modeOff?.()
+  modeOff = null
+  modeStore = session && userId ? new SuggestionModeStore(session, userId) : null
+  const store = modeStore
+  if (!store) { applySuggesting(false); return }
+  applySuggesting(canWrite() && store.get())
+  modeOff = store.onChange(on => applySuggesting(on && canWrite()))
 }
 
 // ── L'editeur de notes actif ───────────────────────────────────────────────

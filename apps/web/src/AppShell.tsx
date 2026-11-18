@@ -21,6 +21,7 @@ import { aiService, setAIAccount } from './aiService'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { catalogEntries } from './pluginStore'
+import { attachSuggestionMode } from './reviewProposals'
 import type { PluginManifest, PluginCommand } from '@savoire/plugin-api'
 import type { FileTypeRegistryImpl } from '@savoire/plugin-runtime'
 import { personalPluginStore } from './pluginPreferences'
@@ -773,6 +774,9 @@ export function AppShell() {
       pluginSettingsRef.current?.attachVault(active.session)
       // Les plugins du store installes dans ce vault (telecharges si besoin).
       savoireStoreRef.current?.attachVault(active.session)
+      // Mode suggestion : celui que le compte a choisi dans ce vault.
+      // (Un lecteur ne peut pas proposer : l'editeur refuse deja sa frappe.)
+      attachSuggestionMode(active.session, activeAccountRef.current?.userId)
       onChanged()
       // La nature des documents anciens est recopiee depuis leur type, quand
       // son plugin est la : un membre sans ce plugin les relira correctement.
@@ -904,6 +908,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
@@ -940,6 +945,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
@@ -1198,6 +1204,7 @@ export function AppShell() {
         // construction, voir ADR-027) : purger la ref du vault precedent.
         vaultSessionRef.current = undefined
         pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
         attachVaultServices(undefined)
         selectedVaultRef.current = stubVault  // update ref immediately so loadDocumentRef sees it
         setSelectedVault(stubVault)
@@ -1225,6 +1232,7 @@ export function AppShell() {
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
             pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
             attachVaultServices(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
@@ -1238,6 +1246,7 @@ export function AppShell() {
             vaultAPIRef.current = undefined
             vaultSessionRef.current = undefined
             pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
             attachVaultServices(undefined)
             setActiveDoc(null); setSelectedVault(null); setDocuments([])
             managerRef.current?.notifyVaultChange()
@@ -1290,6 +1299,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
@@ -1411,6 +1421,7 @@ export function AppShell() {
       vaultAPIRef.current = undefined
       vaultSessionRef.current = undefined
       pluginSettingsRef.current?.attachVault(undefined)
+      attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
