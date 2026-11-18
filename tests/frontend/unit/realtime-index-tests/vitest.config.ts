@@ -15,7 +15,7 @@ export default defineConfig({
       '@savoire/plugin-wikilinks': path.resolve(__dirname, '../../../../packages/plugins/plugin-wikilinks/src/index.ts'),
       '@savoire/plugin-hashtags': path.resolve(__dirname, '../../../../packages/plugins/plugin-hashtags/src/index.ts'),
       '@savoire/plugin-runtime': path.resolve(__dirname, '../../../../packages/plugin-runtime/src/index.ts'),
-      '@microsoft/signalr': path.resolve(__dirname, './src/__mocks__/signalr.ts'),
+      '@savoire/realtime-client': path.resolve(__dirname, './src/__mocks__/signalr.ts'),
     },
   },
   test: {

@@ -11,7 +11,7 @@
     "@savoire/application": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
-    "@microsoft/signalr": "^8.0.17",
+    "@savoire/realtime-client": "workspace:*",
     "yjs": "^13.6.0"
   },
   "devDependencies": {

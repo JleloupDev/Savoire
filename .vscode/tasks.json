@@ -24,10 +24,11 @@
     {
       "label": "backend:api",
       "type": "process",
-      "command": "dotnet",
+      "command": "cargo",
       "args": ["run"],
       "options": {
-        "cwd": "${workspaceFolder}/backend/Savoire.API"
+        "cwd": "${workspaceFolder}/backend",
+        "env": { "SAVOIRE_ENVIRONMENT": "Development" }
       },
       "isBackground": true,
       "problemMatcher": {
@@ -36,8 +37,8 @@
         },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "Building",
-          "endsPattern": "Now listening on"
+          "beginsPattern": "Compiling|Finished",
+          "endsPattern": "Serveur Savoire pret"
         }
       }
     }

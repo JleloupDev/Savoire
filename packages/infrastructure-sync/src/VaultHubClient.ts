@@ -6,7 +6,7 @@ import {
   HubConnection,
   HubConnectionState,
   LogLevel,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import type { IDocumentMeta, IVaultDirectory } from '@savoire/platform'
 import type { DocumentLockState } from '@savoire/application'
 import { VaultGoneError } from '@savoire/application'

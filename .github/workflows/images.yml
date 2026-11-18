@@ -36,17 +36,19 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      # Une base neuve par factory de test (tests/Server.Integration.Tests/AppFactory.cs).
+      # Une base neuve par test (backend/tests/common/mod.rs).
       SAVOIRE_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Username=postgres;Password=postgres
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          global-json-file: global.json
-      - run: dotnet build savoire.sln --configuration Release
-      - run: dotnet test tests/Server.Unit.Tests --configuration Release --no-build
-      - run: dotnet test tests/Server.Architecture.Tests --configuration Release --no-build
-      - run: dotnet test tests/Server.Integration.Tests --configuration Release --no-build
+          workspaces: backend
+      - run: cargo build --locked --all-targets
+      - run: cargo test --locked
 
   images:
     name: Image ${{ matrix.name }}
@@ -60,7 +62,7 @@ jobs:
       matrix:
         include:
           - name: api
-            dockerfile: backend/Savoire.API/Dockerfile
+            dockerfile: backend/Dockerfile
           - name: web
             dockerfile: apps/web/Dockerfile
           - name: indexer

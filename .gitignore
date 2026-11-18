@@ -92,3 +92,7 @@ packages/*/src/**/*.d.ts.map
 # Exploitation (deploy/compose) : sauvegardes locales et metriques des scripts.
 deploy/compose/backups/
 deploy/compose/metrics/
+
+# Serveur Rust : compilation et fichiers de dev
+backend/target/
+backend/storage/

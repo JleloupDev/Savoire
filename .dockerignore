@@ -12,3 +12,6 @@
 **/.claude/
 **/client-desktop/
 **/.local/
+# Serveur Rust : compilation et fichiers de dev locaux
+backend/target/
+backend/storage/

@@ -11,7 +11,7 @@ import {
   HubConnectionBuilder,
   LogLevel,
   type HubConnection,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import {
   toBase64, fromBase64,
   type ITransport, type MessageHandler, type PeerHandler,

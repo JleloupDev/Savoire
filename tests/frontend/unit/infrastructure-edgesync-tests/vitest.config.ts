@@ -12,7 +12,7 @@ export default defineConfig({
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
       '@savoire/platform': path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
-      '@microsoft/signalr': path.resolve(__dirname, './src/__mocks__/signalr.ts'),
+      '@savoire/realtime-client': path.resolve(__dirname, './src/__mocks__/signalr.ts'),
     },
   },
   test: {

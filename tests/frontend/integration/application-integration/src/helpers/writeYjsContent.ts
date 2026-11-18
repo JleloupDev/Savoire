@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import * as Y from 'yjs'
-import { HubConnectionBuilder } from '@microsoft/signalr'
+import { HubConnectionBuilder } from '@savoire/realtime-client'
 import { SERVER_URL } from './makeAppRoot'
 
 /**

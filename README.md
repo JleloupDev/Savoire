@@ -30,12 +30,15 @@ The project is between POC and MVP. Core sync, real-time collaboration, and the 
 
 ## Getting started
 
-**Requirements:** .NET 10 SDK, Node.js 20+, pnpm
+**Requirements:** Rust (stable, 1.88+), PostgreSQL, Node.js 20+, pnpm
 
 ```bash
+# Dependencies (PostgreSQL, Zitadel)
+docker compose -f deploy/compose/docker-compose.dev.yml up -d --wait
+
 # Backend
-cd backend/Savoire.API
-dotnet run
+cd backend
+SAVOIRE_ENVIRONMENT=Development cargo run
 
 # Frontend (separate terminal)
 cd frontend
@@ -48,11 +51,12 @@ Open `http://localhost:3000`. The frontend proxies API calls to the backend auto
 ## Project structure
 
 ```
-backend/
-  Savoire.API/             HTTP API + SignalR hubs
-  Savoire.Application/     Use cases
-  Savoire.Domain/          Domain logic
-  Savoire.Infrastructure/  Persistence, external services
+backend/                   Rust server (axum, sqlx, PostgreSQL)
+  src/api/                 HTTP API
+  src/realtime/            Real-time hubs (WebSocket)
+  src/access.rs            Access control (members, inherited ACLs, share links)
+  src/db/                  Persistence and schema migrations
+  tests/                   Integration tests (PostgreSQL)
 
 apps/
   web/                     Web app
@@ -67,7 +71,8 @@ packages/
   plugin-runtime/          Plugin loader and lifecycle
   plugins/                 All built-in plugins
   domain-sync/             Sync domain model
-  infrastructure-sync/     Sync transport (Yjs + SignalR)
+  infrastructure-sync/     Sync transport (Yjs + real-time hubs)
+  realtime-client/         Client of the server's real-time hubs (WebSocket)
   platform/                Platform abstractions
   workspace/               Vault and workspace management
   ui-components/           Shared UI components

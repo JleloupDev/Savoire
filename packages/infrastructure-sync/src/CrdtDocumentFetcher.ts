@@ -7,7 +7,7 @@ import {
   HubConnection,
   HubConnectionBuilder,
   HubConnectionState,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import type { IDocumentFetcher } from '@savoire/platform'
 import { base64ToBytes } from './base64'
 

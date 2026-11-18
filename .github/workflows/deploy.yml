@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.x'
-      - run: dotnet build --configuration Release
-      - run: dotnet test --configuration Release --no-build
-        working-directory: tests
+      - uses: dtolnay/rust-toolchain@stable
+      # Tests unitaires seulement : les tests d'integration demandent PostgreSQL (images.yml).
+      - run: cargo test --locked --lib
+        working-directory: backend
 
   deploy:
     needs: test

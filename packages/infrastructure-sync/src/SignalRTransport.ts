@@ -7,7 +7,7 @@ import {
   LogLevel,
   HubConnectionState,
   type HubConnection,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import type { ITransport } from '@savoire/plugin-api'
 import type { VaultGoneSignal } from './vaultGone'
 

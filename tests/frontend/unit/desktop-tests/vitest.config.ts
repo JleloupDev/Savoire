@@ -28,7 +28,7 @@ export default defineConfig({
       '@savoire/plugin-api': pkg('plugin-api'),
       '@savoire/plugin-agent-reviewer': path.resolve(__dirname, '../../../../packages/plugins/plugin-agent-reviewer/src/index.ts'),
       // Le profil web importe le connecteur serveur : jamais de vraie connexion ici.
-      '@microsoft/signalr': path.resolve(__dirname, '../infrastructure-sync-tests/src/__mocks__/signalr.ts'),
+      '@savoire/realtime-client': path.resolve(__dirname, '../infrastructure-sync-tests/src/__mocks__/signalr.ts'),
     },
   },
   test: {

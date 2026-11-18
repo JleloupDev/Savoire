@@ -9,7 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@microsoft/signalr": "^8.0.17",
     "@savoire/application": "workspace:*",
     "@savoire/desktop": "workspace:*",
     "@savoire/domain-index": "workspace:*",
@@ -63,6 +62,7 @@
     "@savoire/plugin-webpage": "workspace:*",
     "@savoire/plugin-wikilinks": "workspace:*",
     "@savoire/plugin-word": "workspace:*",
+    "@savoire/realtime-client": "workspace:*",
     "@savoire/ui-components": "workspace:*",
     "@savoire/workspace": "workspace:*",
     "@sentry/browser": "11.8.0",

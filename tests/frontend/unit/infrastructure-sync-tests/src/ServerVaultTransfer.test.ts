@@ -21,7 +21,7 @@ const server = vi.hoisted(() => ({
   dropVaultPushes: false,
 }))
 
-vi.mock('@microsoft/signalr', () => {
+vi.mock('@savoire/realtime-client', () => {
   const HubConnectionState = { Disconnected: 'Disconnected', Connected: 'Connected' }
   class FakeConnection {
     state = HubConnectionState.Disconnected

@@ -14,22 +14,21 @@
             "preLaunchTask": "frontend:web:dev"
         },
         {
-            "name": "Debug Backend (.NET)",
-            "type": "coreclr",
+            "name": "Debug Backend (Rust)",
+            "type": "lldb",
             "request": "launch",
-            "program": "${workspaceFolder}/backend/Savoire.API/bin/Debug/net10.0/Savoire.Server.dll",
+            "cargo": { "args": ["build", "--manifest-path", "${workspaceFolder}/backend/Cargo.toml"] },
             "args": [],
-            "cwd": "${workspaceFolder}/backend/Savoire.API",
+            "cwd": "${workspaceFolder}/backend",
             "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development"
-            },
-            "preLaunchTask": ""
+                "SAVOIRE_ENVIRONMENT": "Development"
+            }
         }
     ],
     "compounds": [
         {
             "name": "Full Stack (Backend + Frontend)",
-            "configurations": ["Debug Backend (.NET)", "Debug Frontend (Chrome)"]
+            "configurations": ["Debug Backend (Rust)", "Debug Frontend (Chrome)"]
         }
     ]
 }

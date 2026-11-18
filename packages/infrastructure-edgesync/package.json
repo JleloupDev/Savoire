@@ -17,10 +17,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@microsoft/signalr": "^8.0.17",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/platform": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/realtime-client": "workspace:*",
     "edgesync-protocol": "workspace:*",
     "yjs": "^13.6.0"
   },

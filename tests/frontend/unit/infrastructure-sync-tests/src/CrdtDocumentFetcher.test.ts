@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, vi } from 'vitest'
 import * as Y from 'yjs'
-import { HubConnectionState } from '@microsoft/signalr'
+import { HubConnectionState } from '@savoire/realtime-client'
 import { CrdtDocumentFetcher } from '@savoire/infrastructure-sync'
 import { bytesToBase64 } from '@savoire/infrastructure-sync'
 

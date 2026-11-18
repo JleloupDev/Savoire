@@ -7,7 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 
 const hub = vi.hoisted(() => ({ factories: [] as (() => string | Promise<string>)[] }))
 
-vi.mock('@microsoft/signalr', () => {
+vi.mock('@savoire/realtime-client', () => {
   const HubConnectionState = { Disconnected: 'Disconnected', Connected: 'Connected' }
   class HubConnectionBuilder {
     withUrl(_url: string, options?: { accessTokenFactory?: () => string | Promise<string> }) {

@@ -12,7 +12,7 @@ Le choix de cette architecture est expliqué dans
 |---|---|
 | `caddy` | Entrée HTTPS (certificats Let's Encrypt automatiques), ports 80 et 443 |
 | `web` | L'application (page web), qui relaie `/api` et `/hubs` vers l'API |
-| `api` | Le backend .NET : vaults, synchro temps réel, droits |
+| `api` | Le serveur (Rust) : vaults, synchro temps réel, droits |
 | `indexer` | Le pair indexeur (recherche, bases), jamais exposé |
 | `postgres` | Les données de Savoire et de Zitadel (deux bases) |
 | `zitadel`, `zitadel-login` | Les comptes : inscription et connexion (fournisseur, lien par mail, clé d'accès) |
@@ -308,7 +308,7 @@ Métriques gardées `METRICS_RETENTION` (30 jours).
 - **web** : les erreurs de l'appli dans le navigateur et dans l'appli de
   bureau. Elles passent par l'API (`/api/v1/errors/envelope`), qui les
   relaie : GlitchTip reste invisible depuis Internet.
-- **api** : le serveur .NET (exceptions, journaux d'erreur).
+- **api** : le serveur (exceptions, journaux d'erreur). Depuis la réécriture en Rust, l'API n'envoie plus ses propres erreurs à GlitchTip (voir ADR-032) ; ses journaux restent dans `docker logs`.
 - **indexer** : le pair indexeur.
 
 Aucun contenu de note, aucune adresse IP, aucun cookie n'est envoyé : la pile

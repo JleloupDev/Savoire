@@ -110,18 +110,18 @@ const RULES = [
     files: src(`${PKGS}/application`),
     allowedSavoire: [pkg('plugin-api'), pkg('platform'), pkg('domain-index')],
     bannedNpm: [
-      { prefix: '@microsoft/signalr', message: 'Use ITransport port.' },
+      { prefix: '@savoire/realtime-client', message: 'Use ITransport port.' },
       { prefix: 'yjs',               message: 'Use ICRDT port.' },
     ],
   },
 
   // ── infrastructure-sync ───────────────────────────────────────────────────
   {
-    label: 'infrastructure-sync — only application, domain-sync, domain-index, platform, plugin-api',
+    label: 'infrastructure-sync — only application, domain-sync, domain-index, platform, plugin-api, realtime-client',
     files: src(`${PKGS}/infrastructure-sync`),
     allowedSavoire: [
       pkg('application'), pkg('domain-sync'), pkg('domain-index'),
-      pkg('platform'), pkg('plugin-api'),
+      pkg('platform'), pkg('plugin-api'), pkg('realtime-client'),
     ],
   },
 
@@ -141,7 +141,7 @@ const RULES = [
       { prefix: 'yjs',                   message: 'Use ICRDT port (plugin-api).' },
       { prefix: 'y-codemirror',           message: 'Use ICRDT.getExtensions().' },
       { prefix: 'y-protocols',            message: 'Use ICRDT port (plugin-api).' },
-      { prefix: '@microsoft/signalr',     message: 'Use ITransport port (plugin-api).' },
+      { prefix: '@savoire/realtime-client', message: 'Use ITransport port (plugin-api).' },
     ],
   },
 

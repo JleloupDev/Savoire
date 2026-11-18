@@ -17,7 +17,7 @@ const hub = vi.hoisted(() => ({
   connections: [] as unknown[],
 }))
 
-vi.mock('@microsoft/signalr', () => {
+vi.mock('@savoire/realtime-client', () => {
   const HubConnectionState = { Disconnected: 'Disconnected', Connected: 'Connected' }
   const serverError = (method: string, code: string) =>
     new Error(`An unexpected error occurred invoking '${method}' on the server. HubException: ${code}`)

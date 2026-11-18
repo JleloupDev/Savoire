@@ -8,7 +8,7 @@ services:
     language: docker
     host: containerapp
     docker:
-      path: backend/Savoire.API/Dockerfile
+      path: backend/Dockerfile
       context: .
 
   web:

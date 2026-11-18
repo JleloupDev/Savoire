@@ -5,7 +5,7 @@ services:
     image: savoire-api:local
     build:
       context: ../..
-      dockerfile: backend/Savoire.API/Dockerfile
+      dockerfile: backend/Dockerfile
   indexer:
     image: savoire-indexer:local
     build:

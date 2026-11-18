@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Mock for @microsoft/signalr (CJS module that breaks ESM/vitest barrel imports)
+// Mock for @savoire/realtime-client (hubs temps reel, sans reseau dans les tests)
 export const HubConnectionState = {
   Disconnected: 'Disconnected',
   Connecting: 'Connecting',

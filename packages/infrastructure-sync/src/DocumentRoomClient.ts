@@ -11,7 +11,7 @@ import {
   HubConnectionBuilder,
   HubConnectionState,
   LogLevel,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import type { DocumentRoom, DocumentRoomPresence, SyncAPI } from '@savoire/plugin-api'
 import { VaultGoneError } from '@savoire/application'
 import type { VaultGoneSignal } from './vaultGone'

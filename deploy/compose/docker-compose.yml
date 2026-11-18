@@ -200,7 +200,7 @@ services:
     <<: *restart
     image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-api:${SAVOIRE_VERSION:-latest}
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      SAVOIRE_ENVIRONMENT: Production
       # Sans Kerberos (GSS) : absent de l'image, et la base est sur le reseau interne.
       ConnectionStrings__Savoire: Host=postgres;Port=5432;Database=savoire;Username=savoire;Password=${SAVOIRE_DB_PASSWORD:?};GSS Encryption Mode=Disable
       Storage__Root: /data

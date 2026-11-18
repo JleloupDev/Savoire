@@ -6,7 +6,7 @@ import {
   HubConnectionBuilder,
   HubConnectionState,
   LogLevel,
-} from '@microsoft/signalr'
+} from '@savoire/realtime-client'
 import { UpdateSource, type DocumentUpdate, type IDocumentSyncGateway } from '@savoire/domain-sync'
 import { base64ToBytes, bytesToBase64 } from './base64'
 import { noteRemoteEditor } from './remoteEditors'
