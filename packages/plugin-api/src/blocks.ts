@@ -45,6 +45,43 @@ export interface BlockLine {
   from: number
 }
 
+/**
+ * Les trois facons d'editer une note Markdown.
+ * - 'source' : le Markdown brut, sans aucun rendu.
+ * - 'power' : le rendu en direct ; un bloc repasse en texte brut des que le
+ *   curseur y entre (callout, tableau, colonnes...).
+ * - 'classic' : les blocs restent des objets rendus. On agit dessus
+ *   directement ; le clic droit donne « Modifier la source ».
+ */
+export type EditorMode = 'source' | 'power' | 'classic'
+
+/**
+ * Un bloc rendu en mode classique. Le plugin y lit la source du bloc et la
+ * reecrit sans passer par le texte brut.
+ */
+export interface BlockEditContext extends BlockContext {
+  /** Le texte brut du bloc, tel qu'il est maintenant dans la note. */
+  source(): string
+  /** Remplace tout le bloc par `next` (une seule modification, annulable). */
+  replace(next: string): void
+  /** Ouvre ce bloc en texte brut, comme « Modifier la source ». */
+  editSource(): void
+  /** Vrai en lecture seule : le rendu ne doit rien proposer de modifier. */
+  readonly readOnly: boolean
+}
+
+/** Une entree du menu d'un bloc (clic droit, poignee). */
+export interface BlockMenuItem {
+  id: string
+  label: string
+  icon?: string
+  /** Coche devant l'entree (le type actuel d'un callout, par exemple). */
+  checked?: boolean
+  /** Trait de separation avant cette entree. */
+  separatorBefore?: boolean
+  run(): void
+}
+
 export interface BlockSpec {
   type: string
   detect?: RegExp | ((text: string) => boolean)
@@ -60,6 +97,19 @@ export interface BlockSpec {
    * telle quelle.
    */
   renderLine?(line: BlockLine, ctx: BlockContext): HTMLElement | null
+  /**
+   * Rendu modifiable, pour le mode classique : on edite le bloc sans voir sa
+   * syntaxe (changer le type d'un callout, ecrire dans son corps). Le rendu
+   * ecrit avec ctx.replace. Sans lui, le mode classique montre renderClient,
+   * et la source reste accessible par le clic droit.
+   */
+  renderEditable?(data: unknown, ctx: BlockEditContext): HTMLElement
+  /**
+   * Entrees propres au bloc dans son menu (clic droit, poignee), en mode
+   * classique. L'editeur ajoute toujours « Modifier la source » et
+   * « Supprimer ».
+   */
+  menu?(data: unknown, ctx: BlockEditContext): BlockMenuItem[]
   /** If defined, auto-registers slash command entries for this block. */
   trigger?: BlockTrigger | BlockTrigger[]
 }

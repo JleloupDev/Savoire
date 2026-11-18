@@ -46,7 +46,7 @@ import { createReviewAPI, isSuggesting, setSuggesting, setSuggestionEditor } fro
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
-import { linkPreviewDelay, showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
+import { linkPreviewDelay, setNoteEditorMode, showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
 import { notify } from '@savoire/notifications'
 import { takeRemoteEditors } from '@savoire/infrastructure-sync'
 interface PluginBootstrapOptions {
@@ -365,6 +365,10 @@ export function usePluginBootstrap({
           return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
         },
       })
+      // Mode d'edition des notes (ADR-030), aussi dans les reglages.
+      for (const [mode, label] of [['classic', 'classique'], ['power', 'power user'], ['source', 'source']] as const) {
+        pluginApi.commands.register({ id: `editor:mode-${mode}`, label: `Mode d'édition : ${label}`, run: () => setNoteEditorMode(mode) })
+      }
       pluginApi.commands.register({
         id: 'review:toggle-suggest',
         label: 'Mode suggestion (suivi des modifications)',

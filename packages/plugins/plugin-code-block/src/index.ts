@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, BlockEditContext } from '@savoire/plugin-api'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
 import typescript from 'highlight.js/lib/languages/typescript'
@@ -104,60 +104,176 @@ const plugin: VaultPlugin = {
 
       createEditorWidget: (_data, _ctx) => ({ mount: (_el) => {}, destroy: () => {} }),
 
-      renderClient: (data, _ctx) => {
-        const { lang, code } = data as CodeData
+      renderClient: (data, _ctx) => renderCode(data as CodeData),
 
-        const wrapper = document.createElement('div')
-        wrapper.style.cssText = 'position:relative;margin:4px 0'
-
-        if (lang) {
-          const badge = document.createElement('span')
+      // Mode classique : un clic dans le code l'ouvre en zone de texte, sans
+      // les ``` autour ; la langue se change dans son badge.
+      renderEditable: (data, ctx) => {
+        const d = data as CodeData
+        const wrapper = renderCode(d)
+        const pre = wrapper.querySelector('pre') as HTMLElement
+        pre.style.cursor = 'text'
+        pre.addEventListener('mousedown', e => {
+          e.preventDefault()
+          editCode(wrapper, pre, ctx)
+        })
+        // Le badge du langage (meme vide) se change sur place.
+        let badge = wrapper.querySelector('.code-lang') as HTMLElement | null
+        if (!badge) {
+          badge = document.createElement('span')
+          badge.className = 'code-lang'
           badge.style.cssText =
-            'position:absolute;top:8px;right:38px;font-size:11px;' +
-            'color:#585b70;font-family:monospace;padding:1px 6px;' +
-            'background:#313244;border-radius:3px;user-select:none;z-index:1'
-          badge.textContent = lang
+            'position:absolute;top:8px;right:38px;font-size:11px;color:#585b70;font-family:monospace;' +
+            'padding:1px 6px;background:#313244;border-radius:3px;z-index:1;opacity:0.7'
+          badge.textContent = 'langage'
           wrapper.appendChild(badge)
         }
-
-        const copyBtn = document.createElement('button')
-        copyBtn.style.cssText =
-          'position:absolute;top:8px;right:8px;background:#313244;border:none;' +
-          'color:#cdd6f4;border-radius:3px;padding:1px 6px;font-size:12px;cursor:pointer;z-index:1'
-        copyBtn.textContent = '⎘'
-        copyBtn.title = 'Copier'
-        copyBtn.addEventListener('click', (e) => {
+        badge.style.cursor = 'pointer'
+        badge.title = 'Changer le langage'
+        badge.addEventListener('mousedown', e => {
+          e.preventDefault()
           e.stopPropagation()
-          navigator.clipboard.writeText(code).then(() => {
-            copyBtn.textContent = '✓'
-            setTimeout(() => { copyBtn.textContent = '⎘' }, 1500)
-          }).catch(() => {})
+          const input = document.createElement('input')
+          input.dataset.testid = 'code-lang-input'
+          input.value = d.lang
+          input.style.cssText = `${badge!.style.cssText};width:90px;outline:none;border:1px solid #585b70;color:#cdd6f4;cursor:text`
+          badge!.replaceWith(input)
+          wrapper.dataset.plumeEditing = '1'
+          input.focus()
+          input.select()
+          let done = false
+          const finish = (commit: boolean) => {
+            if (done) return
+            done = true
+            delete wrapper.dataset.plumeEditing
+            input.replaceWith(badge!)
+            const lang = input.value.trim().replace(/\s+/g, '')
+            const cur = deserializeCode(ctx.source())
+            if (commit && lang !== cur.lang) ctx.replace(serializeCode({ lang, code: cur.code }))
+          }
+          input.addEventListener('keydown', ev => {
+            ev.stopPropagation()
+            if (ev.key === 'Enter') { ev.preventDefault(); finish(true) }
+            if (ev.key === 'Escape') { ev.preventDefault(); finish(false) }
+          })
+          input.addEventListener('blur', () => finish(true))
         })
-        wrapper.appendChild(copyBtn)
-
-        const pre = document.createElement('pre')
-        pre.style.cssText =
-          'margin:0;padding:12px 14px;background:#1e1e2e;border-radius:6px;' +
-          'overflow-x:auto;font-family:monospace;font-size:13px;line-height:1.5'
-
-        const codeEl = document.createElement('code')
-        try {
-          const result = lang && hljs.getLanguage(lang)
-            ? hljs.highlight(code, { language: lang })
-            : hljs.highlightAuto(code)
-          codeEl.innerHTML = result.value
-        } catch {
-          codeEl.textContent = code
-        }
-
-        pre.appendChild(codeEl)
-        wrapper.appendChild(pre)
         return wrapper
       },
+
     })
   },
 
   async onunload() {},
+}
+
+function deserializeCode(raw: string): CodeData {
+  const match = String(raw).trim().match(FENCE_RE)
+  if (!match) return { lang: '', code: String(raw) }
+  return { lang: match[1] ?? '', code: match[2] ?? '' }
+}
+
+function serializeCode(d: CodeData): string {
+  return `\`\`\`${d.lang}\n${d.code}\n\`\`\``
+}
+
+/** Le code en zone de texte, le temps de l'ecrire. */
+function editCode(wrapper: HTMLElement, pre: HTMLElement, ctx: BlockEditContext): void {
+  if (wrapper.querySelector('textarea')) return
+  const area = document.createElement('textarea')
+  area.dataset.testid = 'code-editor'
+  area.spellcheck = false
+  area.value = deserializeCode(ctx.source()).code
+  area.style.cssText =
+    'display:block;width:100%;box-sizing:border-box;resize:none;overflow:hidden;margin:0;' +
+    'padding:12px 14px;background:#1e1e2e;color:#cdd6f4;border:1px solid #585b70;border-radius:6px;' +
+    'font-family:monospace;font-size:13px;line-height:1.5;tab-size:2'
+  const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight + 2}px` }
+  pre.replaceWith(area)
+  wrapper.dataset.plumeEditing = '1'
+  area.focus()
+  requestAnimationFrame(fit)
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const commit = () => {
+    if (timer) { clearTimeout(timer); timer = null }
+    const cur = deserializeCode(ctx.source())
+    ctx.replace(serializeCode({ lang: cur.lang, code: area.value }))
+  }
+  area.addEventListener('input', () => {
+    fit()
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(commit, 500)
+  })
+  area.addEventListener('keydown', e => {
+    e.stopPropagation()
+    if (e.key === 'Escape') { e.preventDefault(); area.blur(); return }
+    // Tab indente au lieu de quitter la zone.
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault()
+      const { selectionStart: a, selectionEnd: b } = area
+      area.setRangeText('  ', a, b, 'end')
+      area.dispatchEvent(new Event('input'))
+    }
+  })
+  area.addEventListener('blur', () => {
+    commit()
+    delete wrapper.dataset.plumeEditing
+    // Le code redevient colore.
+    const fresh = renderCode(deserializeCode(ctx.source())).querySelector('pre')
+    if (fresh) { fresh.style.cursor = 'text'; fresh.addEventListener('mousedown', e => { e.preventDefault(); editCode(wrapper, fresh, ctx) }); area.replaceWith(fresh) }
+  })
+}
+
+function renderCode(data: CodeData): HTMLElement {
+  const { lang, code } = data
+
+  const wrapper = document.createElement('div')
+  wrapper.style.cssText = 'position:relative;margin:4px 0'
+
+  if (lang) {
+    const badge = document.createElement('span')
+    badge.style.cssText =
+      'position:absolute;top:8px;right:38px;font-size:11px;' +
+      'color:#585b70;font-family:monospace;padding:1px 6px;' +
+      'background:#313244;border-radius:3px;user-select:none;z-index:1'
+    badge.className = 'code-lang'
+    badge.textContent = lang
+    wrapper.appendChild(badge)
+  }
+
+  const copyBtn = document.createElement('button')
+  copyBtn.style.cssText =
+    'position:absolute;top:8px;right:8px;background:#313244;border:none;' +
+    'color:#cdd6f4;border-radius:3px;padding:1px 6px;font-size:12px;cursor:pointer;z-index:1'
+  copyBtn.textContent = '⎘'
+  copyBtn.title = 'Copier'
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(code).then(() => {
+      copyBtn.textContent = '✓'
+      setTimeout(() => { copyBtn.textContent = '⎘' }, 1500)
+    }).catch(() => {})
+  })
+  wrapper.appendChild(copyBtn)
+
+  const pre = document.createElement('pre')
+  pre.style.cssText =
+    'margin:0;padding:12px 14px;background:#1e1e2e;border-radius:6px;' +
+    'overflow-x:auto;font-family:monospace;font-size:13px;line-height:1.5'
+
+  const codeEl = document.createElement('code')
+  try {
+    const result = lang && hljs.getLanguage(lang)
+      ? hljs.highlight(code, { language: lang })
+      : hljs.highlightAuto(code)
+    codeEl.innerHTML = result.value
+  } catch {
+    codeEl.textContent = code
+  }
+
+  pre.appendChild(codeEl)
+  wrapper.appendChild(pre)
+  return wrapper
 }
 
 export default plugin

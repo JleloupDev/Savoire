@@ -102,3 +102,39 @@ export function setShowEditorToolbar(show: boolean): void {
 export function useShowEditorToolbar(): boolean {
   return useSyncExternalStore(subscribeDisplayPreferences, showEditorToolbar)
 }
+
+// ── Mode d'edition des notes ─────────────────────────────────────────────────
+
+/**
+ * Facon d'editer les notes Markdown (voir ADR-030) : 'source' (Markdown
+ * brut), 'power' (rendu en direct, la source sous le curseur, par defaut) ou
+ * 'classic' (les blocs restent des objets ; source au clic droit).
+ */
+export type NoteEditorMode = 'source' | 'power' | 'classic'
+
+const MODE_KEY = 'savoire-editor-mode'
+const MODES: readonly NoteEditorMode[] = ['source', 'power', 'classic']
+
+function readMode(): NoteEditorMode {
+  try {
+    const raw = localStorage.getItem(MODE_KEY)
+    return MODES.includes(raw as NoteEditorMode) ? (raw as NoteEditorMode) : 'power'
+  } catch { return 'power' }
+}
+
+let editorModeValue = readMode()
+
+export function noteEditorMode(): NoteEditorMode {
+  return editorModeValue
+}
+
+export function setNoteEditorMode(mode: NoteEditorMode): void {
+  if (mode === editorModeValue || !MODES.includes(mode)) return
+  editorModeValue = mode
+  try { localStorage.setItem(MODE_KEY, mode) } catch { /* navigation privee */ }
+  for (const cb of [...listeners]) cb()
+}
+
+export function useNoteEditorMode(): NoteEditorMode {
+  return useSyncExternalStore(subscribeDisplayPreferences, noteEditorMode)
+}

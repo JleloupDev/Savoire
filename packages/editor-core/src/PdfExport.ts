@@ -9,11 +9,8 @@
 //
 // Pas de bibliotheque PDF : le moteur d'impression du navigateur garde le
 // texte selectionnable, les liens et les images nettes.
-import { markdownLanguage } from '@codemirror/lang-markdown'
-import { marked } from 'marked'
-import { sanitizeHtml } from '@savoire/plugin-api'
-import type { BlockContext, BlockRegistry, HookRegistry } from '@savoire/plugin-api'
-import { BLOCK_NODES } from './LivePreview'
+import type { BlockRegistry, HookRegistry } from '@savoire/plugin-api'
+import { COLUMNS_CSS, renderFragmentInto } from './NoteFragment'
 
 /** Blocs de plugins qu'on imprime en Markdown simple. */
 const PRINT_AS_MARKDOWN = new Set(['code-block'])
@@ -33,14 +30,6 @@ function splitFrontmatter(text: string): { body: string } {
   return { body: m ? text.slice(m[0].length) : text }
 }
 
-function markdownBlock(text: string, hooks?: HookRegistry | null): HTMLElement {
-  const div = document.createElement('div')
-  div.className = 'vault-rendered-block'
-  const pre = hooks ? hooks.runBeforeParseSync(text) : text
-  div.innerHTML = sanitizeHtml(String(marked.parse(pre, { breaks: true })))
-  return div
-}
-
 /**
  * La note rendue en entier, pour l'impression : chaque bloc de premier
  * niveau est rendu par le plugin qui le revendique, sinon en Markdown.
@@ -55,41 +44,14 @@ export function renderNoteForPrint(text: string, opts: NoteRenderOptions = {}): 
     root.appendChild(h)
   }
   const { body } = splitFrontmatter(text.replace(/\r\n?/g, '\n'))
-  const ctx: BlockContext = { editorView: null }
-  const tree = markdownLanguage.parser.parse(body)
-  const cursor = tree.topNode.cursor()
-  let pending = ''
-  const flush = () => {
-    if (pending.trim()) root.appendChild(markdownBlock(pending, opts.hooks))
-    pending = ''
-  }
-  if (cursor.firstChild()) {
-    do {
-      const chunk = body.slice(cursor.from, cursor.to)
-      const name = cursor.type.name
-      const detected = BLOCK_NODES.has(name) && opts.registry
-        ? (opts.registry.detectActive ? opts.registry.detectActive(chunk, opts.activeIds ?? null) : opts.registry.detectBlock(chunk))
-        : null
-      // Une liste a cocher (rendu ligne par ligne) : Markdown suffit. Le
-      // code aussi : sur papier, sans le fond sombre de l'editeur.
-      if (detected && !detected.spec.renderLine && !PRINT_AS_MARKDOWN.has(detected.spec.type)) {
-        try {
-          const el = detected.spec.renderClient(detected.spec.deserialize(chunk), ctx)
-          flush()
-          const box = document.createElement('div')
-          box.className = 'savoire-print-block'
-          box.appendChild(el)
-          root.appendChild(box)
-          continue
-        } catch {
-          // Rendu impossible hors de l'editeur : le texte, en Markdown.
-        }
-      }
-      pending = chunk
-      flush()
-    } while (cursor.nextSibling())
-  }
-  flush()
+  // Le code aussi en Markdown : sur papier, sans le fond sombre de l'editeur.
+  renderFragmentInto(root, body, {
+    registry: opts.registry,
+    hooks: opts.hooks,
+    activeIds: opts.activeIds,
+    asMarkdown: PRINT_AS_MARKDOWN,
+    pluginBoxClass: 'savoire-print-block',
+  })
   return root
 }
 
@@ -123,7 +85,8 @@ const PRINT_CSS = `
   .savoire-print th, .savoire-print td { border: 1px solid #d0d7de; padding: 3pt 6pt; }
   .savoire-print a { color: var(--accent); text-decoration: none; }
   .savoire-print button { display: none !important; }
-`
+  .savoire-print .plume-columns { break-inside: avoid; page-break-inside: avoid; }
+${COLUMNS_CSS}`
 
 /** Attend la fin des rendus asynchrones (images, diagrammes), sans depasser `maxMs`. */
 async function settle(doc: Document, maxMs: number): Promise<void> {

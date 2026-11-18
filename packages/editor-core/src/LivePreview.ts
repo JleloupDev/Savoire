@@ -3,7 +3,7 @@
 // Live preview extension — renders Markdown blocks as HTML widgets in CodeMirror.
 // see ADR-005
 
-import { EditorView, Decoration, DecorationSet, WidgetType, keymap, gutter, GutterMarker } from '@codemirror/view'
+import { EditorView, Decoration, DecorationSet, WidgetType, ViewPlugin, keymap, gutter, GutterMarker } from '@codemirror/view'
 import { StateField, StateEffect, EditorState, Range, Prec } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 // Type des noeuds de l'arbre syntaxique (@lezer/common n'est pas une
@@ -25,26 +25,27 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 
 import { marked } from 'marked'
 import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
-import type { BlockRegistry, BlockContext, BlockSpec, HookRegistry } from '@savoire/plugin-api'
+import type { BlockRegistry, BlockContext, BlockEditContext, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
+import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, type FragmentOptions } from './NoteFragment'
+import { findColumnsBlocks } from './Columns'
+import {
+  ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
+  isClassicEffect, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
+} from './ClassicMode'
+import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
-import { appendTableRow } from './TableRows'
+import { appendTableRow, tableColumnCount } from './TableRows'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
 
-export const BLOCK_NODES = new Set([
-  'Paragraph',
-  'ATXHeading1', 'ATXHeading2', 'ATXHeading3',
-  'ATXHeading4', 'ATXHeading5', 'ATXHeading6',
-  'BulletList', 'OrderedList',
-  'Blockquote',
-  'FencedCode',
-  'HorizontalRule',
-  'Table',
-])
+export { BLOCK_NODES }
+
+/** Rendu en direct : « power » (la source sous le curseur) ou « classic » (des objets). */
+export type PreviewMode = 'power' | 'classic'
 
 /** Ligne faite d'une seule integration `![[...]]`. */
 const EMBED_LINE_RE = /^\s*!\[\[[^\]]+\]\]\s*$/
@@ -348,19 +349,43 @@ function rawLineMarks(state: EditorState, fromPos: number, out: Range<Decoration
   }
 }
 
-function buildDecorations(
-  state: EditorState,
-  registry?: BlockRegistry,
-  hooks?: HookRegistry,
-  ctx?: BlockContext,
-  getActiveScopeIds?: () => Set<string> | null,
-): DecorationSet {
+/** Ce dont le calcul des decorations a besoin, hors de l'etat. */
+interface PreviewEnv {
+  registry?: BlockRegistry
+  hooks?: HookRegistry
+  ctx?: BlockContext
+  getActiveScopeIds?: () => Set<string> | null
+  mode: PreviewMode
+  /** Bornes de l'objet rendu par `dom` (mode classique). */
+  rangeOf: (view: EditorView, dom: HTMLElement) => BlockRange | null
+}
+
+interface PreviewDecorations {
+  decorations: DecorationSet
+  /** Objets du mode classique : le curseur les saute d'un bloc. */
+  objects: DecorationSet
+}
+
+function overlaps(a: { from: number; to: number }, from: number, to: number): boolean {
+  return a.from <= to && a.to >= from
+}
+
+function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecorations {
+  const { registry, hooks, ctx, getActiveScopeIds } = env
+  const classic = env.mode === 'classic'
   const decorations: Range<Decoration>[] = []
+  const objects: Range<Decoration>[] = []
   const { from: cursorFrom } = state.selection.main
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
   // Passages surlignes par la revision : leurs lignes restent en texte brut.
   const reviewed = highlightedRanges(state)
   const underReview = (from: number, to: number): boolean => reviewed.some(r => r.from <= to && r.to >= from)
+  // Mode classique : blocs ouverts par « Modifier la source ».
+  const opened = classic ? state.field(sourceOpenField, false) ?? [] : []
+  const isOpened = (from: number, to: number): boolean => opened.some(r => overlaps(r, from, to))
+  for (const r of opened) if (r.to <= state.doc.length) sourceDecorations(state, r, decorations)
+  const epochs = classic ? state.field(objectEpochField, false) ?? [] : []
+  const epochAt = (from: number): number => epochs.find(e => e.pos === from)?.n ?? 0
 
   // Zone du frontmatter : le panneau des proprietes s'il est branche, sinon
   // le badge replie (null si le curseur y est, ou sans frontmatter).
@@ -368,23 +393,82 @@ function buildDecorations(
   const panelDecos = propertiesDecorations(state, fmEnd)
   const fmDeco = panelDecos ? null : buildFrontmatterDecoration(state, fmEnd)
 
-  const claimedByPlugin = (text: string): boolean => {
-    if (!registry || !ctx) return false
+  const detect = (text: string): { type: string; spec: BlockSpec } | null => {
+    if (!registry || !ctx) return null
     const ids = getActiveScopeIds?.() ?? null
-    return !!(registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text))
+    return registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text)
+  }
+  const claimedByPlugin = (text: string): boolean => !!detect(text)
+
+  // ── Objets du mode classique ──
+  const pushObject = (
+    from: number,
+    to: number,
+    key: string,
+    build: (view: EditorView, edit: BlockEditContext) => HTMLElement,
+    fallback: () => HTMLElement,
+  ): void => {
+    const widget = new ObjectWidget(key, epochAt(from), (view) => {
+      let root: HTMLElement | null = null
+      const edit = editContext(view, ctx ?? { editorView: view }, () => (root ? env.rangeOf(view, root) : null))
+      root = build(view, edit)
+      return root
+    }, fallback)
+    const deco = Decoration.replace({ widget, block: true })
+    decorations.push(deco.range(from, to))
+    objects.push(deco.range(from, to))
+  }
+
+  const pluginObject = (from: number, to: number, text: string, spec: BlockSpec): void => {
+    pushObject(from, to, `${spec.type}|${text}`, (_view, edit) => {
+      const data = spec.deserialize(text)
+      return spec.renderEditable && !edit.readOnly ? spec.renderEditable(data, edit) : spec.renderClient(data, ctx!)
+    }, () => markdownElement(text, hooks))
+  }
+
+  // Les blocs rendus dans une colonne n'ecrivent pas dans la note par leur
+  // ligne : elle serait celle du bloc de colonnes.
+  const innerCtx: BlockContext = { get editorView() { return ctx?.editorView ?? null }, locate: () => null }
+  const fragmentOptions = (): FragmentOptions => ({ registry, hooks, activeIds: getActiveScopeIds?.() ?? null, ctx: innerCtx })
+
+  // ── Colonnes ──
+  const columnsBlocks = findColumnsBlocks(state.doc).filter(b => b.from >= fmEnd)
+  const inColumns = (from: number, to: number): boolean => columnsBlocks.some(b => overlaps(b, from, to))
+  for (const block of columnsBlocks) {
+    const text = state.doc.sliceString(block.from, block.to)
+    if (classic) {
+      if (isOpened(block.from, block.to)) continue
+      pushObject(block.from, block.to, `columns|${text}`, (view, edit) => editableColumns(view, block, edit, fragmentOptions()),
+        () => markdownElement(text, hooks))
+      continue
+    }
+    if (cursorFrom >= block.from && cursorFrom <= block.to) continue
+    if (remoteCursors.some(p => p >= block.from && p <= block.to)) continue
+    if (underReview(block.from, block.to)) continue
+    decorations.push(Decoration.replace({
+      widget: new LineWidget(`columns|${text}`, () => columnsElement(block, t => columnContent(t, fragmentOptions()))),
+      block: true,
+    }).range(block.from, block.to))
   }
 
   const renderParagraphLines = (firstLine: number, lastLine: number): void => {
     const cursorLine = state.doc.lineAt(cursorFrom).number
     for (let n = firstLine; n <= lastLine; n++) {
       const line = state.doc.line(n)
-      if (n === cursorLine) continue
-      if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
-      if (underReview(line.from, line.to)) continue
+      if (inColumns(line.from, line.to)) continue
       const lineText = state.doc.sliceString(line.from, line.to)
       // Une ligne d'integration seule (une image `![[x.png]]` collee entre
       // deux lignes de texte) garde le rendu de son plugin.
       const own = EMBED_LINE_RE.test(lineText) ? detect(lineText) : null
+      // Mode classique : l'image reste une image, meme sous le curseur.
+      if (own && classic) {
+        if (isOpened(line.from, line.to) || underReview(line.from, line.to)) continue
+        pluginObject(line.from, line.to, lineText, own.spec)
+        continue
+      }
+      if (n === cursorLine) continue
+      if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
+      if (underReview(line.from, line.to)) continue
       if (own) {
         const render = () => own.spec.renderClient(own.spec.deserialize(lineText), ctx!)
         decorations.push(Decoration.replace({ widget: new PluginWidget(render, lineText, () => markdownElement(lineText, hooks, 'vault-paragraph-line')), block: true }).range(line.from, line.to))
@@ -400,12 +484,6 @@ function buildDecorations(
         // Ligne laissee en texte brut si le rendu echoue
       }
     }
-  }
-
-  const detect = (text: string): { type: string; spec: BlockSpec } | null => {
-    if (!registry || !ctx) return null
-    const ids = getActiveScopeIds?.() ?? null
-    return registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text)
   }
 
   const renderBlockLines = (firstLine: number, lastLine: number, spec?: BlockSpec): void => {
@@ -454,6 +532,17 @@ function buildDecorations(
       // (et le YAML source du panneau reste du texte brut).
       if ((fmDeco || panelDecos) && node.from < fmEnd) return false
 
+      // Un bloc de colonnes a son propre rendu. Un paragraphe qui deborde
+      // du bloc (pas de ligne vide apres `:::`) garde ses lignes du dehors.
+      if (inColumns(node.from, node.to)) {
+        if (node.type.name === 'Paragraph') {
+          renderParagraphLines(state.doc.lineAt(node.from).number, state.doc.lineAt(Math.min(node.to, state.doc.length)).number)
+        }
+        return false
+      }
+      // Bloc ouvert en texte brut : rien a rendre.
+      if (isOpened(node.from, node.to)) return false
+
       // Listes et citations : ligne par ligne, sauf si un plugin revendique
       // le bloc sans savoir le rendre ligne par ligne (callout, par exemple).
       if (LINE_BLOCKS.has(node.type.name) && isLineRenderable(node.node)) {
@@ -468,16 +557,36 @@ function buildDecorations(
         }
       }
 
+      const blockStartLine = state.doc.lineAt(node.from).number
+      const blockEndLine   = state.doc.lineAt(Math.min(node.to, state.doc.length)).number
+      const cursorLine     = state.doc.lineAt(cursorFrom).number
+      const isSingleLine   = blockStartLine === blockEndLine
+      const text = state.doc.sliceString(node.from, node.to)
+
+      // Mode classique : un bloc (plugin, tableau, code, separateur) reste
+      // un objet ; titres et paragraphes restent du texte.
+      if (classic && !underReview(node.from, node.to)) {
+        const detected = detect(text)
+        if (detected) {
+          pluginObject(node.from, node.to, text, detected.spec)
+          return false
+        }
+        if (node.type.name === 'Table') {
+          tableObject(node.from, node.to, text)
+          return false
+        }
+        if (node.type.name === 'FencedCode' || node.type.name === 'HorizontalRule') {
+          pushObject(node.from, node.to, `md|${text}`, () => markdownElement(text, hooks), () => markdownElement(text, hooks))
+          return false
+        }
+      }
+
       // Cursor check — show raw text when editing this block.
       // For single-line blocks (@[[]], ![[]], callouts): raw only when cursor is on the same line.
       // This lets the widget appear after pressing Enter once (cursor moves to next line).
       // For multi-line blocks (blockquote, list…): raw when cursor is anywhere in the block.
       // EXCEPTION: ATX headings on the cursor line get a Decoration.line() class for live
       // heading styling — so the font/size updates as you type without replacing the text.
-      const blockStartLine = state.doc.lineAt(node.from).number
-      const blockEndLine   = state.doc.lineAt(Math.min(node.to, state.doc.length)).number
-      const cursorLine     = state.doc.lineAt(cursorFrom).number
-      const isSingleLine   = blockStartLine === blockEndLine
       if (isSingleLine && cursorLine === blockStartLine) {
         const headingClass = HEADING_LINE_CLASSES[node.type.name]
         if (headingClass) {
@@ -493,7 +602,7 @@ function buildDecorations(
         // bloc [1–3]. Un vrai bloc (callout, code, liste, citation...) passe,
         // lui, entierement en edition des qu'on y entre.
         // Exception : si un plugin revendique le paragraphe, c'est son bloc.
-        if (node.type.name === 'Paragraph' && !claimedByPlugin(state.doc.sliceString(node.from, node.to))) {
+        if (node.type.name === 'Paragraph' && !claimedByPlugin(text)) {
           renderParagraphLines(blockStartLine, blockEndLine)
           return false
         }
@@ -504,24 +613,17 @@ function buildDecorations(
       if (hasRemoteCursor) return false
       if (underReview(node.from, node.to)) return false
 
-      const text = state.doc.sliceString(node.from, node.to)
-
       // Level 1: ask the plugin BlockRegistry first (scope-filtered when available)
-      if (registry && ctx) {
-        const ids = getActiveScopeIds?.() ?? null
-        const detected = registry.detectActive
-          ? registry.detectActive(text, ids)
-          : registry.detectBlock(text)
-        if (detected) {
-          const render = () => detected.spec.renderClient(detected.spec.deserialize(text), ctx)
-          decorations.push(
-            Decoration.replace({
-              widget: new PluginWidget(render, text, () => markdownElement(text, hooks)),
-              block: true,
-            }).range(node.from, node.to),
-          )
-          return false
-        }
+      const detected = detect(text)
+      if (detected) {
+        const render = () => detected.spec.renderClient(detected.spec.deserialize(text), ctx!)
+        decorations.push(
+          Decoration.replace({
+            widget: new PluginWidget(render, text, () => markdownElement(text, hooks)),
+            block: true,
+          }).range(node.from, node.to),
+        )
+        return false
       }
 
       // Level 2: fallback — render with marked (run beforeParse hooks first, e.g. wikilinks)
@@ -546,12 +648,39 @@ function buildDecorations(
     },
   })
 
+  // Tableau du mode classique : cases modifiables, « + » ligne et colonne.
+  function tableObject(from: number, to: number, text: string): void {
+    pushObject(from, to, `table|${text}`, (view, edit) => {
+      const html = marked.parse(hooks ? hooks.runBeforeParseSync(text) : text, { breaks: true }) as string
+      const el = editableTable(view, html, edit, hooks)
+      if (edit.readOnly) return el
+      const bar = document.createElement('div')
+      bar.className = 'plume-table-actions'
+      const button = (label: string, testid: string, run: () => void) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'vault-table-add'
+        b.dataset.testid = testid
+        b.textContent = label
+        b.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); run() })
+        bar.appendChild(b)
+      }
+      button('+ Nouvelle ligne', 'table-add-row', () => {
+        const src = edit.source()
+        edit.replace(`${src}\n|${'   |'.repeat(tableColumnCount(src.split('\n')[0] ?? ''))}`)
+      })
+      button('+ Colonne', 'table-add-column', () => edit.replace(appendTableColumnText(edit.source())))
+      el.appendChild(bar)
+      return el
+    }, () => markdownElement(text, hooks))
+  }
+
   rawLineMarks(state, fmEnd, decorations)
 
   if (fmDeco) decorations.unshift(fmDeco)
   if (panelDecos) decorations.unshift(...panelDecos)
 
-  return Decoration.set(decorations, true)
+  return { decorations: Decoration.set(decorations, true), objects: Decoration.set(objects, true) }
 }
 
 // see ADR-005
@@ -588,7 +717,8 @@ const blockAwareLineNumbers = gutter({
     return new SingleLineNumberMarker(view.state.doc.lineAt(line.from).number)
   },
   // Called for each replaced block widget (Decoration.replace({ block: true })).
-  widgetMarker(view, _widget, block) {
+  widgetMarker(view, widget, block) {
+    if (widget instanceof SourceDoneWidget) return null
     const { state } = view
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number
@@ -599,21 +729,6 @@ const blockAwareLineNumbers = gutter({
     return new SingleLineNumberMarker(view.state.doc.lines)
   },
 })
-
-// see ADR-005
-function moveOneLine(view: EditorView, dir: 1 | -1): boolean {
-  const { state } = view
-  const pos = state.selection.main.head
-  const line = state.doc.lineAt(pos)
-  const targetLineNum = line.number + dir
-  if (targetLineNum < 1 || targetLineNum > state.doc.lines) return false
-  const targetLine = state.doc.line(targetLineNum)
-  // Preserve horizontal column within the target line.
-  const col = pos - line.from
-  const anchor = Math.min(targetLine.from + col, targetLine.to)
-  view.dispatch({ selection: { anchor }, scrollIntoView: true })
-  return true
-}
 
 const blockquoteExitKeymap = Prec.highest(
   keymap.of([
@@ -637,10 +752,6 @@ const blockquoteExitKeymap = Prec.highest(
   ]),
 )
 
-const blockNavigationKeymap = Prec.highest(keymap.of([
-  { key: 'ArrowDown', run: (view) => moveOneLine(view, 1) },
-  { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1) },
-]))
 
 /**
  * Clic sur une ligne rendue : CodeMirror pose le curseur au debut du bloc,
@@ -674,25 +785,263 @@ const clickPlacesCursor = EditorView.domEventHandlers({
   },
 })
 
+/**
+ * La cible est dans un element interactif DE L'OBJET. Pas plus haut : la
+ * zone de l'editeur elle-meme est contenteditable.
+ */
+function insideObject(target: EventTarget | null, root: HTMLElement, selector: string): boolean {
+  const hit = (target as Element | null)?.closest?.(selector)
+  return !!hit && root.contains(hit)
+}
+
+/** Les regles des colonnes, une fois par page (elles servent aussi a l'export). */
+function ensureColumnsStyle(): void {
+  if (typeof document === 'undefined' || document.getElementById('plume-columns-style')) return
+  const style = document.createElement('style')
+  style.id = 'plume-columns-style'
+  style.textContent = COLUMNS_CSS
+  document.head.appendChild(style)
+}
+
+// ── Mode classique : clavier, menu, poignees ────────────────────────────────
+
+function classicExtensions(
+  env: PreviewEnv,
+  objectsOf: (state: EditorState) => DecorationSet,
+) {
+  const detect = (text: string): { type: string; spec: BlockSpec } | null => {
+    if (!env.registry) return null
+    const ids = env.getActiveScopeIds?.() ?? null
+    return env.registry.detectActive ? env.registry.detectActive(text, ids) : env.registry.detectBlock(text)
+  }
+  const objectStartingAt = (state: EditorState, pos: number): BlockRange | null => {
+    let found: BlockRange | null = null
+    objectsOf(state).between(pos, pos, (from, to) => { if (from === pos) { found = { from, to }; return false } return undefined })
+    return found
+  }
+  const objectEndingAt = (state: EditorState, pos: number): BlockRange | null => {
+    let found: BlockRange | null = null
+    objectsOf(state).between(pos, pos, (from, to) => { if (to === pos) { found = { from, to }; return false } return undefined })
+    return found
+  }
+
+  /** Les lignes entieres d'un bloc, retour a la ligne compris. */
+  const wholeLines = (state: EditorState, r: BlockRange): BlockRange => {
+    const from = state.doc.lineAt(r.from).from
+    const to = state.doc.lineAt(r.to).to
+    return to < state.doc.length ? { from, to: to + 1 } : { from: Math.max(0, from - 1), to }
+  }
+
+  const blockMenu = (view: EditorView, r: BlockRange, isObject: boolean): BlockMenuItem[] => {
+    const text = view.state.sliceDoc(r.from, r.to)
+    const items: BlockMenuItem[] = []
+    if (isObject) {
+      const detected = detect(text)
+      const edit = editContext(view, env.ctx ?? { editorView: view }, () => r)
+      try {
+        items.push(...(detected?.spec.menu?.(detected.spec.deserialize(text), edit) ?? []))
+      } catch (err) {
+        console.debug('[LivePreview] block menu error:', err)
+      }
+      items.push({ id: 'source', label: 'Modifier la source', separatorBefore: items.length > 0, run: () => openSource(view, r) })
+    }
+    items.push({
+      id: 'duplicate',
+      label: 'Dupliquer',
+      separatorBefore: !isObject ? false : undefined,
+      run: () => {
+        const end = view.state.doc.lineAt(r.to).to
+        // Un bloc garde une ligne vide entre lui et sa copie (deux tableaux colles n'en font qu'un).
+        view.dispatch({ changes: { from: end, insert: (isObject ? '\n\n' : '\n') + view.state.sliceDoc(view.state.doc.lineAt(r.from).from, end) }, userEvent: 'input' })
+      },
+    })
+    items.push({
+      id: 'delete',
+      label: 'Supprimer',
+      run: () => view.dispatch({ changes: { ...wholeLines(view.state, r), insert: '' }, userEvent: 'delete' }),
+    })
+    return items
+  }
+
+  const menu = (view: EditorView, r: BlockRange, isObject: boolean, x: number, y: number) => {
+    if (view.state.readOnly) return
+    showBlockMenu(blockMenu(view, r, isObject), x, y)
+  }
+
+  const objectOf = (view: EditorView, target: EventTarget | null): { dom: HTMLElement; range: BlockRange } | null => {
+    const dom = (target as Element | null)?.closest?.('.plume-object') as HTMLElement | null
+    if (!dom || !view.contentDOM.contains(dom)) return null
+    const range = env.rangeOf(view, dom)
+    return range ? { dom, range } : null
+  }
+
+  const pointer = ViewPlugin.define(view => {
+    const contextmenu = (e: MouseEvent) => {
+      if (view.state.readOnly) return
+      const hit = objectOf(view, e.target)
+      if (!hit) return
+      // Le menu du navigateur reste dans une zone de texte (correcteur).
+      if (insideObject(e.target, hit.dom, 'textarea, input, [contenteditable="true"], [contenteditable="plaintext-only"]')) return
+      e.preventDefault()
+      menu(view, hit.range, true, e.clientX, e.clientY)
+    }
+    const dblclick = (e: MouseEvent) => {
+      if (view.state.readOnly) return
+      const hit = objectOf(view, e.target)
+      if (!hit) return
+      if (insideObject(e.target, hit.dom, 'a, button, input, select, textarea, [contenteditable="true"], [contenteditable="plaintext-only"], .plume-columns, .plume-table-object')) return
+      // Un objet sans edition propre : double clic, sa source.
+      const detected = detect(view.state.sliceDoc(hit.range.from, hit.range.to))
+      if (detected?.spec.renderEditable) return
+      e.preventDefault()
+      openSource(view, hit.range)
+    }
+    view.dom.addEventListener('contextmenu', contextmenu)
+    view.dom.addEventListener('dblclick', dblclick)
+    return {
+      destroy() {
+        view.dom.removeEventListener('contextmenu', contextmenu)
+        view.dom.removeEventListener('dblclick', dblclick)
+        closeBlockMenu()
+      },
+    }
+  })
+
+  // Ecrire juste avant ou juste apres un objet ouvre une ligne : le texte
+  // ne se colle pas a la source cachee du bloc.
+  const typingBesideObject = EditorView.inputHandler.of((view, from, to, text) => {
+    if (from !== to || text.includes('\n')) return false
+    const after = objectEndingAt(view.state, from)
+    const before = after ? null : objectStartingAt(view.state, from)
+    if (!after && !before) return false
+    const insert = after ? `\n${text}` : `${text}\n`
+    view.dispatch({ changes: { from, insert }, selection: { anchor: from + (after ? 1 + text.length : text.length) }, userEvent: 'input.type' })
+    return true
+  })
+
+  const keys = Prec.highest(keymap.of([
+    { key: 'Escape', run: view => closeSource(view) },
+    {
+      key: 'Backspace',
+      run: view => {
+        const sel = view.state.selection.main
+        if (!sel.empty) return false
+        // Juste apres un objet : ne pas l'effacer d'un coup (le menu sert a ca).
+        if (objectEndingAt(view.state, sel.head)) return true
+        const obj = objectStartingAt(view.state, sel.head)
+        if (!obj || sel.head === 0) return false
+        const prev = view.state.doc.lineAt(sel.head - 1)
+        // La ligne d'avant a du texte : y aller plutot que de coller l'objet a elle.
+        if (prev.text.trim()) { view.dispatch({ selection: { anchor: prev.to } }); return true }
+        return false
+      },
+    },
+    {
+      key: 'Delete',
+      run: view => {
+        const sel = view.state.selection.main
+        if (!sel.empty) return false
+        if (objectStartingAt(view.state, sel.head)) return true
+        const obj = objectEndingAt(view.state, sel.head)
+        if (!obj || sel.head >= view.state.doc.length) return false
+        const next = view.state.doc.lineAt(sel.head + 1)
+        if (next.text.trim()) { view.dispatch({ selection: { anchor: next.from } }); return true }
+        return false
+      },
+    },
+  ]))
+
+  return [
+    sourceOpenField,
+    objectEpochField,
+    keys,
+    typingBesideObject,
+    pointer,
+    blockDragExtension({
+      objects: objectsOf,
+      frontmatterEnd,
+      menu,
+    }),
+    EditorView.baseTheme({
+      '.plume-object': { cursor: 'default' },
+      '.plume-source-line': {
+        fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+        fontSize: '0.9em',
+        background: 'var(--bg-code, rgba(127,127,127,0.10))',
+        borderLeft: '2px solid var(--accent, #7c3aed)',
+      },
+      '.plume-source-first': { borderTopRightRadius: '6px' },
+      '.plume-source-last': { borderBottomRightRadius: '6px' },
+      '.plume-source-bar': {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+        padding: '2px 6px 4px', fontSize: '11px', color: 'var(--text-faint, #6c7086)',
+        fontFamily: 'var(--font-ui, inherit)',
+      },
+      '.plume-source-done': {
+        border: '1px solid var(--border, #3d3d5c)', borderRadius: '4px', background: 'transparent',
+        color: 'inherit', font: 'inherit', padding: '1px 8px', cursor: 'pointer',
+      },
+      '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
+      '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
+      '.plume-table-actions': { display: 'flex', gap: '6px' },
+      '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em' },
+      '.plume-column:hover': { background: 'var(--bg-hover, rgba(127,127,127,0.06))' },
+      '.plume-column-empty': { color: 'var(--text-faint, #6c7086)', fontStyle: 'italic', padding: '0 6px', userSelect: 'none' },
+      '.plume-column-editor': {
+        width: '100%', boxSizing: 'border-box', resize: 'none', overflow: 'hidden',
+        font: 'inherit', lineHeight: 'var(--vault-line-height, 1.65)', color: 'inherit',
+        background: 'var(--bg-surface, rgba(127,127,127,0.08))',
+        border: '1px solid var(--accent, #7c3aed)', borderRadius: '4px', padding: '2px 6px',
+      },
+    }),
+  ]
+}
+
 export function createLivePreviewExtension(
   registry?: BlockRegistry,
   hooks?: HookRegistry,
   ctx?: BlockContext,
   showLineNumbers = true,
   getActiveScopeIds?: () => Set<string> | null,
+  mode: PreviewMode = 'power',
 ) {
-  const field = StateField.define<DecorationSet>({
+  const classic = mode === 'classic'
+  ensureColumnsStyle()
+  const rangeOf = (view: EditorView, dom: HTMLElement): BlockRange | null => {
+    if (!dom.isConnected) return null
+    let pos: number
+    try { pos = view.posAtDOM(dom) } catch { return null }
+    let found: BlockRange | null = null
+    view.state.field(field).objects.between(pos, pos, (from, to) => {
+      if (from === pos) { found = { from, to }; return false }
+      return undefined
+    })
+    return found
+  }
+  const env: PreviewEnv = { registry, hooks, ctx, getActiveScopeIds, mode, rangeOf }
+  const field: StateField<PreviewDecorations> = StateField.define<PreviewDecorations>({
     create(state) {
-      return buildDecorations(state, registry, hooks, ctx, getActiveScopeIds)
+      return buildDecorations(state, env)
     },
-    update(decorations, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e) || isHighlightsEffect(e))) {
-        return buildDecorations(tr.state, registry, hooks, ctx, getActiveScopeIds)
+    update(value, tr) {
+      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
+        return buildDecorations(tr.state, env)
       }
-      return decorations.map(tr.changes)
+      return { decorations: value.decorations.map(tr.changes), objects: value.objects.map(tr.changes) }
     },
-    provide: (f) => EditorView.decorations.from(f),
+    provide: (f) => [
+      EditorView.decorations.from(f, v => v.decorations),
+      // Mode classique : le curseur saute un objet d'un coup.
+      EditorView.atomicRanges.of(view => view.state.field(f).objects),
+    ],
   })
+
+  const objectsOf = (state: EditorState) => state.field(field).objects
+  const objectAround = (state: EditorState, pos: number): BlockRange | null => {
+    let found: BlockRange | null = null
+    objectsOf(state).between(pos, pos, (from, to) => { found = { from, to }; return false })
+    return found
+  }
 
   const headingCursorFix = EditorView.updateListener.of((update) => {
     if (!update.selectionSet || update.docChanged) return
@@ -711,6 +1060,37 @@ export function createLivePreviewExtension(
     }
   })
 
+  // see ADR-005 — en mode classique, une fleche ne s'arrete pas dans un objet.
+  const moveOneLine = (view: EditorView, dir: 1 | -1): boolean => {
+    const { state } = view
+    const pos = state.selection.main.head
+    const line = state.doc.lineAt(pos)
+    const targetLineNum = line.number + dir
+    if (targetLineNum < 1 || targetLineNum > state.doc.lines) return false
+    let targetLine = state.doc.line(targetLineNum)
+    const col = pos - line.from
+    if (classic) {
+      const obj = objectAround(state, targetLine.from)
+      if (obj && !(dir === -1 && pos === obj.to)) {
+        const beyond = dir === 1 ? state.doc.lineAt(obj.to).number + 1 : state.doc.lineAt(obj.from).number - 1
+        if (beyond < 1 || beyond > state.doc.lines) {
+          view.dispatch({ selection: { anchor: dir === 1 ? obj.to : obj.from }, scrollIntoView: true })
+          return true
+        }
+        targetLine = state.doc.line(beyond)
+      }
+    }
+    // Preserve horizontal column within the target line.
+    const anchor = Math.min(targetLine.from + col, targetLine.to)
+    view.dispatch({ selection: { anchor }, scrollIntoView: true })
+    return true
+  }
+
+  const blockNavigationKeymap = Prec.highest(keymap.of([
+    { key: 'ArrowDown', run: (view) => moveOneLine(view, 1) },
+    { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1) },
+  ]))
+
   return [
     remoteCursorPositionsField,
     field,
@@ -719,6 +1099,7 @@ export function createLivePreviewExtension(
     blockNavigationKeymap,
     headingCursorFix,
     clickPlacesCursor,
+    ...(classic ? classicExtensions(env, objectsOf) : []),
     EditorView.baseTheme({
       // Restore lineNumbers() base theme (removed when we replaced the extension).
       '.cm-lineNumbers .cm-gutterElement': {

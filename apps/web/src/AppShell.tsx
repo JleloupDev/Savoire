@@ -35,7 +35,7 @@ import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { setShowEditorToolbar, showEditorToolbar, useShowFileExtensions } from './displayPreferences'
+import { setShowEditorToolbar, showEditorToolbar, useNoteEditorMode, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
 import { layoutPreferences, subscribeLayoutPreferences } from './layoutPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
@@ -399,12 +399,10 @@ export function AppShell() {
   useMobileBack(() => setSettingsOpen(false), settingsOpen)
   const [sharingOpen, setSharingOpen] = useState(false)
   const [keyDebugOpen, setKeyDebugOpen] = useState(false)
-  // 'rich' par defaut : c'est le mode qui reprend l'affichage actuel (live
-  // preview des blocs) en y ajoutant les marques inline et les barres de mise
-  // en forme. 'source' donne le Markdown brut, sans rien autour.
-  // Le Markdown s'edite toujours avec l'apercu en direct : le bouton qui
-  // basculait vers le Markdown brut a ete retire.
-  const [markdownEditorMode] = useState<'source' | 'rich'>('rich')
+  // Mode d'edition des notes (ADR-030), choisi dans les reglages : 'power'
+  // par defaut (rendu en direct, la source sous le curseur), 'classic' (des
+  // objets, la source au clic droit), 'source' (le Markdown brut, rien autour).
+  const markdownEditorMode = useNoteEditorMode()
   const [quickOpenVisible, setQuickOpenVisible] = useState(false)
   const [paletteVisible, setPaletteVisible] = useState(false)
   const [locale, setLocaleState] = useState<Locale>(getLocale)
@@ -436,7 +434,7 @@ export function AppShell() {
   const identityProviderRef = useRef<IIdentityProvider | undefined>(undefined)
   identityProviderRef.current = appRootRef.current.identityProvider
 
-  const markdownEditorModeRef = useRef<'source' | 'rich'>(markdownEditorMode)
+  const markdownEditorModeRef = useRef<NoteEditorMode>(markdownEditorMode)
   markdownEditorModeRef.current = markdownEditorMode
 
   // Notify open panels only after the mode state has actually been committed.

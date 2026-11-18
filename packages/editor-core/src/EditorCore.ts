@@ -370,7 +370,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
           ? []
           : [
               ...propertiesPanelExtension(propertiesHost),
-              ...createLivePreviewExtension(this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true, () => { this.syncDefaults(); return new Set(this.activationMap.keys()) }),
+              ...createLivePreviewExtension(
+                this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true,
+                () => { this.syncDefaults(); return new Set(this.activationMap.keys()) },
+                options.editorMode === 'classic' ? 'classic' : 'power',
+              ),
             ]),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
@@ -637,6 +641,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       { id: 'builtin-code',       label: 'Bloc de code',    description: 'Bloc de code (```)',        icon: 'square-code', category: 'Blocs',  insert: '```\n\n```' },
       { id: 'builtin-table',      label: 'Tableau',         description: 'Tableau Markdown',          icon: 'table',       category: 'Blocs',   insert: '| Col 1 | Col 2 |\n| --- | --- |\n| | |' },
       { id: 'builtin-hr',         label: 'Séparateur',      description: 'Ligne horizontale (---)',   icon: 'minus',       category: 'Blocs',   insert: '---'  },
+      // Colonnes (ADR-030) : le curseur dans la premiere colonne.
+      { id: 'builtin-columns-2',  label: '2 colonnes',      description: 'Deux colonnes cote a cote (::: colonnes)', icon: 'columns-2', category: 'Mise en page', insert: '::: colonnes\n\n+++\n\n:::', cursor: 13 },
+      { id: 'builtin-columns-3',  label: '3 colonnes',      description: 'Trois colonnes (::: colonnes)',            icon: 'columns-3', category: 'Mise en page', insert: '::: colonnes\n\n+++\n\n+++\n\n:::', cursor: 13 },
+      { id: 'builtin-columns-img', label: 'Image et texte', description: 'Image a gauche, texte a droite (::: colonnes 1 2)', icon: 'panel-left', category: 'Mise en page', insert: '::: colonnes 1 2\n![[]]\n+++\n\n:::', cursor: 20 },
     ] as const
     for (const item of builtins) slash.register(item)
 

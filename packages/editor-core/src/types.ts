@@ -106,9 +106,13 @@ export interface EditorCoreOptions {
   readOnly?: boolean
   /** When false, hides the line-number gutter. Defaults to true. */
   showLineNumbers?: boolean
-  /** 'rich' = live preview (blocs + marques inline). 'source' = Markdown brut.
-   *  Les deux editent le MEME texte : c'est une affaire de rendu, pas de modele. */
-  editorMode?: 'source' | 'rich'
+  /**
+   * Facon d'editer (voir EditorMode) : 'source' (Markdown brut), 'power'
+   * (rendu en direct, la source sous le curseur) ou 'classic' (des objets,
+   * la source au clic droit). 'rich' est l'ancien nom de 'power'. Tous
+   * editent le MEME texte : c'est une affaire de rendu, pas de modele.
+   */
+  editorMode?: import('@savoire/plugin-api').EditorMode | 'rich'
   /**
    * Path of the file being edited (e.g. "notes/drawing.excalidraw").
    * When provided, EditorCore derives the extension and auto-loads the matching

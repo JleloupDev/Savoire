@@ -12,7 +12,7 @@ import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
+import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
 import { layoutMode } from './layoutMode'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
@@ -53,8 +53,8 @@ export interface EditorAreaRefs {
   /** Shared PluginAPIImpl created in onBeforeReady — passed to EditorCore to avoid
    *  reloading plugins on every tab open. */
   pluginAPI: React.MutableRefObject<import('@savoire/plugin-api').IEditorHostAPI | null>
-  /** Markdown editor mode: source (CM6) or rich (internal rich editor). */
-  markdownEditorMode: React.MutableRefObject<'source' | 'rich'>
+  /** Mode d'edition des notes : source, power ou classic (ADR-030). */
+  markdownEditorMode: React.MutableRefObject<NoteEditorMode>
   /** ContentIndexingService — indexes non-Markdown files via shadow documents. */
   contentIndexingService: React.MutableRefObject<import('@savoire/application').ContentIndexingService | null>
   /** Factory for per-document plugin loaders (note-scoped plugins). */
@@ -318,7 +318,7 @@ export function DocumentPanelHost({
   // parti, elles reviennent la ou elles ont un sens : le mode riche, ou l'on
   // met en forme sans connaitre la syntaxe Markdown. Le mode source reste
   // volontairement nu — du texte, rien autour.
-  const showRichChrome = isMarkdown && refs.markdownEditorMode.current === 'rich' && !!controller
+  const showRichChrome = isMarkdown && refs.markdownEditorMode.current !== 'source' && !!controller
   const showToolbar = useShowEditorToolbar()
   const mobile = layoutMode() === 'mobile'
 

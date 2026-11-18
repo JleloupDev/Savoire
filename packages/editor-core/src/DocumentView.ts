@@ -27,7 +27,7 @@ export interface DocumentViewOptions {
   pluginRegistry?: Record<string, () => Promise<VaultPlugin>>
   crdt?: import('@savoire/plugin-api').ICRDT
   getTransportState?: () => 'connected' | 'connecting' | 'disconnected'
-  editorMode?: 'source' | 'rich'
+  editorMode?: import('@savoire/plugin-api').EditorMode | 'rich'
   /** Factory for the per-document plugin loader — injected so editor-core stays free of plugin-runtime. */
   createPluginLoader?: () => IPluginLoader
   /**
@@ -131,7 +131,7 @@ export class DocumentView {
     // « source » montre le Markdown brut. Rien a convertir entre les deux,
     // et donc rien a changer cote synchronisation.
     this.editorController = new EditorCore({
-      editorMode: this.options.editorMode ?? 'rich',
+      editorMode: this.options.editorMode ?? 'power',
       container: this.options.container,
       crdt: this.options.crdt as import('./types').ICodeMirrorCRDT | undefined,
       getTransportState: this.options.getTransportState,

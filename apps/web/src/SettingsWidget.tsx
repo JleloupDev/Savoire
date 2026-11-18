@@ -20,7 +20,7 @@ import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
 import { LayoutSettings, type LayoutPanels } from './LayoutSettings'
-import { setLinkPreviewDelay, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
+import { setLinkPreviewDelay, setNoteEditorMode, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useNoteEditorMode, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -579,6 +579,7 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
         })}
       </div>
       <ShowExtensionsOption />
+      <EditorModeOption />
       <ShowToolbarOption />
       <LinkPreviewOption />
     </div>
@@ -597,6 +598,35 @@ function ShowExtensionsOption() {
       />
       {t('app', 'settings.files.showExtensions')}
     </label>
+  )
+}
+
+function EditorModeOption() {
+  const mode = useNoteEditorMode()
+  const modes: { id: NoteEditorMode; label: 'settings.editor.mode.classic' | 'settings.editor.mode.power' | 'settings.editor.mode.source'; hint: 'settings.editor.mode.classicHint' | 'settings.editor.mode.powerHint' | 'settings.editor.mode.sourceHint' }[] = [
+    { id: 'classic', label: 'settings.editor.mode.classic', hint: 'settings.editor.mode.classicHint' },
+    { id: 'power', label: 'settings.editor.mode.power', hint: 'settings.editor.mode.powerHint' },
+    { id: 'source', label: 'settings.editor.mode.source', hint: 'settings.editor.mode.sourceHint' },
+  ]
+  return (
+    <fieldset data-testid="settings-editor-mode" style={{ border: 0, padding: 0, margin: '16px 0 0' }}>
+      <legend style={{ padding: 0, marginBottom: 6 }}>{t('app', 'settings.editor.mode')}</legend>
+      {modes.map(m => (
+        <label key={m.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4, cursor: 'pointer' }}>
+          <input
+            type="radio"
+            name="editor-mode"
+            data-testid={`settings-editor-mode-${m.id}`}
+            checked={mode === m.id}
+            onChange={() => setNoteEditorMode(m.id)}
+          />
+          <span>
+            {t('app', m.label)}
+            <span style={{ color: 'var(--text-faint)', fontSize: '0.78rem', marginLeft: 6 }}>{t('app', m.hint)}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   )
 }
 
