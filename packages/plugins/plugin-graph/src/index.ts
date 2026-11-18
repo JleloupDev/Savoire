@@ -34,6 +34,8 @@ export function createGraphPlugin(options: { groupId?: string; tabOf?: string } 
         // de place. `ribbon` pose le bouton d'ouverture dans la barre d'icones
         // de gauche. groupId/tabOf restent honores si un hote veut malgre tout
         // l'ancrer dans un groupe.
+        // Sur mobile : un ecran range dans « Plus », pas un onglet du bas.
+        mobile: 'more',
         groupId: options.groupId,
         container: options.groupId ? undefined : 'center',
         tabOf: options.tabOf,

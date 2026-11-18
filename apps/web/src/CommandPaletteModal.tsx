@@ -7,6 +7,7 @@
 // n'y sont pas : elles s'utilisent depuis l'editeur.
 import { useEffect, useRef, useState } from 'react'
 import type { PluginCommand } from '@savoire/plugin-api'
+import { useMobileBack } from './useMobileBack'
 
 const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
@@ -16,6 +17,7 @@ export function CommandPaletteModal({ commands, format, onClose }: {
   format: (command: PluginCommand) => string
   onClose: () => void
 }) {
+  useMobileBack(onClose)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -41,7 +43,7 @@ export function CommandPaletteModal({ commands, format, onClose }: {
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--overlay)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '14vh' }}>
+    <div className="sv-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--overlay)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '14vh' }}>
       <div data-testid="command-palette" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-lg)', width: 520, maxWidth: '90vw', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>

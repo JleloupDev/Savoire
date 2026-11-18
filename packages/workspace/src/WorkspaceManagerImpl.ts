@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { NotificationType, WorkspaceAPI, ViewDocument, ViewSpec, ViewContext } from '@savoire/plugin-api'
+import type { NotificationType, WorkspaceAPI, ViewDocument, ViewSpec, ViewContext, MobilePlacement } from '@savoire/plugin-api'
 import type { WorkspacePaneState, WorkspacePort, WorkspaceLayout, PanelLocation } from './types'
 import { ViewRegistryImpl } from './ViewRegistryImpl'
 
@@ -11,6 +11,8 @@ export interface RibbonItem {
   icon?: string
   /** 'center' = vue principale ; son bouton se range dans la barre de gauche. */
   container: PanelLocation
+  /** Place sur mobile, si la vue ou le groupe la precise. */
+  mobile?: MobilePlacement
 }
 
 export interface ActiveEditorInfo {
@@ -259,7 +261,7 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
   getRibbonItems(): RibbonItem[] {
     const groupItems = this.views.getGroups()
       .filter(g => g.ribbon)
-      .map(g => ({ type: 'group' as const, id: g.id, title: g.title, icon: g.icon, container: g.container }))
+      .map(g => ({ type: 'group' as const, id: g.id, title: g.title, icon: g.icon, container: g.container, mobile: g.mobile }))
 
     // Standalone views (no groupId) AND views inside a group that explicitly opt into the ribbon
     const viewItems = this.views.getAll()
@@ -270,6 +272,7 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
         title: v.title,
         icon: v.icon,
         container: this.effectiveContainer(v) as PanelLocation,
+        mobile: v.mobile,
       }))
 
     return [...groupItems, ...viewItems]

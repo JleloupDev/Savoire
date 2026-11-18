@@ -664,3 +664,35 @@ html[data-layout="mobile"] [data-testid="bubble-window"] {
   width: auto !important;
   bottom: calc(128px + env(safe-area-inset-bottom)) !important;
 }
+html.mobile-keyboard [data-testid="feedback-bubble"],
+html.mobile-keyboard [data-testid="bubble-dock"] { display: none !important; }
+
+/* Editeur : une note a la fois (le titre est dans la barre du haut), sans numeros de ligne. */
+html[data-layout="mobile"] .mobile-screen[data-screen-id="editor-area"] .dv-tabs-and-actions-container { display: none; }
+html[data-layout="mobile"] .cm-lineNumbers { display: none !important; }
+/* La barre d'edition n'apparait qu'avec le clavier. */
+html[data-layout="mobile"]:not(.mobile-keyboard) .sv-tb--bottom { display: none; }
+
+/* Fenetres (parametres, partage, ouverture rapide...) : plein ecran. */
+html[data-layout="mobile"] .sv-overlay {
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+}
+html[data-layout="mobile"] .sv-overlay > * {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  box-sizing: border-box;
+  padding-top: max(env(safe-area-inset-top), var(--sv-overlay-pad-top, 0px));
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: auto;
+}
+html[data-layout="mobile"] .cm-gutters { display: none !important; }
+html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-right: 14px !important; }

@@ -57,6 +57,7 @@ export type {
   ViewContext,
   ViewSpec,
   ViewGroup,
+  MobilePlacement,
   ViewRegistry,
   DocumentRoom,
   DocumentRoomPresence,

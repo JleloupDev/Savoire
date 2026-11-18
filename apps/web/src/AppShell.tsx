@@ -30,6 +30,7 @@ import { loadCustomHotkeys, saveCustomHotkeys } from './hotkeyPreferences'
 import { WorkspaceRoot, MobileWorkspaceRoot } from '@savoire/workspace'
 import { layoutMode } from './layoutMode'
 import { MobileMore } from './MobileMore'
+import { useMobileBack } from './useMobileBack'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
@@ -352,6 +353,7 @@ export function AppShell() {
     getVaultKey(userId), [getVaultKey])
 
   const [keyModalRequest, setKeyModalRequest] = useState<KeyModalRequest | null>(null)
+  useMobileBack(() => setKeyModalRequest(null), !!keyModalRequest)
 
   // ── Vault state ────────────────────────────────────────────────────────────
 
@@ -394,6 +396,7 @@ export function AppShell() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  useMobileBack(() => setSettingsOpen(false), settingsOpen)
   const [sharingOpen, setSharingOpen] = useState(false)
   const [keyDebugOpen, setKeyDebugOpen] = useState(false)
   // 'rich' par defaut : c'est le mode qui reprend l'affichage actuel (live
@@ -618,22 +621,17 @@ export function AppShell() {
   // ── Disposition : panneaux presents et volets ouverts (vue par defaut) ─────
   // Les panneaux retires sont filtres avant la pose des panneaux, puis a
   // chaque changement dans les options.
-  // Mobile : l'inspecteur des plugins reste un outil du bureau.
-  const hiddenPanels = useCallback(() => {
-    const hidden = layoutPreferences().config.hidden
-    return mobile ? [...hidden, 'plugin-inspector'] : hidden
-  }, [mobile])
   const onBeforeReadyWithLayout = useCallback(async (m: WorkspaceManagerImpl) => {
-    m.views.setHiddenIds(hiddenPanels())
+    m.views.setHiddenIds(layoutPreferences().config.hidden)
     await onBeforeReady(m)
-  }, [onBeforeReady, hiddenPanels])
+  }, [onBeforeReady])
   useEffect(() => subscribeLayoutPreferences(() => {
     const m = managerRef.current
     if (!m) return
-    m.views.setHiddenIds(hiddenPanels())
+    m.views.setHiddenIds(layoutPreferences().config.hidden)
     m.syncPanels()
     setRibbonItems(m.getRibbonItems())
-  }), [hiddenPanels])
+  }), [])
   /** Volets du demarrage : maintenant (vue choisie dans les options) ou a l'ouverture. */
   const applyLayoutPanes = useCallback((m: WorkspaceManagerImpl, startup: boolean) => {
     const { config } = layoutPreferences()
@@ -1717,7 +1715,7 @@ export function AppShell() {
 
       {/* ── Settings modal ── */}
       {settingsOpen && (
-        <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="sv-overlay" onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current}
               layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} pluginCapabilities={id => {
@@ -1738,7 +1736,7 @@ export function AppShell() {
           (width/border/shadow), this wrapper only owns the dimmed backdrop
           and the ✕ anchor, or the card would end up double-boxed. ── */}
       {keyModalRequest && activeAccount && (
-        <div data-testid="key-modal" onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div data-testid="key-modal" className="sv-overlay" onClick={() => setKeyModalRequest(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
             <VaultKeyGate userId={activeAccount.userId} onDone={handleKeyModalDone} />
             <button onClick={() => setKeyModalRequest(null)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>

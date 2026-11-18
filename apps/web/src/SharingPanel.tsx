@@ -11,6 +11,7 @@ import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShare
 import type { VaultSummary, DocumentDto } from './types'
 import { t, ti } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
+import { useMobileBack } from './useMobileBack'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ interface Props {
 }
 
 export function SharingPanel({ token, vault, document: doc, sharingApi, onClose, publications }: Props) {
+  useMobileBack(onClose)
   // Which resource to manage: the vault, the note, or one of the note's folders
   // (« folder:A/B ») : droits herites, surchargeables (AclTab).
   const [targetKey, setTarget] = useState<string>(doc ? 'document' : 'vault')
@@ -248,7 +250,7 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
   const activeLinks = sharing?.links.filter(l => l.isValid) ?? []
 
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="sv-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={modal}>
 
         {/* Header */}

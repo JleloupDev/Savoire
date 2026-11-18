@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { useState, useEffect, useRef } from 'react'
 import { t } from '@savoire/i18n'
+import { useMobileBack } from './useMobileBack'
 
 const SearchIco = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -24,6 +25,7 @@ export function QuickOpenModal({
   onSelect: (path: string) => void
   onClose: () => void
 }) {
+  useMobileBack(onClose)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -48,6 +50,7 @@ export function QuickOpenModal({
 
   return (
     <div
+      className="sv-overlay"
       style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--overlay)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '14vh' }}
       onClick={onClose}
     >

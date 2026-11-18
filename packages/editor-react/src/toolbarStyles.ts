@@ -17,6 +17,11 @@ const CSS = `
   user-select: none; flex-shrink: 0; position: relative;
 }
 .sv-tb-spacer { flex: 1; min-width: 4px; }
+/* Sous le document (mobile) : au-dessus du clavier, menus vers le haut, cibles au doigt. */
+.sv-tb.sv-tb--bottom { border-bottom: 0; border-top: 1px solid var(--border, #e2e8f0); padding: 4px 6px; min-height: 48px; }
+.sv-tb--bottom .sv-tb-btn { height: 40px; min-width: 40px; }
+.sv-tb--bottom .sv-tb-menu { top: auto; bottom: calc(100% + 6px); max-height: min(50vh, 360px); }
+.sv-tb--bottom .sv-tb-item { min-height: 40px; }
 .sv-tb-sep { flex: none; width: 1px; height: 18px; background: var(--border, #e2e8f0); margin: 0 5px; }
 .sv-tb-wrap { position: relative; display: inline-flex; flex: none; }
 

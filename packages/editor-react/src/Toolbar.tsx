@@ -37,17 +37,23 @@ const W_INSERT = 104
 const W_MORE = 34
 const PADDING = 24
 
-function widthOf(cmd: ToolbarCommand): number {
-  if (!cmd.items?.length) return W_BUTTON
-  return cmd.currentLabel ? W_BLOCK : W_SPLIT
+function widthOf(cmd: ToolbarCommand, bottom = false): number {
+  if (!cmd.items?.length) return bottom ? 40 : W_BUTTON
+  if (cmd.currentLabel) return bottom ? 120 : W_BLOCK
+  return bottom ? 62 : W_SPLIT
 }
 
 export interface ToolbarProps {
   /** Ajoute « Masquer la barre » au menu ⋯. */
   onHide?: () => void
+  /**
+   * 'bottom' : sous le document (mobile, juste au-dessus du clavier). Les
+   * menus s'ouvrent alors vers le haut et les boutons sont plus grands.
+   */
+  placement?: 'top' | 'bottom'
 }
 
-export function Toolbar({ onHide }: ToolbarProps = {}) {
+export function Toolbar({ onHide, placement = 'top' }: ToolbarProps = {}) {
   ensureToolbarStyles()
   const ctrl = useEditorContext()
   useEditorTick(ctrl)
@@ -69,13 +75,18 @@ export function Toolbar({ onHide }: ToolbarProps = {}) {
   useEffect(() => { menus.setOpen(null) }, [ctrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const commands = ctrl?.getToolbarCommands?.() ?? []
-  if (commands.length === 0) return <div className="sv-tb" ref={barRef} />
+  const barClass = placement === 'bottom' ? 'sv-tb sv-tb--bottom' : 'sv-tb'
+  if (commands.length === 0) return <div className={barClass} ref={barRef} />
 
   const insertCmds = commands.filter(c => c.menu === 'insert')
   const moreCmds = commands.filter(c => c.menu === 'more')
   const groups = new Map<string, ToolbarCommand[]>()
+  const bottom = placement === 'bottom'
+  // En bas (telephone) : les palettes (surlignage, couleur) passent dans ⋯,
+  // gras, italique et listes gardent leur bouton.
+  const paletteFolded = bottom ? commands.filter(c => !c.menu && c.items?.length && !c.currentLabel) : []
   for (const cmd of commands) {
-    if (cmd.menu) continue
+    if (cmd.menu || paletteFolded.includes(cmd)) continue
     const g = cmd.group ?? 'autre'
     if (!groups.has(g)) groups.set(g, [])
     groups.get(g)!.push(cmd)
@@ -87,14 +98,14 @@ export function Toolbar({ onHide }: ToolbarProps = {}) {
 
   // Repli : on garde les groupes tant qu'ils tiennent, le reste va dans ⋯.
   const insertInline = insertCmds.length > 0 && width >= 560
-  let budget = width - PADDING - W_MORE - (insertInline ? W_INSERT : 0)
+  let budget = width - PADDING - (bottom ? 44 : W_MORE) - (insertInline ? W_INSERT : 0)
   const visible: string[] = []
   const folded: string[] = []
   for (const [i, g] of ordered.entries()) {
-    const w = groups.get(g)!.reduce((sum, c) => sum + widthOf(c), 0) + (i > 0 ? W_SEP : 0)
+    const w = groups.get(g)!.reduce((sum, c) => sum + widthOf(c, bottom), 0) + (i > 0 ? W_SEP : 0)
     if (folded.length === 0 && (i < KEPT || w <= budget)) { visible.push(g); budget -= w } else folded.push(g)
   }
-  const foldedCmds = folded.flatMap(g => groups.get(g)!)
+  const foldedCmds = [...folded.flatMap(g => groups.get(g)!), ...paletteFolded]
   const showMore = moreCmds.length > 0 || foldedCmds.length > 0 || !insertInline && insertCmds.length > 0 || !!onHide
 
   const close = () => menus.setOpen(null)
@@ -105,7 +116,7 @@ export function Toolbar({ onHide }: ToolbarProps = {}) {
   }
 
   return (
-    <div className="sv-tb" ref={barRef} role="toolbar" aria-label="Mise en forme" data-testid="editor-toolbar">
+    <div className={barClass} ref={barRef} role="toolbar" aria-label="Mise en forme" data-testid="editor-toolbar" data-placement={placement}>
       <div ref={menus.rootRef} style={{ display: 'contents' }}>
         {visible.map((g, i) => (
           <span key={g} style={{ display: 'contents' }}>

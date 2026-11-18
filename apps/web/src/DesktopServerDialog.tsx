@@ -14,6 +14,7 @@ import { ServerAddressError } from '@savoire/infrastructure-sync'
 import { getServerChoice, subscribeServerChoice, type ServerChoice } from './serverConnection'
 import { describeAuthError } from './loginFlow'
 import { serverLabel, type ServerStatus } from './desktopConnection'
+import { useMobileBack } from './useMobileBack'
 
 /** Le choix du serveur, suivi (il change quand on se connecte ailleurs). */
 export function useServerChoice(): ServerChoice {
@@ -74,6 +75,7 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
   onRetry: () => Promise<boolean>
   onClose: () => void
 }) {
+  useMobileBack(onClose)
   const choice = useServerChoice()
   const [server, setServer] = useState(choice.current ?? defaultServer)
   const [error, setError] = useState<string | null>(null)
@@ -104,7 +106,7 @@ export function DesktopServerDialog({ status, defaultServer, onConnect, onDiscon
 
   const known = choice.servers
   return (
-    <div data-testid="server-dialog" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div data-testid="server-dialog" className="sv-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '92vw', maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, boxShadow: 'var(--shadow)', position: 'relative', fontFamily: 'var(--font-ui)', color: 'var(--text)' }}>
         <button onClick={onClose} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
         <div>

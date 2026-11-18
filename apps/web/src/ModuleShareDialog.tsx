@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import type { IVaultSharing } from '@savoire/application'
 import type { PublicationService } from './publication'
+import { useMobileBack } from './useMobileBack'
 
 const BTN: React.CSSProperties = {
   padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent',
@@ -31,6 +32,7 @@ export function ModuleShareDialog({ docId, path, publications, sharing, token, c
   canWrite: boolean
   onClose: () => void
 }) {
+  useMobileBack(onClose)
   const [mode, setMode] = useState<'read' | 'write' | null>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -63,7 +65,7 @@ export function ModuleShareDialog({ docId, path, publications, sharing, token, c
   const snippet = url ? embedSnippet(url) : ''
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    <div className="sv-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div data-testid="module-share" style={{ width: 540, maxWidth: 'calc(100vw - 32px)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 18, display: 'flex', flexDirection: 'column', gap: 12, fontSize: '0.82rem', color: 'var(--text)' }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>

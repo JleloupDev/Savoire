@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Disposition mobile : un ecran a la fois, un volet du bas, un historique.
 import { describe, it, expect, vi } from 'vitest'
-import { MobileAdapter, EDITOR_SCREEN, WorkspaceManagerImpl, ViewRegistryImpl, locatePanel, panelViews, sheetTabs, bottomTabs } from '@savoire/workspace'
+import { MobileAdapter, EDITOR_SCREEN, WorkspaceManagerImpl, ViewRegistryImpl, locatePanel, panelPlacement, panelViews, sheetTabs, bottomTabs, registerMobileBack, consumeMobileBack } from '@savoire/workspace'
 import type { ViewSpec } from '@savoire/plugin-api'
 import type { RibbonItem } from '@savoire/workspace'
 
@@ -70,6 +70,24 @@ describe('MobileAdapter', () => {
     expect(a.sheetPanel).toBeNull()
   })
 
+  it("d'une note a l'autre : retour rouvre la precedente", async () => {
+    const a = new MobileAdapter('explorer')
+    const m = new WorkspaceManagerImpl(a)
+    m.subscribeOpenFile(path => a.openDocument(path))
+    const reopened: string[] = []
+    a.subscribeReopen(path => reopened.push(path))
+    await m.openFile('a.md')
+    await m.openFile('b.md')
+    await m.openFile('b.md')
+    expect(a.screen).toBe(EDITOR_SCREEN)
+    a.back()
+    expect(reopened).toEqual(['a.md'])
+    expect(a.screen).toBe(EDITOR_SCREEN)
+    a.back()
+    expect(a.screen).toBe('explorer')
+    expect(reopened).toEqual(['a.md'])
+  })
+
   it('un panneau ferme quitte l\'historique', () => {
     const a = new MobileAdapter()
     a.navigate('search')
@@ -79,7 +97,49 @@ describe('MobileAdapter', () => {
   })
 })
 
+describe('retour du telephone et fenetres', () => {
+  it('une fenetre ouverte se ferme avant de changer d\'ecran', () => {
+    const calls: string[] = []
+    const fake = { history: { state: null, pushState: () => calls.push('push'), back: () => calls.push('back') } }
+    vi.stubGlobal('window', fake)
+    const close = vi.fn()
+    const unregister = registerMobileBack(close)
+    expect(calls).toEqual(['push'])
+    expect(consumeMobileBack()).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+    unregister() // deja fermee par retour : rien de plus
+    expect(calls).toEqual(['push'])
+    expect(consumeMobileBack()).toBe(false)
+
+    // Fermee par son bouton : son entree est retiree, l'ecran ne recule pas.
+    const off = registerMobileBack(vi.fn())
+    off()
+    expect(calls).toEqual(['push', 'push', 'back'])
+    expect(consumeMobileBack()).toBe(true)
+    expect(consumeMobileBack()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+})
+
 describe('regles de la disposition mobile', () => {
+  it('une vue choisit sa place : cachee, dans Plus, ou dans le volet', () => {
+    const views = registry()
+    views.register(view({ id: 'inspector', container: 'right', mobile: 'hidden' }))
+    views.register(view({ id: 'outline', container: 'left', mobile: 'sheet' }))
+    expect(panelPlacement(views, 'inspector')).toBe('hidden')
+    expect(sheetTabs(views).map(t => t.id)).toEqual(['notes-tools', 'review', 'outline'])
+    expect(locatePanel(views, 'outline')).toEqual({ kind: 'sheet', panel: 'outline' })
+    const items: RibbonItem[] = [
+      { type: 'group', id: 'explorer', title: 'Explorateur', container: 'left' },
+      { type: 'view', id: 'graph', title: 'Graphe', container: 'center', mobile: 'more' },
+      { type: 'view', id: 'search', title: 'Recherche', container: 'left' },
+      { type: 'view', id: 'inspector', title: 'Inspecteur', container: 'right', mobile: 'hidden' },
+    ]
+    const { primary, overflow } = bottomTabs(items, { id: EDITOR_SCREEN, title: 'Note' })
+    expect(primary.map(t => t.id)).toEqual(['explorer', EDITOR_SCREEN, 'search'])
+    expect(overflow.map(t => t.id)).toEqual(['graph'])
+  })
+
   it('range chaque panneau a sa place', () => {
     const views = registry()
     expect(locatePanel(views, 'filetree')).toEqual({ kind: 'screen', screen: 'explorer' })

@@ -13,6 +13,7 @@ import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
 import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions } from './displayPreferences'
+import { layoutMode } from './layoutMode'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -98,6 +99,9 @@ function DocumentTab(props: IDockviewPanelProps<EditorPanelParams>) {
     </div>
   )
 }
+
+/** Mobile : notes gardees ouvertes (cachees) pour revenir vite en arriere. */
+const MOBILE_OPEN_NOTES = 5
 
 interface EditorPanelParams {
   doc: DocumentDto
@@ -316,6 +320,7 @@ export function DocumentPanelHost({
   // volontairement nu — du texte, rien autour.
   const showRichChrome = isMarkdown && refs.markdownEditorMode.current === 'rich' && !!controller
   const showToolbar = useShowEditorToolbar()
+  const mobile = layoutMode() === 'mobile'
 
   // Le menu de triggers (« / », « [[ ») reste dans LES DEUX modes : c'est de
   // l'assistance a la frappe, pas de la mise en forme, et il ne s'affiche que
@@ -394,7 +399,7 @@ export function DocumentPanelHost({
             </button>
           </div>
         )}
-        {showRichChrome && !lockedByOther && showToolbar && <Toolbar onHide={() => setShowEditorToolbar(false)} />}
+        {showRichChrome && !lockedByOther && showToolbar && !mobile && <Toolbar onHide={() => setShowEditorToolbar(false)} />}
         <div
           data-testid="editor-panel"
           data-doc-id={doc.id}
@@ -402,8 +407,11 @@ export function DocumentPanelHost({
           ref={containerRef}
           style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
         />
+        {/* Mobile : la barre sous le texte, juste au-dessus du clavier (cachee sans lui). */}
+        {showRichChrome && !lockedByOther && mobile && <Toolbar placement="bottom" />}
       </div>
-      {showRichChrome && <BubbleToolbar />}
+      {/* Mobile : pas de bulle, le telephone a deja son menu de selection. */}
+      {showRichChrome && !mobile && <BubbleToolbar />}
       {showTriggers && <TriggerOverlay />}
     </EditorContext.Provider>
   )
@@ -517,6 +525,12 @@ function EditorAreaPanel({
           top: 'above', bottom: 'below', left: 'left', right: 'right', center: 'within',
         }
         const splitDir = dropPosition ? dirMap[dropPosition] : undefined
+        // Mobile : une note a la fois a l'ecran ; on garde les dernieres
+        // ouvertes (retour rapide), pas toutes.
+        if (api && layoutMode() === 'mobile') {
+          const docs = api.panels.filter(p => p.id.startsWith('doc-'))
+          for (const old of docs.slice(0, Math.max(0, docs.length - (MOBILE_OPEN_NOTES - 1)))) api.removePanel(old)
+        }
         api?.addPanel({
           id: panelId,
           component: 'doc-editor',

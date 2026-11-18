@@ -48,7 +48,7 @@ export function VaultTransferDialog({ run, onClose }: { run: VaultTransferRun; o
   const fraction = progress.total > 0 ? progress.done / progress.total : 0
 
   return (
-    <div data-testid="vault-transfer-dialog" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div data-testid="vault-transfer-dialog" className="sv-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-lg)', width: 440, maxWidth: '90vw', padding: 18, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: 'var(--text)' }}>
         <div style={{ fontWeight: 600, fontSize: 14 }}>{run.title}</div>
 

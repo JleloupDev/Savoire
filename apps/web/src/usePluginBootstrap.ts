@@ -296,6 +296,8 @@ export function usePluginBootstrap({
       id: 'plugin-inspector',
       title: 'Plugins actifs',
       container: 'right',
+      // Outil du bureau : absent sur mobile.
+      mobile: 'hidden',
       ribbon: true,
       icon: 'cpu',
       createView: (_ctx: unknown) => new PluginInspectorWidget(manager),

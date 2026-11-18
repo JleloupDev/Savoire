@@ -146,6 +146,15 @@ bureau. Par défaut : `http://127.0.0.1:5000`, à joindre par un tunnel SSH
 lancé sur le téléphone (par exemple une redirection de port locale
 5000 → `localhost:5000` de la machine du serveur).
 
+L'interface est celle du mobile, choisie au démarrage selon l'écran
+(`apps/web/src/layoutMode.ts`) : un écran à la fois, une barre d'onglets en
+bas, les outils de la note dans un volet, la barre d'édition au-dessus du
+clavier. Le bouton retour du téléphone ferme d'abord la fenêtre ouverte, puis
+revient à l'écran (ou à la note) précédent. Pour la voir dans un navigateur :
+`?layout=mobile` (`?layout=auto` pour revenir au choix automatique). Une vue
+de plugin choisit sa place sur mobile avec `mobile: 'tab' | 'more' | 'sheet' |
+'hidden'` (`ViewSpec`, `ViewGroup`).
+
 Côté code : `src-tauri/src/lib.rs` (les commandes de dossier sont réservées
 au bureau, Android n'a que celles des serveurs), `isAndroidRuntime`
 (`apps/web/src/tauriRuntime.ts`) et `initProfile` (`apps/web/src/profile.ts`).

@@ -17,6 +17,7 @@ import { WorkspaceManagerImpl } from '../WorkspaceManagerImpl'
 import { WorkspaceContext } from '../WorkspaceContext'
 import type { WorkspaceRootProps } from '../WorkspaceRoot'
 import { MobileAdapter, EDITOR_SCREEN } from './MobileAdapter'
+import { consumeMobileBack, pushMobileHistory } from './backStack'
 import { bottomTabs, locatePanel, panelViews, sheetTabs } from './mobileLayout'
 import type { MobileTab } from './mobileLayout'
 import './mobile.css'
@@ -93,6 +94,9 @@ function MoreIcon() {
   )
 }
 
+/** Un clavier fait au moins cette hauteur (px) ; en dessous, une barre d'adresse qui bouge. */
+const KEYBOARD_MIN = 120
+
 /** Un champ ou l'editeur a le focus : le clavier est ouvert, la barre du bas se cache. */
 function isEditable(el: Element | null): boolean {
   if (!el) return false
@@ -110,7 +114,12 @@ export function MobileWorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onRead
   const manager = useMemo(() => new WorkspaceManagerImpl(adapter), [adapter])
   const [, refresh] = useReducer((n: number) => n + 1, 0)
   const [ctx, setCtx] = useState<ViewContext | null>(null)
-  const [keyboard, setKeyboard] = useState(false)
+  // Clavier ouvert = un champ a le focus ET l'ecran visible a retreci. Le
+  // focus seul ne suffit pas : fermer le clavier (retour d'Android) laisse
+  // le focus dans l'editeur.
+  const [editing, setEditing] = useState(false)
+  const [shrunk, setShrunk] = useState(false)
+  const keyboard = editing && shrunk
   // Ecrans et onglets du volet deja ouverts : montes une fois, puis caches.
   const visited = useRef(new Set<string>([EDITOR_SCREEN, adapter.screen]))
   const visitedSheet = useRef(new Set<string>())
@@ -131,13 +140,14 @@ export function MobileWorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onRead
       visitedSheet.current.delete(id)
     })
     // Le bouton retour : une entree d'historique par pas, retiree au retour.
-    // L'etat du routeur est recopie : il ne voit pas de changement de page.
-    const offPush = adapter.subscribePush(() => {
-      window.history.pushState({ ...(window.history.state as object | null), savoireMobile: true }, '')
-    })
-    const onPop = () => { adapter.back() }
+    // Une fenetre ouverte (parametres...) passe avant : elle se ferme.
+    const offPush = adapter.subscribePush(pushMobileHistory)
+    const onPop = () => { if (!consumeMobileBack()) adapter.back() }
     window.addEventListener('popstate', onPop)
-    return () => { offChange(); offClose(); offPush(); window.removeEventListener('popstate', onPop) }
+    // D'une note a l'autre : un pas d'historique ; « retour » rouvre la precedente.
+    const offOpen = manager.subscribeOpenFile(path => adapter.openDocument(path))
+    const offReopen = adapter.subscribeReopen(path => { void manager.openFile(path) })
+    return () => { offChange(); offClose(); offPush(); offOpen(); offReopen(); window.removeEventListener('popstate', onPop) }
   }, [adapter, manager])
 
   useEffect(() => {
@@ -159,12 +169,48 @@ export function MobileWorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onRead
   }, [manager])
 
   useEffect(() => {
-    const update = () => setKeyboard(isEditable(document.activeElement))
+    const update = () => setEditing(isEditable(document.activeElement))
     // focusout passe avant que le nouvel element ait le focus : on attend.
     const onFocusOut = () => { setTimeout(update, 0) }
     document.addEventListener('focusin', update)
     document.addEventListener('focusout', onFocusOut)
     return () => { document.removeEventListener('focusin', update); document.removeEventListener('focusout', onFocusOut) }
+  }, [])
+
+  // Clavier ouvert : les boutons flottants de l'application (hors d'ici) se cachent.
+  useEffect(() => {
+    document.documentElement.classList.toggle('mobile-keyboard', keyboard)
+    return () => { document.documentElement.classList.remove('mobile-keyboard') }
+  }, [keyboard])
+
+  // iOS ne retrecit pas la page quand le clavier s'ouvre : seule la partie
+  // visible (visualViewport) retrecit. On cale alors l'interface sur elle,
+  // pour que la barre d'edition reste juste au-dessus du clavier. Android
+  // retrecit la page (interactive-widget) : rien a faire.
+  const [visible, setVisible] = useState<{ top: number; height: number } | null>(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    // Hauteur de reference sans clavier : la plus grande vue, pour cette largeur.
+    let width = window.innerWidth
+    let full = vv?.height ?? window.innerHeight
+    const update = () => {
+      const height = vv?.height ?? window.innerHeight
+      if (window.innerWidth !== width) { width = window.innerWidth; full = height } // rotation
+      full = Math.max(full, height)
+      setShrunk(full - height > KEYBOARD_MIN)
+      // iOS : la page garde sa taille, seule la partie visible retrecit.
+      const covered = vv ? window.innerHeight - vv.height > KEYBOARD_MIN : false
+      setVisible(covered && vv ? { top: vv.offsetTop, height: vv.height } : null)
+    }
+    vv?.addEventListener('resize', update)
+    vv?.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+    update()
+    return () => {
+      vv?.removeEventListener('resize', update)
+      vv?.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
   }, [])
 
   const screen = adapter.screen
@@ -216,7 +262,7 @@ export function MobileWorkspaceRoot({ vault, fileTypesRef, onBeforeReady, onRead
         className={['mobile-root', keyboard ? 'mobile-root--keyboard' : '', className].filter(Boolean).join(' ')}
         data-testid="mobile-workspace"
         data-screen={screen}
-        style={style}
+        style={visible ? { ...style, position: 'fixed', left: 0, right: 0, top: visible.top, height: visible.height, zIndex: 1 } : style}
       >
         <header className="mobile-topbar">
           {adapter.canGoBack() && !sheet ? (

@@ -24,16 +24,20 @@ const MAX_HISTORY = 50
 
 export class MobileAdapter implements WorkspacePort {
   private history: string[]
+  /** Note ouverte a chaque pas (ecran de l'editeur), alignee sur `history`. */
+  private docs: (string | undefined)[]
   private sheet: string | null = null
   private locate: (panelId: string) => MobileTarget = id => ({ kind: 'screen', screen: id })
   private readonly changeListeners = new Set<() => void>()
   private readonly pushListeners = new Set<() => void>()
   private readonly activeListeners = new Set<(panelId: string | null) => void>()
   private readonly closeListeners = new Set<(panelId: string) => void>()
+  private readonly reopenListeners = new Set<(path: string) => void>()
 
   /** `start` : le premier ecran (l'editeur par defaut). */
   constructor(start: string = EDITOR_SCREEN) {
     this.history = [start]
+    this.docs = [undefined]
   }
 
   /** La racine dit ou va chaque panneau (selon les vues enregistrees). */
@@ -71,9 +75,7 @@ export class MobileAdapter implements WorkspacePort {
       if (sheetWasOpen) this.emit()
       return
     }
-    this.history.push(screen)
-    if (this.history.length > MAX_HISTORY) this.history.splice(0, this.history.length - MAX_HISTORY)
-    this.emitPush()
+    this.pushEntry(screen, undefined)
     this.emit()
   }
 
@@ -96,9 +98,45 @@ export class MobileAdapter implements WorkspacePort {
   back(): boolean {
     if (this.sheet !== null) { this.closeSheet(); return true }
     if (this.history.length <= 1) return false
+    const left = this.docs[this.docs.length - 1]
     this.history.pop()
+    this.docs.pop()
+    // Retour sur une note precedente : l'editeur la rouvre.
+    const doc = this.docs[this.docs.length - 1]
+    if (this.screen === EDITOR_SCREEN && doc && doc !== left) {
+      for (const cb of this.reopenListeners) cb(doc)
+    }
     this.emit()
     return true
+  }
+
+  /**
+   * Une note s'ouvre dans l'editeur. D'une note a une autre (lien, ouverture
+   * rapide), c'est un pas de plus : « retour » rouvre la precedente.
+   */
+  openDocument(path: string): void {
+    if (this.screen !== EDITOR_SCREEN) this.navigate(EDITOR_SCREEN)
+    const current = this.docs[this.docs.length - 1]
+    if (current === path) return
+    if (current === undefined) { this.docs[this.docs.length - 1] = path; return }
+    this.pushEntry(EDITOR_SCREEN, path)
+    this.emit()
+  }
+
+  /** La note a rouvrir quand « retour » revient sur elle. */
+  subscribeReopen(cb: (path: string) => void): () => void {
+    this.reopenListeners.add(cb)
+    return () => { this.reopenListeners.delete(cb) }
+  }
+
+  private pushEntry(screen: string, doc: string | undefined): void {
+    this.history.push(screen)
+    this.docs.push(doc)
+    if (this.history.length > MAX_HISTORY) {
+      this.history.splice(0, this.history.length - MAX_HISTORY)
+      this.docs.splice(0, this.docs.length - MAX_HISTORY)
+    }
+    this.emitPush()
   }
 
   /** Affiche un panneau la ou il vit : son ecran, ou le volet. */
@@ -151,8 +189,10 @@ export class MobileAdapter implements WorkspacePort {
     let changed = false
     if (this.sheet === panelId) { this.sheet = null; changed = true }
     if (panelId !== EDITOR_SCREEN && this.history.includes(panelId)) {
-      this.history = this.history.filter(id => id !== panelId)
-      if (this.history.length === 0) this.history = [EDITOR_SCREEN]
+      const keep = this.history.map(id => id !== panelId)
+      this.history = this.history.filter((_, i) => keep[i])
+      this.docs = this.docs.filter((_, i) => keep[i])
+      if (this.history.length === 0) { this.history = [EDITOR_SCREEN]; this.docs = [undefined] }
       changed = true
     }
     for (const cb of this.closeListeners) cb(panelId)

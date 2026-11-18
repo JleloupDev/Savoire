@@ -20,6 +20,9 @@ export interface ViewContext {
 }
 
 /** Declared by the host app or a plugin. Plugins subscribe via groupId. */
+/** Place d'une vue ou d'un groupe sur mobile (voir ViewSpec.mobile). */
+export type MobilePlacement = 'tab' | 'more' | 'sheet' | 'hidden'
+
 export interface ViewGroup {
   id: string
   title: string
@@ -36,6 +39,15 @@ export interface ViewGroup {
   layout?: 'tabs' | 'stack'
   /** Stamped automatically by the runtime — 'app' for host-declared groups, 'plugin' for plugin-declared groups. */
   source?: 'app' | 'plugin'
+  /**
+   * Place sur mobile (un ecran a la fois). Par defaut : un ecran pour la
+   * gauche et le centre, le volet du bas pour la droite.
+   *  - 'tab'    : un ecran, qui peut avoir son onglet dans la barre du bas ;
+   *  - 'more'   : un ecran, range dans « Plus » ;
+   *  - 'sheet'  : un onglet du volet du bas (outils de la note) ;
+   *  - 'hidden' : absent sur mobile.
+   */
+  mobile?: MobilePlacement
 }
 
 export interface ViewSpec {
@@ -60,6 +72,15 @@ export interface ViewSpec {
   closable?: boolean
   /** Initial size in px (width for left/right). */
   initialSize?: number
+  /**
+   * Place sur mobile (un ecran a la fois). Par defaut : un ecran pour la
+   * gauche et le centre, le volet du bas pour la droite.
+   *  - 'tab'    : un ecran, qui peut avoir son onglet dans la barre du bas ;
+   *  - 'more'   : un ecran, range dans « Plus » ;
+   *  - 'sheet'  : un onglet du volet du bas (outils de la note) ;
+   *  - 'hidden' : absent sur mobile.
+   */
+  mobile?: MobilePlacement
   createView(ctx: ViewContext): Widget
 }
 
