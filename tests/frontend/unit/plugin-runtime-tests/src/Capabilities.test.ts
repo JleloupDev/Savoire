@@ -4,7 +4,7 @@
 // Les systemes de Savoire qu'un plugin implemente : releve de ce qu'il
 // enregistre a son chargement, puis analyse (capabilities.ts).
 import { describe, it, expect } from 'vitest'
-import { analyzeCapabilities, emptyRegistrations, overclaimedCapabilities, type FileTypeSpec, type PluginAPI } from '@savoire/plugin-api'
+import { analyzeCapabilities, emptyRegistrations, overclaimedCapabilities, pluginTrust, type FileTypeSpec, type PluginAPI } from '@savoire/plugin-api'
 import { manifestOfPackage, recordRegistrations, runtimeOf, type StorePackage } from '@savoire/plugin-runtime'
 
 const level = (r: ReturnType<typeof analyzeCapabilities>, id: string) => r.find(c => c.id === id)?.level
@@ -89,6 +89,10 @@ describe('paquets du store', () => {
   it('jamais officiel, pour le vault par defaut, dans la page par defaut', () => {
     const m = manifestOfPackage(pkg({ official: true, permissions: ['vault:read', 42] }))
     expect(m.official).toBe(false)
+    // Les plugins du store sont relus par l'equipe Savoire ; un paquet peut se dire non verifie.
+    expect(pluginTrust(m)).toBe('verified')
+    expect(pluginTrust(manifestOfPackage(pkg({ trust: 'official' })))).toBe('verified')
+    expect(pluginTrust(manifestOfPackage(pkg({ trust: 'unverified' })))).toBe('unverified')
     expect(m.scope).toBe('vault')
     expect(m.permissions).toEqual(['vault:read'])
     expect(runtimeOf(pkg({}))).toBe('page')

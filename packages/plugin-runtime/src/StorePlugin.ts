@@ -16,8 +16,9 @@
 //    plugin qui veut se passer de l'acces a la page. Il n'a que l'API
 //    reduite du cadre (commandes, extracteurs, lecture du vault...).
 //
-// Un plugin du store ne tourne jamais sur le serveur (pair indexeur gere) :
-// le manifeste est force a official: false.
+// Un plugin du store n'est jamais « official » (livre avec Savoire) ; il est
+// « verified » (relu par l'equipe Savoire), voir manifestOfPackage. Le pair
+// indexeur gere n'execute pas le code des paquets du store pour l'instant.
 import type { PluginAPI, PluginManifest, PluginPermission, VaultPlugin } from '@savoire/plugin-api'
 import { UnknownLibraryError } from '@savoire/plugin-api'
 import { PermissionFilteredAPI } from './PermissionFilteredAPI'
@@ -47,8 +48,13 @@ export function manifestOfPackage(pkg: StorePackage): PluginManifest {
     permissions: (Array.isArray(m.permissions) ? m.permissions : []).filter((p): p is PluginPermission => typeof p === 'string'),
     defaultActive: m.defaultActive === true,
     scope,
-    // Jamais sur le serveur : seuls les plugins de l'equipe Savoire y tournent.
+    // Jamais 'official' : ce niveau est celui des plugins livres avec Savoire.
     official: false,
+    // Les plugins du store sont tous relus par l'equipe Savoire (decision du
+    // 19/11 : leur auteur est celui de Savoire). Quand des tiers publieront,
+    // le store dira le niveau dans le manifeste signe (champ `trust`), et un
+    // paquet non relu sera 'unverified'.
+    trust: m.trust === 'unverified' ? 'unverified' : 'verified',
     capabilities: Array.isArray(m.capabilities) ? m.capabilities.filter((c): c is string => typeof c === 'string') : undefined,
   } as PluginManifest
 }

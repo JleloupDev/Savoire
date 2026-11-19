@@ -86,6 +86,8 @@ export type {
   DocMetadata,
   FileTreeEntry,
 } from './types'
+export { pluginTrust, trustAllowed } from './manifest'
+export type { PluginTrust, PeerPluginPolicy } from './manifest'
 
 // Runtime values from domain-index re-exported via indexing.ts
 export { AnchorIndex, resolveEntry, validateEntry, anchorKey } from './indexing'

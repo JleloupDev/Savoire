@@ -46,6 +46,17 @@ export interface PluginManifest {
    */
   official?: boolean
   /**
+   * Niveau de confiance (ADR-033) : qui peut faire tourner le code du plugin
+   * cote serveur.
+   *  - 'official'   : livre avec Savoire (equivaut a `official: true`) ;
+   *  - 'verified'   : relu et signe par l'equipe Savoire (plugins du store) ;
+   *  - 'unverified' : plugin maison ou tiers (defaut).
+   * Le pair indexeur gere par Savoire n'execute que official et verified ; un
+   * pair d'organisation sur une VM dediee peut accepter les autres
+   * (SAVOIRE_INDEXER_PLUGIN_TRUST=all). Voir pluginTrust.
+   */
+  trust?: PluginTrust
+  /**
    * Bibliotheques communes dont le plugin a besoin (require('react')...),
    * chargees avant lui. Voir libraries.ts. Les plugins du depot n'en ont pas
    * besoin : ils sont construits avec l'application.
@@ -96,3 +107,20 @@ export type PluginPermission =
   | 'agents'
   /** Demander des reponses a l'IA de la personne, ou ajouter un fournisseur (voir ai.ts). */
   | 'ai'
+
+export type PluginTrust = 'official' | 'verified' | 'unverified'
+
+/** Le niveau de confiance d'un plugin (official: true compte comme 'official'). */
+export function pluginTrust(manifest: Pick<PluginManifest, 'official' | 'trust'>): PluginTrust {
+  if (manifest.official || manifest.trust === 'official') return 'official'
+  return manifest.trust === 'verified' ? 'verified' : 'unverified'
+}
+
+/** Ce qu'accepte un pair : 'official' (le plus strict), 'verified' (defaut du pair gere) ou 'all'. */
+export type PeerPluginPolicy = 'official' | 'verified' | 'all'
+
+export function trustAllowed(trust: PluginTrust, policy: PeerPluginPolicy): boolean {
+  if (policy === 'all') return true
+  if (policy === 'verified') return trust !== 'unverified'
+  return trust === 'official'
+}
