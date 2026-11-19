@@ -99,6 +99,8 @@ export default defineConfig({
       '/api': 'http://localhost:5000',
       // Pages publiees sur le web : rendues par l'API.
       '/p/': 'http://localhost:5000',
+      // Metadonnees OAuth du MCP (ChatGPT, Claude.ai) : servies par l'API.
+      '/.well-known/oauth-': 'http://localhost:5000',
       // Savoire Store (depot voisin SavoireStore), en developpement.
       '/store': {
         target: 'http://127.0.0.1:5100',

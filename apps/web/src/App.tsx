@@ -9,6 +9,7 @@ import { AppShell } from './AppShell'
 import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
+import { OAuthConsentPage } from './OAuthConsentPage'
 import { loadModulePlugins } from './pluginStore'
 import { ToastContainer } from './ToastContainer'
 import { FeedbackBubble } from './FeedbackBubble'
@@ -43,6 +44,8 @@ export function App() {
               <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
               <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} loadPlugins={loadModulePlugins} />} />
               <Route path="/view" element={<ViewGrantPage />} />
+              {/* Ecran d'accord OAuth du MCP (ChatGPT, Claude.ai). */}
+              <Route path="/oauth/consent" element={<OAuthConsentPage />} />
               <Route path="/" element={<><AppShell /><FeedbackBubble /></>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

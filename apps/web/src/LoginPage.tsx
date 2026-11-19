@@ -10,6 +10,7 @@ import { ServerAddressError } from '@savoire/infrastructure-sync'
 import { getServerChoice } from './serverConnection'
 import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 import { describeAuthError } from './loginFlow'
+import { RETURN_TO_KEY } from './OAuthConsentPage'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: 'file-text', key: 'login.feature.markdown' },
@@ -77,7 +78,15 @@ export function LoginPage() {
   const shownError              = error ?? loginError
 
   useEffect(() => {
-    if (token) navigate('/', { replace: true })
+    if (!token) return
+    // Retour vers l'ecran d'accord OAuth s'il a demande la connexion.
+    let back = '/'
+    try {
+      const saved = sessionStorage.getItem(RETURN_TO_KEY)
+      sessionStorage.removeItem(RETURN_TO_KEY)
+      if (saved?.startsWith('/oauth/')) back = saved
+    } catch { /* stockage indisponible */ }
+    navigate(back, { replace: true })
   }, [token, navigate])
 
   // La connexion se fait chez le fournisseur d'identite du serveur (ADR-028) :

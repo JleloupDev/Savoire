@@ -5,6 +5,8 @@
 // ChatGPT, Claude, un script ou n8n agir en votre nom, sur tous vos vaults ou
 // ceux choisis. Sans agent : lecture seule. Rattache a un agent (ADR-033) :
 // les droits et le nom de cet agent. Montre une seule fois.
+// Plus bas : les acces OAuth (ChatGPT, Claude.ai branches sur le MCP par
+// l'ecran d'accord), revocables de meme.
 import { useEffect, useState } from 'react'
 import { serverUrl } from '@savoire/infrastructure-sync'
 import type { AgentDefinition } from '@savoire/plugin-api'
@@ -36,6 +38,16 @@ interface AccessToken {
   agentId?: string | null
 }
 
+interface OAuthGrant {
+  id: string
+  clientId: string
+  clientName: string
+  agentId: string | null
+  vaultIds: string[] | null
+  createdAt: string
+  lastUsedAt: string | null
+}
+
 interface Draft { name: string; all: boolean; vaultIds: string[]; days: string; agentId: string }
 
 export function ApiTokenSettings({ token, vaults }: { token: () => string; vaults: { id: string; name: string }[] }) {
@@ -46,6 +58,7 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
   const [busy, setBusy] = useState(false)
   const [agents, setAgents] = useState<AgentDefinition[]>([])
   useEffect(() => { void agentDirectory()?.list().then(setAgents, () => setAgents([])) }, [])
+  const [grants, setGrants] = useState<OAuthGrant[] | null>(null)
 
   const call = async (method: string, path: string, body?: unknown): Promise<Response> => {
     const res = await fetch(serverUrl(`/api/v1/me/access-tokens${path}`), {
@@ -63,6 +76,17 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
 
   const reload = () => call('GET', '').then(r => r.json()).then(setList, err => setError(String(err.message ?? err)))
   useEffect(() => { void reload() }, [])
+
+  const grantsCall = (method: string, path = '') => fetch(serverUrl(`/api/v1/me/oauth-grants${path}`), { method, headers: { Authorization: `Bearer ${token()}` } })
+  const reloadGrants = () => grantsCall('GET').then(r => r.ok ? r.json() as Promise<OAuthGrant[]> : []).then(setGrants, () => setGrants([]))
+  useEffect(() => { void reloadGrants() }, [])
+
+  const revokeGrant = async (g: OAuthGrant) => {
+    if (!window.confirm(`Révoquer l’accès de « ${g.clientName} » ? Il devra se reconnecter.`)) return
+    const r = await grantsCall('DELETE', `/${encodeURIComponent(g.id)}`)
+    if (!r.ok && r.status !== 404) setError(`Erreur ${r.status}`)
+    await reloadGrants()
+  }
 
   const create = async () => {
     if (!draft) return
@@ -143,6 +167,28 @@ export function ApiTokenSettings({ token, vaults }: { token: () => string; vault
         ))}
       </div>
 
+      <div data-testid="api-oauth-grants" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <strong>Accès OAuth</strong>
+        <span style={{ color: 'var(--text-muted)' }}>
+          Les outils branchés sur le serveur MCP par connexion (ChatGPT, Claude.ai) : ajoutez l’adresse du serveur MCP dans l’outil, il ouvre l’écran d’accord.
+        </span>
+        {grants !== null && grants.length === 0 && <span style={{ color: 'var(--text-muted)' }}>Aucun accès OAuth.</span>}
+        {(grants ?? []).map(g => (
+          <div key={g.id} data-testid="api-oauth-grant-row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{g.clientName}</div>
+              <div style={{ color: 'var(--text-muted)' }}>
+                {g.vaultIds ? g.vaultIds.map(vaultName).join(', ') : 'Tous vos vaults'} · {g.agentId ? `agent « ${agents.find(a => a.id === g.agentId)?.name ?? 'supprimé'} »` : 'lecture'}
+                {' · '}accordé le {new Date(g.createdAt).toLocaleDateString()}
+                {' · '}{g.lastUsedAt ? `utilisé le ${new Date(g.lastUsedAt).toLocaleDateString()}` : 'jamais utilisé'}
+              </div>
+            </div>
+            <button data-testid="api-oauth-revoke" style={BTN} onClick={() => void revokeGrant(g)}>Révoquer</button>
+          </div>
+        ))}
+      </div>
+
+      <strong>Jetons personnels</strong>
       {draft ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, borderRadius: 8, border: '1px solid var(--border)' }}>
           <label>Nom<input data-testid="api-token-name" style={INPUT} value={draft.name} placeholder="Claude, n8n, script…" onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
