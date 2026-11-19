@@ -77,7 +77,9 @@ say "── Courriels (Brevo) ──"
 echo "Brevo > SMTP & API > onglet SMTP : identifiant SMTP et une cle SMTP."
 ask SMTP_USER "Identifiant SMTP (xxxx@smtp-brevo.com)"
 ask SMTP_PASSWORD "Cle SMTP" "" secret
+# Domaine parent : savoire.exemple.fr -> exemple.fr ; exemple.fr reste tel quel.
 parent="${domain#*.}"
+case "$parent" in *.*) ;; *) parent="$domain" ;; esac
 ask SMTP_FROM "Expediteur (une adresse du domaine verifie chez Brevo)" "noreply@$parent"
 generate SMTP_SERVER smtp-relay.brevo.com
 generate SMTP_PORT 465
