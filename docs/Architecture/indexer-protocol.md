@@ -181,8 +181,42 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 | `index` | `status` | `{}` → `IndexState` + `{ seq, docs, bytes }` |
 | `documents` | `read` | `{ id }` ou `{ path }` (casse ignorée) → `{ id, path, title, content, truncated }` : le texte d'une note en Markdown, relu dans son CRDT chez le backend (pas dans l'index) ; pour un fichier, le texte extrait ou publié. 512 Ki caractères au plus. 404 `not_found` si absent ou à la corbeille. Pouvoir du pair, hors index : sert l'API ouverte. |
 
-| `tools` | `list` | `{}` → `{ tools: ToolSpec[] }` : le catalogue des outils du socle (`@savoire/agent-core`, `coreCatalog('server')`). Le serveur le lit pour le MCP. |
+| `tools` | `list` | `{}` → `{ tools: ToolSpec[] }` : le catalogue des outils du socle (`@savoire/agent-core`, `coreCatalog('server')`), puis ceux des plugins permis sur ce pair qui déclarent `runtimes: ['app', 'server']` (voir « Outils des plugins sur le pair »). Le serveur le lit pour le MCP. |
 | `tools` | `call` | `{ name, args, mode: 'direct' \| 'propose', agent, actor, ticket }` (+ `access` ajouté par le pair) → `{ text, isError, sources? }`. Exécute un outil pour une IA externe (ADR-033) ; ses écritures partent au backend par `…/write` avec le ticket. **Jamais en cache. Appelé par le backend seul** : la route publique `/index/{capacité}/{méthode}` refuse `tools` (404). |
+
+### Outils des plugins sur le pair
+
+Les outils d'agent des plugins (`api.agents.registerTool`) tournent aussi sur le pair, pour les IA externes, quand leur fiche déclare `runtimes: ['app', 'server']`. Code : `apps/indexer/src/serverPlugins.ts` et `pluginApi.ts`.
+
+- **Chargement** : au premier appel `tools.*`, le pair appelle `onload` de chaque plugin permis avec une **PluginAPI sans écran**. Vues, blocs, commandes, menu `/` et espace de travail y sont des registres inertes : un `onload` qui en enregistre ne casse pas. Un plugin dont l'interface tire une bibliothèque de page (React, mermaid) donne une entrée `./server` qui n'enregistre que ses outils (agenda, Mermaid, tags).
+- **Ce que l'API sait faire ici**, pour l'appel en cours (personne, ticket, ACL ; porté par un `AsyncLocalStorage`) :
+  - `vault.read`, `readDocumentByPath`, `list`, `exists`, `resolveDocumentId`, `getFileTree` : journaux Yjs et arborescence, filtrés par l'ACL, corbeille exclue ;
+  - `vault.editText`, `write`, `createFile`, `createFolder` : différence Yjs, envoyée par `…/write` avec le ticket ; chaque écriture laisse une trace `edit` signée de l'agent (le titre de l'outil) ;
+  - `vault.moveFiles`, `renameFile` : le canal des déplacements (`relinkAfterMoves`), les liens suivent ;
+  - `review.propose` : une entrée `kind: 'proposal'` de la carte `map/review`, même forme que `ReviewService.propose` (`changeNoteText` en mode `propose` y dépose un `savoire.text`) ;
+  - `indexer` (liens, tags), `query`, `search` : les pouvoirs locaux.
+- **Ce qu'elle ne sait pas faire** : `openTree`, `sharedData`, les lignes légères des bases. Les outils qui en ont besoin (historique, discussions, bases) restent `runtime 'app'`.
+- **Outils serveur aujourd'hui** : tâches (`list_tasks`, `add_task`, `check_task`), agenda (`daily_note`, `append_to_daily`), modèles (`list_templates`, `create_from_template`), Mermaid (`insert_diagram`), tags (`add_tag`, `rename_tag`). Un outil de plugin ne remplace jamais un outil du socle de même nom.
+
+#### Niveaux de confiance
+
+Le manifeste porte un niveau (`pluginTrust`, `packages/plugin-api/src/manifest.ts`) :
+
+| Niveau | Qui | Sur le pair |
+|---|---|---|
+| `official` | Livré avec Savoire (`official: true`) | toujours |
+| `verified` | Relu par l'équipe Savoire. Les plugins actuels du store le sont tous (`manifestOfPackage`) ; un paquet peut se déclarer `unverified`, jamais `official`. | réglage `verified` ou `all` |
+| `unverified` | Plugin maison ou tiers (défaut) | réglage `all` seulement |
+
+Réglages du pair :
+- `SAVOIRE_INDEXER_PLUGIN_TRUST` : `official`, `verified` (défaut) ou `all`. Le pair géré par Savoire reste en `verified`. `all` est pour un pair d'organisation sur une VM dédiée, qui exécute les plugins maison de l'organisation.
+- `SAVOIRE_INDEXER_PLUGIN_DIR` : un dossier de plugins en plus. Un module ESM `.mjs` par plugin, `export default` un `VaultPlugin` (le code de `@savoire/plugin-api` empaqueté dedans : le module n'importe rien). Filtrés par `SAVOIRE_INDEXER_PLUGIN_TRUST` ; un plugin refusé est journalisé (`plugin refuse sur ce pair`) et absent de `tools.list`. Le niveau déclaré dans ces fichiers n'est pas vérifié par une signature : c'est l'administrateur de la VM qui les y dépose.
+
+#### Brancher une VM d'organisation
+
+1. Sur la VM, lancer l'image du pair (`apps/indexer/Dockerfile`) avec `SAVOIRE_INDEXER_NAME`, `SAVOIRE_INDEXER_BACKEND_URL`, l'authentification (jeton OIDC `SAVOIRE_INDEXER_OIDC_FILE`, ou `SAVOIRE_INDEXER_TOKEN`), `SAVOIRE_INDEXER_PLUGIN_TRUST=all` et `SAVOIRE_INDEXER_PLUGIN_DIR=/plugins` (un volume avec les `.mjs` de l'organisation).
+2. **Installation de l'organisation** (`SELF_HOSTING.md`) : la VM est une instance de `Indexer:Instances` de son propre backend. Les vaults restent en réglage `managed` : ce pair est le pair géré de cette installation. C'est ce qui marche aujourd'hui.
+3. **Vault hébergé par Savoire** : un administrateur du vault passe le réglage en `organization` (`PUT /api/v1/vaults/{id}/indexer`, `{ mode: 'organization', url }`). Le pair géré supprime son index (`vault-deleted`), et le backend répond 503 `{ mode: 'organization', url }` sans relayer. Le relais vers la VM (authentification du demandeur, tickets d'écriture pour ce pair) viendra avec le circuit du pair d'organisation (ADR-027) ; d'ici là, les outils des plugins maison de ce vault ne tournent que dans l'appli.
 
 Résolution des liens (pouvoir `links`, façon Obsidian) : chemin exact (avec ou sans extension ; relatif au dossier de la note d'abord pour un lien « ./ », « ../ » ou Markdown), sinon nom de fichier sans extension (casse ignorée ; « a/b » exige un chemin qui finit par « /a/b » ; en cas d'ambiguïté le `.md`, puis le plus court chemin, puis l'ordre alphabétique), sinon alias du frontmatter.
 
