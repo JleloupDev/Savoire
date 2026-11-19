@@ -226,4 +226,116 @@ describe('moteur', () => {
     expect(host.content('a.md')).toBe('x')
     expect(childAi.requests[0]!.tools!.map(t => t.name)).not.toContain('append')
   })
+
+  it('le texte arrive au fil de l eau dans l etape du modele', async () => {
+    const host = new MemoryHost({})
+    const a = agent()
+    const seen: string[] = []
+    const chat = async (r: AIChatRequest): Promise<AIChatResponse> => {
+      r.onDelta?.({ text: 'Bon' })
+      r.onDelta?.({ text: 'jour' })
+      return reply('Bonjour')
+    }
+    const run = await new AgentEngine({
+      agent: a, person: { canWrite: true }, actor, tools: box(host, a), chat,
+      onUpdate: r => { const t = r.steps[0]?.text; if (r.steps[0]?.status === 'running' && t) seen.push(t) },
+    }).run('?')
+    expect(seen).toEqual(['Bon', 'Bonjour'])
+    expect(run.answer).toBe('Bonjour')
+  })
+})
+
+describe('orchestrateur', () => {
+  const chef = (p: Partial<AgentDefinition> = {}) => agent({ id: 'chef', name: 'Chef', permissions: { read: 'direct', edit: 'direct', delegate: 'direct' }, delegates: ['red'], ...p })
+  const red = (p: Partial<AgentDefinition> = {}) => agent({ id: 'red', name: 'Rédacteur', permissions: { read: 'direct', edit: 'direct', delegate: 'direct' }, ...p })
+
+  /** Un agent par modele scripte ; forChild relie chaque sous-agent a son script. */
+  function team(host: MemoryHost, known: AgentDefinition[], scripts: Record<string, ReturnType<typeof scripted>>, canWrite = true) {
+    const deps = (a: AgentDefinition) => ({
+      agent: a, person: { canWrite }, actor: { ...actor, agentId: a.id, agentName: a.name }, tools: box(host, a, { canWrite }),
+      chat: scripts[a.id]!.chat, agents: known, forChild: deps,
+    })
+    return deps
+  }
+
+  it('sans le droit de deleguer, l outil delegate n est pas propose', async () => {
+    const host = new MemoryHost({})
+    const a = chef({ permissions: { read: 'direct' } })
+    const ai = scripted([reply('ok')])
+    await new AgentEngine(team(host, [a, red()], { chef: ai })(a)).run('?')
+    expect(ai.requests[0]!.tools!.map(t => t.name)).not.toContain('delegate')
+    // Avec le droit mais sans sous-agent permis : pas d'outil non plus.
+    const b = chef({ delegates: [] })
+    const ai2 = scripted([reply('ok')])
+    await new AgentEngine(team(host, [b, red()], { chef: ai2 })(b)).run('?')
+    expect(ai2.requests[0]!.tools!.map(t => t.name)).not.toContain('delegate')
+  })
+
+  it('l outil delegate lance le sous-agent avec au plus les droits du parent ; ses tokens remontent', async () => {
+    const host = new MemoryHost({ 'a.md': 'x' })
+    const a = chef({ permissions: { read: 'direct', delegate: 'direct' } })
+    const chefAi = scripted([reply('', [{ name: 'delegate', args: { agent: 'Rédacteur', task: 'Ajoute y à a.md' } }]), reply('Le rédacteur a répondu.')])
+    const redAi = scripted([reply('', [{ name: 'append', args: { path: 'a.md', text: 'y' } }], 5), reply('Pas le droit.', undefined, 5)])
+    const run = await new AgentEngine(team(host, [a, red()], { chef: chefAi, red: redAi })(a)).run('?')
+    expect(run.status).toBe('done')
+    expect(chefAi.requests[0]!.tools!.map(t => t.name)).toContain('delegate')
+    // Le chef ne peut pas modifier : le redacteur non plus.
+    expect(redAi.requests[0]!.tools!.map(t => t.name)).not.toContain('append')
+    expect(host.content('a.md')).toBe('x')
+    const step = run.steps.find(s => s.kind === 'delegate')!
+    expect(step).toMatchObject({ status: 'done', name: 'Rédacteur' })
+    expect(run.children?.[0]).toMatchObject({ id: step.childRunId, parentRunId: run.id, parentStepId: step.id, answer: 'Pas le droit.' })
+    expect(run.usage).toEqual({ inputTokens: 30, outputTokens: 30 })
+    expect(chefAi.requests[1]!.messages.at(-1)!.content).toContain('Pas le droit.')
+  })
+
+  it('un agent inconnu, ou lui-meme, n est pas delegable', async () => {
+    const host = new MemoryHost({})
+    const a = chef({ delegates: ['chef', 'red'] })
+    const chefAi = scripted([reply('', [{ name: 'delegate', args: { agent: 'chef', task: 't' } }]), reply('fin')])
+    const run = await new AgentEngine(team(host, [a, red()], { chef: chefAi })(a)).run('?')
+    expect(run.steps.find(s => s.kind === 'delegate')).toMatchObject({ status: 'error' })
+    expect(chefAi.requests[0]!.tools!.find(t => t.name === 'delegate')!.description).not.toContain('id chef')
+  })
+
+  it('profondeur : trois niveaux au plus', async () => {
+    const host = new MemoryHost({})
+    const ids = ['n0', 'n1', 'n2', 'n3', 'n4']
+    const known = ids.map((id, i) => agent({ id, name: id, permissions: { read: 'direct', delegate: 'direct' }, ...(ids[i + 1] ? { delegates: [ids[i + 1]!] } : {}) }))
+    const scripts: Record<string, ReturnType<typeof scripted>> = {}
+    for (const [i, id] of ids.entries()) scripts[id] = scripted(ids[i + 1] ? [reply('', [{ name: 'delegate', args: { agent: ids[i + 1], task: 't' } }]), reply(`fin ${id}`)] : [reply(`fin ${id}`)])
+    const run = await new AgentEngine(team(host, known, scripts)(known[0]!)).run('?')
+    expect(run.status).toBe('done')
+    // n0 -> n1 -> n2 -> n3 ; n3 (profondeur 3) n'a plus l'outil.
+    expect(scripts.n3!.requests[0]!.tools?.map(t => t.name) ?? []).not.toContain('delegate')
+    expect(scripts.n4!.requests.length).toBe(0)
+  })
+
+  it('budget par enfant : le sous-agent s arrete a son plafond', async () => {
+    const host = new MemoryHost({})
+    const a = chef({ budget: { maxTokensPerChild: 15 } })
+    const chefAi = scripted([reply('', [{ name: 'delegate', args: { agent: 'red', task: 't' } }]), reply('fin')])
+    const redAi = scripted([reply('', [{ name: 'search', args: { query: 'x' } }]), reply('jamais')])
+    const run = await new AgentEngine(team(host, [a, red()], { chef: chefAi, red: redAi })(a)).run('?')
+    expect(run.children?.[0]?.status).toBe('budget')
+    expect(redAi.requests.length).toBe(1)
+    expect(run.steps.find(s => s.kind === 'delegate')).toMatchObject({ status: 'error' })
+  })
+
+  it('mode demander : sans accord, pas de sous-agent', async () => {
+    const host = new MemoryHost({})
+    const a = chef({ permissions: { read: 'direct', delegate: 'ask' } })
+    const chefAi = scripted([reply('', [{ name: 'delegate', args: { agent: 'red', task: 't' } }]), reply('fin')])
+    const redAi = scripted([reply('jamais')])
+    const asked: unknown[] = []
+    const run = await new AgentEngine({ ...team(host, [a, red()], { chef: chefAi, red: redAi })(a), approve: async r => { asked.push(r); return 'refused' } }).run('?')
+    expect(asked.length).toBe(1)
+    expect(redAi.requests.length).toBe(0)
+    expect(run.steps.find(s => s.kind === 'approval')).toMatchObject({ status: 'refused' })
+  })
+
+  it('un lecteur peut deleguer, le sous-agent ne peut pas ecrire', () => {
+    expect(effectiveMode(chef(), 'delegate', { canWrite: false })).toBe('direct')
+    expect(effectiveMode(chef(), 'edit', { canWrite: false })).toBe('deny')
+  })
 })

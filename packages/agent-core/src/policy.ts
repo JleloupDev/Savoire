@@ -36,7 +36,8 @@ export function normalizePermissions(p: AgentPermissions | undefined): Required<
  */
 export function effectiveMode(agent: Pick<AgentDefinition, 'permissions'>, action: AgentAction, person: PersonRights): AgentActionMode {
   const mode = normalizeMode(action, agent.permissions?.[action])
-  if (action !== 'read' && !person.canWrite) return 'deny'
+  // Deleguer n'ecrit rien : le sous-agent, lui, reste borne par la personne.
+  if (action !== 'read' && action !== 'delegate' && !person.canWrite) return 'deny'
   return mode
 }
 
@@ -80,6 +81,18 @@ export function narrowAgent(parent: AgentDefinition, child: AgentDefinition): Ag
   return { ...child, permissions, scope: narrowScope(parent.scope, child.scope) }
 }
 
+/** Profondeur maximale d'une delegation (orchestrateur -> sous-agent -> ...). */
+export const MAX_DELEGATION_DEPTH = 3
+
+/**
+ * Les agents a qui cet agent peut confier une tache : ceux de sa liste,
+ * connus, et jamais lui-meme.
+ */
+export function delegableAgents(agent: AgentDefinition, known: readonly AgentDefinition[]): AgentDefinition[] {
+  const ids = new Set(agent.delegates ?? [])
+  return known.filter(a => ids.has(a.id) && a.id !== agent.id)
+}
+
 function narrowScope(parent: AgentScope | undefined, child: AgentScope | undefined): AgentScope | undefined {
   const vaultIds = !parent?.vaultIds?.length ? child?.vaultIds
     : !child?.vaultIds?.length ? parent.vaultIds
@@ -101,6 +114,7 @@ export const ACTION_LABELS: Record<AgentAction, string> = {
   organize: 'Déplacer et renommer',
   delete: 'Mettre à la corbeille',
   plugin: 'Actions des plugins',
+  delegate: 'Déléguer à un sous-agent',
 }
 
 export const MODE_LABELS: Record<AgentActionMode, string> = {

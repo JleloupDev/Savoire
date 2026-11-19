@@ -116,6 +116,24 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
           </tbody>
         </table>
 
+        {perms.delegate !== 'deny' && (
+          <>
+            <label style={LABEL}>Sous-agents</label>
+            <div style={MUTED}>Ceux à qui il peut confier une tâche. Ils n’ont jamais plus de droits que lui ; trois niveaux au plus.</div>
+            {(list ?? []).filter(a => a.id !== draft.id).length === 0 && <div style={{ ...MUTED, marginTop: 4 }}>Aucun autre agent pour l’instant.</div>}
+            {(list ?? []).filter(a => a.id !== draft.id).map(a => (
+              <label key={a.id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, marginTop: 4 }}>
+                <input type="checkbox" data-testid={`agent-delegate-${a.id}`} checked={draft.delegates?.includes(a.id) ?? false}
+                  onChange={e => {
+                    const rest = (draft.delegates ?? []).filter(id => id !== a.id)
+                    set({ delegates: e.target.checked ? [...rest, a.id] : rest })
+                  }} />
+                {a.name}{a.description ? <span style={MUTED}> · {a.description}</span> : null}
+              </label>
+            ))}
+          </>
+        )}
+
         <label style={LABEL}>Où</label>
         <select style={INPUT} value={draft.scope?.vaultIds?.[0] ?? ''}
           onChange={e => set({ scope: { ...draft.scope, vaultIds: e.target.value ? [e.target.value] : [] } })}>
@@ -137,7 +155,7 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
 
         <label style={LABEL}>Budget</label>
         <div style={{ display: 'flex', gap: 6 }}>
-          {([['maxSteps', 'Étapes / exécution'], ['maxTokensPerRun', 'Tokens / exécution'], ['maxTokensPerDay', 'Tokens / jour']] as const).map(([k, label]) => (
+          {([['maxSteps', 'Étapes / exécution'], ['maxTokensPerRun', 'Tokens / exécution'], ['maxTokensPerDay', 'Tokens / jour'], ...(perms.delegate !== 'deny' ? [['maxTokensPerChild', 'Tokens / sous-agent']] as const : [])] as const).map(([k, label]) => (
             <input key={k} style={INPUT} type="number" min={0} placeholder={label} title={label} value={draft.budget?.[k] ?? ''}
               onChange={e => set({ budget: { ...draft.budget, [k]: e.target.value ? Math.max(0, Number(e.target.value)) : undefined } })} />
           ))}
@@ -174,12 +192,14 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
         {list?.map(a => {
           const perms = normalizePermissions(a.permissions)
           const rights = AGENT_ACTIONS.filter(x => perms[x] !== 'deny').map(x => `${ACTION_LABELS[x]} (${MODE_LABELS[perms[x]].toLowerCase()})`).join(', ')
+          const subs = perms.delegate !== 'deny' ? (a.delegates ?? []).map(id => list.find(b => b.id === id)?.name).filter(Boolean).join(', ') : ''
           return (
             <div key={a.id} data-testid="agent-row" style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{a.name}{a.vaultId ? <span style={MUTED}> · agent du vault</span> : null}</div>
                 {a.description && <div style={MUTED}>{a.description}</div>}
                 <div style={{ ...MUTED, marginTop: 2 }}>{rights || 'Aucun droit'}</div>
+                {subs && <div style={{ ...MUTED, marginTop: 2 }}>Sous-agents : {subs}</div>}
               </div>
               <button style={BTN} onClick={() => setDraft({ ...a })}>Modifier</button>
               <button style={BTN} onClick={() => void remove(a)}>Supprimer</button>

@@ -46,13 +46,13 @@ use crate::state::AppState;
 
 // ── Droits (copie courte de packages/agent-core/src/policy.ts) ──────────────
 
-pub const ACTIONS: [&str; 7] = ["read", "comment", "edit", "create", "organize", "delete", "plugin"];
+pub const ACTIONS: [&str; 8] = ["read", "comment", "edit", "create", "organize", "delete", "plugin", "delegate"];
 
 /// Les modes qui ont un sens pour chaque action (AGENT_ACTION_MODES).
 fn modes_of(action: &str) -> &'static [&'static str] {
     match action {
         "read" => &["direct", "deny"],
-        "comment" | "create" | "organize" | "delete" => &["direct", "ask", "deny"],
+        "comment" | "create" | "organize" | "delete" | "delegate" => &["direct", "ask", "deny"],
         "edit" | "plugin" => &["direct", "ask", "propose", "deny"],
         _ => &["deny"],
     }
@@ -64,10 +64,11 @@ pub fn mode_for(definition: &Value, action: &str) -> &'static str {
     modes_of(action).iter().find(|m| **m == asked).copied().unwrap_or("deny")
 }
 
-/// Un lecteur du vault ne fait jamais ecrire un agent.
+/// Un lecteur du vault ne fait jamais ecrire un agent. Deleguer n'ecrit rien :
+/// le sous-agent, lui, reste borne par la personne.
 pub fn effective_mode(definition: &Value, action: &str, can_write: bool) -> &'static str {
     let m = mode_for(definition, action);
-    if action != "read" && !can_write { "deny" } else { m }
+    if action != "read" && action != "delegate" && !can_write { "deny" } else { m }
 }
 
 /// Le vault est-il dans la portee de l'agent ?
@@ -103,6 +104,7 @@ async fn can_edit(c: &mut PgConnection, user: &str, agent: &AgentRow) -> AppResu
 
 const MAX_DEFINITION_BYTES: usize = 64 * 1024;
 const MAX_INSTRUCTIONS_CHARS: usize = 20_000;
+const MAX_DELEGATES: usize = 50;
 
 fn dto(a: &AgentRow) -> Value {
     let mut v = a.definition.clone();
@@ -154,6 +156,13 @@ fn clean_definition(body: &Value) -> AppResult<(String, Option<String>, Value)> 
     for k in ["scope", "budget", "source"] {
         if let Some(v) = o.get(k).filter(|v| v.is_object()) {
             def[k] = v.clone();
+        }
+    }
+    // Orchestrateur : les agents (ids) a qui il peut confier une tache.
+    if let Some(ids) = o.get("delegates").and_then(Value::as_array) {
+        let ids: Vec<&str> = ids.iter().filter_map(Value::as_str).filter(|v| !v.is_empty() && v.len() <= 200).take(MAX_DELEGATES).collect();
+        if !ids.is_empty() {
+            def["delegates"] = json!(ids);
         }
     }
     for k in ["connectionId", "model"] {
@@ -654,6 +663,21 @@ mod tests {
         assert_eq!(effective_mode(&d, "edit", false), "deny");
         assert_eq!(effective_mode(&d, "read", false), "direct");
         assert_eq!(mode_for(&read_only_definition(), "edit"), "deny");
+    }
+
+    #[test]
+    fn delegate() {
+        let d = json!({ "permissions": { "delegate": "ask" } });
+        assert_eq!(mode_for(&d, "delegate"), "ask");
+        // Deleguer n'ecrit rien : permis meme a un lecteur.
+        assert_eq!(effective_mode(&d, "delegate", false), "ask");
+        assert_eq!(mode_for(&json!({ "permissions": { "delegate": "propose" } }), "delegate"), "deny");
+        let (_, _, def) = clean_definition(&json!({ "name": "Chef", "permissions": { "delegate": "direct" }, "delegates": ["a", "", 3, "b"] })).unwrap();
+        assert_eq!(def["permissions"]["delegate"], "direct");
+        assert_eq!(def["delegates"], json!(["a", "b"]));
+        let (_, _, def) = clean_definition(&json!({ "name": "Seul" })).unwrap();
+        assert_eq!(def["permissions"]["delegate"], "deny");
+        assert!(def.get("delegates").is_none());
     }
 
     #[test]

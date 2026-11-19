@@ -17,7 +17,11 @@
 import type { ToolContext, ToolResult, ToolSpec } from './tools'
 
 /** Ce qu'un agent peut faire. Lire ne donne jamais le droit d'ecrire. */
-export type AgentAction = 'read' | 'comment' | 'edit' | 'create' | 'organize' | 'delete' | 'plugin'
+/**
+ * 'delegate' : confier une tache a un sous-agent (orchestrateur). Le sous-agent
+ * n'a jamais plus de droits que lui.
+ */
+export type AgentAction = 'read' | 'comment' | 'edit' | 'create' | 'organize' | 'delete' | 'plugin' | 'delegate'
 
 /**
  * Comment une action est faite :
@@ -37,9 +41,10 @@ export const AGENT_ACTION_MODES: Record<AgentAction, readonly AgentActionMode[]>
   organize: ['direct', 'ask', 'deny'],
   delete: ['direct', 'ask', 'deny'],
   plugin: ['direct', 'ask', 'propose', 'deny'],
+  delegate: ['direct', 'ask', 'deny'],
 }
 
-export const AGENT_ACTIONS: readonly AgentAction[] = ['read', 'comment', 'edit', 'create', 'organize', 'delete', 'plugin']
+export const AGENT_ACTIONS: readonly AgentAction[] = ['read', 'comment', 'edit', 'create', 'organize', 'delete', 'plugin', 'delegate']
 
 /** Droits d'un agent : un mode par action. Une action absente est interdite. */
 export type AgentPermissions = Partial<Record<AgentAction, AgentActionMode>>
@@ -59,6 +64,8 @@ export interface AgentBudget {
   maxTokensPerRun?: number
   /** Tokens au plus par jour, toutes executions confondues. */
   maxTokensPerDay?: number
+  /** Orchestrateur : tokens au plus pour chaque sous-agent (sinon ce qui reste de son propre budget). */
+  maxTokensPerChild?: number
 }
 
 /** Un agent declare. */
@@ -73,6 +80,8 @@ export interface AgentDefinition {
   /** Agent du vault (partage par ses membres). Absent : agent personnel. */
   vaultId?: string
   permissions: AgentPermissions
+  /** Orchestrateur : les agents (ids) a qui il peut confier une tache (action 'delegate'). */
+  delegates?: string[]
   scope?: AgentScope
   budget?: AgentBudget
   /** Connexion d'IA a utiliser dans l'appli (AIConnectionInfo.id). Absente : celle par defaut. */

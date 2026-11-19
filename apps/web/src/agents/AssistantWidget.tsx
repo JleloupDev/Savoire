@@ -64,10 +64,45 @@ function Steps({ run }: { run: AgentRun }) {
           <b>{s.kind === 'model' ? 'IA' : s.name}</b>{s.mode && s.mode !== 'direct' ? ` (${s.mode})` : ''} · {s.status}
           {s.usage ? ` · ${fmt(s.usage.inputTokens + s.usage.outputTokens)} tokens` : ''}
           {s.kind === 'tool' && s.text ? <div style={{ whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto' }}>{s.text}</div> : null}
+          {s.kind === 'delegate' ? <Delegation step={s} run={run.children?.find(c => c.id === s.childRunId)} /> : null}
         </div>
       ))}
     </div>
   )
+}
+
+/** Une delegation : la tache confiee, et l'execution du sous-agent, depliable. */
+function Delegation({ step, run }: { step: AgentRun['steps'][number]; run: AgentRun | undefined }) {
+  const [open, setOpen] = useState(false)
+  const task = typeof step.args?.task === 'string' ? step.args.task : ''
+  return (
+    <div data-testid="agent-delegation">
+      {task && <div style={{ whiteSpace: 'pre-wrap' }}>Tâche : {task.slice(0, 300)}</div>}
+      {run && (
+        <>
+          <button data-testid="agent-delegation-toggle" style={{ ...BTN, padding: '1px 6px', fontSize: 11, marginTop: 2 }} onClick={() => setOpen(!open)}>
+            {open ? '▾' : '▸'} {run.agentName} · {run.status === 'running' ? 'en cours' : run.status}
+          </button>
+          {open && (
+            <div style={{ paddingLeft: 8 }}>
+              {run.answer ? <div style={{ whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto' }}>{run.answer}</div> : <Live run={run} />}
+              {run.error && <div style={{ color: 'var(--danger, #ef4444)' }}>{run.error}</div>}
+              <Steps run={run} />
+            </div>
+          )}
+        </>
+      )}
+      {!run && step.status === 'error' && step.text ? <div>{step.text}</div> : null}
+    </div>
+  )
+}
+
+/** Pendant l'execution : le texte de l'IA au fil de l'eau. */
+function Live({ run }: { run: AgentRun }) {
+  if (run.status !== 'running') return null
+  const last = [...run.steps].reverse().find(s => s.kind === 'model')
+  const text = last?.status === 'running' ? last.text : undefined
+  return <div data-testid="agent-live" style={{ ...MUTED, whiteSpace: 'pre-wrap' }}>{text || '…'}</div>
 }
 
 function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: EditorAreaRefs }) {
@@ -157,7 +192,7 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
                 <div style={{ fontWeight: 600, marginTop: 6, color: '#7c3aed' }}>{t.run?.agentName ?? agent?.name ?? 'Agent'} (IA)</div>
                 {t.error && <div style={{ color: 'var(--danger, #ef4444)' }}>{t.error}</div>}
                 {t.run?.answer && <Answer text={t.run.answer} onOpen={openNote} />}
-                {t.run && !t.run.answer && t.run.status === 'running' && <div style={MUTED}>…</div>}
+                {t.run && !t.run.answer && <Live run={t.run} />}
                 {t.run?.error && <div style={{ ...MUTED, color: 'var(--danger, #ef4444)' }}>{t.run.error}</div>}
                 {t.run && t.run.sources.length > 0 && (
                   <div data-testid="agent-sources" style={{ ...MUTED, marginTop: 4 }}>
