@@ -98,25 +98,33 @@ Les secrets vivent dans GitHub (environnement `production`), pas sur votre
 poste ni dans le dépôt. Après chaque construction réussie des images sur
 master, `.github/workflows/deploy.yml` déploie ce commit sur le serveur.
 
-1. Sur votre poste, dans le dépôt, avec `gh` connecté (`gh auth login`) :
-   ```bash
-   ENV_FILE=~/savoire-production.env bash deploy/vps/configure.sh
-   bash deploy/vps/github-secrets.sh ~/savoire-production.env
-   ```
-   Le premier pose les questions et génère les secrets. Le second les
-   envoie dans GitHub (mots de passe et clés en secrets, le reste en
-   variables), crée une clé SSH de déploiement et affiche la commande pour
-   le serveur. Rangez ensuite le fichier dans un gestionnaire de mots de
-   passe et effacez-le : GitHub ne rend jamais un secret.
-2. Sur le serveur, la commande affichée :
-   `sudo DEPLOY_PUBKEY="ssh-ed25519 ..." bash install.sh --ci`. La machine
-   est préparée, sans `.env` ni démarrage. La clé de la CI est posée sur le
-   compte `savoire` et ne peut lancer que `deploy/vps/ci-deploy.sh` : ni
-   terminal, ni tunnel.
-3. `sudo reboot` une fois (pare-feu d'origine d'Oracle).
-4. Les deux variables affichées par `install.sh` : `DEPLOY_HOST` et
-   `DEPLOY_HOST_KEY` (la clé du serveur : la CI refuse tout autre serveur).
-5. GitHub, *Actions → Deploy → Run workflow* : premier déploiement.
+Avant : ports 80 et 443 ouverts chez l'hébergeur (Oracle : *Security List*
+du VCN), DNS vers le serveur, domaine vérifié chez Brevo.
+
+Sur votre poste, dans le dépôt, avec `gh` connecté (`gh auth login`) :
+
+```bash
+ENV_FILE=~/savoire-production.env bash deploy/vps/configure.sh
+bash deploy/vps/github-secrets.sh ~/savoire-production.env --server ubuntu@<IP>
+```
+
+Le premier pose les questions (domaine, adresse, Brevo, S3 au besoin) et
+génère tous les secrets. Le second, par votre connexion SSH :
+
+1. envoie tout dans GitHub (mots de passe et clés en secrets, le reste en
+   variables) et crée la clé SSH de déploiement (`DEPLOY_SSH_KEY`) ;
+2. installe le serveur (`install.sh --ci`) : la clé de la CI est posée sur
+   le compte `savoire` et ne peut lancer que `deploy/vps/ci-deploy.sh`, ni
+   terminal, ni tunnel ;
+3. déclare le serveur dans GitHub : `DEPLOY_HOST` et `DEPLOY_HOST_KEY`, la
+   clé du serveur lue par votre connexion (la CI refuse tout autre serveur) ;
+4. redémarre la machine si le pare-feu d'origine d'Oracle bloque encore 80
+   et 443 ;
+5. lance le premier déploiement et le suit jusqu'au bout.
+
+Rangez ensuite le fichier dans un gestionnaire de mots de passe et
+effacez-le : GitHub ne rend jamais un secret. Sans `--server`, le script
+s'arrête après l'étape 1 et affiche la commande à lancer sur le serveur.
 
 À chaque déploiement, `ci-deploy.sh` (sous `savoire`) :
 - met les fichiers de déploiement au commit déployé ;
