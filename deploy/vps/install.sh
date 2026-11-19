@@ -109,8 +109,19 @@ fi
 usermod -aG sudo,docker "$ADMIN_USER"
 home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
 install -d -m 700 -o "$ADMIN_USER" -g "$ADMIN_USER" "$home/.ssh"
-if [ -s /root/.ssh/authorized_keys ] && [ ! -s "$home/.ssh/authorized_keys" ]; then
-  install -m 600 -o "$ADMIN_USER" -g "$ADMIN_USER" /root/.ssh/authorized_keys "$home/.ssh/authorized_keys"
+# Les cles de celui qui lance le script (sudo), sinon celles de root. Chez
+# Oracle (et AWS), les cles de root portent command="Please login as the
+# user ubuntu..." : copiees telles quelles, elles fermeraient ce compte.
+keys=/root/.ssh/authorized_keys
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+  sudo_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+  [ -s "$sudo_home/.ssh/authorized_keys" ] && keys="$sudo_home/.ssh/authorized_keys"
+fi
+if [ -s "$keys" ] && [ ! -s "$home/.ssh/authorized_keys" ]; then
+  grep -v 'command=' "$keys" > "$home/.ssh/authorized_keys" || true
+  chown "$ADMIN_USER:$ADMIN_USER" "$home/.ssh/authorized_keys"
+  chmod 600 "$home/.ssh/authorized_keys"
+  [ -s "$home/.ssh/authorized_keys" ] || rm -f "$home/.ssh/authorized_keys"
 fi
 # sudo sans mot de passe : le compte n'en a pas (connexion par cle seulement).
 echo "$ADMIN_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-$ADMIN_USER"
