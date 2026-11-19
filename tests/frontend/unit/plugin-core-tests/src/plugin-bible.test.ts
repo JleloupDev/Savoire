@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { TEXT_PROPOSAL, type PluginAPI, type ToolContext } from '@savoire/plugin-api'
 import {
   ReferenceParser, addNote, emptyIndex, extractVerses, suggest, DEFAULT_SETTINGS,
-  referenceBelowSelection, referencesInDocument, triggerPattern,
+  referenceBelowSelection, referencesInDocument, triggerPattern, bibleAgentTools,
 } from '@savoire/plugin-bible'
 
 // Comme le vault JW : fins de ligne Windows, marqueur colle au texte.
@@ -129,5 +130,49 @@ describe('plugin-bible : commandes', () => {
     expect(done).toBe('Q1 (Gen 1:2 ; 2:1) ?\n![[Genèse 1#^2]]\n![[Genèse 2#^1]]\nQ2 (voir p. 12)\nQ3 (Gn 1:3)\n![[Genèse 1#^3]]')
     // Relancee : rien de plus.
     expect(referencesInDocument(done, parser, link).verses).toBe(0)
+  })
+})
+
+describe('plugin-bible : outils d agent', () => {
+  const actor = { agentId: 'a', agentName: 'Secrétaire', onBehalfOf: { userId: 'u', displayName: 'Jean' } }
+  function tools(notes: Record<string, string>, installed = true) {
+    const { parser, link } = setup()
+    const texts = new Map(Object.entries(notes))
+    const propose = vi.fn(async () => 'p1')
+    const api = {
+      vault: {
+        getFileTree: () => [...texts.keys()].map(p => ({ docId: p, path: p })),
+        resolveDocumentId: (p: string) => (texts.has(p) ? p : undefined),
+        read: async (id: string) => texts.get(id) ?? '',
+        editText: async (id: string, edit: (s: string) => string) => { texts.set(id, edit(texts.get(id) ?? '')); return true },
+      },
+      review: { propose },
+    } as unknown as PluginAPI
+    const [find, insert] = bibleAgentTools(api, { parser: async () => (installed ? parser : null), linkTarget: link })
+    return { find: find!, insert: insert!, texts, propose }
+  }
+  const direct = { mode: 'direct', actor } as ToolContext
+
+  it('cite une reference, cherche un mot', async () => {
+    const { find } = tools({})
+    expect((await find.run({ query: 'Gen 1:1-2' }, direct)).text).toBe('Gen 1:1-2 :\nGenèse 1:1 Au commencement, Dieu créa le ciel et la terre.\nGenèse 1:2 La terre était informe et déserte.')
+    const word = await find.run({ query: 'lumiere' }, direct)
+    expect(word.text).toContain('Genèse 1:3 Et Dieu dit')
+    expect((await find.run({ query: 'introuvable' }, direct)).text).toContain('Rien')
+  })
+
+  it('insere les versets sous une ligne, ou les propose', async () => {
+    const { insert, texts, propose } = tools({ 'Etude.md': 'Création (Gen 1:3)\nSuite' })
+    const r = await insert.run({ path: 'Etude', reference: 'Gen 1:3', after: 'Création' }, direct)
+    expect(r.isError).toBeFalsy()
+    expect(texts.get('Etude.md')).toBe('Création (Gen 1:3)\n![[Genèse 1#^3]]\nSuite')
+    await insert.run({ path: 'Etude.md', reference: 'Gen 2:1' }, { mode: 'propose', actor } as ToolContext)
+    expect(propose).toHaveBeenCalledWith('Etude.md', TEXT_PROPOSAL, expect.objectContaining({ after: '\n![[Genèse 2#^1]]\n' }), expect.stringContaining('Secrétaire'))
+    await expect(insert.run({ path: 'Etude.md', reference: 'page 12' }, direct)).rejects.toThrow('Référence inconnue')
+  })
+
+  it('sans Bible installee, l outil le dit', async () => {
+    const { find } = tools({}, false)
+    expect(await find.run({ query: 'Gen 1:1' }, direct)).toMatchObject({ isError: true, text: expect.stringContaining('Aucune Bible') })
   })
 })

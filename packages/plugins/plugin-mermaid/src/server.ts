@@ -15,7 +15,8 @@ export const MERMAID_MANIFEST: PluginManifest = {
   description: 'Rendu de diagrammes Mermaid dans l\'éditeur',
   permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
   defaultActive: true,
-  official: true,
+  // Plugin du store (pas livre d'office), relu par l'equipe Savoire.
+  trust: 'verified',
 }
 
 const serverPlugin: VaultPlugin = {

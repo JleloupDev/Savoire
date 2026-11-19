@@ -14,6 +14,7 @@
 // Bible/Chapter et Bible/Book, alias, versets marques « ^numero »).
 import type { PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { linkTargetFor } from '@savoire/plugin-api'
+import { bibleAgentTools, type BibleToolState } from './agentTools'
 import { addNote, emptyIndex, type ReferenceIndex } from './references'
 import { ReferenceParser } from './parse'
 import { DEFAULT_SETTINGS, suggest, type QuickRefSettings } from './suggest'
@@ -24,6 +25,7 @@ import { indexPath, installedBibleId } from './notes'
 import { BibleWidget, type BibleHost } from './BibleWidget'
 
 export { ReferenceParser } from './parse'
+export { bibleAgentTools, type BibleToolState } from './agentTools'
 export { addNote, emptyIndex, extractVerses, normalize } from './references'
 export { suggest, DEFAULT_SETTINGS } from './suggest'
 export { referenceBelowSelection, referencesInDocument, embedsInLine } from './commands'
@@ -226,13 +228,20 @@ export function createBiblePlugin(settings: QuickRefSettings = DEFAULT_SETTINGS)
       version: '0.1.0',
       description: 'Choisir et télécharger sa Bible, puis citer : « ! » et un livre, un chapitre ou un mot insère les versets',
       scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write', 'network:wol.jw.org'],
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'network:wol.jw.org', 'agents'],
       defaultActive: true,
+      trust: 'verified',
     },
 
     async onload(api: PluginAPI) {
       host = api
       void reload(api)
+      // Agents (ADR-033) : chercher et citer des versets, inserer une reference.
+      const toolState: BibleToolState = {
+        parser: async () => { if (loading) await loading; return index.byName.size ? parser : null },
+        linkTarget,
+      }
+      for (const tool of bibleAgentTools(api, toolState)) api.agents?.registerTool(tool)
       // Fichiers crees, renommes, supprimes : la liste est relue.
       const unsubVault = api.workspace?.subscribeVaultChange?.(() => reloadSoon(api))
       if (unsubVault) unsubscribers.push(unsubVault)

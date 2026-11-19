@@ -195,7 +195,7 @@ Les outils d'agent des plugins (`api.agents.registerTool`) tournent aussi sur le
   - `vault.moveFiles`, `renameFile` : le canal des déplacements (`relinkAfterMoves`), les liens suivent ;
   - `review.propose` : une entrée `kind: 'proposal'` de la carte `map/review`, même forme que `ReviewService.propose` (`changeNoteText` en mode `propose` y dépose un `savoire.text`) ;
   - `indexer` (liens, tags), `query`, `search` : les pouvoirs locaux.
-- **Ce qu'elle ne sait pas faire** : `openTree`, `sharedData`, les lignes légères des bases. Les outils qui en ont besoin (historique, discussions, bases) restent `runtime 'app'`.
+- **Ce qu'elle ne sait pas faire** : `openTree`, `sharedData`, les lignes légères des bases. Les outils qui en ont besoin (historique, discussions, bases, dessins Excalidraw) restent `runtime 'app'`, comme ceux qui lisent un état chargé dans la page (Bible).
 - **Outils serveur aujourd'hui** : tâches (`list_tasks`, `add_task`, `check_task`), agenda (`daily_note`, `append_to_daily`), modèles (`list_templates`, `create_from_template`), Mermaid (`insert_diagram`), tags (`add_tag`, `rename_tag`). Un outil de plugin ne remplace jamais un outil du socle de même nom.
 
 #### Niveaux de confiance
@@ -205,7 +205,7 @@ Le manifeste porte un niveau (`pluginTrust`, `packages/plugin-api/src/manifest.t
 | Niveau | Qui | Sur le pair |
 |---|---|---|
 | `official` | Livré avec Savoire (`official: true`) | toujours |
-| `verified` | Relu par l'équipe Savoire. Les plugins actuels du store le sont tous (`manifestOfPackage`) ; un paquet peut se déclarer `unverified`, jamais `official`. | réglage `verified` ou `all` |
+| `verified` | Relu par l'équipe Savoire. Les plugins actuels du store le sont tous : ceux du catalogue de l'appli (Mermaid, Excalidraw, Bible...) et les paquets signés (`manifestOfPackage` ; un paquet peut se déclarer `unverified`, jamais `official`). | réglage `verified` ou `all` |
 | `unverified` | Plugin maison ou tiers (défaut) | réglage `all` seulement |
 
 Réglages du pair :

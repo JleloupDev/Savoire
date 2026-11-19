@@ -21,6 +21,7 @@ import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, IShar
 import { excalidrawContentExtractor } from './content-extractor'
 import { SceneBinding, applyScenePatch, type ScenePatch, type SceneElement, type SceneFile, type StoredFile } from './binding'
 import { applyPatchToElements, diffSceneJson, diffScenes, sceneJson } from './compare'
+import { SCENE_PROPOSAL, excalidrawAgentTools } from './agentTools'
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>
 type ExcalidrawInitialDataState = NonNullable<ExcalidrawProps['initialData']>
@@ -36,8 +37,7 @@ export { excalidrawContentExtractor } from './content-extractor'
 export { SceneBinding, assignOrder, isBetter, applyScenePatch } from './binding'
 export type { SceneElement, SceneFile, StoredFile, SceneBindingOptions, ScenePatch } from './binding'
 
-/** Type de proposition d'un dessin (Revision) : des elements changes. */
-export const SCENE_PROPOSAL = 'excalidraw.scene'
+export { SCENE_PROPOSAL, excalidrawAgentTools, describeScene, shapeElements } from './agentTools'
 
 const EMPTY_SCENE = { elements: [], appState: { viewBackgroundColor: '#1e1e2e' }, files: {} }
 const STABILIZE_MS = 1000
@@ -469,12 +469,15 @@ const plugin: VaultPlugin = {
     name: 'Excalidraw',
     version: '0.0.2',
     description: 'Éditeur de dessin vectoriel Excalidraw pour les fichiers .excalidraw',
-    permissions: ['ui:editor', 'vault:read', 'vault:write'],
+    permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
     defaultActive: false,
+    trust: 'verified',
   },
 
   async onload(api: PluginAPI) {
     pluginAPI = api
+    // Agents (ADR-033) : lire un dessin, y ajouter des formes.
+    for (const tool of excalidrawAgentTools(api)) api.agents?.registerTool(tool)
     // Revision : des changements de dessin proposes, appliques a l'acceptation.
     api.review?.registerProposalType({
       type: SCENE_PROPOSAL,
