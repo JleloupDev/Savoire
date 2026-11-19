@@ -6,7 +6,8 @@
 # servent partout : auto-hebergement, production (deploy/compose).
 #
 # Etiquettes : « latest » (master), « sha-<commit> », et pour une etiquette
-# git v1.2.3 : « v1.2.3 » et « v1.2 ».
+# git v1.2.3 : « v1.2.3 » et « v1.2 ». Chaque etiquette couvre x86 (amd64) et
+# ARM (arm64) : docker choisit seul la bonne sur le serveur.
 name: Images
 
 on:
@@ -50,23 +51,28 @@ jobs:
       - run: cargo build --locked --all-targets
       - run: cargo test --locked
 
-  images:
-    name: Image ${{ matrix.name }}
+  # Chaque image est construite deux fois, sur une machine native : x86 (amd64)
+  # et ARM (arm64). Pas d'emulation : le backend Rust y prendrait des heures.
+  # Chaque construction pousse son image sans etiquette ; le job « publish »
+  # les reunit ensuite sous les etiquettes (latest, sha-..., v...).
+  build:
+    name: Image ${{ matrix.name }} (${{ matrix.arch }})
     needs: backend-tests
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
+        name: [api, web, indexer, login]
+        arch: [amd64, arm64]
         include:
-          - name: api
-            dockerfile: backend/Dockerfile
-          - name: web
-            dockerfile: apps/web/Dockerfile
-          - name: indexer
-            dockerfile: apps/indexer/Dockerfile
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+          - { name: api, dockerfile: backend/Dockerfile }
+          - { name: web, dockerfile: apps/web/Dockerfile }
+          - { name: indexer, dockerfile: apps/indexer/Dockerfile }
           # Page de connexion (Zitadel retouche) : son dossier suffit.
           - name: login
             context: deploy/compose/zitadel-login
@@ -90,18 +96,79 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context || '.' }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
+
+      - name: Garder l'empreinte
+        run: |
+          mkdir -p digests
+          echo "${{ steps.build.outputs.digest }}" > "digests/${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.name }}-${{ matrix.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Une image n'est etiquetee que si ses deux architectures sont construites :
+  # « latest » ne pointe jamais vers une image x86 seule.
+  publish:
+    name: Publier ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [api, web, indexer, login]
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          path: digests
+          merge-multiple: true
+
+      - name: Nom de l'image (ghcr.io exige des minuscules)
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/savoire-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context || '.' }}
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Reunir amd64 et arm64 sous les etiquettes
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          for t in $TAGS; do args+=(-t "$t"); done
+          for f in digests/*; do args+=("$IMAGE@$(cat "$f")"); done
+          docker buildx imagetools create "${args[@]}"
+          docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}"

@@ -83,6 +83,8 @@ packages/plugins/*/dist/
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map
 packages/*/src/**/*.d.ts
+# Declaration ecrite a la main (Icon.tsx), pas une sortie de tsc.
+!packages/ui-components/src/lucide-all.d.ts
 packages/*/src/**/*.d.ts.map
 *.lscache
 
