@@ -9,7 +9,8 @@
 // Le choix se fait sur l'emetteur du jeton (lu sans verification : la
 // verification est faite ensuite par le schema choisi).
 // Un troisieme schema, les jetons personnels « svp_... », ne sert que sur
-// l'API ouverte (/api/open/v1, /api/mcp).
+// l'API ouverte (/api/open/v1, /api/mcp). Les jetons OAuth « sva_... »
+// (ChatGPT, Claude.ai, voir api/oauth.rs) s'y comportent de meme.
 //
 // Temps reel (WebSocket) : le jeton arrive dans la query string (access_token).
 
@@ -540,6 +541,9 @@ const TOUCH_EVERY: chrono::Duration = chrono::Duration::minutes(5);
 
 /// Un jeton personnel valide ; None sinon (inconnu, revoque, expire, compte indisponible).
 pub async fn authenticate_access_token(st: &AppState, token: &str) -> AppResult<Option<Principal>> {
+    if crate::api::oauth::looks_like(token) {
+        return authenticate_oauth_token(st, token).await;
+    }
     if !access_token::looks_like(token) {
         return Ok(None);
     }
@@ -561,6 +565,27 @@ pub async fn authenticate_access_token(st: &AppState, token: &str) -> AppResult<
         display_name: Some(user.display_name),
         token_vaults: t.vault_ids,
         token_agent: t.agent_id,
+        ..Default::default()
+    }))
+}
+
+/// Un jeton d'acces OAuth valide : comme un jeton personnel (agent, vaults).
+async fn authenticate_oauth_token(st: &AppState, token: &str) -> AppResult<Option<Principal>> {
+    let mut c = st.db.acquire().await?;
+    let Some(g) = crate::api::oauth::access_of(&mut c, token).await? else { return Ok(None) };
+    let Some(user) = users::by_id(&mut c, &g.user_id).await? else { return Ok(None) };
+    if users::is_locked(&user) {
+        return Ok(None);
+    }
+    let at = now();
+    if g.last_used_at.is_none_or(|l| l < at - TOUCH_EVERY) {
+        crate::api::oauth::touch(&mut c, &g.grant_id).await?;
+    }
+    Ok(Some(Principal {
+        sub: g.user_id,
+        display_name: Some(user.display_name),
+        token_vaults: g.vault_ids,
+        token_agent: g.agent_id,
         ..Default::default()
     }))
 }
@@ -603,8 +628,8 @@ async fn principal_of(parts: &Parts, st: &AppState) -> Option<Principal> {
         return (**p).clone();
     }
     let token = request_token(parts)?;
-    // Un jeton personnel n'ouvre jamais les routes de l'application.
-    if access_token::looks_like(&token) {
+    // Un jeton personnel ou OAuth n'ouvre jamais les routes de l'application.
+    if access_token::looks_like(&token) || crate::api::oauth::looks_like(&token) {
         return None;
     }
     st.auth.authenticate(st, &token).await
@@ -662,12 +687,13 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         use axum::response::IntoResponse;
         let st = AppState::from_ref(state);
+        // RFC 9728 : le refus dit ou lire les metadonnees OAuth (ChatGPT, Claude.ai).
+        let challenge = crate::api::oauth::www_authenticate(&crate::api::public_base(&st, parts));
         let refuse = || {
             let mut r = axum::http::StatusCode::UNAUTHORIZED.into_response();
-            r.headers_mut().insert(
-                axum::http::header::WWW_AUTHENTICATE,
-                axum::http::HeaderValue::from_static("Bearer realm=\"savoire\", error=\"invalid_token\""),
-            );
+            if let Ok(v) = axum::http::HeaderValue::from_str(&challenge) {
+                r.headers_mut().insert(axum::http::header::WWW_AUTHENTICATE, v);
+            }
             r
         };
         let Some(token) = bearer(parts) else { return Err(refuse()) };

@@ -206,3 +206,44 @@ async fn propose_mode_cannot_touch_notes_and_tokens_without_agent_stay_read_only
     let denied = mcp(&app, &plain, 3, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "id": doc, "text": "x" } })).await;
     assert_eq!(denied["result"]["isError"], true);
 }
+
+#[tokio::test]
+async fn oauth_token_carries_the_chosen_agent() {
+    use base64::Engine;
+    use sha2::Digest;
+    let (url, peer) = fake_peer().await;
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let doc = app.document(&ta, &v).await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Secrétaire", "permissions": { "read": "direct", "edit": "direct" } })).await;
+    let agent_id = agent.1["id"].as_str().unwrap().to_string();
+    // Le parcours OAuth de ChatGPT, en bref (le detail : tests/oauth.rs).
+    let redirect = "https://chatgpt.com/connector_platform_oauth_redirect";
+    let reg = app.post("", "/api/oauth/register", json!({ "client_name": "ChatGPT", "redirect_uris": [redirect] })).await;
+    let client_id = reg.1["client_id"].as_str().unwrap().to_string();
+    let verifier = "v".repeat(64);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let r = http.get(app.url("/api/oauth/authorize"))
+        .query(&[("response_type", "code"), ("client_id", &client_id), ("code_challenge", &challenge), ("code_challenge_method", "S256")])
+        .send().await.unwrap();
+    let loc = r.headers()["location"].to_str().unwrap().to_string();
+    let request = loc.split("request=").nth(1).unwrap().to_string();
+    let d = app.post(&ta, &format!("/api/v1/oauth/requests/{request}/decide"), json!({ "approve": true, "agentId": agent_id })).await;
+    let back = url::Url::parse(d.1["redirect"].as_str().unwrap()).unwrap();
+    let code = back.query_pairs().find(|(k, _)| k == "code").unwrap().1.into_owned();
+    let t: Value = app.http.post(app.url("/api/oauth/token"))
+        .form(&[("grant_type", "authorization_code"), ("code", code.as_str()), ("client_id", client_id.as_str()), ("code_verifier", verifier.as_str())])
+        .send().await.unwrap().json().await.unwrap();
+    let token = t["access_token"].as_str().unwrap().to_string();
+    // Les droits et le nom de l'agent choisi a l'ecran d'accord.
+    let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
+    let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["list_vaults", "search", "append"]);
+    let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "append", "arguments": { "vault": "Journal", "id": doc, "text": "x" } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    let author: Value = sqlx::query_scalar("SELECT author FROM operations_log WHERE resource_id = $1").bind(&doc).fetch_one(&app.state.db).await.unwrap();
+    assert_eq!(author["agentName"], "Secrétaire");
+}

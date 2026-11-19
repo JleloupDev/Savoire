@@ -21,6 +21,7 @@ struct Migration {
 const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, name: "baseline", sql: include_str!("../../migrations/0001_baseline.sql") },
     Migration { version: 2, name: "agents", sql: include_str!("../../migrations/0002_agents.sql") },
+    Migration { version: 3, name: "oauth", sql: include_str!("../../migrations/0003_oauth.sql") },
 ];
 
 /// Cle du verrou des migrations (pg_advisory_lock) : deux instances qui
