@@ -14,6 +14,9 @@
 set -euo pipefail
 
 SAVOIRE_DIR="${SAVOIRE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# Sous le compte de Savoire (sans sudo, son Docker) : lance en root, il s'y relance.
+. "$SAVOIRE_DIR/deploy/vps/lib.sh"
+as_owner "$SAVOIRE_DIR/deploy/vps/restore-test.sh" "$@"
 COMPOSE_DIR="$SAVOIRE_DIR/deploy/compose"
 PG_IMAGE="postgres:17.10-alpine"
 NAME="savoire-restore-test"

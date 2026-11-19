@@ -10,11 +10,17 @@
 # avec les memes noms que dans .env, et SAVOIRE_NONINTERACTIVE=1.
 #   SAVOIRE_DOMAIN=savoire.exemple.fr ADMIN_EMAIL=moi@exemple.fr \
 #   SMTP_USER=... SMTP_PASSWORD=... SAVOIRE_NONINTERACTIVE=1 ./configure.sh
+#
+# Pour la CI (secrets dans GitHub), sur votre poste :
+#   ENV_FILE=~/savoire-production.env bash deploy/vps/configure.sh
+#   bash deploy/vps/github-secrets.sh ~/savoire-production.env
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="${COMPOSE_DIR:-$HERE/../compose}"
-ENV_FILE="$COMPOSE_DIR/.env"
+# ENV_FILE : ecrire ailleurs, par exemple sur votre poste avant de tout
+# envoyer dans GitHub (deploy/vps/github-secrets.sh).
+ENV_FILE="${ENV_FILE:-$COMPOSE_DIR/.env}"
 NONINTERACTIVE="${SAVOIRE_NONINTERACTIVE:-0}"
 
 say() { printf '\033[1;36m%s\033[0m\n' "$*"; }
@@ -115,8 +121,10 @@ if [ -z "$(get STORE_SIGNING_KEY)" ]; then
   set_var STORE_SIGNING_KEY "$(printf '%s\n' "$store_pem" | base64 -w0)"
   set_var STORE_PUBLIC_KEY "$(printf '%s\n' "$store_pem" | openssl pkey -pubout -outform DER 2>/dev/null | base64 -w0)"
 fi
-generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml:docker-compose.store.yml"
-mkdir -p "$COMPOSE_DIR/backups" "$COMPOSE_DIR/metrics"
+# Le store (docker-compose.store.yml) s'ajoute quand son image savoire-store
+# est publiee : sans elle, le demarrage echoue.
+generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml"
+[ "$ENV_FILE" != "$COMPOSE_DIR/.env" ] || mkdir -p "$COMPOSE_DIR/backups" "$COMPOSE_DIR/metrics"
 
 # Verifications simples.
 for key in SAVOIRE_DOMAIN AUTH_DOMAIN ADMIN_EMAIL SMTP_USER SMTP_PASSWORD SMTP_FROM; do
@@ -126,7 +134,7 @@ done
 
 cat <<EOF
 
-Configuration ecrite dans $ENV_FILE (lisible par root seulement).
+Configuration ecrite dans $ENV_FILE (lisible par son proprietaire seulement).
 
 A GARDER AILLEURS QUE SUR CETTE MACHINE (gestionnaire de mots de passe) :
   - le fichier .env entier, ou au moins :

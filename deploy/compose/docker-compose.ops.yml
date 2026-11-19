@@ -197,13 +197,14 @@ services:
     <<: *restart
     image: ghcr.io/google/cadvisor:${CADVISOR_VERSION:-v0.60.6}
     command: ["--docker_only=true", "--housekeeping_interval=30s", "--store_container_labels=false"]
+    # Docker rootless (deploy/vps/lib.sh) : le socket et les donnees sont ceux
+    # du compte savoire ; pas de /dev/kmsg (evenements de manque de memoire).
     privileged: true
-    devices: ["/dev/kmsg"]
     volumes:
       - /:/rootfs:ro
-      - /var/run:/var/run:ro
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
+      - ${DOCKER_DATA_ROOT:-/var/lib/docker}:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
     networks: [ops]
 
@@ -236,7 +237,7 @@ services:
     command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./ops/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
     networks: [ops]
 

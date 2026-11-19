@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Jean Leloup
 #
 # Reinstalle Savoire depuis la copie hors machine (restic), sur une machine
-# neuve ou sur celle-ci. A lancer en root, apres install.sh --restore (qui
+# neuve ou sur celle-ci. A lancer avec sudo (il passe sous le compte savoire), apres install.sh --restore (qui
 # l'appelle) ou seul.
 #
 #  1. Lit la derniere copie : export des bases, fichiers des vaults, .env,
@@ -22,10 +22,12 @@
 set -euo pipefail
 
 SAVOIRE_DIR="${SAVOIRE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# Sous le compte de Savoire (sans sudo, son Docker) : lance en root, il s'y relance.
+. "$SAVOIRE_DIR/deploy/vps/lib.sh"
+as_owner "$SAVOIRE_DIR/deploy/vps/restore.sh" "$@"
 COMPOSE_DIR="$SAVOIRE_DIR/deploy/compose"
 RESTIC_IMAGE="restic/restic:${RESTIC_VERSION:-0.19.1}"
 
-[ "$(id -u)" = 0 ] || { echo "A lancer en root." >&2; exit 1; }
 cd "$COMPOSE_DIR"
 
 read_var() {

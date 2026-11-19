@@ -297,7 +297,9 @@ services:
     ports:
       - "127.0.0.1:${PORTAINER_PORT:-9443}:9443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Le socket du Docker de Savoire (rootless : DOCKER_SOCKET, pose par
+      # deploy/vps/lib.sh).
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       - portainer-data:/data
 
 networks:

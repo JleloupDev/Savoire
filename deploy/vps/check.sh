@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Jean Leloup
 #
-# Etat de Savoire en un coup d'oeil (root) : services, site, alertes en cours,
+# Etat de Savoire en un coup d'oeil (sudo, ou sous le compte savoire) : services, site, alertes en cours,
 # age des sauvegardes.
 set -uo pipefail
 
 SAVOIRE_DIR="${SAVOIRE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# Sous le compte de Savoire (sans sudo, son Docker) : lance en root, il s'y relance.
+. "$SAVOIRE_DIR/deploy/vps/lib.sh"
+as_owner "$SAVOIRE_DIR/deploy/vps/check.sh" "$@"
 cd "$SAVOIRE_DIR/deploy/compose" || exit 1
 env_get() { grep -E "^$1=" .env | tail -1 | cut -d= -f2-; }
 

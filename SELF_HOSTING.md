@@ -36,8 +36,8 @@ fournisseur d'identité. Savoire garde les vaults, les membres et les droits.
 
 ## Installer sur un VPS, automatiquement
 
-Sur une machine neuve (Debian 12 ou 13, Ubuntu 22.04 ou 24.04), avec votre
-clé SSH déjà autorisée pour root :
+Sur une machine neuve (Debian 12 ou 13, Ubuntu 22.04 ou 24.04), depuis
+votre compte qui a sudo (`ubuntu` chez Oracle), avec votre clé SSH :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JleloupDev/Savoire/master/deploy/vps/install.sh -o install.sh
@@ -45,7 +45,7 @@ sudo bash install.sh
 ```
 
 Le script prépare la machine (mises à jour de sécurité automatiques,
-pare-feu, fail2ban, Docker, un utilisateur `savoire` connecté par clé
+pare-feu, fail2ban, Docker rootless, le compte `savoire`, SSH par clé
 seulement, mémoire d'échange), pose les questions (domaines, adresse,
 Brevo, stockage de la copie hors machine), génère tous les secrets, puis
 démarre Savoire et son exploitation. Relance sans risque.
@@ -69,10 +69,91 @@ Les scripts de `deploy/vps/` :
 
 La suite de ce guide décrit l'installation à la main.
 
+## Comptes et droits
+
+| Compte | Rôle | sudo |
+|---|---|---|
+| le vôtre (`ubuntu` chez Oracle) | Administration de la machine, SSH par clé | oui |
+| `savoire` | Possède `/opt/savoire`, le `.env`, les sauvegardes ; fait tourner Docker | non |
+
+- **Docker rootless** : le compte `savoire` a son propre Docker, lancé par
+  sa session systemd (active sans connexion). Aucun conteneur ne tourne en
+  root ; le Docker root de la machine est arrêté. Un conteneur qui
+  s'échapperait n'aurait que les droits de `savoire`.
+- Ce compte n'a ni mot de passe ni sudo. Pour agir sous lui :
+  `sudo -iu savoire` (il arrive dans `deploy/compose`, `docker compose ...`
+  marche). Les scripts de `deploy/vps/` lancés avec sudo passent d'eux-mêmes
+  sous ce compte.
+- Ports 80 et 443 sans root : `net.ipv4.ip_unprivileged_port_start=80`.
+  Les ports passent par slirp4netns : Caddy voit la vraie adresse des
+  visiteurs.
+- Ubuntu 24.04 : un profil AppArmor (`/etc/apparmor.d/usr.bin.rootlesskit`)
+  autorise le Docker du compte.
+- Limite : cAdvisor (mémoire et processeur par conteneur) voit moins de
+  choses qu'avec un Docker root.
+
+## Déployer depuis GitHub (CI)
+
+Les secrets vivent dans GitHub (environnement `production`), pas sur votre
+poste ni dans le dépôt. Après chaque construction réussie des images sur
+master, `.github/workflows/deploy.yml` déploie ce commit sur le serveur.
+
+1. Sur votre poste, dans le dépôt, avec `gh` connecté (`gh auth login`) :
+   ```bash
+   ENV_FILE=~/savoire-production.env bash deploy/vps/configure.sh
+   bash deploy/vps/github-secrets.sh ~/savoire-production.env
+   ```
+   Le premier pose les questions et génère les secrets. Le second les
+   envoie dans GitHub (mots de passe et clés en secrets, le reste en
+   variables), crée une clé SSH de déploiement et affiche la commande pour
+   le serveur. Rangez ensuite le fichier dans un gestionnaire de mots de
+   passe et effacez-le : GitHub ne rend jamais un secret.
+2. Sur le serveur, la commande affichée :
+   `sudo DEPLOY_PUBKEY="ssh-ed25519 ..." bash install.sh --ci`. La machine
+   est préparée, sans `.env` ni démarrage. La clé de la CI est posée sur le
+   compte `savoire` et ne peut lancer que `deploy/vps/ci-deploy.sh` : ni
+   terminal, ni tunnel.
+3. `sudo reboot` une fois (pare-feu d'origine d'Oracle).
+4. Les deux variables affichées par `install.sh` : `DEPLOY_HOST` et
+   `DEPLOY_HOST_KEY` (la clé du serveur : la CI refuse tout autre serveur).
+5. GitHub, *Actions → Deploy → Run workflow* : premier déploiement.
+
+À chaque déploiement, `ci-deploy.sh` (sous `savoire`) :
+- met les fichiers de déploiement au commit déployé ;
+- refait le `.env` à partir de GitHub. Il refuse si un secret qui ouvre des
+  données a changé (`ZITADEL_MASTERKEY`, mots de passe des bases,
+  `RESTIC_PASSWORD`, clé du store) ;
+- sauvegarde si Savoire tourne déjà ;
+- tire les images `sha-<commit>` et redémarre ce qui a changé ;
+- attend que l'API, le site et la connexion répondent (6 minutes au plus).
+
+Changer un réglage : modifier la variable ou le secret dans GitHub
+(*Settings → Environments → production*), puis *Run workflow*. Déployer une
+version précise : *Run workflow* avec un commit ou une étiquette `v1.2.3`.
+Les noms qui commencent par `GITHUB_` sont refusés par GitHub :
+`GITHUB_CLIENT_ID` s'écrit `OAUTH_GITHUB_CLIENT_ID`.
+
+## Nginx, Caddy et HTTPS
+
+Rien à installer ni à configurer sur la machine : ni Nginx, ni certificat.
+
+- **Caddy** (conteneur `caddy`) reçoit les ports 80 et 443. Il obtient et
+  renouvelle seul les certificats Let's Encrypt de `SAVOIRE_DOMAIN` et
+  `AUTH_DOMAIN`, et répartit vers les services. Sa configuration est dans
+  le dépôt (`deploy/compose/caddy/Caddyfile`) et part avec chaque
+  déploiement.
+- **Nginx** tourne seulement *dans* l'image `web`, pour servir les pages de
+  l'appli. Sa configuration est dans l'image.
+- Un autre site sur la même machine (un blog…) : un bloc de plus dans le
+  Caddyfile, son certificat se fait tout seul.
+- Aucun Nginx ou Apache ne doit occuper 80 ou 443 sur la machine.
+
 ## Savoire Store
 
-Le store (plugins, modèles, modules) est déployé avec Savoire
-(`deploy/compose/docker-compose.store.yml`, dans `COMPOSE_FILE`). Il répond
+Le store (plugins, modèles, modules) se déploie avec Savoire
+(`deploy/compose/docker-compose.store.yml`, à ajouter à `COMPOSE_FILE`).
+**Pas encore par défaut** : son image `savoire-store` n'est pas publiée (son
+dépôt n'est pas sur GitHub) ; sans elle, le démarrage échoue. Il répond
 sous l'adresse de Savoire, `https://SAVOIRE_DOMAIN/store/`, tant qu'il n'a pas
 de domaine à lui. Ses comptes sont ceux de Savoire ; `ADMIN_EMAIL` relit les
 publications.
@@ -208,7 +289,7 @@ perdues) dans `BACKUP_DIR` :
   restaurée sur une autre machine ne redémarre pas.
 
 Une sauvegarde n'est comptée réussie que si l'export est complet et relu.
-Les fichiers ne sont lisibles que par root. Il garde `BACKUP_KEEP_DAYS` jours. Une sauvegarde sur le même disque ne
+Les fichiers ne sont lisibles que par le compte `savoire`. Il garde `BACKUP_KEEP_DAYS` jours. Une sauvegarde sur le même disque ne
 protège pas d'une panne de disque : avec `docker-compose.ops.yml`, le
 service `offsite` en fait une copie hors de la machine (voir plus bas).
 
@@ -328,6 +409,9 @@ Ces alertes tombent avec la machine. Ajoutez une surveillance extérieure
 gratuite (UptimeRobot, Better Stack…) sur `https://<SAVOIRE_DOMAIN>/`.
 
 ## Mettre à jour
+
+Avec la CI (voir plus haut), rien à faire : chaque image construite sur
+master est déployée. Sans la CI :
 
 ```bash
 sudo bash deploy/vps/update.sh

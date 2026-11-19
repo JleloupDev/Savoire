@@ -1,59 +1,116 @@
-# Deploy dev — CI/CD vers Azure Container Apps via azd
-name: Deploy dev
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Deploiement sur le serveur (ADR-028) : apres chaque construction reussie des
+# images sur master (images.yml), ou a la demande (un commit ou une etiquette).
+#
+# Tout vient de l'environnement GitHub « production » (Settings >
+# Environments) :
+#   - ses secrets et variables forment le .env du serveur
+#     (deploy/vps/github-secrets.sh les y met) ; OAUTH_GITHUB_* devient
+#     GITHUB_* (GitHub refuse ce prefixe) ;
+#   - DEPLOY_HOST, DEPLOY_HOST_KEY (variables), DEPLOY_SSH_KEY (secret),
+#     et au besoin DEPLOY_PORT (22) et DEPLOY_USER (savoire).
+# Sans DEPLOY_HOST, rien ne part.
+#
+# La CI se connecte au compte savoire (sans sudo), dont la cle ne lance que
+# deploy/vps/ci-deploy.sh : le .env passe sur l'entree standard, jamais sur
+# le disque du serveur ailleurs que dans deploy/compose/.env.
+name: Deploy
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: [Images]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit (40 caracteres) ou etiquette v1.2.3. Vide : le commit choisi ci-dessus."
+        required: false
+
+permissions:
+  contents: read
+
+# Un deploiement a la fois ; un deploiement en attente remplace le precedent.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # Tests unitaires seulement : les tests d'integration demandent PostgreSQL (images.yml).
-      - run: cargo test --locked --lib
-        working-directory: backend
-
   deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    environment: dev
-
+    name: Production
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    environment: production
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: Azure/setup-azd@v1
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login Azure
-        run: |
-          azd auth login \
-            --client-id ${{ secrets.AZURE_CLIENT_ID }} \
-            --client-secret ${{ secrets.AZURE_CLIENT_SECRET }} \
-            --tenant-id ${{ secrets.AZURE_TENANT_ID }}
-
-      - name: Deploy
-        run: azd deploy --no-prompt
+      # Les variables de l'environnement ne sont lisibles qu'ici, pas dans le
+      # « if » du job : sans serveur declare, les etapes suivantes sautent.
+      - name: Ce qui part
+        id: ref
         env:
-          AZURE_ENV_NAME: dev
-          AZURE_LOCATION: westeurope
+          INPUT_REF: ${{ inputs.ref }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "Pas de DEPLOY_HOST dans l'environnement production : rien a deployer." >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+          ref="${INPUT_REF:-${RUN_SHA:-$GITHUB_SHA}}"
+          if [[ ! "$ref" =~ ^([0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.]+)?)$ ]]; then
+            echo "::error::Un commit (40 caracteres) ou une etiquette v1.2.3 est attendu, lu « $ref »."
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Deploiement de $ref" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Démarrer watchdog teardown (1h)
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'teardown-watchdog.yml',
-              ref: 'main'
-            })
+      - name: Fichier .env
+        if: steps.ref.outputs.go == 'true'
+        env:
+          SECRETS: ${{ toJSON(secrets) }}
+          VARS: ${{ toJSON(vars) }}
+        run: |
+          umask 077
+          jq -nr --argjson s "$SECRETS" --argjson v "$VARS" '
+            ($v + $s) | to_entries[]
+            | select(.key | test("^(github_token|DEPLOY_.*|SAVOIRE_VERSION)$") | not)
+            | .key |= sub("^OAUTH_GITHUB_"; "GITHUB_")
+            | if (.value | test("[\r\n]")) then error("\(.key) : une valeur sur plusieurs lignes ne va pas dans un .env")
+              else "\(.key)=\(.value)" end
+          ' > "$RUNNER_TEMP/savoire.env"
+          echo "$(wc -l < "$RUNNER_TEMP/savoire.env") valeurs."
+
+      - name: SSH
+        if: steps.ref.outputs.go == 'true'
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ vars.DEPLOY_HOST }}
+          HOST_KEY: ${{ vars.DEPLOY_HOST_KEY }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::Secret DEPLOY_SSH_KEY manquant."; exit 1; }
+          [ -n "$HOST_KEY" ] || { echo "::error::Variable DEPLOY_HOST_KEY manquante (affichee par install.sh --ci)."; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          if [ "$PORT" = 22 ]; then name="$HOST"; else name="[$HOST]:$PORT"; fi
+          printf '%s %s\n' "$name" "$HOST_KEY" > ~/.ssh/known_hosts
+
+      - name: Deployer
+        if: steps.ref.outputs.go == 'true'
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          USER_NAME: ${{ vars.DEPLOY_USER || 'savoire' }}
+          REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" \
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30 \
+            "$USER_NAME@$HOST" "$REF" < "$RUNNER_TEMP/savoire.env"
+
+      - name: Nettoyage
+        if: always()
+        run: rm -f ~/.ssh/deploy "$RUNNER_TEMP/savoire.env"
