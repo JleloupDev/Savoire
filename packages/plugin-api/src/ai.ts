@@ -15,8 +15,11 @@
 // L'IA agit avec les droits de la personne qui l'utilise : pas de droits
 // propres, pas de compte a elle.
 
-/** Protocoles d'appel que l'application sait parler. */
-export type AIProtocol = 'openai'
+/**
+ * Protocoles d'appel que l'application sait parler (un adaptateur par
+ * protocole, dans AIService). « openai » seulement pour l'instant.
+ */
+export type AIProtocol = 'openai' | (string & {})
 
 /**
  * Un fournisseur, decrit par un plugin ou par l'application. Aucune cle ici :
@@ -72,7 +75,22 @@ export interface AIChatRequest {
   json?: boolean
   /** Outils que le modele peut demander. */
   tools?: AIToolDefinition[]
+  /**
+   * Reponse au fil de l'eau : appele a chaque morceau recu (texte, appel
+   * d'outil en cours). Present : l'application demande un flux au
+   * fournisseur, et retombe sur une reponse entiere s'il le refuse. La
+   * reponse finale (chat) reste la meme.
+   */
+  onDelta?(delta: AIStreamDelta): void
   signal?: AbortSignal
+}
+
+/** Un morceau de reponse en flux. */
+export interface AIStreamDelta {
+  /** Texte ajoute a la reponse. */
+  text?: string
+  /** Un appel d'outil qui se construit (nom, puis morceaux d'arguments). */
+  toolCall?: { index: number; name?: string; arguments?: string }
 }
 
 export interface AIChatResponse {

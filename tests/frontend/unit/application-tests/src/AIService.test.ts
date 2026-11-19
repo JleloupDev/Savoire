@@ -4,7 +4,7 @@
 // L'IA de la personne : connexions, appels au format OpenAI, vue des plugins
 // sans cle, fournisseurs ajoutes par des plugins.
 import { describe, it, expect } from 'vitest'
-import { AIService, AIRequestError, type AIConnection, type AIConnectionStore } from '@savoire/application'
+import { AIService, AIRequestError, openAIProtocol, type AIConnection, type AIConnectionStore } from '@savoire/application'
 import { AINotConfiguredError } from '@savoire/plugin-api'
 
 function memoryStore(): AIConnectionStore & { list: AIConnection[] } {
@@ -68,5 +68,121 @@ describe('IA de la personne', () => {
     off()
     expect(ai.provider('mistral')).toBeUndefined()
     expect(() => ai.registerProvider({ id: 'x', name: 'X', protocol: 'grpc' as never, baseUrl: '', requiresKey: false })).toThrow()
+  })
+})
+
+/** Un flux SSE au format OpenAI, morceau par morceau (coupe au milieu des lignes). */
+function sse(events: unknown[], cut = 7): Response {
+  const raw = events.map(e => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('')
+  const bytes = new TextEncoder().encode(raw)
+  const body = new ReadableStream<Uint8Array>({
+    start(ctl) {
+      for (let i = 0; i < bytes.length; i += cut) ctl.enqueue(bytes.slice(i, i + cut))
+      ctl.close()
+    },
+  })
+  return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}
+
+describe('IA en flux', () => {
+  const setup = (reply: (url: string, init: RequestInit) => Response) => {
+    const f = fakeFetch(reply)
+    const ai = new AIService(memoryStore(), f.fn)
+    ai.saveConnection({ name: 'A', providerId: 'openai', baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' })
+    return { ai, f }
+  }
+
+  it('demande un flux, rend le texte morceau par morceau, puis la reponse entiere', async () => {
+    const { ai, f } = setup(() => sse([
+      { model: 'm-2', choices: [{ delta: { role: 'assistant', content: 'Bon' } }] },
+      { choices: [{ delta: { content: 'jour' } }] },
+      { choices: [], usage: { prompt_tokens: 4, completion_tokens: 2 } },
+      '[DONE]',
+    ]))
+    const deltas: string[] = []
+    const r = await ai.chat({ messages: [{ role: 'user', content: 'Salut' }], onDelta: d => { if (d.text) deltas.push(d.text) } })
+    expect(deltas).toEqual(['Bon', 'jour'])
+    expect(r).toEqual({ text: 'Bonjour', model: 'm-2', connection: 'A', usage: { inputTokens: 4, outputTokens: 2 } })
+    expect(JSON.parse(String(f.calls[0]!.init.body))).toMatchObject({ stream: true, stream_options: { include_usage: true } })
+  })
+
+  it('les appels d outils arrivent par morceaux et sont recolles', async () => {
+    const { ai } = setup(() => sse([
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'search', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"query":' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 1, id: 'c2', function: { name: 'read_note', arguments: '{"path":"a.md"}' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"x"}' } }] } }] },
+      '[DONE]',
+    ], 5))
+    const parts: string[] = []
+    const r = await ai.chat({ messages: [], tools: [{ name: 'search', description: '', parameters: {} }], onDelta: d => { if (d.toolCall?.arguments) parts.push(d.toolCall.arguments) } })
+    expect(r.toolCalls).toEqual([
+      { id: 'c1', name: 'search', arguments: '{"query":"x"}' },
+      { id: 'c2', name: 'read_note', arguments: '{"path":"a.md"}' },
+    ])
+    expect(r.text).toBe('')
+    expect(parts.join('')).toContain('"query"')
+  })
+
+  it('flux refuse : redemande sans flux', async () => {
+    const { ai, f } = setup((_u, init) => (JSON.parse(String(init.body)).stream
+      ? json({ error: 'stream not supported' }, 400)
+      : json({ choices: [{ message: { content: 'Entier' } }] })))
+    const deltas: string[] = []
+    const r = await ai.chat({ messages: [], onDelta: d => { if (d.text) deltas.push(d.text) } })
+    expect(r.text).toBe('Entier')
+    expect(deltas).toEqual(['Entier'])
+    expect(f.calls.length).toBe(2)
+    expect(JSON.parse(String(f.calls[1]!.init.body)).stream).toBeUndefined()
+  })
+
+  it('un service qui repond en JSON malgre la demande est lu tel quel', async () => {
+    const { ai, f } = setup(() => json({ choices: [{ message: { content: 'Direct' } }] }))
+    const r = await ai.chat({ messages: [], onDelta: () => {} })
+    expect(r.text).toBe('Direct')
+    expect(f.calls.length).toBe(1)
+  })
+
+  it('une cle refusee n est pas redemandee sans flux', async () => {
+    const { ai, f } = setup(() => json({ error: 'bad' }, 401))
+    await expect(ai.chat({ messages: [], onDelta: () => {} })).rejects.toThrow(/clé refusée/)
+    expect(f.calls.length).toBe(1)
+  })
+
+  it('sans onDelta, pas de flux demande', async () => {
+    const { ai, f } = setup(() => json({ choices: [{ message: { content: 'x' } }] }))
+    await ai.chat({ messages: [] })
+    expect(JSON.parse(String(f.calls[0]!.init.body)).stream).toBeUndefined()
+  })
+})
+
+describe('adaptateur de protocole', () => {
+  it('le fournisseur porte son protocole : requete, reponse et modeles passent par l adaptateur', async () => {
+    const f = fakeFetch(url => (url.endsWith('/models') ? json({ data: [{ id: 'b' }, { id: 'a' }] }) : json({ choices: [{ message: { content: 'ok' } }] })))
+    const ai = new AIService(memoryStore(), f.fn)
+    ai.registerProvider({ id: 'mistral', name: 'Mistral', protocol: 'openai', baseUrl: 'https://api.mistral.ai/v1', requiresKey: true })
+    ai.saveConnection({ name: 'M', providerId: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k', model: 'small' })
+    expect(await ai.listModels({ name: 'M', providerId: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k' })).toEqual(['a', 'b'])
+    expect((await ai.chat({ messages: [] })).text).toBe('ok')
+    expect(f.calls[1]!.url).toBe('https://api.mistral.ai/v1/chat/completions')
+  })
+
+  it('openai : construit la requete et lit la reponse', () => {
+    const { path, body } = openAIProtocol.chatRequest('m', {
+      messages: [{ role: 'assistant', content: '', toolCalls: [{ id: 'c', name: 't', arguments: '{}' }] }, { role: 'tool', toolCallId: 'c', content: 'r' }],
+      tools: [{ name: 't', description: 'd', parameters: { type: 'object' } }], maxTokens: 9,
+    }, false)
+    expect(path).toBe('/chat/completions')
+    expect(body).toEqual({
+      model: 'm', max_tokens: 9,
+      messages: [
+        { role: 'assistant', content: null, tool_calls: [{ id: 'c', type: 'function', function: { name: 't', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'c', content: 'r' },
+      ],
+      tools: [{ type: 'function', function: { name: 't', description: 'd', parameters: { type: 'object' } } }],
+    })
+    expect(openAIProtocol.readResponse({ nope: 1 })).toBeNull()
+    expect(openAIProtocol.readResponse({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 1, completion_tokens: 2 } }))
+      .toEqual({ text: 'x', usage: { inputTokens: 1, outputTokens: 2 } })
   })
 })

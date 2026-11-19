@@ -5,24 +5,14 @@
 // appels. L'application est la seule a tenir les cles et a faire les appels ;
 // les plugins recoivent une vue sans cle (pluginAPI()).
 //
-// Protocole « openai » : POST {adresse}/chat/completions, le format que
-// parlent OpenAI, Mistral, OpenRouter, Ollama, LM Studio, vLLM...
+// Chaque fournisseur porte son protocole (AIProviderSpec.protocol) ; un
+// adaptateur par protocole (aiProtocols.ts) construit la requete et lit la
+// reponse, entiere ou en flux.
 import {
   AINotConfiguredError,
-  type AIAPI, type AIChatRequest, type AIChatResponse, type AIConnectionInfo, type AIMessage, type AIProviderSpec, type AIToolCall,
+  type AIAPI, type AIChatRequest, type AIChatResponse, type AIConnectionInfo, type AIProviderSpec,
 } from '@savoire/plugin-api'
-
-/** Un message au format OpenAI (appels d'outils compris). */
-function toOpenAIMessage(m: AIMessage): Record<string, unknown> {
-  if (m.role === 'tool') return { role: 'tool', tool_call_id: m.toolCallId ?? '', content: m.content }
-  if (m.role === 'assistant' && m.toolCalls?.length) {
-    return {
-      role: 'assistant', content: m.content || null,
-      tool_calls: m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })),
-    }
-  }
-  return { role: m.role, content: m.content }
-}
+import { AI_PROTOCOLS, type AIProtocolAdapter, type AIProtocolResult } from './aiProtocols'
 
 /** Une connexion de la personne, cle comprise. Ne sort jamais de l'application. */
 export interface AIConnection {
@@ -67,6 +57,9 @@ export const BUILTIN_AI_PROVIDERS: AIProviderSpec[] = [
   },
 ]
 
+/** Statuts d'un service qui refuse le flux : on redemande sans. */
+const STREAM_REFUSED = new Set([400, 404, 405, 415, 422, 501])
+
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export class AIService {
@@ -92,7 +85,7 @@ export class AIService {
 
   registerProvider(spec: AIProviderSpec): () => void {
     if (!spec.id || !spec.name) throw new Error('fournisseur sans id ou sans nom')
-    if (spec.protocol !== 'openai') throw new Error(`protocole inconnu : ${spec.protocol}`)
+    if (!AI_PROTOCOLS[spec.protocol]) throw new Error(`protocole inconnu : ${spec.protocol}`)
     if (spec.baseUrl && !/^https?:\/\//.test(spec.baseUrl)) throw new Error('adresse du fournisseur invalide')
     this.providers.set(spec.id, spec)
     this.emit()
@@ -152,38 +145,60 @@ export class AIService {
     if (!conn) throw new AINotConfiguredError()
     const model = request.model ?? conn.model
     if (!model) throw new AIRequestError(`Choisissez un modèle pour la connexion « ${conn.name} ».`)
-    const body: Record<string, unknown> = { model, messages: request.messages.map(toOpenAIMessage) }
-    if (request.temperature !== undefined) body.temperature = request.temperature
-    if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens
-    if (request.json) body.response_format = { type: 'json_object' }
-    if (request.tools?.length) {
-      body.tools = request.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }))
+    const protocol = this.protocolOf(conn)
+    let result: AIProtocolResult | null = null
+    if (request.onDelta) result = await this.streamed(conn, protocol, model, request)
+    if (!result) {
+      const { path, body } = protocol.chatRequest(model, request, false)
+      const res = await this.call(conn, path, { method: 'POST', body: JSON.stringify(body), signal: request.signal })
+      result = protocol.readResponse(await res.json().catch(() => null))
+      // Pas de flux : le texte arrive d'un coup, l'ecran le montre quand meme.
+      if (result?.text && request.onDelta) request.onDelta({ text: result.text })
     }
-    const res = await this.call(conn, '/chat/completions', { method: 'POST', body: JSON.stringify(body), signal: request.signal })
-    const data = await res.json().catch(() => null) as {
-      model?: string
-      choices?: { message?: { content?: string | null; tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[] } }[]
-      usage?: { prompt_tokens?: number; completion_tokens?: number }
-    } | null
-    const message = data?.choices?.[0]?.message
-    const toolCalls: AIToolCall[] = (message?.tool_calls ?? [])
-      .filter(c => typeof c?.function?.name === 'string')
-      .map((c, i) => ({ id: c.id || `call_${i}`, name: c.function!.name!, arguments: c.function!.arguments ?? '{}' }))
-    const text = message?.content ?? (toolCalls.length ? '' : undefined)
-    if (typeof text !== 'string') throw new AIRequestError(`Réponse inattendue de « ${conn.name} ».`)
+    if (!result) throw new AIRequestError(`Réponse inattendue de « ${conn.name} ».`)
     return {
-      text, model: data?.model ?? model, connection: conn.name,
-      ...(data?.usage ? { usage: { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens } } : {}),
-      ...(toolCalls.length ? { toolCalls } : {}),
+      text: result.text, model: result.model ?? model, connection: conn.name,
+      ...(result.usage ? { usage: result.usage } : {}),
+      ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
     }
   }
 
+  /**
+   * Demande un flux. null : le service le refuse (requete rejetee), on
+   * retombera sur une reponse entiere. Un service qui repond en JSON malgre
+   * la demande est lu tel quel.
+   */
+  private async streamed(conn: AIConnection, protocol: AIProtocolAdapter, model: string, request: AIChatRequest): Promise<AIProtocolResult | null> {
+    const onDelta = request.onDelta!
+    const { path, body } = protocol.chatRequest(model, request, true)
+    let res: Response
+    try {
+      res = await this.call(conn, path, { method: 'POST', body: JSON.stringify(body), signal: request.signal })
+    } catch (err) {
+      const status = (err as AIRequestError)?.status
+      if (err instanceof AIRequestError && status !== undefined && STREAM_REFUSED.has(status)) return null
+      throw err
+    }
+    if (!/event-stream/i.test(res.headers.get('content-type') ?? '')) {
+      const result = protocol.readResponse(await res.json().catch(() => null))
+      if (result?.text) onDelta({ text: result.text })
+      if (!result) throw new AIRequestError(`Réponse inattendue de « ${conn.name} ».`)
+      return result
+    }
+    return protocol.readStream(res, onDelta)
+  }
+
   /** Modeles proposes par le service (pour les reglages). */
-  async listModels(conn: Pick<AIConnection, 'name' | 'baseUrl' | 'apiKey'>): Promise<string[]> {
-    const res = await this.call(conn, '/models', { method: 'GET' })
-    const data = await res.json().catch(() => null) as { data?: { id?: string }[]; models?: { name?: string }[] } | null
-    const ids = (data?.data ?? []).map(m => m.id).filter((x): x is string => !!x)
-    return ids.sort((a, b) => a.localeCompare(b))
+  async listModels(conn: Pick<AIConnection, 'name' | 'baseUrl' | 'apiKey'> & { providerId?: string }): Promise<string[]> {
+    const protocol = this.protocolOf(conn)
+    const res = await this.call(conn, protocol.modelsPath, { method: 'GET' })
+    return protocol.readModels(await res.json().catch(() => null))
+  }
+
+  /** L'adaptateur du fournisseur de la connexion (openai par defaut). */
+  private protocolOf(conn: { providerId?: string }): AIProtocolAdapter {
+    const spec = conn.providerId ? this.providers.get(conn.providerId) : undefined
+    return AI_PROTOCOLS[spec?.protocol ?? 'openai'] ?? AI_PROTOCOLS.openai!
   }
 
   /** La vue des plugins : reponses et fournisseurs, jamais les cles. */
