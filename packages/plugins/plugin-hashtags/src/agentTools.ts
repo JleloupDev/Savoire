@@ -29,7 +29,7 @@ export function hashtagAgentTools(api: PluginAPI): PluginTool[] {
   return [
     {
       spec: {
-        name: 'add_tag', title: 'Ajouter un tag', action: 'edit',
+        name: 'add_tag', title: 'Ajouter un tag', action: 'edit', runtimes: ['app', 'server'],
         description: 'Ajoute un tag (#tag) à une note, sur une ligne à la fin.',
         inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Note.' }, tag: { type: 'string', description: 'Le tag, sans #.' } }, required: ['path', 'tag'], additionalProperties: false },
       },
@@ -47,7 +47,7 @@ export function hashtagAgentTools(api: PluginAPI): PluginTool[] {
     },
     {
       spec: {
-        name: 'rename_tag', title: 'Renommer un tag', action: 'edit',
+        name: 'rename_tag', title: 'Renommer un tag', action: 'edit', runtimes: ['app', 'server'],
         description: 'Renomme un tag dans toutes les notes du vault (ses sous-tags suivent : #projet/a devient #nouveau/a).',
         inputSchema: { type: 'object', properties: { from: { type: 'string', description: 'Tag actuel, sans #.' }, to: { type: 'string', description: 'Nouveau nom, sans #.' } }, required: ['from', 'to'], additionalProperties: false },
       },

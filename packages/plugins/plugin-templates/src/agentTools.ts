@@ -9,7 +9,7 @@ export function templateAgentTools(api: PluginAPI, templates: () => Promise<stri
   return [
     {
       spec: {
-        name: 'list_templates', title: 'Modèles', action: 'read',
+        name: 'list_templates', title: 'Modèles', action: 'read', runtimes: ['app', 'server'],
         description: 'Les modèles de notes du vault (dossier « Modèles »).',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       },
@@ -20,7 +20,7 @@ export function templateAgentTools(api: PluginAPI, templates: () => Promise<stri
     },
     {
       spec: {
-        name: 'create_from_template', title: 'Créer depuis un modèle', action: 'create',
+        name: 'create_from_template', title: 'Créer depuis un modèle', action: 'create', runtimes: ['app', 'server'],
         description: 'Crée une note à partir d’un modèle. Le titre de la note remplace {{title}}.',
         inputSchema: {
           type: 'object',

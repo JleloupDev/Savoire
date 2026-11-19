@@ -66,7 +66,7 @@ export function taskAgentTools(api: PluginAPI): PluginTool[] {
   return [
     {
       spec: {
-        name: 'list_tasks', title: 'Lister les tâches', action: 'read',
+        name: 'list_tasks', title: 'Lister les tâches', action: 'read', runtimes: ['app', 'server'],
         description: 'Les tâches « - [ ] » d’une note, ou de tout le vault sans note. open_only : seulement celles à faire.',
         inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Note (facultatif).' }, open_only: { type: 'boolean', description: 'Seulement les tâches à faire (oui par défaut).' } }, additionalProperties: false },
       },
@@ -89,7 +89,7 @@ export function taskAgentTools(api: PluginAPI): PluginTool[] {
     },
     {
       spec: {
-        name: 'add_task', title: 'Ajouter une tâche', action: 'edit',
+        name: 'add_task', title: 'Ajouter une tâche', action: 'edit', runtimes: ['app', 'server'],
         description: 'Ajoute une tâche « - [ ] » à une note (sous ses tâches, sinon à la fin).',
         inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Note.' }, text: { type: 'string', description: 'La tâche.' } }, required: ['path', 'text'], additionalProperties: false },
       },
@@ -103,7 +103,7 @@ export function taskAgentTools(api: PluginAPI): PluginTool[] {
     },
     {
       spec: {
-        name: 'check_task', title: 'Cocher une tâche', action: 'edit',
+        name: 'check_task', title: 'Cocher une tâche', action: 'edit', runtimes: ['app', 'server'],
         description: 'Coche (ou décoche) une tâche d’une note, désignée par son texte.',
         inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Note.' }, task: { type: 'string', description: 'Texte de la tâche.' }, done: { type: 'boolean', description: 'Faite (oui par défaut).' } }, required: ['path', 'task'], additionalProperties: false },
       },

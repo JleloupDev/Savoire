@@ -115,6 +115,9 @@ importers:
       '@savoire/indexer-core':
         specifier: workspace:*
         version: link:../../packages/indexer-core
+      '@savoire/plugin-agenda':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-agenda
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
@@ -124,9 +127,15 @@ importers:
       '@savoire/plugin-excel':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-excel
+      '@savoire/plugin-hashtags':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-hashtags
       '@savoire/plugin-images':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-images
+      '@savoire/plugin-mermaid':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-mermaid
       '@savoire/plugin-opendocument':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-opendocument
@@ -136,6 +145,12 @@ importers:
       '@savoire/plugin-powerpoint':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-powerpoint
+      '@savoire/plugin-task-list':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-task-list
+      '@savoire/plugin-templates':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-templates
       '@savoire/plugin-webpage':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-webpage

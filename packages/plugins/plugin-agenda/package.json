@@ -7,14 +7,23 @@
       "source": "./src/index.ts",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "source": "./src/server.ts",
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@savoire/plugin-api": "workspace:*" },
-  "peerDependencies": { "react": "^18.0.0" },
+  "dependencies": {
+    "@savoire/plugin-api": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  },
   "devDependencies": {
     "@types/react": "^18.2.0",
     "react": "^18.3.1",

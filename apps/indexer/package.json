@@ -12,13 +12,18 @@
   "dependencies": {
     "@savoire/agent-core": "workspace:*",
     "@savoire/indexer-core": "workspace:*",
+    "@savoire/plugin-agenda": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",
     "@savoire/plugin-excel": "workspace:*",
+    "@savoire/plugin-hashtags": "workspace:*",
     "@savoire/plugin-images": "workspace:*",
+    "@savoire/plugin-mermaid": "workspace:*",
     "@savoire/plugin-opendocument": "workspace:*",
     "@savoire/plugin-pdf": "workspace:*",
     "@savoire/plugin-powerpoint": "workspace:*",
+    "@savoire/plugin-task-list": "workspace:*",
+    "@savoire/plugin-templates": "workspace:*",
     "@savoire/plugin-webpage": "workspace:*",
     "@savoire/plugin-word": "workspace:*",
     "tesseract.js": "7.0.0"

@@ -137,6 +137,8 @@ const plugin: VaultPlugin = {
     version: '1.0.0',
     permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
     defaultActive: true,
+    // Livre avec Savoire : ses outils d'agent tournent aussi sur le pair indexeur.
+    official: true,
   },
 
   async onload(api: PluginAPI) {

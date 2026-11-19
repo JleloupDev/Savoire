@@ -20,10 +20,11 @@ import {
 import {
   mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, textAnchor, treeFoldersUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
-import { relinkAfterMoves, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
+import { MAX_PROPOSAL_BYTES, relinkAfterMoves, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
 import { canRead, parseAccess, type AccessRules } from './access'
 import type { UpdatesLog, WriteBody } from './backend'
 import { HttpError } from './errors'
+import type { ServerPluginSet } from './serverPlugins'
 
 export const TOOLS_CAPABILITY = 'tools'
 const REVIEW_NS = 'map/review'
@@ -68,6 +69,8 @@ interface ReviewValue {
   status?: string
   anchor?: { quote: string }
   replacement?: string
+  proposalType?: string
+  payload?: unknown
 }
 
 const describe = (a: ReviewValue['author']): string =>
@@ -83,8 +86,15 @@ export class PeerToolHost implements AgentToolHost {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  /** Ce que cet appel a deja cree ou deplace : l'index le saura un peu plus tard. */
+  private readonly moved = new Map<string, string>()
+
   private async paths(): Promise<Map<string, string>> {
-    this.pathCache ??= await this.f.paths()
+    if (!this.pathCache) {
+      const fetched = await this.f.paths()
+      for (const [id, p] of this.moved) fetched.set(id, p)
+      this.pathCache = fetched
+    }
     return this.pathCache
   }
 
@@ -182,6 +192,7 @@ export class PeerToolHost implements AgentToolHost {
         ...(content ? [{ target: 'document' as const, docId: id, update: b64(newNoteUpdate(content)) }] : []),
       ],
     })
+    this.moved.set(id, path)
     return { id, path }
   }
 
@@ -192,29 +203,48 @@ export class PeerToolHost implements AgentToolHost {
   }
 
   async moveNote(docId: string, newPath: string): Promise<string> {
-    const tree = await this.f.treeLog()
-    const paths = await this.paths()
-    const from = paths.get(docId)
+    const from = (await this.paths()).get(docId)
     if (!from) throw new HostError('Note introuvable.', 'not_found')
-    const folders = parentFolders(newPath)
-    await this.write({
-      folders: [{ docId, folder: folders.at(-1) ?? '' }],
-      ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], docId, { path: newPath }, folders)) }],
-    })
-    // Le canal des deplacements (plugin-api/relink.ts), le meme que dans l'appli :
-    // les liens des notes qui citent la note suivent.
-    await relinkAfterMoves(this.relinkVault(docId, newPath), [{ from, to: newPath }], async names => {
-      const r = await this.f.call('links', 'citing', { names }) as { items?: { path: string }[] }
-      return r.items ?? []
-    })
+    await this.moveFiles([{ from, to: newPath }])
     return newPath
   }
 
+  /**
+   * Deplace des notes (chemins avant -> apres), puis le canal des deplacements
+   * (plugin-api/relink.ts), le meme que dans l'appli : les liens des notes qui
+   * les citent suivent. Rend le nombre de notes dont les liens ont change.
+   */
+  async moveFiles(moves: readonly { from: string; to: string }[]): Promise<number> {
+    const paths = await this.paths()
+    const byPath = new Map([...paths].filter(([id, p]) => this.visible(id, p)).map(([id, p]) => [p, id]))
+    const real: { id: string; from: string; to: string }[] = []
+    for (const m of moves) {
+      if (m.from === m.to) continue
+      const id = byPath.get(m.from)
+      if (!id) throw new HostError(`Note introuvable : ${m.from}.`, 'not_found')
+      real.push({ id, ...m })
+    }
+    for (const m of real) {
+      const tree = await this.f.treeLog()
+      const folders = parentFolders(m.to)
+      await this.write({
+        folders: [{ docId: m.id, folder: folders.at(-1) ?? '' }],
+        ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], m.id, { path: m.to }, folders)) }],
+      })
+      this.moved.set(m.id, m.to)
+    }
+    if (!real.length) return 0
+    return relinkAfterMoves(this.relinkVault(new Map(real.map(m => [m.id, m.to]))), real, async names => {
+      const r = await this.f.call('links', 'citing', { names }) as { items?: { path: string }[] }
+      return r.items ?? []
+    })
+  }
+
   /** Le vault vu par le canal des deplacements : chemins d'apres, editText par difference Yjs. */
-  private relinkVault(movedId: string, movedTo: string): RelinkVault {
+  private relinkVault(moved: ReadonlyMap<string, string>): RelinkVault {
     const pathsAfter = async (): Promise<Map<string, string>> => {
       const m = new Map(await this.paths())
-      m.set(movedId, movedTo)
+      for (const [id, to] of moved) m.set(id, to)
       return m
     }
     let after: Map<string, string> | null = null
@@ -247,16 +277,57 @@ export class PeerToolHost implements AgentToolHost {
         for (const [id, p] of after) if (p === path) return id
         return undefined
       },
-      editText: async (id, edit) => {
-        const log = await this.noteLog(id)
-        const current = noteText(log.updates)
-        const next = edit(current)
-        if (next === current) return false
-        const c = minimalChange(current, next)
-        await this.write({ ops: [{ target: 'document', docId: id, update: b64(replaceTextUpdate(log.updates, c.from, c.to, c.text)) }] })
-        return true
-      },
+      editText: (id, edit) => this.editNote(id, edit),
     }
+  }
+
+  // ── Pour la PluginAPI sans ecran (pluginApi.ts) ──────────────────────────
+
+  /** Les notes visibles par la personne : id -> chemin (hors corbeille, ACL). */
+  async visiblePaths(): Promise<Map<string, string>> {
+    const out = new Map<string, string>()
+    for (const [id, p] of await this.paths()) if (this.visible(id, p)) out.set(id, p)
+    return out
+  }
+
+  /** Le texte d'une note, relu dans son journal Yjs (sinon le texte extrait). */
+  async noteText(docId: string): Promise<string> {
+    const path = (await this.paths()).get(docId)
+    if (!path || !this.visible(docId, path)) throw new HostError('Note introuvable.', 'not_found')
+    const log = await this.f.docLog(docId)
+    if (log && log.format === 'yjs') return noteText(log.updates)
+    if (!log && this.moved.has(docId)) return '' // creee par cet appel, encore sans texte
+    const text = await this.f.readText(docId, path)
+    if (text === null) throw new HostError('Note illisible.', 'not_found')
+    return text
+  }
+
+  /** Applique `edit` au texte du moment : la difference seulement part au serveur. */
+  async editNote(docId: string, edit: (current: string) => string): Promise<boolean> {
+    const fresh = await this.f.docLog(docId)
+    if (!fresh && (await this.paths()).has(docId)) {
+      // Note toute neuve (createNote sans texte) : pas encore de journal.
+      const next = edit('')
+      if (!next) return false
+      await this.write({ ops: [{ target: 'document', docId, update: b64(newNoteUpdate(next)) }] })
+      return true
+    }
+    const log = await this.noteLog(docId)
+    const current = noteText(log.updates)
+    const next = edit(current)
+    if (next === current) return false
+    const c = minimalChange(current, next)
+    await this.write({ ops: [{ target: 'document', docId, update: b64(replaceTextUpdate(log.updates, c.from, c.to, c.text)) }] })
+    return true
+  }
+
+  /** Une proposition d'un plugin (« base.cell », « savoire.text »...), comme ReviewService.propose. */
+  async propose(docId: string, type: string, payload: unknown, note: string, actor: ToolActor): Promise<string> {
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(type)) throw new HostError('Type de proposition invalide.')
+    const json = JSON.stringify(payload)
+    if (json === undefined) throw new HostError('Proposition vide.')
+    if (new TextEncoder().encode(json).length > MAX_PROPOSAL_BYTES) throw new HostError('Proposition trop grosse.')
+    return this.addReview({ docId, kind: 'proposal', text: note.trim() || 'Proposition', status: 'open', proposalType: type, payload: JSON.parse(json) }, actor)
   }
 
   async trashNote(docId: string): Promise<string> {
@@ -271,6 +342,7 @@ export class PeerToolHost implements AgentToolHost {
       folders: [{ docId, folder: parentFolders(target).at(-1) ?? '' }],
       ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], docId, { path: target })) }],
     })
+    this.moved.set(docId, target)
     return target
   }
 
@@ -313,9 +385,13 @@ export class PeerToolHost implements AgentToolHost {
   }
 }
 
-/** Un appel `tools.*`, pour un vault. */
-export async function callTools(f: PeerVaultFacade, method: string, params: unknown): Promise<unknown> {
-  if (method === 'list') return { tools: coreCatalog('server') }
+/** Un appel `tools.*`, pour un vault. `plugins` : les outils serveur des plugins (serverPlugins.ts). */
+export async function callTools(f: PeerVaultFacade, method: string, params: unknown, plugins?: ServerPluginSet): Promise<unknown> {
+  if (method === 'list') {
+    const core = coreCatalog('server')
+    const taken = new Set(core.map(t => t.name))
+    return { tools: [...core, ...(plugins ? (await plugins.specs()).filter(s => !taken.has(s.name)) : [])] }
+  }
   if (method !== 'call') throw new HttpError(404, 'unknown_method', `Methode inconnue : tools.${method}.`)
   const p = (params ?? {}) as { name?: unknown; args?: unknown; mode?: unknown; agent?: unknown; actor?: unknown; ticket?: unknown; access?: unknown }
   if (typeof p.name !== 'string' || typeof p.ticket !== 'string' || !p.agent || typeof p.agent !== 'object' || !p.actor || typeof p.actor !== 'object') {
@@ -325,8 +401,12 @@ export async function callTools(f: PeerVaultFacade, method: string, params: unkn
   const agent = p.agent as AgentDefinition
   const actor = p.actor as ToolActor
   const host = new PeerToolHost(f, parseAccess(p.access), p.ticket)
+  // Un outil de plugin : ses lectures et ecritures passent par le meme hote (ticket, ACL).
+  const pluginTools = plugins && !coreCatalog('server').some(t => t.name === p.name) && (await plugins.specs()).some(s => s.name === p.name)
+    ? await plugins.tools({ host, actor, paths: await host.visiblePaths() })
+    : []
   // Le serveur a verifie les droits de la personne et recueilli l'accord : il impose le mode.
-  const tools = new ToolBox({ agent, person: { canWrite: true }, actor, runtime: 'server', host, imposedMode: p.mode === 'propose' ? 'propose' : 'direct' })
+  const tools = new ToolBox({ agent, person: { canWrite: true }, actor, runtime: 'server', host, pluginTools, imposedMode: p.mode === 'propose' ? 'propose' : 'direct' })
   const outcome = await tools.call(p.name, args)
   return { text: outcome.result.text, isError: !!outcome.result.isError, ...(outcome.result.sources ? { sources: outcome.result.sources } : {}) }
 }

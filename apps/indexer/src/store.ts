@@ -46,6 +46,7 @@ import type { BackendClient, FeedChange, UpdatesLog } from './backend'
 import { BackendError } from './backend'
 import { HostError } from '@savoire/agent-core'
 import { TOOLS_CAPABILITY, callTools, type PeerVaultFacade } from './agentTools'
+import type { ServerPluginSet } from './serverPlugins'
 import { HttpError, notOwner, unavailable } from './errors'
 import type { Logger } from './log'
 import { Counter, Histogram, gauge } from './metrics'
@@ -73,6 +74,8 @@ export interface StoreOptions {
   powers?: () => IndexPower[]
   /** Extracteur d'un fichier (PDF, Word...) : plugins officiels seulement. Absent : fichiers ignores. */
   extractor?: (path: string) => ExtractorSpec | undefined
+  /** Outils d'agent des plugins permis sur ce pair (serverPlugins.ts). */
+  plugins?: ServerPluginSet
 }
 
 /** Pourquoi un vault est (re)construit. */
@@ -444,7 +447,7 @@ export class VaultStore {
     }
     this.m.calls.inc({ capability })
     if (capability === DOCUMENTS_CAPABILITY) return this.callDocuments(v, method, params, signal)
-    if (capability === TOOLS_CAPABILITY) return { result: await callTools(this.facade(v, signal), method, params), gen: v.gen }
+    if (capability === TOOLS_CAPABILITY) return { result: await callTools(this.facade(v, signal), method, params, this.opts.plugins), gen: v.gen }
     return this.slot.run(INTERACTIVE, async () => {
       if (signal.aborted) throw unavailable('Delai depasse.', this.opts.unavailableRetryAfterS)
       if (!v.owned) throw notOwner(vaultId)

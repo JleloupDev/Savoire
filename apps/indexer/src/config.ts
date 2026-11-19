@@ -69,6 +69,8 @@ export interface IndexerConfig {
   metricsAuth: 'token' | 'none'
   extractFiles: 'on' | 'off'
   ocr: 'on' | 'off'
+  pluginTrust: 'official' | 'verified' | 'all'
+  pluginDir: string
   metricsMaxVaults: number
   slowCallMs: number
   shutdownTimeoutMs: number
@@ -117,6 +119,8 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'statsIntervalMs', env: 'SAVOIRE_INDEXER_STATS_INTERVAL_MS', kind: 'duration', def: '30000', min: 1000, max: 3600000, doc: 'Rafraichissement des tailles et nombres de notes par vault (metriques).' },
   { key: 'extractFiles', env: 'SAVOIRE_INDEXER_EXTRACT_FILES', kind: 'enum', def: 'on', values: ['on', 'off'], doc: 'Lire le texte des fichiers (PDF, Word, Excel, PowerPoint, LibreOffice, pages web, CSV, images) par les extracteurs des plugins officiels.' },
   { key: 'ocr', env: 'SAVOIRE_INDEXER_OCR', kind: 'enum', def: 'on', values: ['on', 'off'], doc: 'Lire le texte dans les images (OCR, quelques secondes par image ; langues gardees dans `{dataDir}/ocr`).' },
+  { key: 'pluginTrust', env: 'SAVOIRE_INDEXER_PLUGIN_TRUST', kind: 'enum', def: 'verified', values: ['official', 'verified', 'all'], doc: 'Plugins dont le pair execute les outils d\'agent (IA externes, ADR-033) : `official` (livres avec Savoire), `verified` (plus ceux relus par l\'equipe Savoire) ou `all` (tout plugin, maison compris : pair d\'organisation sur une VM dediee seulement).' },
+  { key: 'pluginDir', env: 'SAVOIRE_INDEXER_PLUGIN_DIR', kind: 'string', def: '', doc: 'Dossier de plugins en plus (un module ESM `.mjs` par plugin, `export default` un VaultPlugin), filtres par `pluginTrust`. Vide : les plugins livres avec Savoire seulement.' },
   { key: 'metricsAuth', env: 'SAVOIRE_INDEXER_METRICS_AUTH', kind: 'enum', def: 'token', values: ['token', 'none'], doc: '`/metrics` demande le jeton de service (`token`) ou non (`none`, reseau prive seulement).' },
   { key: 'metricsMaxVaults', env: 'SAVOIRE_INDEXER_METRICS_MAX_VAULTS', kind: 'int', def: '1000', min: 0, max: 1000000, doc: 'Vaults detailles dans `/metrics` (les plus gros, en retard ou en construction d\'abord) ; 0 : aucun.' },
   { key: 'slowCallMs', env: 'SAVOIRE_INDEXER_SLOW_CALL_MS', kind: 'duration', def: '1000', min: 0, max: 600000, doc: 'Appel journalise en avertissement au-dela de cette duree.' },

@@ -21,7 +21,7 @@ export function agendaAgentTools(api: PluginAPI, files: () => Promise<string[]>)
   return [
     {
       spec: {
-        name: 'daily_note', title: 'Note du jour', action: 'read',
+        name: 'daily_note', title: 'Note du jour', action: 'read', runtimes: ['app', 'server'],
         description: 'La note du jour d’une date (Journal/AAAA-MM-JJ.md) : son chemin et son texte, ou qu’elle n’existe pas encore.',
         inputSchema: { type: 'object', properties: { date }, additionalProperties: false },
       },
@@ -36,7 +36,7 @@ export function agendaAgentTools(api: PluginAPI, files: () => Promise<string[]>)
     },
     {
       spec: {
-        name: 'append_to_daily', title: 'Écrire dans la note du jour', action: 'create',
+        name: 'append_to_daily', title: 'Écrire dans la note du jour', action: 'create', runtimes: ['app', 'server'],
         description: 'Ajoute du texte à la fin de la note du jour d’une date ; la crée d’abord (depuis le modèle « Note du jour ») si besoin.',
         inputSchema: { type: 'object', properties: { date, text: { type: 'string', description: 'Texte Markdown à ajouter.' } }, required: ['text'], additionalProperties: false },
       },

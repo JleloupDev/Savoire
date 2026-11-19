@@ -13,6 +13,9 @@ export const alias = [
   { find: /^@savoire\/domain-index$/, replacement: pkg('domain-index/src/index.ts') },
   // Plugins officiels dont le pair fait tourner les extracteurs (PDF, Word...).
   { find: /^@savoire\/plugin-(word|powerpoint|excel|opendocument|pdf|images|webpage|csv)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },
+  // Plugins dont le pair execute les outils d'agent (serverPlugins.ts).
+  { find: /^@savoire\/plugin-(agenda|hashtags|mermaid)\/server$/, replacement: pkg('plugins/plugin-$1/src/server.ts') },
+  { find: /^@savoire\/plugin-(task-list|templates)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },
 ]
 
 export default defineConfig({

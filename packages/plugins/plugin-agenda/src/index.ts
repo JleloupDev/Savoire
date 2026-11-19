@@ -10,19 +10,7 @@ import { renderTemplate } from '@savoire/plugin-api'
 import { AgendaWidget, type AgendaHost } from './AgendaWidget'
 import { dailyNotePath, dailyTemplatePath, dateOfKey, dayKey } from './daily'
 import { agendaAgentTools } from './agentTools'
-
-async function allFiles(api: PluginAPI): Promise<string[]> {
-  const files: string[] = []
-  const queue = ['']
-  while (queue.length) {
-    const dir = queue.shift()!
-    for (const entry of await api.vault.list(dir || undefined)) {
-      if (entry.endsWith('/')) { if (entry !== dir) queue.push(entry) }
-      else files.push(entry)
-    }
-  }
-  return files
-}
+import { AGENDA_MANIFEST, allFiles } from './server'
 
 /** Ouvre la note de ce jour ; la cree d'abord si besoin, depuis le modele. */
 export async function openDailyNote(api: PluginAPI, key: string): Promise<string> {
@@ -43,15 +31,7 @@ export async function openDailyNote(api: PluginAPI, key: string): Promise<string
 
 export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribbon?: boolean } = {}): VaultPlugin {
   return {
-    manifest: {
-      id: 'plugin-agenda',
-      name: 'Agenda',
-      version: '0.0.1',
-      description: 'Un calendrier et une note par jour (Journal/AAAA-MM-JJ.md), avec le modèle « Note du jour »',
-      scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
-      defaultActive: true,
-    },
+    manifest: AGENDA_MANIFEST,
 
     async onload(api: PluginAPI) {
       const open = (key: string) => openDailyNote(api, key).then(() => {}, err => {

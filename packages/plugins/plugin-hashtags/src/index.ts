@@ -4,6 +4,7 @@ import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
 import { HashtagIndexContributor } from './HashtagIndexContributor'
 import { HashtagsWidget } from './HashtagsWidget'
 import { hashtagAgentTools } from './agentTools'
+import { HASHTAGS_MANIFEST } from './server'
 
 export { hashtagAgentTools, renameTagIn } from './agentTools'
 
@@ -17,14 +18,7 @@ export function createHashtagsPlugin(options: {
   container?: 'left' | 'right'
 } = {}): VaultPlugin {
   return {
-    manifest: {
-      id: 'plugin-hashtags',
-      scope: 'vault',
-      name: 'Hashtags',
-      version: '0.0.1',
-      description: 'Indexe les hashtags et affiche les documents associés.',
-      permissions: ['vault:read', 'ui:editor', 'vault:write', 'agents'],
-    },
+    manifest: HASHTAGS_MANIFEST,
 
     async onload(api: PluginAPI) {
       // Agents (ADR-033) : ajouter un tag, renommer un tag partout.

@@ -8,7 +8,7 @@ import { changeNoteText, noteRef, type PluginAPI, type PluginTool } from '@savoi
 export function mermaidAgentTools(api: PluginAPI): PluginTool[] {
   return [{
     spec: {
-      name: 'insert_diagram', title: 'Ajouter un schéma', action: 'edit',
+      name: 'insert_diagram', title: 'Ajouter un schéma', action: 'edit', runtimes: ['app', 'server'],
       description: 'Ajoute un schéma Mermaid à la fin d’une note (flowchart, sequenceDiagram, gantt, mindmap...). code : le code Mermaid seul, sans ```.',
       inputSchema: {
         type: 'object',

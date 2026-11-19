@@ -4,6 +4,8 @@
 // Pouvoir « tools » (ADR-033) : le pair execute les outils des agents pour les
 // IA externes. Il lit les journaux, renvoie ses ecritures au serveur avec le
 // ticket, et applique les regles d'acces (ACL) de la personne.
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { FakeBackend } from './fakeBackend'
@@ -28,8 +30,8 @@ afterEach(async () => {
 const actor = { agentId: 'ag', agentName: 'Secrétaire', onBehalfOf: { userId: 'u1', displayName: 'Jean' } }
 const agent = (permissions: Record<string, string>) => ({ id: 'ag', name: 'Secrétaire', description: '', instructions: '', ownerId: 'u1', permissions })
 
-async function ready(): Promise<Peer> {
-  peer = await startPeer(backend, tmp.dir)
+async function ready(env: Record<string, string> = {}): Promise<Peer> {
+  peer = await startPeer(backend, tmp.dir, env)
   await until(async () => (await peer!.status('v1')).body.status === 'ready', 10_000, 'construction')
   return peer
 }
@@ -127,5 +129,106 @@ describe('tools', () => {
     expect(search.body.result.hits.map(h => h.id)).toEqual(['a'])
     expect((await p.call('v1', 'documents', 'read', { id: 's' }, access)).status).toBe(404)
     expect((await p.call('v1', 'documents', 'read', { id: 's' }, { base: 'admin' })).status).toBe(200)
+  })
+})
+
+/** Un plugin maison (VM d'organisation), un fichier .mjs. */
+function homePlugin(dir: string, id: string, trust: string, tool: string): void {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${id}.mjs`), `export default {
+  manifest: { id: '${id}', name: '${id}', version: '1.0.0', permissions: ['agents'], trust: '${trust}' },
+  async onload(api) {
+    api.views.register({ id: 'vue' })
+    api.agents.registerTool({
+      spec: { name: '${tool}', title: 'Ping', action: 'read', runtimes: ['app', 'server'], description: 'Ping.', inputSchema: { type: 'object', properties: {} } },
+      async run() { return { text: 'pong ' + (await api.vault.list()).join(',') } },
+    })
+  },
+  async onunload() {},
+}
+`)
+}
+
+describe('tools des plugins', () => {
+  it('le catalogue contient les outils serveur des plugins livres avec Savoire', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    const p = await ready()
+    const r = await p.call<{ tools: { name: string; runtimes?: string[] }[] }>('v1', 'tools', 'list')
+    const names = r.body.result.tools.map(t => t.name)
+    expect(names).toEqual(expect.arrayContaining(['search', 'list_tasks', 'add_task', 'check_task', 'daily_note', 'append_to_daily', 'list_templates', 'create_from_template', 'insert_diagram', 'add_tag', 'rename_tag']))
+    // Les outils qui ont besoin de l'ecran restent dans l'appli.
+    expect(names).not.toContain('list_versions')
+    expect(names).not.toContain('base_set_cell')
+  })
+
+  it('ChatGPT appelle add_task : la note change, la trace est signee de l agent', async () => {
+    backend.writeNote('v1', 'a', 'Projets/Plan.md', '# Plan\n\n- [ ] Ecrire\n')
+    const p = await ready()
+    const r = await call(p, 'add_task', { path: 'projets/plan', text: 'Relire' })
+    expect(r.body.result).toMatchObject({ isError: false, text: 'Tâche ajoutée à Projets/Plan.md.' })
+    expect(backend.text('v1', 'a')).toBe('# Plan\n\n- [ ] Ecrire\n- [ ] Relire\n')
+    expect(backend.writes.map(w => w.body.ticket)).toEqual(['t1', 't1'])
+    expect(backend.reviewEntries('v1')).toMatchObject([{ kind: 'edit', docId: 'a', text: 'Ajouter une tâche', author: { kind: 'agent', agentName: 'Secrétaire' } }])
+    const list = await call(p, 'list_tasks', {})
+    expect(list.body.result.text).toContain('- [ ] Relire')
+    const check = await call(p, 'check_task', { path: 'Projets/Plan.md', task: 'Ecrire' })
+    expect(check.body.result.isError).toBe(false)
+    expect(backend.text('v1', 'a')).toContain('- [x] Ecrire')
+  })
+
+  it('mode proposition : une proposition de texte dans la Revision, la note ne change pas', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'Texte')
+    const p = await ready()
+    const r = await call(p, 'insert_diagram', { path: 'A.md', code: 'flowchart LR\n  a --> b' }, { mode: 'propose' })
+    expect(r.body.result).toMatchObject({ isError: false, text: 'Schéma proposé dans A.md (Révision).' })
+    expect(backend.text('v1', 'a')).toBe('Texte')
+    expect(backend.reviewEntries('v1')).toMatchObject([{
+      kind: 'proposal', docId: 'a', proposalType: 'savoire.text', status: 'open',
+      payload: { at: 5, before: '', after: '\n\n```mermaid\nflowchart LR\n  a --> b\n```\n' },
+      author: { kind: 'agent', agentName: 'Secrétaire' },
+    }])
+  })
+
+  it('cree une note depuis un modele, puis ecrit dans la note du jour', async () => {
+    backend.writeNote('v1', 't', 'Modèles/Réunion.md', '# {{title}}\n\n## Décisions\n')
+    const p = await ready()
+    expect((await call(p, 'list_templates', {})).body.result.text).toContain('Réunion')
+    const r = await call(p, 'create_from_template', { template: 'Réunion', path: 'CR/Lundi' })
+    expect(r.body.result.isError).toBe(false)
+    const id = backend.writes.find(w => w.body.register?.length)!.body.register![0]!
+    expect(backend.pathOf('v1', id)).toBe('CR/Lundi.md')
+    expect(backend.text('v1', id)).toBe('# Lundi\n\n## Décisions\n')
+    const d = await call(p, 'append_to_daily', { date: '2026-11-19', text: 'Appeler Paul' })
+    expect(d.body.result.isError).toBe(false)
+    const daily = backend.writes.filter(w => w.body.register?.length).at(-1)!.body.register![0]!
+    expect(backend.pathOf('v1', daily)).toBe('Journal/2026-11-19.md')
+    expect(backend.text('v1', daily)).toBe('Appeler Paul\n')
+  })
+
+  it('ACL : un outil de plugin ne voit pas les notes interdites', async () => {
+    backend.writeNote('v1', 'a', 'Public/A.md', '- [ ] commune')
+    backend.writeNote('v1', 's', 'Secret/S.md', '- [ ] secrete')
+    const p = await ready()
+    const access = { base: 'write', rules: [{ folder: 'Secret', permission: 'none' }], closed: [] }
+    const list = await call(p, 'list_tasks', {}, { access })
+    expect(list.body.result.text).toContain('commune')
+    expect(list.body.result.text).not.toContain('secrete')
+    expect((await call(p, 'add_task', { path: 'Secret/S.md', text: 'x' }, { access })).body.result.isError).toBe(true)
+  })
+
+  it('confiance : un plugin maison non verifie est refuse en mode verified, accepte en mode all', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    const dir = join(tmp.dir, 'plugins')
+    homePlugin(dir, 'plugin-maison', 'unverified', 'maison_ping')
+    homePlugin(dir, 'plugin-relu', 'verified', 'relu_ping')
+    const p = await ready({ SAVOIRE_INDEXER_PLUGIN_DIR: dir })
+    const names = async () => (await p.call<{ tools: { name: string }[] }>('v1', 'tools', 'list')).body.result.tools.map(t => t.name)
+    expect(await names()).toContain('relu_ping')
+    expect(await names()).not.toContain('maison_ping')
+    expect((await call(p, 'maison_ping', {})).body.result.isError).toBe(true)
+    expect((await call(p, 'relu_ping', {})).body.result.text).toBe('pong A.md')
+    await peer!.stop()
+    const all = await ready({ SAVOIRE_INDEXER_PLUGIN_DIR: dir, SAVOIRE_INDEXER_PLUGIN_TRUST: 'all' })
+    expect((await call(all, 'maison_ping', {})).body.result.text).toBe('pong A.md')
   })
 })
