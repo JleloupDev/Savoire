@@ -18,10 +18,10 @@ import {
   type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry,
 } from '@savoire/agent-core'
 import {
-  mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, textAnchor, treeFoldersUpdate, treeSetUpdate,
+  vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, textAnchor, treeFoldersUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
 import { MAX_PROPOSAL_BYTES, relinkAfterMoves, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
-import { canRead, parseAccess, type AccessRules } from './access'
+import { baseOfQuery, canRead, filterResult, parseAccess, type AccessRules } from './access'
 import type { UpdatesLog, WriteBody } from './backend'
 import { HttpError } from './errors'
 import type { ServerPluginSet } from './serverPlugins'
@@ -156,7 +156,15 @@ export class PeerToolHost implements AgentToolHost {
 
   async power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null> {
     if (!['links', 'tags', 'query'].includes(capability)) return null
-    return this.f.call(capability, method, params)
+    const result = await this.f.call(capability, method, params)
+    // Les memes regles d'acces que les appels directs (lignes legeres : celles de leur base).
+    const baseId = capability === 'query' ? baseOfQuery(params) : undefined
+    let basePath = baseId ? (await this.paths()).get(baseId) : undefined
+    if (baseId && !basePath) {
+      const tree = await this.f.treeLog()
+      basePath = tree ? vaultTreeFromUpdates(tree.updates).docs.get(baseId) : undefined
+    }
+    return filterResult(this.access, capability, method, result, baseId && basePath ? { base: { id: baseId, path: basePath } } : {})
   }
 
   private async reviewValues(): Promise<ReviewValue[]> {

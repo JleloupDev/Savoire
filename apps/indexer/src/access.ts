@@ -12,8 +12,11 @@
 // le droit de base dans le vault.
 //
 // Limites connues : les compteurs (total, nombre de notes par tag) ne sont pas
-// corriges ; une ligne legere de base (sans chemin) suit les droits de la
-// racine et de sa base seulement.
+// corriges.
+//
+// Une ligne legere de base (sans chemin ni note a elle) suit les droits de SA
+// base : le document .base et ses dossiers. L'appelant donne la base (id et
+// chemin) ; sans elle, une ligne legere n'est pas montree.
 
 export interface AccessRules {
   base: 'admin' | 'write' | 'read' | 'none' | string
@@ -63,13 +66,20 @@ const visible = (a: AccessRules, r: Ref): boolean => typeof r?.id !== 'string' |
  * Le resultat d'un pouvoir, sans ce que la personne ne peut pas voir.
  * Rejette (null) un document lu qui lui est interdit.
  */
-export function filterResult(a: AccessRules | undefined, capability: string, method: string, result: unknown): unknown | null {
+export function filterResult(
+  a: AccessRules | undefined, capability: string, method: string, result: unknown,
+  opts: { base?: { id: string; path: string } } = {},
+): unknown | null {
   if (!restricts(a) || !result || typeof result !== 'object') return result
   const r = result as Record<string, unknown>
   const keep = (k: string) => { if (Array.isArray(r[k])) r[k] = (r[k] as Ref[]).filter(x => visible(a, x)) }
-  if (capability === 'documents' && method === 'read') return visible(a, r) ? r : null
+  if (capability === 'documents' && (method === 'read' || method === 'path')) return visible(a, r) ? r : null
   if (capability === 'search') keep('hits')
-  if (capability === 'query') keep('rows')
+  if (capability === 'query' && Array.isArray(r.rows)) {
+    const base = opts.base
+    const baseOk = !!base && canRead(a, base.id, base.path)
+    r.rows = (r.rows as Ref[]).filter(row => (row?.path === '' ? baseOk : visible(a, row)))
+  }
   if (capability === 'links') {
     keep('items'); keep('resolved')
     if (Array.isArray(r.nodes)) {
@@ -86,4 +96,10 @@ export function filterResult(a: AccessRules | undefined, capability: string, met
   }
   if (capability === 'tags') keep('items')
   return r
+}
+
+/** La base d'une requete (`from.base`), s'il y en a une. */
+export function baseOfQuery(params: unknown): string | undefined {
+  const b = (params as { from?: { base?: unknown } } | null)?.from?.base
+  return typeof b === 'string' && b ? b : undefined
 }

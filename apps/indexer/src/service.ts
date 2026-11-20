@@ -22,7 +22,7 @@ import type { IndexState, SearchHit, SearchResult } from '@savoire/plugin-api'
 import { BackendClient } from './backend'
 import { ResultCache } from './cache'
 import type { IndexerConfig } from './config'
-import { canRead, filterResult, parseAccess, restricts } from './access'
+import { baseOfQuery, canRead, filterResult, parseAccess, restricts } from './access'
 import { TOOLS_CAPABILITY } from './agentTools'
 import { HttpError, notOwner, unavailable } from './errors'
 import { Feed } from './feed'
@@ -238,7 +238,13 @@ export class IndexerService {
       }
       let json = await this.callCached(vaultId, body.capability, body.method, body.params ?? {}, ac.signal)
       if (restricts(access)) {
-        const filtered = filterResult(access, body.capability, body.method, JSON.parse(json))
+        // Lignes legeres d'une base : les droits de la base (son chemin).
+        const baseId = body.capability === 'query' ? baseOfQuery(body.params) : undefined
+        let base: { id: string; path: string } | undefined
+        if (baseId) {
+          try { base = JSON.parse(await this.callCached(vaultId, 'documents', 'path', { id: baseId }, ac.signal)) as { id: string; path: string } } catch { base = undefined }
+        }
+        const filtered = filterResult(access, body.capability, body.method, JSON.parse(json), base ? { base } : {})
         if (filtered === null) throw new HttpError(404, 'not_found', 'Document introuvable dans ce vault.')
         json = JSON.stringify(filtered)
       }

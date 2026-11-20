@@ -463,6 +463,20 @@ export class VaultStore {
    * Claude, scripts) : l'index ne garde que des morceaux, pas le texte exact.
    */
   private async callDocuments(v: Vault, method: string, params: unknown, signal: AbortSignal): Promise<{ result: unknown; gen: number }> {
+    if (method === 'path') {
+      // Le chemin d'un document (filtre ACL des lignes legeres d'une base, cote service).
+      const id = typeof (params as { id?: unknown })?.id === 'string' ? (params as { id: string }).id : ''
+      if (!id || id.length > 200) throw new HttpError(400, 'invalid_query', 'Donner `id`.')
+      const paths = await this.slot.run(INTERACTIVE, async () => (await this.handleFor(v, 'query')).paths([id]), signal)
+      let path = paths.get(id)
+      if (!path) {
+        // Une base (.base) n'est pas dans la table des notes : son chemin est dans l'arbre du vault.
+        const log = await this.fetch(() => this.backend.tree(v.id, signal))
+        path = log ? vaultTreeFromUpdates(bytesOf(log)).docs.get(id) : undefined
+      }
+      if (!path) throw new HttpError(404, 'not_found', 'Document introuvable dans ce vault.')
+      return { result: { id, path }, gen: v.gen }
+    }
     if (method !== 'read') throw new HttpError(404, 'unknown_method', `Methode inconnue : documents.${method}.`)
     const p = (params ?? {}) as { id?: unknown; path?: unknown }
     const id = typeof p.id === 'string' && p.id.length <= 200 ? p.id : undefined

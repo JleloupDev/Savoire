@@ -130,6 +130,26 @@ describe('tools', () => {
     expect((await p.call('v1', 'documents', 'read', { id: 's' }, access)).status).toBe(404)
     expect((await p.call('v1', 'documents', 'read', { id: 's' }, { base: 'admin' })).status).toBe(200)
   })
+
+  it('ACL : une ligne legere de base suit les droits de sa base', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    backend.writeBase('v1', 'B1', 'Secret/Comptes.base', [{ id: 'r1', title: 'Loyer', values: { montant: 900 } }])
+    backend.writeBase('v1', 'B2', 'Public/Livres.base', [{ id: 'r2', title: 'Dune', values: { lu: true } }])
+    const p = await ready()
+    const access = { base: 'write', rules: [{ folder: 'Secret', permission: 'none' }], closed: [] }
+    const rows = async (base: string) => {
+      const r = await p.call<{ rows: { id: string; path: string }[] }>('v1', 'query', 'run', { from: { base }, limit: 50 }, access)
+      return r.body.result.rows.map(x => x.id)
+    }
+    await until(async () => (await rows('B2')).length === 1, 10_000, 'lignes de B2')
+    expect(await rows('B1')).toEqual([])
+    // Proprietaire : tout.
+    const all = await p.call<{ rows: { id: string }[] }>('v1', 'query', 'run', { from: { base: 'B1' }, limit: 50 }, { base: 'admin' })
+    expect(all.body.result.rows.map(x => x.id)).toEqual(['r1'])
+    // Par l'outil d'agent aussi.
+    const tool = await call(p, 'query', { base: 'B1' }, { access })
+    expect(tool.body.result.text).not.toContain('Loyer')
+  })
 })
 
 /** Un plugin maison (VM d'organisation), un fichier .mjs. */
