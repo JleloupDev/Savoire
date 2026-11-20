@@ -6,7 +6,7 @@
 // version a part, sans toucher a la note ; on peut la restaurer ou la copier.
 import { useEffect, useMemo, useState } from 'react'
 import type { ISharedMap, ViewContext, Widget } from '@savoire/plugin-api'
-import { diffLines, diffStats, listVersions, type NoteVersion } from './history'
+import { authorLabel, diffLines, diffStats, listVersions, type NoteVersion } from './history'
 
 export interface HistoryHost {
   openMap(docId: string): ISharedMap | null
@@ -27,7 +27,7 @@ function dayLabel(iso: string): string {
   return longDate.format(d)
 }
 
-const authorName = (v: NoteVersion) => v.author?.name ?? 'Avant l\'historique'
+const authorName = (v: NoteVersion) => authorLabel(v.author)
 
 function HistoryPanel({ ctx, host }: { ctx: ViewContext; host: HistoryHost }) {
   const [path, setPath] = useState<string | null>(() => ctx.workspace.getActiveDocument()?.path ?? null)

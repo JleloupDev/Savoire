@@ -7,7 +7,7 @@
 // tape sous notre nom.
 import { describe, it, expect } from 'vitest'
 import type { ISharedMap } from '@savoire/plugin-api'
-import { VersionRecorder, listVersions, GUEST_SETTLE_MS } from '@savoire/plugin-history'
+import { VersionRecorder, listVersions, authorLabel, GUEST_SETTLE_MS } from '@savoire/plugin-history'
 
 function memoryMap(): ISharedMap {
   const data = new Map<string, unknown>()
@@ -80,5 +80,18 @@ describe('versions : auteurs dans une note partagee', () => {
     recorder.observe('d', 'x12', false, [{ id: 'share:lien-2', name: 'Invité', guest: true }])
     recorder.flush()
     expect(listVersions(map)[0].author?.name).toBe('Invités')
+  })
+
+  it('un agent IA ecrit : « Nom (IA), pour Personne », tel que le serveur le declare', () => {
+    const { map, recorder, advance } = setup()
+    // Ce que le serveur joint a l'operation d'un agent (backend/src/api/agents.rs).
+    const editors = [{ id: 'agent:a1:bob', name: 'Bob', guest: false, agentId: 'a1', agentName: 'Relectrice' }]
+    recorder.observe('d', 'texte', false)
+    recorder.observe('d', 'texte corrige', false, editors)
+    advance(GUEST_SETTLE_MS); recorder.tick()
+    const v = listVersions(map)[0]
+    expect(v.text).toBe('texte corrige')
+    expect(authorLabel(v.author)).toBe('Relectrice (IA), pour Bob')
+    expect(authorLabel({ id: 'bob', name: 'Bob' })).toBe('Bob')
   })
 })

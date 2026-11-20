@@ -111,7 +111,7 @@ export interface VaultAPI {
    * `guest` : un invite (lien de partage, sans compte), qui ne tient pas
    * d'historique : c'est a ceux qui le voient de noter sa version.
    */
-  takeRemoteEditors?(documentId: string): { id: string; name: string; guest: boolean }[]
+  takeRemoteEditors?(documentId: string): { id: string; name: string; guest: boolean; agentId?: string; agentName?: string }[]
   /** Returns the vault id — used by embedded views to open DocumentRoom. */
   getVaultId?(): string
   /** Returns the current bearer token — used by embedded views for scoped API calls. */

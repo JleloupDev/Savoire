@@ -5,7 +5,7 @@
 // voir ce qui a change, restaurer une version. Restaurer modifie la note
 // (action « edit ») : en mode proposition, c'est une proposition de texte.
 import { changeNoteText, noteRef, type ISharedMap, type PluginAPI, type PluginTool } from '@savoire/plugin-api'
-import { diffLines, diffStats, listVersions } from './history'
+import { authorLabel, diffLines, diffStats, listVersions } from './history'
 
 export interface HistoryAccess {
   openMap(docId: string): ISharedMap | null
@@ -42,7 +42,7 @@ export function historyAgentTools(api: PluginAPI, h: HistoryAccess): PluginTool[
         const lines = list.map((v, i) => {
           const prev = list[i + 1]
           const s = prev ? diffStats(prev.text, v.text) : null
-          return `- ${v.id} · ${v.at} · ${v.author?.name ?? 'inconnu'}${s ? ` · +${s.added} −${s.removed}` : ''}`
+          return `- ${v.id} · ${v.at} · ${(v.author ? authorLabel(v.author) : 'inconnu')}${s ? ` · +${s.added} −${s.removed}` : ''}`
         })
         return { text: `Versions de ${note.path} :\n${lines.join('\n')}`, sources: [{ docId: note.id, path: note.path }] }
       },

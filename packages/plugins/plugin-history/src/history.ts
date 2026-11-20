@@ -24,10 +24,24 @@ export const VERSION_INTERVAL_MS = 5 * 60_000
 /** Versions gardees par note ; les plus anciennes partent. */
 export const MAX_VERSIONS = 100
 
-export interface VersionAuthor { id: string; name: string; guest?: boolean }
+export interface VersionAuthor {
+  id: string
+  /** Pour un agent : la personne pour qui il a ecrit. */
+  name: string
+  guest?: boolean
+  /** Version ecrite par un agent IA (son nom), pour la personne `name`. */
+  agentName?: string
+}
+
+/** Nom affiche d'un auteur : « Nom (IA), pour Personne » si c'est un agent. */
+export function authorLabel(a: VersionAuthor | null | undefined): string {
+  if (!a) return 'Avant l\'historique'
+  if (a.agentName) return a.name ? `${a.agentName} (IA), pour ${a.name}` : `${a.agentName} (IA)`
+  return a.name
+}
 
 /** Une modification recue arrive d'eux (voir VaultAPI.takeRemoteEditors). */
-export interface RemoteEditor { id: string; name: string; guest: boolean }
+export interface RemoteEditor { id: string; name: string; guest: boolean; agentId?: string; agentName?: string }
 
 /** Delai sans nouvelle modification d'un invite avant d'enregistrer sa version. */
 export const GUEST_SETTLE_MS = 60_000
@@ -101,7 +115,8 @@ export class VersionRecorder {
       // Ce qu'on avait tape devient une version a son nom, AVANT ce qui
       // arrive : sinon la version suivante melangerait les deux sous notre nom.
       if (s.pending !== undefined) this.flush(docId)
-      const guests = editors.filter(e => e.guest)
+      // Un invite ou un agent IA ne tient pas d'historique : on note leur version.
+      const guests = editors.filter(e => e.guest || e.agentName)
       if (guests.length > 0) {
         const map = this.deps.openMap(docId)
         // Premiere modification d'une note sans historique : le texte d'avant.
@@ -169,9 +184,12 @@ export class VersionRecorder {
     const map = this.deps.openMap(docId)
     if (!map || listVersions(map)[0]?.text === g.text) return
     const authors = [...g.authors.values()]
-    const author: VersionAuthor = authors.length === 1
-      ? { id: authors[0].id, name: authors[0].name || 'Invité', guest: true }
-      : { id: 'guests', name: 'Invités', guest: true }
+    const one = authors[0]
+    const author: VersionAuthor = authors.length !== 1
+      ? { id: 'guests', name: 'Invités', guest: true }
+      : one.agentName
+        ? { id: one.id, name: one.name, agentName: one.agentName }
+        : { id: one.id, name: one.name || 'Invité', guest: true }
     this.write(map, { at: new Date(g.at).toISOString(), author, text: g.text })
   }
 

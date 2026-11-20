@@ -8,7 +8,7 @@ import { HISTORY_MAP, VersionRecorder, type NoteVersion } from './history'
 import { HistoryWidget, type HistoryHost } from './HistoryWidget'
 import { historyAgentTools } from './agentTools'
 
-export { VersionRecorder, listVersions, diffLines, diffStats, HISTORY_MAP, VERSION_INTERVAL_MS, MAX_VERSIONS, GUEST_SETTLE_MS } from './history'
+export { VersionRecorder, listVersions, authorLabel, diffLines, diffStats, HISTORY_MAP, VERSION_INTERVAL_MS, MAX_VERSIONS, GUEST_SETTLE_MS } from './history'
 export type { NoteVersion, VersionAuthor, DiffLine, RemoteEditor } from './history'
 
 const TICK_MS = 30_000
