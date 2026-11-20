@@ -352,7 +352,10 @@ const EXTERNAL_IDPS = [
       const tenant = process.env.MICROSOFT_TENANT?.trim() || 'common'
       return {
         tenant: MS_TENANTS[tenant] ? { tenantType: MS_TENANTS[tenant] } : { tenantId: tenant },
-        emailVerified: true,
+        // Jamais « verifiee » : dans un annuaire Microsoft, l'administrateur ecrit
+        // l'adresse qu'il veut (« nOAuth »). Zitadel envoie son propre code de
+        // verification ; sans lui, Savoire ne donne ni role ni invitation (E5).
+        emailVerified: false,
         scopes: ['openid', 'profile', 'email', 'User.Read'],
       }
     },
