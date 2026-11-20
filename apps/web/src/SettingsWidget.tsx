@@ -6,6 +6,7 @@
 
 import { AISettings } from './AISettings'
 import { ApiTokenSettings } from './ApiTokenSettings'
+import { AccountSettings, type AccountSettingsProps } from './AccountSettings'
 import { AgentsSettings, type AgentsSettingsProps } from './agents/AgentsSettings'
 import { StoreSettings } from './StoreSettings'
 import type { SavoireStoreService } from './savoireStore'
@@ -54,7 +55,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api'
+type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api' | 'account'
 
 export function SettingsPanel({
   loader,
@@ -69,6 +70,7 @@ export function SettingsPanel({
   api,
   store,
   layout,
+  account,
 }: {
   loader: PluginLoader
   triggers: TriggerRegistry
@@ -87,6 +89,8 @@ export function SettingsPanel({
   agents?: AgentsSettingsProps
   /** Jetons de l'API ouverte (profil serveur) : onglet API. */
   api?: { token(): string; vaults: { id: string; name: string }[] }
+  /** Compte (profil serveur) : onglet Compte (export, suppression). */
+  account?: AccountSettingsProps
   /** Le Savoire Store : onglet Store. */
   store?: SavoireStoreService
   /** Panneaux de l'espace de travail : onglet Disposition. */
@@ -138,6 +142,7 @@ export function SettingsPanel({
           {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
           {agents && <button data-testid="settings-tab-agents" style={tabStyle(tab === 'agents')} onClick={() => setTab('agents')}>Agents</button>}
           {api && <button data-testid="settings-tab-api" style={tabStyle(tab === 'api')} onClick={() => setTab('api')}>API</button>}
+          {account && <button data-testid="settings-tab-account" style={tabStyle(tab === 'account')} onClick={() => setTab('account')}>Compte</button>}
           {vaultIndexer && (
             <button data-testid="settings-tab-vault" style={tabStyle(tab === 'vault')} onClick={() => setTab('vault')}>Vault</button>
           )}
@@ -156,6 +161,7 @@ export function SettingsPanel({
         {tab === 'layout' && layout && <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />}
         {tab === 'ai' && ai && <AISettings ai={ai} />}
         {tab === 'agents' && agents && <AgentsSettings {...agents} />}
+        {tab === 'account' && account && <AccountSettings {...account} />}
         {tab === 'api' && api && <ApiTokenSettings token={api.token} vaults={api.vaults} />}
         {tab === 'vault' && vaultIndexer && (
           <VaultIndexerSettings indexer={vaultIndexer.indexer} isOwner={vaultIndexer.isOwner} vaultName={vaultIndexer.vaultName} />

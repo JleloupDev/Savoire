@@ -253,24 +253,29 @@ export function announceTransfer(run: VaultTransferRun): void {
 
 /** Tout le dossier (notes, images, `.savoire/`) dans une archive. */
 export async function zipFolder(fs: IVaultFileSystem): Promise<Blob> {
+  return createZip(await zipEntriesOf(fs))
+}
+
+/** Les entrees d'archive d'un dossier, sous `prefix` (ex. « Mon vault/ »). */
+export async function zipEntriesOf(fs: IVaultFileSystem, prefix = ''): Promise<ZipEntry[]> {
   const entries: ZipEntry[] = []
   const all = await fs.list('', { recursive: true })
   for (const entry of all.sort((a, b) => a.path.localeCompare(b.path))) {
     if (entry.kind === 'directory') {
       // Un dossier n'a besoin d'une entree que s'il est vide.
-      if (!all.some(e => e.path.startsWith(`${entry.path}/`))) entries.push({ path: `${entry.path}/` })
+      if (!all.some(e => e.path.startsWith(`${entry.path}/`))) entries.push({ path: `${prefix}${entry.path}/` })
       continue
     }
     entries.push({
-      path: entry.path,
+      path: `${prefix}${entry.path}`,
       bytes: await fs.readBytes(entry.path),
       date: entry.mtimeMs ? new Date(entry.mtimeMs) : undefined,
     })
   }
-  return createZip(entries)
+  return entries
 }
 
-function saveBlob(blob: Blob, fileName: string): void {
+export function saveBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -281,7 +286,7 @@ function saveBlob(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
-function safeFileName(name: string): string {
+export function safeFileName(name: string): string {
   return name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'vault'
 }
 

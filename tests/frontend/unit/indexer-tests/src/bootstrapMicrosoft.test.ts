@@ -14,4 +14,11 @@ describe('bootstrap Zitadel, connexion Microsoft', () => {
     expect(block).toContain('emailVerified: false')
     expect(block).not.toContain('emailVerified: true')
   })
+
+  it('SIGNUP_CLOSED ferme l inscription libre et la creation par un fournisseur externe', () => {
+    expect(src).toContain("env('SIGNUP_CLOSED', 'false')")
+    expect(src).toContain('allowRegister: !SIGNUP_CLOSED')
+    expect(src).toContain('isCreationAllowed: !SIGNUP_CLOSED')
+    expect(src).toContain('isAutoCreation: !SIGNUP_CLOSED')
+  })
 })

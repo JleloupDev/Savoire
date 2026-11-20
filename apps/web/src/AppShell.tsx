@@ -22,7 +22,7 @@ import { setAgentDirectory } from './agents/agentDirectory'
 import { startLocalMcpService } from './agents/localMcpDesktop'
 import { LocalMcpApprovals } from './agents/LocalMcpSettings'
 import { sharedLibraries } from './sharedLibraries'
-import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
+import { VaultTransferService, isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { catalogEntries } from './pluginStore'
 import { attachSuggestionMode } from './reviewProposals'
 import type { AgentPreset, PluginManifest, PluginCommand } from '@savoire/plugin-api'
@@ -62,10 +62,12 @@ import { notify } from '@savoire/notifications'
 import { DesktopServerDialog, ServerButton, useServerChoice } from './DesktopServerDialog'
 import { connectToServer, desktopConnectionDeps, serverLabel, serverStatus, type ServerStatus } from './desktopConnection'
 import { VaultTransferDialog } from './VaultTransferDialog'
-import { vaultTransferActions, type VaultTransferRun } from './vaultTransfer'
+import { vaultTransferActions, getVaultFolderHost, saveBlob, type VaultTransferRun } from './vaultTransfer'
+import { apiCaller, buildAccountExport, deleteAccount, fetchAccountProfile } from './accountData'
 import type { VaultSourceTab, VaultTransferActions } from '@savoire/plugin-vault-browser'
 import { FileSystemVaultSession } from '@savoire/infrastructure-sync'
-import { InMemoryVaultFileSystem } from '@savoire/platform'
+import { InMemoryVaultFileSystem, isAttachmentPath } from '@savoire/platform'
+import { isBinaryDocumentPath } from './diskShapes'
 import { MISSING_VAULT_ROLE } from './desktopAccount'
 import type { OpenedVaultFolder } from '@savoire/desktop'
 
@@ -1300,26 +1302,71 @@ export function AppShell() {
   // Telecharger / exporter un vault du serveur, envoyer un vault du poste.
   // Le serveur est celui du profil de l'app ; en version bureau (vaults =
   // dossiers), c'est l'hote bureau qui le fournit (voir vaultTransfer.ts).
+  const appRemote = async () => {
+    const tok = tokenRef.current
+    const userId = activeAccountRef.current?.userId
+    if (!tok || !userId) throw new Error('Connectez-vous au serveur pour copier un vault.')
+    const identity = identityProviderRef.current
+    await identity?.init()
+    return {
+      sessions: activeProfile.vaultSyncSessionFactory ?? makeServerVaultSessionFactory(() => tokenRef.current),
+      vaults: application.vaults,
+      auth: { userId, token: tok, identity },
+    }
+  }
+  const syncKindOf = (path: string): 'crdt' | 'snapshot' => {
+    const ext = path.split('.').pop()?.toLowerCase() ?? ''
+    const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
+    return spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
+  }
+
+  // Parametres → Compte : l'archive des donnees (vaults du serveur et du poste),
+  // puis le compte supprime. L'archive va au navigateur, ou, au bureau, dans un
+  // dossier choisi.
+  const accountApi = apiCaller(() => tokenRef.current ?? '', serverUrl)
+  async function exportAccountData(): Promise<string> {
+    const tok = tokenRef.current
+    if (!tok) throw new Error('Connectez-vous au serveur pour exporter vos données.')
+    const host = getVaultFolderHost()
+    const profile = await fetchAccountProfile(accountApi)
+    const openDisk = host?.openDiskSession ?? ((fs, params) => FileSystemVaultSession.open(fs, params, diskSessionOptions))
+    const out = await buildAccountExport({
+      profile,
+      vaults: vaultsRef.current,
+      memoryFolder: (name) => new InMemoryVaultFileSystem({ rootLabel: name, watch: false }),
+      copyServerVault: async (vault, fs) => {
+        const service = new VaultTransferService({
+          remote: appRemote, openDiskSession: openDisk,
+          activeSession: (id) => (selectedVaultRef.current?.id === id ? vaultSessionRef.current : undefined),
+          transferOptions: () => ({ syncKindOf, isFile: (p: string) => isAttachmentPath(p) || isBinaryDocumentPath(p) }),
+        })
+        const result = await service.downloadVault(vault.id, fs).result
+        return result.errors.map(e => (typeof e === 'string' ? e : JSON.stringify(e)))
+      },
+      localFolder: host ? (vault) => host.fileSystemOf(vault.id) : undefined,
+    })
+    const fileName = `savoire-mes-donnees-${new Date().toISOString().slice(0, 10)}.zip`
+    if (host) {
+      const folder = await host.createDownloadFolder('Mes données Savoire')
+      if (!folder) return 'Export annulé.'
+      await folder.writeBytes(fileName, new Uint8Array(await out.blob.arrayBuffer()))
+      return `${fileName} enregistré dans ${folder.rootLabel} (${out.vaults} vault(s)).${out.errors.length ? ` ${out.errors.length} erreur(s) : ${out.errors[0]}` : ''}`
+    }
+    saveBlob(out.blob, fileName)
+    return `${fileName} téléchargé (${out.vaults} vault(s)).${out.errors.length ? ` ${out.errors.length} erreur(s) : ${out.errors[0]}` : ''}`
+  }
+  async function deleteMyAccount(): Promise<void> {
+    const tok = tokenRef.current
+    if (!tok) throw new Error('Connectez-vous au serveur pour supprimer votre compte.')
+    await deleteAccount(accountApi)
+    await handleServerDisconnect()
+  }
+
   vaultTransferRef.current = activeProfile.name === 'edgesync' ? null : vaultTransferActions<VaultSummary>({
     profile: activeProfile.name,
-    appRemote: async () => {
-      const tok = tokenRef.current
-      const userId = activeAccountRef.current?.userId
-      if (!tok || !userId) throw new Error('Connectez-vous au serveur pour copier un vault.')
-      const identity = identityProviderRef.current
-      await identity?.init()
-      return {
-        sessions: activeProfile.vaultSyncSessionFactory ?? makeServerVaultSessionFactory(() => tokenRef.current),
-        vaults: application.vaults,
-        auth: { userId, token: tok, identity },
-      }
-    },
+    appRemote,
     activeSession: (vaultId) => (selectedVaultRef.current?.id === vaultId ? vaultSessionRef.current : undefined),
-    syncKindOf: (path) => {
-      const ext = path.split('.').pop()?.toLowerCase() ?? ''
-      const spec = (fileTypeRegistryRef.current as FileTypeRegistryImpl | null)?.resolveRegistered(ext)
-      return spec?.collaborationMode === 'crdt' || ext === 'md' ? 'crdt' : 'snapshot'
-    },
+    syncKindOf,
     memoryDiskSession: (fs, params) => FileSystemVaultSession.open(fs, params, diskSessionOptions),
     memoryFolder: (name) => new InMemoryVaultFileSystem({ rootLabel: name, watch: false }),
     show: setTransferRun,
@@ -1756,6 +1803,7 @@ export function AppShell() {
                 adminVaults: activeProfile.name === 'server' ? vaults.filter(v => v.role === 'owner').map(v => ({ id: v.id, name: v.name })) : [],
                 vaults: vaults.map(v => ({ id: v.id, name: v.name })),
               }}
+              account={activeProfile.name !== 'edgesync' && tokenRef.current ? { loadProfile: () => fetchAccountProfile(accountApi), exportData: exportAccountData, deleteAccount: deleteMyAccount } : undefined}
               api={activeProfile.name === 'server' && tokenRef.current ? { token: () => tokenRef.current ?? '', vaults: vaults.map(v => ({ id: v.id, name: v.name })) } : undefined}
               vaultIndexer={selectedVault && indexerServices.vaultIndexer ? { indexer: indexerServices.vaultIndexer, isOwner: selectedVault.role === 'owner', vaultName: selectedVault.name } : undefined} hotkeys={pluginAPIRef.current?.hotkeys} commands={pluginAPIRef.current?.commands as { getAll(): PluginCommand[] } | undefined} triggers={triggersRef.current ?? { register: () => {}, unregister: () => {}, getAll: () => [], findConflict: () => undefined }} />
             <button onClick={() => setSettingsOpen(false)} title="Fermer" style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', zIndex: 1, display: 'inline-flex', padding: 2 }}><Icon name="x" size={18} /></button>

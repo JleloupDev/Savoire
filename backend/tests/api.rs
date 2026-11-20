@@ -26,7 +26,7 @@ async fn first_request_creates_the_account() {
     let t = app.token("alice-sub", Some("alice@test.local"), Some("Alice"));
     let r = app.get(&t, "/api/v1/auth/me").await;
     assert_eq!(r.0, 200, "{}", r.1);
-    assert_eq!(r.1, json!({ "id": "alice-sub", "displayName": "Alice", "email": "alice@test.local", "isAdmin": false }));
+    assert_eq!(r.1, json!({ "id": "alice-sub", "displayName": "Alice", "email": "alice@test.local", "isAdmin": false, "signupClosed": false }));
 }
 
 #[tokio::test]

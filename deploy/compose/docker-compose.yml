@@ -159,6 +159,7 @@ services:
       DEV_MODE: "false"
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       OUT_DIR: /out
+      SIGNUP_CLOSED: ${SIGNUP_CLOSED:-false}
       # Connexion par un service externe : vide = pas de bouton.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -206,6 +207,8 @@ services:
       Storage__Root: /data
       Savoire__OidcConfigFile: /run/savoire/savoire-oidc.json
       Auth__AdminEmails__0: ${ADMIN_EMAIL:?}
+      # Affiche l'etat de l'inscription dans les Parametres (le reglage est celui de zitadel-bootstrap).
+      Auth__SignupClosed: ${SIGNUP_CLOSED:-false}
       AllowedOrigins__0: https://${SAVOIRE_DOMAIN:?}
       # Derriere Caddy puis nginx : adresse du visiteur et hote d'origine.
       ForwardedHeaders__Enabled: "true"

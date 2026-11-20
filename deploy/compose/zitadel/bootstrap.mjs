@@ -28,6 +28,9 @@
 //   API_FILE_OWNER, INDEXER_FILE_OWNER  "uid:gid" du lecteur de chaque fichier
 //                   (production : l'utilisateur de l'image api, du pair)
 //
+// Inscription : SIGNUP_CLOSED=true la ferme (politique de connexion et
+// fournisseurs externes). Defaut : ouverte.
+//
 // Connexion par un service externe (facultatif) : un fournisseur est ajoute
 // des que son identifiant ET son secret sont donnes, retire s'ils disparaissent.
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
@@ -53,6 +56,8 @@ const PAT_FILE = env('ZITADEL_PAT_FILE')
 const WEB_ORIGINS = env('WEB_ORIGINS').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
 const DEV_MODE = env('DEV_MODE', 'false') === 'true'
 const OUT_DIR = env('OUT_DIR')
+
+const SIGNUP_CLOSED = env('SIGNUP_CLOSED', 'false').trim().toLowerCase() === 'true'
 
 const PROJECT = 'Savoire'
 const WEB_APP = 'Savoire Web'
@@ -266,7 +271,9 @@ async function ensureLoginPolicy() {
     ...fields,
     allowUsernamePassword: false,
     passwordlessType: 'PASSWORDLESS_TYPE_ALLOWED',
-    allowRegister: true,
+    // SIGNUP_CLOSED=true : plus d'inscription libre. Les comptes deja la, et ceux
+    // que l'administrateur cree dans la console, se connectent comme avant.
+    allowRegister: !SIGNUP_CLOSED,
     forceMfa: false,
     forceMfaLocalOnly: false,
     ignoreUnknownUsernames: false,
@@ -335,7 +342,9 @@ try {
 // Fournisseurs de l'instance : la personne choisit « Continuer avec Google »
 // sur la page de connexion ; un compte Savoire est cree a la premiere venue,
 // relie ensuite. Les noms servent de cle : relancer met a jour, sans doublon.
-const PROVIDER_OPTIONS = { isLinkingAllowed: true, isCreationAllowed: true, isAutoCreation: true, isAutoUpdate: true }
+// Inscription fermee : un fournisseur externe ne cree plus de compte, il relie
+// seulement un compte qui existe deja.
+const PROVIDER_OPTIONS = { isLinkingAllowed: true, isCreationAllowed: !SIGNUP_CLOSED, isAutoCreation: !SIGNUP_CLOSED, isAutoUpdate: true }
 const MS_TENANTS = { common: 'AZURE_AD_TENANT_TYPE_COMMON', organizations: 'AZURE_AD_TENANT_TYPE_ORGANISATIONS', consumers: 'AZURE_AD_TENANT_TYPE_CONSUMERS' }
 const EXTERNAL_IDPS = [
   {

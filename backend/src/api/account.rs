@@ -44,7 +44,11 @@ pub async fn auth_config(State(st): State<AppState>) -> Response {
 pub async fn me(State(st): State<AppState>, Auth(p): Auth) -> AppResult<Response> {
     let mut c = st.db.acquire().await?;
     Ok(match users::by_id(&mut c, &p.sub).await? {
-        Some(u) => ok(&json!({ "id": u.id, "displayName": u.display_name, "email": u.email.unwrap_or_default(), "isAdmin": u.is_admin })),
+        Some(u) => ok(&json!({
+            "id": u.id, "displayName": u.display_name, "email": u.email.unwrap_or_default(), "isAdmin": u.is_admin,
+            // Reglage de l'instance (applique par zitadel-bootstrap), montre dans les Parametres.
+            "signupClosed": st.settings().bool_or("Auth:SignupClosed", false),
+        })),
         None => super::status(401),
     })
 }
