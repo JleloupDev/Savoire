@@ -1,0 +1,23 @@
+[package]
+name = "savoire-core"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Prototype du coeur Savoire en Rust (yrs + wasm-bindgen)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+yrs = "0.28"
+wasm-bindgen = "=0.2.130"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false  # wasm-bindgen retire les sections de noms
+
+# Crate isole : hors de tout espace de travail Cargo du depot.
+[workspace]
