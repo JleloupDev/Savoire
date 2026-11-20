@@ -287,6 +287,7 @@ async function genericOfficePreview(spec: ExtractorSpec, bytes: Uint8Array, path
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-office',
+    trust: 'verified',
     scope: 'vault',
     name: 'Documents Office liés',
     version: '0.0.1',

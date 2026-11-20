@@ -29,6 +29,7 @@ export const proofreaderPreset: AgentPreset = {
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-agent-proofreader',
+    trust: 'verified',
     name: 'Agent Correcteur',
     version: '0.1.0',
     description: 'Un modèle d’agent qui corrige une note, en suggestions à accepter',

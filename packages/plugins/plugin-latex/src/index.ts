@@ -22,6 +22,7 @@ let pluginAPI: PluginAPI | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-latex',
+    trust: 'verified',
     name: 'LaTeX',
     version: '0.0.1',
     description: 'Des documents LaTeX (.tex) écrits à plusieurs, avec un aperçu des formules',

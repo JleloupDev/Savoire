@@ -63,6 +63,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-csv',
+    trust: 'verified',
     name: 'Tableaux CSV',
     version: '0.0.1',
     description: 'Les fichiers CSV : leur contenu dans la recherche, un aperçu en tableau',

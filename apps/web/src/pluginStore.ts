@@ -151,6 +151,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-word', preinstalled: false,
     manifest: {
       id: 'plugin-word',
+      trust: 'verified',
       name: 'Documents Word',
       version: '0.0.1',
       description: 'Le texte des documents Word (.docx) dans la recherche, et leur aperçu',
@@ -166,6 +167,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-powerpoint', preinstalled: false,
     manifest: {
       id: 'plugin-powerpoint',
+      trust: 'verified',
       name: 'Présentations PowerPoint',
       version: '0.0.1',
       description: 'Le texte des présentations PowerPoint (.pptx) dans la recherche, et leur aperçu',
@@ -181,6 +183,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-excel', preinstalled: false,
     manifest: {
       id: 'plugin-excel',
+      trust: 'verified',
       name: 'Classeurs Excel',
       version: '0.0.1',
       description: 'Le contenu des classeurs Excel (.xlsx) dans la recherche, et leur aperçu en tableaux',
@@ -196,6 +199,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-opendocument', preinstalled: false,
     manifest: {
       id: 'plugin-opendocument',
+      trust: 'verified',
       name: 'Documents LibreOffice',
       version: '0.0.1',
       description: 'Le contenu des documents LibreOffice (.odt, .ods, .odp) dans la recherche, et leur aperçu',
@@ -211,6 +215,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-pdf', preinstalled: false,
     manifest: {
       id: 'plugin-pdf',
+      trust: 'verified',
       name: 'PDF',
       version: '0.0.1',
       description: 'Le texte des PDF dans la recherche, et leur aperçu',
@@ -226,6 +231,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-images', preinstalled: false,
     manifest: {
       id: 'plugin-images',
+      trust: 'verified',
       name: 'Images',
       version: '0.0.1',
       description: 'Les images dans la recherche : dimensions, date, appareil, et le texte qu’elles contiennent (OCR)',
@@ -242,6 +248,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-video', preinstalled: false, editorDefault: true,
     manifest: {
       id: 'plugin-video',
+      trust: 'verified',
       name: 'Vidéos et sons',
       version: '0.0.1',
       description: 'Lire les vidéos et les sons du vault, et les intégrer dans les notes : ![[Démo.mp4]]',
@@ -256,6 +263,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-webpage', preinstalled: false,
     manifest: {
       id: 'plugin-webpage',
+      trust: 'verified',
       name: 'Pages web',
       version: '0.0.1',
       description: 'Les pages web (.html) : leur texte dans la recherche, un aperçu sans script',
@@ -271,6 +279,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-csv', preinstalled: false,
     manifest: {
       id: 'plugin-csv',
+      trust: 'verified',
       name: 'Tableaux CSV',
       version: '0.0.1',
       description: 'Les fichiers CSV : leur contenu dans la recherche, un aperçu en tableau',
@@ -302,6 +311,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-mindmap', preinstalled: false,
     manifest: {
       id: 'plugin-mindmap',
+      trust: 'verified',
       name: 'Mind Map',
       version: '0.0.2',
       description: 'Éditeur de mind maps interactif pour les fichiers .mm',
@@ -333,6 +343,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-office', preinstalled: false,
     manifest: {
       id: 'plugin-office',
+      trust: 'verified',
       scope: 'vault',
       name: 'Documents Office liés',
       version: '0.0.1',
@@ -348,6 +359,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-agent-proofreader', preinstalled: false,
     manifest: {
       id: 'plugin-agent-proofreader',
+      trust: 'verified',
       name: 'Agent Correcteur',
       version: '0.1.0',
       description: 'Un modèle d’agent qui corrige une note, en suggestions à accepter',
@@ -362,6 +374,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-ai-mistral', preinstalled: false,
     manifest: {
       id: 'plugin-ai-mistral',
+      trust: 'verified',
       name: 'Mistral AI',
       version: '0.0.1',
       description: 'Ajoute Mistral AI aux services d’IA (votre clé reste dans Savoire)',
@@ -375,6 +388,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-chat', preinstalled: false,
     manifest: {
       id: 'plugin-chat',
+      trust: 'verified',
       name: 'Discussions',
       version: '0.0.1',
       description: 'Des discussions en direct entre les membres du vault (fichiers .chat)',
@@ -388,6 +402,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-outline', preinstalled: false,
     manifest: {
       id: 'plugin-outline',
+      trust: 'verified',
       name: 'Plans',
       version: '0.0.1',
       description: 'Des plans à la Workflowy : listes imbriquées, pliage, zoom (fichiers .outline)',
@@ -401,6 +416,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-page', preinstalled: false,
     manifest: {
       id: 'plugin-page',
+      trust: 'verified',
       name: 'Pages',
       version: '0.0.1',
       description: 'Des pages facon Notion : blocs, menu /, sous-pages (fichiers .page)',
@@ -431,6 +447,7 @@ export const STORE_CATALOG: StoreEntry[] = [
     id: 'plugin-latex', preinstalled: false,
     manifest: {
       id: 'plugin-latex',
+      trust: 'verified',
       name: 'LaTeX',
       version: '0.0.1',
       description: 'Des documents LaTeX (.tex) écrits à plusieurs, avec un aperçu des formules',

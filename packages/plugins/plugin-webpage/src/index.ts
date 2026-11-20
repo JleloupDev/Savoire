@@ -45,6 +45,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-webpage',
+    trust: 'verified',
     name: 'Pages web',
     version: '0.0.1',
     description: 'Les pages web (.html) : leur texte dans la recherche, un aperçu sans script',

@@ -80,6 +80,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-pdf',
+    trust: 'verified',
     name: 'PDF',
     version: '0.0.1',
     description: 'Le texte des PDF dans la recherche, et leur aperçu',

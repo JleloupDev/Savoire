@@ -163,6 +163,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-images',
+    trust: 'verified',
     name: 'Images',
     version: '0.0.1',
     description: 'Les images dans la recherche : dimensions, date, appareil, et le texte qu’elles contiennent (OCR)',

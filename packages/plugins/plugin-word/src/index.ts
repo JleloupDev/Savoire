@@ -43,6 +43,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-word',
+    trust: 'verified',
     name: 'Documents Word',
     version: '0.0.1',
     description: 'Le texte des documents Word (.docx) dans la recherche, et leur aperçu',

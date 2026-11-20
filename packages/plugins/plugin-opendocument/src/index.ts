@@ -63,6 +63,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-opendocument',
+    trust: 'verified',
     name: 'Documents LibreOffice',
     version: '0.0.1',
     description: 'Le contenu des documents LibreOffice (.odt, .ods, .odp) dans la recherche, et leur aperçu',

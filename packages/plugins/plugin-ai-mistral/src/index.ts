@@ -25,6 +25,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-ai-mistral',
+    trust: 'verified',
     name: 'Mistral AI',
     version: '0.0.1',
     description: 'Ajoute Mistral AI aux services d’IA (votre clé reste dans Savoire)',

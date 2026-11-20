@@ -27,6 +27,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-powerpoint',
+    trust: 'verified',
     name: 'Présentations PowerPoint',
     version: '0.0.1',
     description: 'Le texte des présentations PowerPoint (.pptx) dans la recherche, et leur aperçu',

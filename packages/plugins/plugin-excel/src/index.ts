@@ -58,6 +58,7 @@ let unregister: (() => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-excel',
+    trust: 'verified',
     name: 'Classeurs Excel',
     version: '0.0.1',
     description: 'Le contenu des classeurs Excel (.xlsx) dans la recherche, et leur aperçu en tableaux',

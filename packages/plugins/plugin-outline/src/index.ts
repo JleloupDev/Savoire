@@ -150,6 +150,7 @@ let pluginAPI: PluginAPI | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-outline',
+    trust: 'verified',
     name: 'Plans',
     version: '0.0.1',
     description: 'Des plans à la Workflowy : listes imbriquées, pliage, zoom (fichiers .outline)',

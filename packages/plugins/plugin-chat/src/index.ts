@@ -228,6 +228,7 @@ function createChatView(path: string, ctx: FileContext, api?: PluginAPI): FileVi
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-chat',
+    trust: 'verified',
     name: 'Discussions',
     version: '0.0.1',
     description: 'Des discussions en direct entre les membres du vault (fichiers .chat)',

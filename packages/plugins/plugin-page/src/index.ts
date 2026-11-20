@@ -31,6 +31,7 @@ let unregister: ((id: string) => void) | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-page',
+    trust: 'verified',
     name: 'Pages',
     version: '0.0.1',
     description: 'Des pages facon Notion : blocs, menu /, sous-pages (fichiers .page)',

@@ -92,6 +92,7 @@ export function createVideoPlugin(): VaultPlugin {
   return {
     manifest: {
       id: 'plugin-video',
+      trust: 'verified',
       name: 'Vidéos et sons',
       version: '0.0.1',
       description: 'Lire les vidéos et les sons du vault, et les intégrer dans les notes : ![[Démo.mp4]]',

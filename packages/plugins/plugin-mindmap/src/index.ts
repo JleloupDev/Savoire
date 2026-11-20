@@ -64,6 +64,7 @@ let pluginAPI: PluginAPI | null = null
 const plugin: VaultPlugin = {
   manifest: {
     id: 'plugin-mindmap',
+    trust: 'verified',
     scope: 'vault',
     name: 'Mind Map',
     version: '0.0.2',
