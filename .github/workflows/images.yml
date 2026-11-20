@@ -97,9 +97,16 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
 
+      # Commit et date, affiches dans l'en-tete de l'appli web.
+      - id: commit
+        run: echo "date=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+
       - id: build
         uses: docker/build-push-action@v6
         with:
+          build-args: |
+            SAVOIRE_COMMIT=${{ github.sha }}
+            SAVOIRE_COMMIT_DATE=${{ steps.commit.outputs.date }}
           context: ${{ matrix.context || '.' }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}

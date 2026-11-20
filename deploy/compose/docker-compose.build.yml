@@ -22,6 +22,11 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+      # Commit affiche dans l'en-tete : SAVOIRE_COMMIT=$(git rev-parse HEAD)
+      # SAVOIRE_COMMIT_DATE=$(git log -1 --format=%cI) avant le build.
+      args:
+        SAVOIRE_COMMIT: ${SAVOIRE_COMMIT:-}
+        SAVOIRE_COMMIT_DATE: ${SAVOIRE_COMMIT_DATE:-}
   zitadel-login:
     image: savoire-login:local
     build:

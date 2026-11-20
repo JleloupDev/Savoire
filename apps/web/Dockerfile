@@ -26,6 +26,11 @@ COPY apps/web/ ./apps/web/
 COPY apps/desktop/package.json apps/desktop/tsconfig.json ./apps/desktop/
 COPY apps/desktop/src/ ./apps/desktop/src/
 COPY packages/ ./packages/
+# Commit affiche dans l'en-tete : .git n'entre pas dans l'image (.dockerignore),
+# la CI le passe (images.yml).
+ARG SAVOIRE_COMMIT=""
+ARG SAVOIRE_COMMIT_DATE=""
+ENV SAVOIRE_COMMIT=$SAVOIRE_COMMIT SAVOIRE_COMMIT_DATE=$SAVOIRE_COMMIT_DATE
 RUN cd frontend && pnpm --filter @savoire/web build
 
 # ── Image finale : nginx ─────────────────────────────────────────────

@@ -70,6 +70,7 @@ import { InMemoryVaultFileSystem, isAttachmentPath } from '@savoire/platform'
 import { isBinaryDocumentPath } from './diskShapes'
 import { MISSING_VAULT_ROLE } from './desktopAccount'
 import type { OpenedVaultFolder } from '@savoire/desktop'
+import { BuildInfo } from './BuildInfo'
 
 initTheme()
 
@@ -1667,6 +1668,9 @@ export function AppShell() {
 
         {/* Right actions */}
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+
+          {/* Commit de cette version et sa date */}
+          <BuildInfo />
 
           {/* Etat de l'index du vault (pair indexeur ou index local), explication au survol. */}
           {selectedVault && <IndexStatusIndicator services={indexerServices} />}

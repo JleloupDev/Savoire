@@ -6,6 +6,16 @@ import react from '@vitejs/plugin-react'
 import { resolve, join } from 'path'
 import { createRequire } from 'module'
 import { cpSync, existsSync, createReadStream, statSync, realpathSync } from 'fs'
+import { execSync } from 'child_process'
+
+// Le commit construit, affiche dans l'en-tete (src/BuildInfo.tsx). L'image
+// Docker n'a pas le dossier .git : la CI passe SAVOIRE_COMMIT et
+// SAVOIRE_COMMIT_DATE. Ailleurs (dev, appli de bureau), git les donne.
+function gitInfo(format: string): string {
+  try { return execSync(`git log -1 --format=${format}`, { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() } catch { return '' }
+}
+const buildCommit = process.env.SAVOIRE_COMMIT || gitInfo('%H')
+const buildCommitDate = process.env.SAVOIRE_COMMIT_DATE || gitInfo('%cI')
 
 // Les morceaux d'Excalidraw (polices, langues, code differe), servis par
 // l'app au lieu du CDN : l'appli de bureau doit marcher hors ligne et sa CSP
@@ -91,6 +101,8 @@ export default defineConfig({
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'development'),
+    __SAVOIRE_COMMIT__: JSON.stringify(buildCommit),
+    __SAVOIRE_COMMIT_DATE__: JSON.stringify(buildCommitDate),
   },
   server: {
     port: 3000,

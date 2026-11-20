@@ -11,6 +11,7 @@ import { getServerChoice } from './serverConnection'
 import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 import { describeAuthError } from './loginFlow'
 import { RETURN_TO_KEY } from './OAuthConsentPage'
+import { BuildInfo } from './BuildInfo'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: 'file-text', key: 'login.feature.markdown' },
@@ -138,6 +139,8 @@ export function LoginPage() {
             <path d="M104 4 L109 9 L109 18 L109 27 L104 32" stroke="var(--on-accent-muted)" strokeWidth="2.8" strokeLinecap="round" fill="none"/>
             <path d="M112 4 L117 9 L117 18 L117 27 L112 32" stroke="var(--on-accent)" strokeWidth="2.8" strokeLinecap="round" fill="none"/>
           </svg>
+          {/* Commit de cette version et sa date */}
+          <BuildInfo color="var(--on-accent-muted)" />
         </div>
 
         {/* Hero text */}
