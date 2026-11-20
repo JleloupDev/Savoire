@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# MCP local (ADR-033, src/mcp_local.rs) : un client MCP du poste (Claude
+# Desktop, Claude Code) parle a l'appli ouverte, sur 127.0.0.1, avec un jeton.
+
+[[set]]
+identifier = "mcp-local"
+description = "Ouvrir le MCP local sur 127.0.0.1 et repondre a ses messages (outils des agents)."
+permissions = [
+  "allow-mcp-local-start",
+  "allow-mcp-local-stop",
+  "allow-mcp-local-status",
+  "allow-mcp-local-new-token",
+  "allow-mcp-local-reply",
+]

@@ -27,17 +27,46 @@ export interface RunParams {
   signal?: AbortSignal
 }
 
-export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
-  const { agent } = p
-  if (agent.scope?.vaultIds?.length && !agent.scope.vaultIds.includes(p.vaultId)) {
+/** Un agent ne sert que dans les vaults qui lui sont permis : meme regle pour l'assistant et le MCP local. */
+export function assertAgentUsable(agent: AgentDefinition, vaultId: string): void {
+  if (agent.scope?.vaultIds?.length && !agent.scope.vaultIds.includes(vaultId)) {
     throw new Error(`« ${agent.name} » n’a pas accès à ce vault.`)
   }
-  if (agent.vaultId && agent.vaultId !== p.vaultId) throw new Error(`« ${agent.name} » est un agent d’un autre vault.`)
+  if (agent.vaultId && agent.vaultId !== vaultId) throw new Error(`« ${agent.name} » est un agent d’un autre vault.`)
+}
+
+type ToolParams = Pick<RunParams, 'client' | 'session' | 'api'>
+
+/** L'hote des outils et les outils des plugins : ce sur quoi toute boite d'outils de l'appli s'appuie. */
+export function appToolParts(p: ToolParams): { host: AppToolHost; pluginTools: PluginTool[] } {
+  const moveFiles = p.api?.vault?.moveFiles?.bind(p.api.vault)
+  return {
+    host: new AppToolHost({ client: p.client, session: p.session, api: p.api, ...(moveFiles ? { moveFiles } : {}) }),
+    pluginTools: p.api?.agents?.tools() ?? [],
+  }
+}
+
+export interface AppToolBoxParams extends ToolParams {
+  agent: AgentDefinition
+  person: RunParams['person']
+  vaultId: string
+  approve: RunParams['approve']
+}
+
+/** La boite d'outils d'un agent dans l'appli, sans IA : les memes droits, outils et accords que runAgentInApp (MCP local). */
+export function appToolBox(p: AppToolBoxParams): ToolBox {
+  assertAgentUsable(p.agent, p.vaultId)
+  const { host, pluginTools } = appToolParts(p)
+  const actor: ToolActor = { agentId: p.agent.id, agentName: p.agent.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
+  return new ToolBox({ agent: p.agent, person: { canWrite: p.person.canWrite }, actor, runtime: 'app', host, pluginTools, approve: p.approve })
+}
+
+export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
+  const { agent } = p
+  assertAgentUsable(agent, p.vaultId)
   if (!aiService.connections().length) throw new Error('Aucune IA configurée : ajoutez une connexion dans Paramètres → IA.')
   const person = { canWrite: p.person.canWrite }
-  const moveFiles = p.api?.vault?.moveFiles?.bind(p.api.vault)
-  const host = new AppToolHost({ client: p.client, session: p.session, api: p.api, ...(moveFiles ? { moveFiles } : {}) })
-  const pluginTools = p.api?.agents?.tools() ?? []
+  const { host, pluginTools } = appToolParts(p)
   // Orchestrateur : les agents connus, et la consommation du jour de ceux
   // qu'on peut deleguer (forChild est synchrone, on la lit avant).
   const known = agent.delegates?.length ? await agentDirectory()?.list().catch(() => []) ?? [] : []

@@ -38,6 +38,11 @@ const COMMANDS: &[&str] = &[
     "note_window_open",
     "note_window_pin",
     "web_fetch_text",
+    "mcp_local_start",
+    "mcp_local_stop",
+    "mcp_local_status",
+    "mcp_local_new_token",
+    "mcp_local_reply",
 ];
 
 fn main() {

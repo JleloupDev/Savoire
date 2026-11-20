@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenetre principale : les commandes de vault, l'index SQLite des vaults ouverts, la liste des serveurs Savoire et leurs sessions, la connexion a un serveur par le navigateur du systeme, la reception des evenements du disque, et la lecture de pages des sites autorises pour les plugins (wol.jw.org). Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page. Les fenetres de note (note-*) ont les memes droits ; elles demandent la session a la fenetre principale par evenement.",
+  "description": "Fenetre principale : les commandes de vault, l'index SQLite des vaults ouverts, la liste des serveurs Savoire et leurs sessions, la connexion a un serveur par le navigateur du systeme, la reception des evenements du disque, et la lecture de pages des sites autorises pour les plugins (wol.jw.org). Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page. Les fenetres de note (note-*) ont les memes droits ; elles demandent la session a la fenetre principale par evenement. Le MCP local (127.0.0.1, jeton) pour les clients MCP du poste.",
   "windows": [
     "main",
     "note-*"
@@ -15,6 +15,7 @@
     "server",
     "server-login",
     "note-window",
-    "network"
+    "network",
+    "mcp-local"
   ]
 }

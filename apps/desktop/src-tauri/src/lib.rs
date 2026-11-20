@@ -16,6 +16,9 @@ mod folders;
 // Public : le pont de test examples/index_stdio.rs s'en sert.
 #[cfg(desktop)]
 pub mod index_db;
+// Public : le pont stdio (main.rs, --mcp-stdio) s'en sert.
+#[cfg(desktop)]
+pub mod mcp_local;
 #[cfg(desktop)]
 mod note_window;
 #[cfg(desktop)]
@@ -51,6 +54,8 @@ pub fn run() {
             app.manage(servers::ServerSettings::load(&app.path().app_config_dir()?));
             // Connexion a un serveur : retour du navigateur sur 127.0.0.1 (ADR-028).
             app.manage(oauth::OAuthLoopback::default());
+            // MCP local (ADR-033) : demarre a la demande de la page (Parametres > Agents).
+            app.manage(mcp_local::McpLocal::new(&app.path().app_config_dir()?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -87,6 +92,11 @@ pub fn run() {
             note_window::note_window_open,
             note_window::note_window_pin,
             web_fetch::web_fetch_text,
+            mcp_local::mcp_local_start,
+            mcp_local::mcp_local_stop,
+            mcp_local::mcp_local_status,
+            mcp_local::mcp_local_new_token,
+            mcp_local::mcp_local_reply,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");

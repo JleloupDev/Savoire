@@ -19,6 +19,8 @@ import { extractorRegistry } from './extractors'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { setAgentDirectory } from './agents/agentDirectory'
+import { startLocalMcpService } from './agents/localMcpDesktop'
+import { LocalMcpApprovals } from './agents/LocalMcpSettings'
 import { sharedLibraries } from './sharedLibraries'
 import { isKeyManagedSession, watchDocumentKinds, ExtractedTextPublisher, PluginSettingsService, SessionSyncAPI, VaultGoneError, withDocumentRefCount, type IVaultSyncSession, type PluginCatalogEntry, type LoginPrompt } from '@savoire/application'
 import { catalogEntries } from './pluginStore'
@@ -485,6 +487,27 @@ export function AppShell() {
   // Arret du suivi des natures de documents (vault precedent).
   const documentKindsStopRef = useRef<(() => void) | null>(null)
   isReadOnlyRef.current = selectedVault?.role === 'viewer'
+
+  // MCP local (bureau) : un client MCP du poste parle a l'appli ouverte (ADR-033).
+  useEffect(() => {
+    if (!isTauriRuntime() || !desktopWindows()) return
+    let stop: (() => void) | undefined
+    let gone = false
+    void startLocalMcpService({
+      context: () => {
+        const vault = selectedVaultRef.current
+        const account = activeAccountRef.current
+        const client = vaultAPIRef.current
+        const session = vaultSessionRef.current
+        if (!vault || !account || !client || !session) return null
+        return {
+          vaultId: vault.id, client, session, api: pluginAPIRef.current as never,
+          person: { userId: account.userId, displayName: account.displayName, canWrite: !isReadOnlyRef.current && vault.role !== 'viewer' },
+        }
+      },
+    }).then(s => { if (gone) s(); else stop = s }, () => {})
+    return () => { gone = true; stop?.() }
+  }, [])
   // L'IA est celle de la personne connectee : ses connexions, ses cles.
   setAIAccount(activeAccountRef.current?.userId)
   // Les agents declares (ADR-033) : sur le serveur en profil serveur, sur ce poste sinon.
@@ -1752,6 +1775,8 @@ export function AppShell() {
           </div>
         </div>
       )}
+
+      <LocalMcpApprovals />
 
       {transferRun && <VaultTransferDialog run={transferRun} onClose={() => setTransferRun(null)} />}
 

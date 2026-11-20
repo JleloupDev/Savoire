@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react'
 import { ACTION_LABELS, MODE_LABELS, normalizePermissions } from '@savoire/agent-core'
 import { AGENT_ACTION_MODES, AGENT_ACTIONS, type AgentActionMode, type AgentDefinition, type AgentPreset } from '@savoire/plugin-api'
 import type { AIConnectionInfo } from '@savoire/plugin-api'
+import { isAndroidRuntime, isTauriRuntime } from '../tauriRuntime'
+import { LocalMcpSettings } from './LocalMcpSettings'
 import { agentDirectory, notifyAgentsChanged, onAgentDirectoryChange, type AgentDraft } from './agentDirectory'
 
 const INPUT: React.CSSProperties = {
@@ -207,6 +209,7 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
           )
         })}
       </div>
+      {isTauriRuntime() && !isAndroidRuntime() && <LocalMcpSettings agents={list ?? []} />}
     </div>
   )
 }

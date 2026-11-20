@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mcp-local-new-token"
+description = "Enables the mcp_local_new_token command without any pre-configured scope."
+commands.allow = ["mcp_local_new_token"]
+
+[[permission]]
+identifier = "deny-mcp-local-new-token"
+description = "Denies the mcp_local_new_token command without any pre-configured scope."
+commands.deny = ["mcp_local_new_token"]
