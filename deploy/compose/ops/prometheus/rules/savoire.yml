@@ -125,7 +125,8 @@ groups:
           summary: "Pas de copie hors de la machine depuis plus de 10 heures"
           description: "Voir les journaux du service offsite (restic)."
       - alert: CopieHorsMachineJamaisFaite
-        expr: absent(savoire_offsite_last_success_timestamp_seconds)
+        # Seulement si un depot est configure : sans RESTIC_REPOSITORY, rien.
+        expr: absent(savoire_offsite_last_success_timestamp_seconds) and on() savoire_offsite_configured == 1
         for: 30h
         labels: { severity: critical }
         annotations:

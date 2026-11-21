@@ -12,7 +12,7 @@
 #  - les jetons de service de Zitadel (/bootstrap) : il ne les ecrit qu'a sa
 #    premiere installation, et sans eux une base restauree ne redemarre pas.
 # Sans depot configure (RESTIC_REPOSITORY vide), le service attend et le dit ;
-# l'alerte « copie hors machine jamais faite » le rappelle.
+# savoire_offsite_configured vaut alors 0 et aucune alerte ne part.
 # Garde 7 jours, 4 semaines, 6 mois. Verifie le depot chaque dimanche.
 #
 #   offsite.sh                 boucle (toutes les 15 minutes)
@@ -60,6 +60,7 @@ copy() {
 }
 
 if [ -z "${RESTIC_REPOSITORY:-}" ] || [ -z "${RESTIC_PASSWORD:-}" ]; then
+  metric savoire_offsite_configured 0 "1 si une copie hors machine est configuree (RESTIC_REPOSITORY)."
   if [ "${1:-loop}" = "loop" ]; then
     while true; do
       echo "offsite : aucun depot configure (RESTIC_REPOSITORY, RESTIC_PASSWORD) : pas de copie hors machine" >&2
@@ -69,6 +70,8 @@ if [ -z "${RESTIC_REPOSITORY:-}" ] || [ -z "${RESTIC_PASSWORD:-}" ]; then
   echo "offsite : aucun depot configure (RESTIC_REPOSITORY, RESTIC_PASSWORD)" >&2
   exit 1
 fi
+
+metric savoire_offsite_configured 1 "1 si une copie hors machine est configuree (RESTIC_REPOSITORY)."
 
 case "${1:-loop}" in
   now) copy force ;;
