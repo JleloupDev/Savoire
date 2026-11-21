@@ -106,8 +106,11 @@ jobs:
           args=()
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Sans la cle, l'appli publiee ne se mettrait jamais a jour.
-            if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$SAVOIRE_UPDATER_PUBKEY" ]; then
-              echo "::error::Release sans cle de mise a jour : secret TAURI_SIGNING_PRIVATE_KEY et variable TAURI_UPDATER_PUBKEY requis."
+            missing=()
+            [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || missing+=("secret TAURI_SIGNING_PRIVATE_KEY")
+            [ -n "$SAVOIRE_UPDATER_PUBKEY" ] || missing+=("variable TAURI_UPDATER_PUBKEY (onglet Variables, pas Secrets)")
+            if [ ${#missing[@]} -gt 0 ]; then
+              echo "::error::Release sans cle de mise a jour, il manque : ${missing[*]}"
               exit 1
             fi
             # Version du tag (v1.2.3 -> 1.2.3) ; MSI n'accepte que des chiffres.
