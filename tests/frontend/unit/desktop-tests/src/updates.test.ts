@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDesktopUpdates, type TauriBridge } from '@savoire/desktop'
 import { findReadyUpdate } from '../../../../../apps/web/src/UpdateBanner'
-import { DOWNLOADS, detectDesktopOs, downloadUrl } from '../../../../../apps/web/src/downloads'
+import { DOWNLOADS, availableDownloads, detectDesktopOs, downloadUrl, fetchPublishedFiles } from '../../../../../apps/web/src/downloads'
 // @ts-expect-error script Node sans types
 import { ASSETS, prepareRelease } from '../../../../../apps/desktop/scripts/release-assets.mjs'
 
@@ -57,6 +57,30 @@ describe('bouton de telechargement', () => {
       for (const f of os.files) expect(published.has(f.file)).toBe(true)
     }
     expect(downloadUrl('Savoire-linux-x86_64.AppImage')).toBe('https://github.com/JleloupDev/Savoire/releases/latest/download/Savoire-linux-x86_64.AppImage')
+  })
+})
+
+describe('fichiers vraiment publies', () => {
+  const answer = (status: number, body: unknown = {}) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+
+  it('pas encore de Release : rien a telecharger', async () => {
+    const files = await fetchPublishedFiles(answer(404))
+    expect(files).toEqual([])
+    expect(Object.values(availableDownloads(files)).every(os => os.files.length === 0)).toBe(true)
+  })
+
+  it('seuls les fichiers presents dans la Release sont proposes', async () => {
+    const files = await fetchPublishedFiles(answer(200, { assets: [{ name: 'Savoire-linux-x86_64.AppImage' }, { name: 'latest.json' }] }))
+    const shown = availableDownloads(files)
+    expect(shown.linux.files.map(f => f.file)).toEqual(['Savoire-linux-x86_64.AppImage'])
+    expect(shown.windows.files).toEqual([])
+  })
+
+  it('GitHub injoignable : on garde tous les liens', async () => {
+    const failing = (async () => { throw new TypeError('reseau') }) as unknown as typeof fetch
+    expect(await fetchPublishedFiles(failing)).toBeNull()
+    expect(await fetchPublishedFiles(answer(403))).toBeNull()
+    expect(availableDownloads(null)).toBe(DOWNLOADS)
   })
 })
 

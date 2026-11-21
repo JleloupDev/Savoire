@@ -3,20 +3,42 @@
 //
 // Page de connexion : telecharger l'appli de bureau. Le bouton vise le
 // systeme de l'ordinateur ; « Autres systemes » montre tous les fichiers.
+// Seuls les fichiers vraiment publies sont proposes (downloads.ts).
 // Cache dans l'appli de bureau elle-meme.
 
-import { useState } from 'react'
-import { DOWNLOADS, detectDesktopOs, downloadUrl, type DesktopOs } from './downloads'
+import { useEffect, useState } from 'react'
+import { availableDownloads, detectDesktopOs, downloadUrl, fetchPublishedFiles, type DesktopOs } from './downloads'
 import { isTauriRuntime } from './tauriRuntime'
 
 export function DesktopDownload() {
   const [os] = useState<DesktopOs | null>(() => typeof navigator === 'undefined' ? null : detectDesktopOs(navigator.userAgent))
   const [all, setAll] = useState(false)
-  if (isTauriRuntime()) return null
-  const main = os ? DOWNLOADS[os] : null
+  // undefined : on demande encore a GitHub.
+  const [published, setPublished] = useState<string[] | null | undefined>(undefined)
+  const desktop = isTauriRuntime()
+
+  useEffect(() => {
+    if (desktop) return
+    let stopped = false
+    void fetchPublishedFiles().then(files => { if (!stopped) setPublished(files) })
+    return () => { stopped = true }
+  }, [desktop])
+
+  if (desktop || published === undefined) return null
+
+  const downloads = availableDownloads(published)
+  const systems = (Object.keys(downloads) as DesktopOs[]).filter(key => downloads[key].files.length > 0)
+  if (systems.length === 0) {
+    return (
+      <div data-testid="desktop-download" data-state="none" style={{ marginTop: 36, position: 'relative', fontSize: 13, color: 'var(--on-accent-muted)' }}>
+        Application de bureau : bientôt disponible.
+      </div>
+    )
+  }
+  const main = os && downloads[os].files.length > 0 ? downloads[os] : null
 
   return (
-    <div data-testid="desktop-download" style={{ marginTop: 36, position: 'relative' }}>
+    <div data-testid="desktop-download" data-state="ready" style={{ marginTop: 36, position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
         {main && (
           <a
@@ -38,10 +60,10 @@ export function DesktopDownload() {
       </div>
       {all && (
         <div data-testid="desktop-download-list" style={{ marginTop: 14, display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-          {(Object.keys(DOWNLOADS) as DesktopOs[]).map(key => (
+          {systems.map(key => (
             <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-accent)' }}>{DOWNLOADS[key].name}</span>
-              {DOWNLOADS[key].files.map(f => (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-accent)' }}>{downloads[key].name}</span>
+              {downloads[key].files.map(f => (
                 <a key={f.file} href={downloadUrl(f.file)} style={{ fontSize: 12.5, color: 'var(--on-accent-muted)' }}>{f.label}</a>
               ))}
             </div>
