@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Mises a jour de l'appli (voir src/updater.rs). Les commandes du plugin
+# updater lui-meme ne sont pas accordees a la page.
+
+[[set]]
+identifier = "update"
+description = "Chercher une nouvelle version signee, la telecharger, redemarrer pour l'installer."
+permissions = [
+  "allow-update-check",
+  "allow-update-download",
+  "allow-update-restart",
+]

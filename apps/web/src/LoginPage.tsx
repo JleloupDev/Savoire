@@ -12,6 +12,7 @@ import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 import { describeAuthError } from './loginFlow'
 import { RETURN_TO_KEY } from './OAuthConsentPage'
 import { BuildInfo } from './BuildInfo'
+import { DesktopDownload } from './DesktopDownload'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: 'file-text', key: 'login.feature.markdown' },
@@ -159,6 +160,8 @@ export function LoginPage() {
               </div>
             ))}
           </div>
+          {/* Appli de bureau : le bon installeur pour cet ordinateur */}
+          <DesktopDownload />
         </div>
 
         {/* Footer */}

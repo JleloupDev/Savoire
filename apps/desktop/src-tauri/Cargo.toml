@@ -28,6 +28,8 @@ serde_json = "1.0"
 # Choix du dossier du vault : la boite de dialogue s'ouvre cote Rust, jamais
 # depuis le front, pour que seul un dossier choisi par la personne soit autorise.
 tauri-plugin-dialog = "=2.8.1"
+# Mises a jour signees (cle publique fixee au build, voir src/updater.rs).
+tauri-plugin-updater = "=2.14.1"
 # Surveillance du disque (modifications faites par d'autres outils).
 notify = { version = "=8.2.0", default-features = false, features = ["macos_fsevent"] }
 # Index SQLite du vault (ADR-027), dans `.savoire/index.sqlite`. `bundled` :

@@ -27,6 +27,8 @@ mod oauth;
 mod paths;
 mod servers;
 #[cfg(desktop)]
+mod updater;
+#[cfg(desktop)]
 mod vault_fs;
 #[cfg(desktop)]
 mod vaults;
@@ -39,8 +41,12 @@ use tauri::Manager;
 
 #[cfg(desktop)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // Mises a jour : seulement si ce build a la cle publique (updater.rs).
+    if let Some(updater) = updater::plugin() {
+        builder = builder.plugin(updater);
+    }
+    builder
         // Cadre des boards, avec sa propre CSP (board_frame.rs).
         .register_uri_scheme_protocol("savoire-board", |_ctx, request| board_frame::respond(request))
         .setup(|app| {
@@ -56,6 +62,7 @@ pub fn run() {
             app.manage(oauth::OAuthLoopback::default());
             // MCP local (ADR-033) : demarre a la demande de la page (Parametres > Agents).
             app.manage(mcp_local::McpLocal::new(&app.path().app_config_dir()?));
+            app.manage(updater::PendingUpdate::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -97,6 +104,9 @@ pub fn run() {
             mcp_local::mcp_local_status,
             mcp_local::mcp_local_new_token,
             mcp_local::mcp_local_reply,
+            updater::update_check,
+            updater::update_download,
+            updater::update_restart,
         ])
         .run(tauri::generate_context!())
         .expect("echec du demarrage de Savoire");

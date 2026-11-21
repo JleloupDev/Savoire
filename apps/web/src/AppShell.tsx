@@ -71,6 +71,7 @@ import { isBinaryDocumentPath } from './diskShapes'
 import { MISSING_VAULT_ROLE } from './desktopAccount'
 import type { OpenedVaultFolder } from '@savoire/desktop'
 import { BuildInfo } from './BuildInfo'
+import { UpdateBanner } from './UpdateBanner'
 
 initTheme()
 
@@ -1633,6 +1634,9 @@ export function AppShell() {
 
       {/* ── Main area (topbar + workspace stacked) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+
+      {/* Bureau : nouvelle version prete, redemarrer (fenetre principale seulement) */}
+      {!noteWindow && <UpdateBanner />}
 
       {/* ── Breadcrumb bar (bureau ; le mobile a sa propre barre) ── */}
       {!mobile && <div style={{ height: 42, background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 6, flexShrink: 0 }}>

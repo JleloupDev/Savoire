@@ -43,9 +43,14 @@ const COMMANDS: &[&str] = &[
     "mcp_local_status",
     "mcp_local_new_token",
     "mcp_local_reply",
+    "update_check",
+    "update_download",
+    "update_restart",
 ];
 
 fn main() {
+    // La cle publique des mises a jour est lue au build (src/updater.rs).
+    println!("cargo:rerun-if-env-changed=SAVOIRE_UPDATER_PUBKEY");
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

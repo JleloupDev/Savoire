@@ -8,7 +8,14 @@
 # Android (serveur seulement) : un APK de debug, joint au lancement, hors Release.
 #
 # Rien ici ne connait de serveur : l'appli joint par defaut le backend local
-# (http://127.0.0.1:5000, par tunnel SSH). Paquets non signes.
+# (http://127.0.0.1:5000, par tunnel SSH).
+#
+# Mises a jour (tag v* seulement) : la version vient du tag, les fichiers sont
+# signes par la cle des mises a jour (secret TAURI_SIGNING_PRIVATE_KEY, et
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD si elle en a un), la cle publique
+# (variable TAURI_UPDATER_PUBKEY) entre dans l'appli. La Release porte des
+# noms fixes et latest.json (scripts/release-assets.mjs). Les paquets ne sont
+# pas signes pour Windows ni macOS (avertissement au premier lancement).
 name: Desktop
 
 on:
@@ -90,9 +97,23 @@ jobs:
       - name: Construire
         working-directory: apps/desktop
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          SAVOIRE_UPDATER_PUBKEY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.TAURI_UPDATER_PUBKEY || '' }}
         run: |
           set -o pipefail
-          pnpm run tauri:build 2>&1 | tee build.log
+          args=()
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Sans la cle, l'appli publiee ne se mettrait jamais a jour.
+            if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$SAVOIRE_UPDATER_PUBKEY" ]; then
+              echo "::error::Release sans cle de mise a jour : secret TAURI_SIGNING_PRIVATE_KEY et variable TAURI_UPDATER_PUBKEY requis."
+              exit 1
+            fi
+            # Version du tag (v1.2.3 -> 1.2.3) ; MSI n'accepte que des chiffres.
+            args=(--config "{\"version\":\"${GITHUB_REF_NAME#v}\",\"bundle\":{\"createUpdaterArtifacts\":true}}")
+          fi
+          pnpm run tauri:build "${args[@]}" 2>&1 | tee build.log
 
       # Les journaux d'Actions demandent un compte GitHub : la fin du journal
       # d'un echec part aussi en annotation, lisible par l'API publique.
@@ -119,6 +140,8 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/release/bundle/*/*.sig
 
   # Android : serveur seulement (pas de dossier de vault). Le projet Android
   # (src-tauri/gen/android, ignore par git) est genere a chaque fois.
@@ -198,11 +221,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: apps/desktop/scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - uses: actions/download-artifact@v8
         with:
+          pattern: savoire-{Linux,macOS,Windows}
           path: dist
-          merge-multiple: true
+      # Noms fixes (bouton de telechargement) et latest.json (mises a jour).
+      - name: Fichiers de la Release
+        run: node apps/desktop/scripts/release-assets.mjs dist release "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}"
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --generate-notes --title "Savoire ${GITHUB_REF_NAME}"
+        run: gh release create "${GITHUB_REF_NAME}" release/* --repo "${GITHUB_REPOSITORY}" --generate-notes --title "Savoire ${GITHUB_REF_NAME}"
