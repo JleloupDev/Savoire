@@ -160,6 +160,15 @@ services:
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       OUT_DIR: /out
       SIGNUP_CLOSED: ${SIGNUP_CLOSED:-false}
+      # Courriels : remis a chaque passage dans la configuration de Zitadel
+      # (il ne lit ZITADEL_DEFAULTINSTANCE_SMTP* qu'a sa creation).
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Savoire}
+      SMTP_REPLY_TO: ${SMTP_REPLY_TO:-}
       # Connexion par un service externe : vide = pas de bouton.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

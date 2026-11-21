@@ -28,6 +28,9 @@
 //   API_FILE_OWNER, INDEXER_FILE_OWNER  "uid:gid" du lecteur de chaque fichier
 //                   (production : l'utilisateur de l'image api, du pair)
 //
+// Courriels : SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_TLS, SMTP_FROM,
+// SMTP_FROM_NAME, SMTP_REPLY_TO. Vides (dev) : configuration laissee telle quelle.
+//
 // Inscription : SIGNUP_CLOSED=true la ferme (politique de connexion et
 // fournisseurs externes). Defaut : ouverte.
 //
@@ -40,6 +43,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, chownSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { createHash } from 'node:crypto'
 
 const env = (name, fallback) => {
   const v = process.env[name]?.trim()
@@ -336,6 +340,56 @@ try {
 } catch (err) {
   // Des mails aux textes d'origine marchent encore (ils montrent le code).
   console.error(`bootstrap : textes des mails non appliques (${err.message}).`)
+}
+
+// ── Courriels (SMTP) ───────────────────────────────────────────────────────
+// Zitadel ne lit ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_* qu'a la creation
+// de l'instance : une cle Brevo changee ensuite ne l'atteignait jamais. La
+// configuration active est donc remise ici sur celle du .env.
+// En v4.16, modifier une configuration (PUT /admin/v1/smtp/{id}) enregistre
+// le nouvel identifiant sans le reporter dans la vue que lit l'envoi, et
+// PUT .../password repond « non trouvee ». On en cree donc une neuve, on
+// l'active, puis on retire les autres. Le mot de passe ne se relit pas chez
+// Zitadel : l'empreinte de la configuration voulue est gardee dans OUT_DIR,
+// et rien n'est refait tant qu'elle ne change pas.
+const SMTP = {
+  host: env('SMTP_HOST', ''),
+  user: env('SMTP_USER', ''),
+  password: env('SMTP_PASSWORD', ''),
+  tls: env('SMTP_TLS', 'true').toLowerCase() !== 'false',
+  senderAddress: env('SMTP_FROM', ''),
+  senderName: env('SMTP_FROM_NAME', 'Savoire'),
+  replyToAddress: env('SMTP_REPLY_TO', ''),
+}
+const smtpStateFile = join(OUT_DIR, 'smtp-state.json')
+
+async function ensureSmtp() {
+  if (!SMTP.host || !SMTP.senderAddress) {
+    console.log('bootstrap : SMTP_HOST ou SMTP_FROM vide, courriels de Zitadel laisses tels quels.')
+    return
+  }
+  const stamp = createHash('sha256').update(JSON.stringify(SMTP)).digest('hex')
+  let saved = {}
+  try { saved = JSON.parse(readFileSync(smtpStateFile, 'utf8')) } catch { /* premier passage */ }
+
+  const { result = [] } = await api('POST', '/admin/v1/smtp/_search', {})
+  const active = result.find(c => c.state === 'SMTP_CONFIG_ACTIVE')
+  if (active && active.id === saved.id && saved.stamp === stamp) return
+
+  const { id } = await api('POST', '/admin/v1/smtp', { ...SMTP, description: 'Savoire (.env)' })
+  await api('POST', `/admin/v1/smtp/${id}/_activate`, {})
+  writeFileSync(smtpStateFile, JSON.stringify({ id, stamp }) + '\n', { mode: 0o600 })
+  for (const old of result) {
+    await api('DELETE', `/admin/v1/smtp/${old.id}`).catch(err =>
+      console.error(`bootstrap : ancienne configuration SMTP ${old.id} non retiree (${err.message}).`))
+  }
+  console.log(`bootstrap : courriels par ${SMTP.host}${SMTP.user ? ' (authentifie)' : ' (sans authentification)'}, expediteur ${SMTP.senderAddress}.`)
+}
+
+try {
+  await ensureSmtp()
+} catch (err) {
+  console.error(`bootstrap : configuration SMTP de Zitadel non appliquee (${err.message}).`)
 }
 
 // ── Connexion par Google, GitHub, Microsoft ────────────────────────────────

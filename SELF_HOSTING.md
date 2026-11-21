@@ -206,6 +206,10 @@ d'adresse, liens de connexion, invitations, alertes.
 Serveur `smtp-relay.brevo.com`, port 465 (TLS dès la connexion). Le même
 compte sert à Zitadel, à GlitchTip et aux alertes.
 
+Zitadel ne lit sa configuration SMTP qu'à sa création : `zitadel-bootstrap`
+la remet sur celle du `.env` à chaque déploiement. Changer la clé Brevo dans
+GitHub suffit, puis *Run workflow*.
+
 ## Installer
 
 ```bash
