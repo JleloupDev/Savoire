@@ -7,6 +7,9 @@
 // dans les options. Les panneaux se designent par l'id de leur vue ou de leur
 // groupe (« explorer », « notes-tools », « review »...). Un id inconnu (plugin
 // absent) ne gene pas : il est ignore.
+//
+// Les outils du developpeur (plugins actifs, metadonnees) ne sont presents que
+// dans la vue Developpeur ; ailleurs on peut les rajouter a la main.
 
 import { useSyncExternalStore } from 'react'
 
@@ -30,32 +33,35 @@ export interface LayoutPreset {
   display: { editorToolbar: boolean; showFileExtensions: boolean }
 }
 
+/** Panneaux reserves a la vue Developpeur. */
+const DEV_PANELS = ['plugin-inspector', 'metadata']
+
 export const LAYOUT_PRESETS: LayoutPreset[] = [
   {
     id: 'savoire',
     name: 'Savoire',
-    description: 'Tous les panneaux. L\'explorateur à gauche, les outils de la note à droite.',
-    config: { hidden: [], leftOpen: 'explorer', rightOpen: true, rightFocus: null },
+    description: 'L\'explorateur à gauche, les outils de la note à droite.',
+    config: { hidden: [...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: null },
     display: { editorToolbar: true, showFileExtensions: false },
   },
   {
     id: 'obsidian',
     name: 'Obsidian',
-    description: 'Fichiers, recherche et tags à gauche. Liens entrants et métadonnées à droite. Pas de barre d\'édition.',
-    config: { hidden: ['review', 'history', 'agenda', 'plugin-inspector'], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks' },
+    description: 'Fichiers, recherche et tags à gauche. Liens entrants à droite. Pas de barre d\'édition.',
+    config: { hidden: ['review', 'history', 'agenda', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks' },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
     id: 'notion',
     name: 'Notion',
     description: 'Une seule colonne de pages à gauche. La note prend la place. Commentaires et versions à la demande.',
-    config: { hidden: ['notes-tools', 'hashtags', 'graph', 'plugin-inspector'], leftOpen: 'explorer', rightOpen: false, rightFocus: null },
+    config: { hidden: ['notes-tools', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
     id: 'developer',
     name: 'Développeur',
-    description: 'Tous les panneaux, l\'inspecteur des plugins ouvert à droite. Extensions des fichiers visibles.',
+    description: 'Tous les panneaux, dont les plugins actifs et les métadonnées. Plugins actifs ouverts à droite. Extensions des fichiers visibles.',
     config: { hidden: [], leftOpen: 'explorer', rightOpen: true, rightFocus: 'plugin-inspector' },
     display: { editorToolbar: false, showFileExtensions: true },
   },
@@ -70,6 +76,11 @@ export interface LayoutPreferences {
 }
 
 const KEY = 'savoire-layout'
+/**
+ * Version des reglages gardes. 2 : les outils du developpeur sortent des
+ * autres vues ; un reglage plus ancien les perd une fois (rajoutables).
+ */
+const VERSION = 2
 const listeners = new Set<() => void>()
 
 export function presetById(id: string): LayoutPreset {
@@ -91,10 +102,14 @@ function read(): LayoutPreferences {
     const parsed = JSON.parse(raw) as Partial<LayoutPreferences> & { config?: Partial<LayoutConfig> }
     const preset = presetById(typeof parsed.presetId === 'string' ? parsed.presetId : DEFAULT_PRESET_ID)
     const c: Partial<LayoutConfig> = parsed.config ?? {}
+    let hidden = Array.isArray(c.hidden) ? c.hidden.filter((x): x is string => typeof x === 'string') : [...preset.config.hidden]
+    if ((parsed as { v?: number }).v !== VERSION && preset.id !== 'developer') {
+      hidden = [...new Set([...hidden, ...DEV_PANELS])]
+    }
     return {
       presetId: preset.id,
       config: {
-        hidden: Array.isArray(c.hidden) ? c.hidden.filter((x): x is string => typeof x === 'string') : [...preset.config.hidden],
+        hidden,
         leftOpen: typeof c.leftOpen === 'string' || c.leftOpen === null ? c.leftOpen : preset.config.leftOpen,
         rightOpen: typeof c.rightOpen === 'boolean' ? c.rightOpen : preset.config.rightOpen,
         rightFocus: typeof c.rightFocus === 'string' || c.rightFocus === null ? c.rightFocus : preset.config.rightFocus,
@@ -104,10 +119,12 @@ function read(): LayoutPreferences {
 }
 
 let current = read()
+// Garde le reglage relu a la version courante : la migration ne se fait qu'une fois.
+try { if (localStorage.getItem(KEY)) localStorage.setItem(KEY, JSON.stringify({ v: VERSION, ...current })) } catch { /* navigation privee */ }
 
 function write(next: LayoutPreferences): void {
   current = next
-  try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* navigation privee */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ v: VERSION, ...next })) } catch { /* navigation privee */ }
   for (const cb of [...listeners]) cb()
 }
 

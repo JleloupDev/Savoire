@@ -1797,7 +1797,7 @@ export function AppShell() {
       {/* ── Settings modal ── */}
       {settingsOpen && (
         <div className="sv-overlay" onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '90vw', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 760, maxWidth: '92vw', height: 'min(680px, 86vh)', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current}
               layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} pluginCapabilities={id => {
                 const report = pluginLoaderRef.current.capabilitiesOf(id)

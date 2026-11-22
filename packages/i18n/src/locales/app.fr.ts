@@ -69,6 +69,7 @@ export const appFr = {
   'settings.tab.themes': 'Thèmes',
   'settings.tab.hotkeys': 'Raccourcis',
   'settings.tab.layout': 'Disposition',
+  'settings.tab.appearance': 'Apparence',
   'settings.hotkeys.intro': 'Cliquez sur + puis tapez la combinaison. Un raccourci choisi remplace celui par défaut ; ↺ y revient. Une commande peut avoir plusieurs raccourcis.',
   'settings.hotkeys.search': 'Filtrer les commandes…',
   'settings.hotkeys.none': 'Aucun',

@@ -133,6 +133,15 @@ export function storeBaseUrl(): string {
   return (configured || '/store').replace(/\/+$/, '')
 }
 
+/**
+ * Message d'une reponse en erreur du store. 502 a 504 : le proxy du serveur
+ * ne joint pas le store (pas installe sur ce serveur, ou arrete).
+ */
+export function storeHttpError(status: number): string {
+  if (status >= 502 && status <= 504) return 'Le Savoire Store n\'est pas disponible sur ce serveur pour le moment.'
+  return `Savoire Store : erreur ${status}.`
+}
+
 // ── Paquets gardes dans ce navigateur ─────────────────────────────────────
 
 const DB_NAME = 'savoire-store'
@@ -239,7 +248,7 @@ export class SavoireStoreService {
     }
     if (!res.ok) {
       const body = await res.json().catch(() => null) as { message?: string } | null
-      throw new Error(body?.message ?? `Savoire Store : erreur ${res.status}.`)
+      throw new Error(body?.message ?? storeHttpError(res.status))
     }
     return res.json() as Promise<T>
   }
@@ -287,7 +296,7 @@ export class SavoireStoreService {
     } catch {
       throw new Error('Le Savoire Store ne répond pas.')
     }
-    if (!res.ok) throw new Error(res.status === 404 ? 'Élément introuvable sur le store.' : `Savoire Store : erreur ${res.status}.`)
+    if (!res.ok) throw new Error(res.status === 404 ? 'Élément introuvable sur le store.' : storeHttpError(res.status))
     const signature = res.headers.get('X-Savoire-Signature') ?? ''
     const sha256 = res.headers.get('X-Savoire-Sha256') ?? ''
     if (!signature) throw new StorePackageError('Paquet non signé : refusé.')

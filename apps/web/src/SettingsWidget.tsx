@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // SettingsWidget — écran de paramètres style Obsidian.
-// Tabs: Fonctionnalites (plugins core), Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
+// Tabs: Fonctionnalites (plugins core), Plugins, Raccourcis, Triggers, Apparence (theme et disposition), Vault (pair indexeur du vault ouvert).
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
 import { AISettings } from './AISettings'
@@ -55,7 +55,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'features' | 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api' | 'account'
+type Tab = 'features' | 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'agents' | 'api' | 'account'
 
 export function SettingsPanel({
   loader,
@@ -93,7 +93,7 @@ export function SettingsPanel({
   account?: AccountSettingsProps
   /** Le Savoire Store : onglet Store. */
   store?: SavoireStoreService
-  /** Panneaux de l'espace de travail : onglet Disposition. */
+  /** Panneaux de l'espace de travail : partie Disposition de l'onglet Apparence. */
   layout?: { panels: LayoutPanels; applyPanes(): void }
 }) {
   const [tab, setTab] = useState<Tab>(pluginSettings ? 'features' : 'plugins')
@@ -129,7 +129,7 @@ export function SettingsPanel({
       {/* Header */}
       <div style={{ padding: '16px 24px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
-        {/* Les onglets passent a la ligne : la fenetre est etroite (560 px). */}
+        {/* Les onglets passent a la ligne si la fenetre est etroite. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0 }}>
           {pluginSettings && <button data-testid="settings-tab-features" style={tabStyle(tab === 'features')} onClick={() => setTab('features')}>{t('app', 'settings.tab.features')}</button>}
           <button data-testid="settings-tab-plugins" style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
@@ -138,8 +138,7 @@ export function SettingsPanel({
             <button data-testid="settings-tab-hotkeys" style={tabStyle(tab === 'hotkeys')} onClick={() => setTab('hotkeys')}>{t('app', 'settings.tab.hotkeys')}</button>
           )}
           <button style={tabStyle(tab === 'triggers')} onClick={() => setTab('triggers')}>{t('app', 'settings.tab.triggers')}</button>
-          <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.themes')}</button>
-          {layout && <button data-testid="settings-tab-layout" style={tabStyle(tab === 'layout')} onClick={() => setTab('layout')}>{t('app', 'settings.tab.layout')}</button>}
+          <button data-testid="settings-tab-themes" style={tabStyle(tab === 'themes')}   onClick={() => setTab('themes')}>{t('app', 'settings.tab.appearance')}</button>
           {ai && <button data-testid="settings-tab-ai" style={tabStyle(tab === 'ai')} onClick={() => setTab('ai')}>IA</button>}
           {agents && <button data-testid="settings-tab-agents" style={tabStyle(tab === 'agents')} onClick={() => setTab('agents')}>Agents</button>}
           {api && <button data-testid="settings-tab-api" style={tabStyle(tab === 'api')} onClick={() => setTab('api')}>API</button>}
@@ -159,8 +158,18 @@ export function SettingsPanel({
         {tab === 'store' && store && <StoreSettings store={store} />}
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
         {tab === 'triggers' && <TriggersTab triggers={triggerList} />}
-        {tab === 'themes'   && <ThemesTab   themeId={themeId} onSelect={selectTheme} />}
-        {tab === 'layout' && layout && <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />}
+        {tab === 'themes' && (
+          <>
+            <div style={appearanceHeading}>{t('app', 'settings.tab.themes')}</div>
+            <ThemesTab themeId={themeId} onSelect={selectTheme} />
+            {layout && (
+              <>
+                <div style={{ ...appearanceHeading, marginTop: 28, paddingTop: 16, borderTop: '1px solid var(--border)' }}>{t('app', 'settings.tab.layout')}</div>
+                <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />
+              </>
+            )}
+          </>
+        )}
         {tab === 'ai' && ai && <AISettings ai={ai} />}
         {tab === 'agents' && agents && <AgentsSettings {...agents} />}
         {tab === 'account' && account && <AccountSettings {...account} />}
@@ -577,6 +586,9 @@ function TriggersTab({ triggers }: { triggers: InputTrigger[] }) {
     </div>
   )
 }
+
+/** Titre d'une partie de l'onglet Apparence (theme, disposition). */
+const appearanceHeading: React.CSSProperties = { fontSize: '0.9rem', fontWeight: 700, color: 'var(--text)', marginBottom: 8 }
 
 // ── Themes tab ────────────────────────────────────────────────────────────────
 
