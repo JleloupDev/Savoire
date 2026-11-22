@@ -38,3 +38,26 @@ describe('dictée', () => {
     expect(v.text).toBe('A\nLigne')
   })
 })
+
+describe('dictée par morceaux', () => {
+  it('coupe à une pause après de la parole, jamais dans le silence', async () => {
+    const { SilenceSegmenter } = await import('../../../../../apps/web/src/dictation')
+    const seg = new SilenceSegmenter(0)
+    let t = 0
+    const feed = (rms: number, ms: number) => { let cut = false; for (const end = t + ms; t < end; t += 100) cut = seg.feed(rms, t) || cut; return cut }
+    expect(feed(0.001, 3000)).toBe(false) // silence : rien
+    expect(seg.hasVoice).toBe(false)
+    expect(feed(0.1, 1500)).toBe(false) // on parle
+    expect(feed(0.001, 1000)).toBe(true) // pause : on coupe
+    seg.reset(t)
+    expect(seg.hasVoice).toBe(false)
+  })
+
+  it('un long monologue est coupé au plus tard', async () => {
+    const { SilenceSegmenter } = await import('../../../../../apps/web/src/dictation')
+    const seg = new SilenceSegmenter(0, { maxMs: 5000 })
+    let cut = false
+    for (let t = 0; t <= 5000 && !cut; t += 100) cut = seg.feed(0.2, t)
+    expect(cut).toBe(true)
+  })
+})

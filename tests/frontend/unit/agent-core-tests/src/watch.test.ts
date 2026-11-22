@@ -4,7 +4,7 @@
 // Veille d'un agent sur la note ouverte : un bloc relu une fois par version,
 // l'ecran d'abord, gros collage demande, bloc modifie pendant l'analyse
 // abandonne, contexte de la note, reponse rangee.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { BlockWatcher, noteOutline, parseWatchReply, watchMessages, type WatchMemory, type WatchMemoryStore, type WatchNote, type WatchReply } from '@savoire/agent-core'
 import { splitNoteBlocks, type AIChatRequest, type AIChatResponse, type AgentDefinition, type NoteBlock } from '@savoire/plugin-api'
 
@@ -123,12 +123,35 @@ describe('veille', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('une erreur de l IA arrete la veille', async () => {
+  it('une erreur definitive (cle refusee) arrete la veille', async () => {
     const memory = new Memories()
-    const w = new BlockWatcher({ agent, memory, chat: async () => { throw new Error('Aucune IA configurée') }, onFinding: () => {} })
+    const refused = Object.assign(new Error('« OpenAI » : clé refusée.'), { status: 401 })
+    const w = new BlockWatcher({ agent, memory, chat: async () => { throw refused }, onFinding: () => {} })
     w.update(note('Un. Deux.'))
     await flush()
-    expect(w.status().error).toBe('Aucune IA configurée')
+    expect(w.status().error).toBe('« OpenAI » : clé refusée.')
+  })
+
+  it('une erreur passagere ne l arrete pas : le bloc est relu plus tard', async () => {
+    vi.useFakeTimers()
+    try {
+      let n = 0
+      const found: string[] = []
+      const w = new BlockWatcher({
+        agent, memory: new Memories(), onFinding: (_n, b) => { found.push(b.text) },
+        chat: async () => {
+          if (n++ === 0) throw Object.assign(new Error('« OpenAI » : erreur 500.'), { status: 500 })
+          return { text: '{"fautes":[],"conseil":null,"resume":"r"}', model: 'm', connection: 'c' }
+        },
+      })
+      w.update(note('Un paragraphe.'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(w.status().error).toBeUndefined()
+      expect(w.status().warning).toContain('500')
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(found).toEqual(['Un paragraphe.'])
+      expect(w.status().warning).toBeUndefined()
+    } finally { vi.useRealTimers() }
   })
 
   it('budget atteint : pas d appel', async () => {

@@ -251,7 +251,7 @@ class AgentWatchService {
       agent,
       memory: localWatchMemory,
       chat: req => {
-        if (!aiService.connections().length) return Promise.reject(new Error('Aucune IA configurée : ajoutez une connexion dans Paramètres → IA.'))
+        if (!aiService.connections().length) return Promise.reject(Object.assign(new Error('Aucune IA configurée : ajoutez une connexion dans Paramètres → IA.'), { fatal: true }))
         return aiService.chat(req, agent.connectionId)
       },
       canSpend: () => {
@@ -264,7 +264,7 @@ class AgentWatchService {
         w.pendingUsage.outputTokens += u.outputTokens
         if (++w.pendingUsage.n >= USAGE_BATCH) this.flushUsage(w)
       },
-      onFinding: (note, block, reply) => { void this.apply(w, note, block, reply) },
+      onFinding: (note, block, reply) => { void this.apply(w, note, block, reply).catch(() => {}) },
       onState: status => {
         const hadError = w.status.error
         w.status = status

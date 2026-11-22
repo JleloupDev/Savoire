@@ -7,7 +7,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { applyBlockMarks, blockMarksExtension } from '../../../../../packages/editor-core/src/BlockMarks'
+import { applyBlockMarks, blockMarksExtension, blockMarksOf } from '../../../../../packages/editor-core/src/BlockMarks'
 
 const views: EditorView[] = []
 afterEach(() => { for (const v of views.splice(0)) v.destroy() })
@@ -18,7 +18,17 @@ function editor(doc: string) {
   return view
 }
 
-const marked = (view: EditorView, cls: string) => [...view.dom.querySelectorAll(`.cm-line.${cls}`)].map(l => l.textContent)
+/** Les lignes (texte) qui portent un trait de cette classe dans la gouttiere. */
+const marked = (view: EditorView, cls: string) => {
+  const lines: string[] = []
+  for (let n = 1; n <= view.state.doc.lines; n++) {
+    const line = view.state.doc.line(n)
+    for (const marks of blockMarksOf(view).values()) {
+      if (marks.some(m => m.className === cls && m.from <= line.to && m.to >= line.from)) { lines.push(line.text); break }
+    }
+  }
+  return lines
+}
 
 describe('marques de blocs', () => {
   it('toutes les lignes du bloc ; chaque source remplace seulement les siennes', () => {
@@ -39,13 +49,16 @@ describe('marques de blocs', () => {
     expect(marked(view, 'cm-block-changed')).toEqual(['B'])
   })
 
-  it('pastille : s ouvre au clic, ses boutons agissent', () => {
+  it('dans la gouttiere ; pastille : s ouvre au clic, ses boutons agissent', async () => {
     const view = editor('Un paragraphe.')
     let kept = 0
     applyBlockMarks(view, 'watch', [{
       from: 0, to: 14, className: 'cm-block-watch-advice',
       badge: { label: '💡', text: 'Développe cette idée.', actions: [{ label: 'Garder', run: () => { kept++ } }] },
     }])
+    view.requestMeasure()
+    await new Promise(r => setTimeout(r, 50))
+    expect(view.dom.querySelector('.cm-block-marks .cm-block-mark-bar.cm-block-watch-advice')).not.toBeNull()
     const button = view.dom.querySelector('.cm-block-badge-button') as HTMLButtonElement
     const panel = view.dom.querySelector('.cm-block-badge-panel') as HTMLElement
     expect(panel.hidden).toBe(true)

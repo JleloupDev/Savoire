@@ -38,6 +38,21 @@ const MAX_DISMISSED = 20
 const MAX_CONTEXT = 10
 const MAX_REVIEWS_IN_PROMPT = 40
 const MAX_FAULTS = 10
+/** Erreurs passageres de suite avant d'arreter la veille. */
+const MAX_FAILURES = 4
+const RETRY_MS = 4000
+
+/**
+ * Une erreur qui ne passera pas en reessayant : pas d'IA, cle refusee,
+ * modele introuvable. Les autres (reseau, 429, 5xx, reponse illisible) sont
+ * passageres.
+ */
+export function isFatalWatchError(err: unknown): boolean {
+  const e = err as { fatal?: boolean; status?: number; message?: string } | null
+  if (!e) return false
+  if (e.fatal === true || /^Aucune IA configurée/.test(e.message ?? '')) return true
+  return e.status === 401 || e.status === 403 || e.status === 404
+}
 /** Un bloc plus court n'est pas relu (« Oui. », une puce vide). */
 const MIN_BLOCK_CHARS = 3
 
@@ -101,8 +116,10 @@ export interface WatchStatus {
   asking: number
   reading: number
   pending: number
-  /** Arret sur erreur (IA absente, budget atteint...). */
+  /** Arret sur erreur (IA absente, cle refusee, budget atteint, erreurs repetees). */
   error?: string
+  /** Erreur passagere : la veille continue et reessaie. */
+  warning?: string
 }
 
 export interface BlockWatcherDeps {
@@ -271,6 +288,9 @@ export class BlockWatcher {
   private asking: { count: number } | null = null
   private stopped = false
   private error: string | undefined
+  private warning: string | undefined
+  private failures = 0
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
   private visible: { from: number; to: number } = { from: 0, to: Number.MAX_SAFE_INTEGER }
 
   constructor(private readonly d: BlockWatcherDeps) {}
@@ -381,6 +401,7 @@ export class BlockWatcher {
       asking: this.asking?.count ?? 0,
       reading: this.running.size, pending: this.asking ? 0 : this.queue.length,
       ...(this.error ? { error: this.error } : {}),
+      ...(this.warning ? { warning: this.warning } : {}),
     }
   }
 
@@ -419,6 +440,8 @@ export class BlockWatcher {
       void this.ask(this.note, fresh.length)
       return
     }
+    // Apres une erreur passagere : on attend le nouvel essai.
+    if (this.retryTimer) { this.emit(); return }
     while (this.running.size < this.concurrency && this.queue.length) {
       const refusal = this.d.canSpend?.() ?? null
       if (refusal) { this.fail(refusal); return }
@@ -437,13 +460,16 @@ export class BlockWatcher {
       const reviews = this.d.reviews?.(note) ?? []
       const answer = await this.d.chat({
         messages: watchMessages(this.d.agent, note, block, memory, reviews),
-        json: true, temperature: 0.2, maxTokens: 700,
+        // Large : un modele qui raisonne (gpt-5, o3...) compte aussi sa reflexion dans ce plafond.
+        json: true, temperature: 0.2, maxTokens: 2000,
         ...(this.d.agent.model ? { model: this.d.agent.model } : {}),
         signal: ac.signal,
       })
       this.d.onUsage?.({ inputTokens: answer.usage?.inputTokens ?? 0, outputTokens: answer.usage?.outputTokens ?? 0 })
       if (ac.signal.aborted || this.running.get(block.hash)?.ac !== ac) return
       this.running.delete(block.hash)
+      this.failures = 0
+      this.warning = undefined
       const reply = parseWatchReply(answer.text, block.text) ?? { faults: [], advice: null, summary: '' }
       if (this.d.agent.watch?.advice === false) reply.advice = null
       // Deja propose, accepte ou refuse dans la Revision : jamais repropose. Conseil ecarte : non plus.
@@ -460,9 +486,17 @@ export class BlockWatcher {
       if (now) this.d.onFinding(current, now, reply)
     } catch (err) {
       if (this.running.get(block.hash)?.ac === ac) this.running.delete(block.hash)
-      if (ac.signal.aborted) return
-      // Une erreur de l'IA arrete la veille : la relancer en boucle couterait sans servir.
-      this.fail(err instanceof Error ? err.message : String(err))
+      if (ac.signal.aborted || this.stopped) return
+      const message = err instanceof Error ? err.message : String(err)
+      // Erreur definitive, ou trop d'erreurs de suite : on arrete (reessayer couterait sans servir).
+      if (isFatalWatchError(err) || ++this.failures >= MAX_FAILURES) { this.fail(message); return }
+      // Passagere : le bloc revient dans la file, on reessaie un peu plus tard.
+      this.warning = message
+      if (this.note?.docId === note.docId && this.note.blocks.some(b => b.hash === block.hash) && !this.queue.some(b => b.hash === block.hash)) this.queue.push(block)
+      this.emit()
+      if (!this.retryTimer) {
+        this.retryTimer = setTimeout(() => { this.retryTimer = null; this.pump() }, RETRY_MS * this.failures)
+      }
       return
     }
     this.pump()
@@ -474,6 +508,7 @@ export class BlockWatcher {
   }
 
   private cancelAll(): void {
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
     for (const job of this.running.values()) job.ac.abort()
     this.running.clear()
   }

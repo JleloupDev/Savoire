@@ -119,6 +119,7 @@ function watchLine(agentId: string): string {
   const st = agentWatch.status(agentId)
   if (!agentWatch.isWatching(agentId)) return 'Il relit chaque passage qui change, après une pause de frappe.'
   if (st?.error) return `Arrêtée : ${st.error}`
+  if (st?.warning && !st.reading) return `Erreur passagère, nouvel essai bientôt : ${st.warning.slice(0, 160)}`
   if (st?.asking) return `${st.asking} passages nouveaux à relire (environ ${fmt(agentWatch.askEstimate(agentId))} tokens).`
   if (st?.reading) return `Relit ${st.reading} passage(s)${st.pending ? `, ${st.pending} en attente` : ''}…`
   if (st?.pending) return `${st.pending} passage(s) en attente.`

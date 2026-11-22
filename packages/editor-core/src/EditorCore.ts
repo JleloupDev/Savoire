@@ -368,8 +368,6 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).
         highlightsExtension(),
-        // Marques de blocs (modifie depuis la derniere visite, agent en veille).
-        blockMarksExtension(),
         // Agent en veille sur la note : un robot en bas a droite.
         agentPresenceExtension(),
         // Cartes de revision par-dessus la note (clic sur un passage surligne).
@@ -390,6 +388,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
                 options.editorMode === 'classic' ? 'classic' : 'power',
               ),
             ]),
+        // Marques de blocs (modifie depuis la derniere visite, agent en veille) :
+        // une gouttiere apres les numeros de ligne, contre le texte.
+        blockMarksExtension(),
         ...(options.readOnly ? [EditorView.theme({
           '&': { height: 'auto' },
           '.cm-scroller': { overflow: 'visible' },
