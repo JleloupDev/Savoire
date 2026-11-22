@@ -57,6 +57,11 @@ export function chatBodyFixFor(detail: string, body: Record<string, unknown>): C
   return fix.maxCompletionTokens || fix.noTemperature ? fix : null
 }
 
+/** L'API d'OpenAI (et non un service compatible). */
+export function isOpenAIApi(baseUrl: string): boolean {
+  try { return new URL(baseUrl).hostname === 'api.openai.com' } catch { return false }
+}
+
 /** Applique les corrections connues au corps d'une demande. */
 export function applyChatBodyFix(body: Record<string, unknown>, fix: ChatBodyFix | undefined): Record<string, unknown> {
   if (!fix) return body
@@ -230,6 +235,9 @@ export class AIService {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : null
     if (!body) return this.call(conn, path, { method: 'POST', body: JSON.stringify(raw), signal })
     // Un refus peut en cacher un autre (max_tokens, puis temperature) : deux corrections au plus.
+    // L'API d'OpenAI elle-meme accepte max_completion_tokens pour tous ses
+    // modeles (max_tokens y est ancien) : pas besoin d'attendre le refus.
+    if (!this.bodyFixes.has(key) && isOpenAIApi(conn.baseUrl)) this.bodyFixes.set(key, { maxCompletionTokens: true })
     for (let attempt = 0; ; attempt++) {
       const fix = this.bodyFixes.get(key)
       const sent = applyChatBodyFix(body, fix)

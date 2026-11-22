@@ -235,3 +235,15 @@ describe('parametres refuses par un modele', () => {
     expect(f.calls).toHaveLength(1)
   })
 })
+
+describe('API d OpenAI', () => {
+  it('max_completion_tokens d emblee, sans attendre de refus', async () => {
+    const f = fakeFetch(() => json({ choices: [{ message: { content: 'ok' } }] }))
+    const ai = new AIService(memoryStore(), f.fn)
+    ai.saveConnection({ name: 'OpenAI', providerId: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'k', model: 'gpt-5-mini' })
+    await ai.chat({ messages: [{ role: 'user', content: 'x' }], maxTokens: 700 })
+    const body = JSON.parse(String(f.calls[0].init.body))
+    expect(body.max_completion_tokens).toBe(700)
+    expect(body).not.toHaveProperty('max_tokens')
+  })
+})
