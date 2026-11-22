@@ -5,6 +5,8 @@
 // MCP de Savoire. La personne, connectee comme dans l'appli, choisit l'agent
 // que portera l'IA (ses droits, son nom) et les vaults ouverts, puis accepte
 // ou refuse. Le serveur rend l'adresse ou renvoyer le client.
+// Pas encore d'agent qui convienne : on en cree un ici, en choisissant ses
+// droits parmi quelques reglages simples (le detail reste dans Parametres).
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { serverUrl } from '@savoire/infrastructure-sync'
@@ -34,6 +36,21 @@ const BTN: React.CSSProperties = {
   padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent',
   color: 'var(--text)', font: 'inherit', cursor: 'pointer',
 }
+/** Option du choix d'agent : en creer un. */
+const NEW_AGENT = '__new'
+
+/** Reglages simples des droits d'un agent cree ici (modes valides : AGENT_ACTION_MODES). */
+const PRESETS = [
+  { id: 'ask', label: 'Lire, et écrire en me demandant', hint: 'Chaque changement attend votre accord dans Savoire (Agents > Activité).',
+    permissions: { read: 'direct', comment: 'direct', edit: 'ask', create: 'ask', organize: 'ask', delete: 'ask' } },
+  { id: 'direct', label: 'Lire et écrire directement', hint: 'Modifier, créer, ranger, ajouter des images. Mettre à la corbeille demande votre accord.',
+    permissions: { read: 'direct', comment: 'direct', edit: 'direct', create: 'direct', organize: 'direct', delete: 'ask' } },
+  { id: 'propose', label: 'Lire et proposer', hint: 'Les changements deviennent des propositions dans la Révision : rien ne change sans vous.',
+    permissions: { read: 'direct', comment: 'direct', edit: 'propose' } },
+  { id: 'read', label: 'Lire seulement', hint: 'Chercher et lire vos notes, rien d’autre.',
+    permissions: { read: 'direct' } },
+] as const
+
 const PRIMARY: React.CSSProperties = { ...BTN, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff', fontWeight: 600 }
 
 export function OAuthConsentPage() {
@@ -47,6 +64,10 @@ export function OAuthConsentPage() {
   const [all, setAll] = useState(true)
   const [vaultIds, setVaultIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [preset, setPreset] = useState<(typeof PRESETS)[number]['id']>('ask')
+  // Agent deja cree par un essai precedent (on ne le recree pas si l'accord echoue).
+  const [createdId, setCreatedId] = useState<string | null>(null)
 
   // Pas connecte : la connexion d'abord, puis retour ici.
   useEffect(() => {
@@ -63,17 +84,24 @@ export function OAuthConsentPage() {
         if (!r.ok) throw new Error(`Erreur ${r.status}`)
         return r.json() as Promise<RequestInfo>
       })
-      .then(setInfo, err => setError((err as Error).message))
+      .then(i => {
+        setInfo(i)
+        setNewName(i.clientName || 'Assistant')
+        // Aucun agent : on propose d'en creer un.
+        if (i.agents.length === 0) setAgentId(NEW_AGENT)
+      }, err => setError((err as Error).message))
   }, [token, request])
 
   const decide = async (approve: boolean) => {
     if (!token) return
     setBusy(true); setError(null)
     try {
+      let chosen = agentId
+      if (approve && agentId === NEW_AGENT) chosen = createdId ?? await createAgent()
       const res = await fetch(serverUrl(`/api/v1/oauth/requests/${encodeURIComponent(request)}/decide`), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approve, agentId: agentId || null, vaultIds: all ? null : vaultIds }),
+        body: JSON.stringify({ approve, agentId: (chosen === NEW_AGENT ? '' : chosen) || null, vaultIds: all ? null : vaultIds }),
       })
       const body = await res.json().catch(() => null) as { redirect?: string; detail?: string; errors?: Record<string, string[]> } | null
       if (!res.ok || !body?.redirect) {
@@ -85,6 +113,20 @@ export function OAuthConsentPage() {
       setError((err as Error).message)
       setBusy(false)
     }
+  }
+
+  const createAgent = async (): Promise<string> => {
+    const name = newName.trim()
+    if (!name) throw new Error('Donnez un nom à l’agent.')
+    const res = await fetch(serverUrl('/api/v1/agents'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, instructions: '', permissions: PRESETS.find(p => p.id === preset)!.permissions }),
+    })
+    const body = await res.json().catch(() => null) as { id?: string; detail?: string } | null
+    if (!res.ok || !body?.id) throw new Error(body?.detail ?? `Création de l’agent : erreur ${res.status}`)
+    setCreatedId(body.id)
+    return body.id
   }
 
   if (!request) return <div style={BOX}>Demande d’accès manquante.</div>
@@ -106,9 +148,27 @@ export function OAuthConsentPage() {
             <select data-testid="oauth-agent" style={INPUT} value={agentId} onChange={e => setAgentId(e.target.value)}>
               <option value="">Aucun : lecture seule</option>
               {info.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              <option value={NEW_AGENT}>+ Créer un agent…</option>
             </select>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>L’outil aura les droits de cet agent et signera de son nom (Paramètres → Agents).</span>
           </label>
+          {agentId === NEW_AGENT && (
+            <div data-testid="oauth-new-agent" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                Nom de l’agent
+                <input data-testid="oauth-new-agent-name" style={INPUT} value={newName} maxLength={80} disabled={!!createdId} onChange={e => setNewName(e.target.value)} />
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {PRESETS.map(p => (
+                  <label key={p.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <input type="radio" name="oauth-preset" value={p.id} checked={preset === p.id} disabled={!!createdId} onChange={() => setPreset(p.id)} style={{ marginTop: 2 }} />
+                    <span>{p.label}<br /><span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{p.hint}</span></span>
+                  </label>
+                ))}
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Ses droits se changent ensuite dans Paramètres → Agents.</span>
+            </div>
+          )}
           <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} /> Tous mes vaults
           </label>
