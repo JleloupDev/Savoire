@@ -134,13 +134,16 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
     void manager.openFile(meta?.path ?? path)
   }
 
-  async function send() {
-    const text = input.trim()
+  /** Sans texte : l'agent suit seulement ses instructions (bouton « Lancer »). */
+  const LAUNCH = 'Fais ta tâche, en suivant tes instructions.'
+
+  async function send(launch = false) {
+    const text = launch ? LAUNCH : input.trim()
     const client = refs.vaultAPI.current
     const session = refs.vaultSession.current
     const account = refs.activeAccount.current
     if (!text || !agent || !client || !session || !account || !vault) return
-    setInput('')
+    if (!launch) setInput('')
     setBusy(true)
     const index = turns.length
     setTurns(t => [...t, { input: text }])
@@ -226,7 +229,9 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
               placeholder={agent ? `Demander à ${agent.name}…` : ''}
               style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, minHeight: 54, resize: 'vertical', padding: 6, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', font: 'inherit', fontSize: 12 }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <button data-testid="assistant-send" style={PRIMARY} disabled={!agent || busy || !input.trim()} onClick={() => void send()}>Envoyer</button>
+              {input.trim() || !agent?.instructions?.trim()
+                ? <button data-testid="assistant-send" style={PRIMARY} disabled={!agent || busy || !input.trim()} onClick={() => void send()}>Envoyer</button>
+                : <button data-testid="assistant-launch" style={PRIMARY} disabled={busy} title="Lancer l’agent avec ses seules instructions" onClick={() => void send(true)}>▶ Lancer</button>}
               {busy && <button style={BTN} onClick={() => abort.current?.abort()}>Arrêter</button>}
               {!busy && turns.length > 0 && <button style={BTN} onClick={() => setTurns([])}>Nouvelle conversation</button>}
             </div>
