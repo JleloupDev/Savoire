@@ -113,8 +113,15 @@ jobs:
               echo "::error::Release sans cle de mise a jour, il manque : ${missing[*]}"
               exit 1
             fi
+            # La cle publique : le contenu du fichier .pub, une ligne en base64.
+            if ! printf '%s' "$SAVOIRE_UPDATER_PUBKEY" | grep -qE '^[A-Za-z0-9+/=]+$'; then
+              echo "::error::TAURI_UPDATER_PUBKEY n'est pas une cle publique : colle tout le contenu du fichier .key.pub, sur une ligne."
+              exit 1
+            fi
             # Version du tag (v1.2.3 -> 1.2.3) ; MSI n'accepte que des chiffres.
-            args=(--config "{\"version\":\"${GITHUB_REF_NAME#v}\",\"bundle\":{\"createUpdaterArtifacts\":true}}")
+            # La CLI verifie les signatures avec la cle publique de la config :
+            # elle doit y etre, pas seulement dans l'appli (src/updater.rs).
+            args=(--config "{\"version\":\"${GITHUB_REF_NAME#v}\",\"bundle\":{\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"${SAVOIRE_UPDATER_PUBKEY}\"}}}")
           fi
           pnpm run tauri:build "${args[@]}" 2>&1 | tee build.log
 
@@ -127,7 +134,9 @@ jobs:
         run: |
           for log in test.log build.log; do
             [ -f "$log" ] || continue
-            msg=$(tail -n 60 "$log" | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            # Sans couleurs ni la liste des fichiers du front : une annotation
+            # garde peu de texte, il faut qu'il reste l'erreur.
+            msg=$(sed -e 's/\x1b\[[0-9;]*m//g' "$log" | grep -v -e '^dist/' -e 'kB │ gzip' | tail -n 40 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=${log} (${{ matrix.name }})::${msg}"
           done
 
