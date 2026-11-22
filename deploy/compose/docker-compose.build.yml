@@ -11,11 +11,11 @@ services:
     build:
       context: ../..
       dockerfile: apps/indexer/Dockerfile
-  # Le store : depot voisin (STORE_SOURCE, par defaut a cote de Savoire).
+  # Le store : dossier store/ (pour l'instant dans ce depot).
   store:
     image: savoire-store:local
     build:
-      context: ${STORE_SOURCE:-../../../SavoireStore}
+      context: ../../store
       dockerfile: Dockerfile
   web:
     image: savoire-web:local

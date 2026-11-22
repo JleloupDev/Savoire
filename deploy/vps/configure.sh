@@ -121,9 +121,8 @@ if [ -z "$(get STORE_SIGNING_KEY)" ]; then
   set_var STORE_SIGNING_KEY "$(printf '%s\n' "$store_pem" | base64 -w0)"
   set_var STORE_PUBLIC_KEY "$(printf '%s\n' "$store_pem" | openssl pkey -pubout -outform DER 2>/dev/null | base64 -w0)"
 fi
-# Le store (docker-compose.store.yml) s'ajoute quand son image savoire-store
-# est publiee : sans elle, le demarrage echoue.
-generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml"
+# Le store (docker-compose.store.yml) : son image est publiee avec les autres.
+generate COMPOSE_FILE "docker-compose.yml:docker-compose.ops.yml:docker-compose.store.yml"
 [ "$ENV_FILE" != "$COMPOSE_DIR/.env" ] || mkdir -p "$COMPOSE_DIR/backups" "$COMPOSE_DIR/metrics"
 
 # Verifications simples.

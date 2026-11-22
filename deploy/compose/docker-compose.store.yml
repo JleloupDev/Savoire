@@ -1,6 +1,7 @@
-# Savoire Store (depot voisin SavoireStore) : catalogue des plugins, modeles
-# et modules, avec Savoire. Ajoute a COMPOSE_FILE dans .env :
+# Savoire Store (dossier store/ de ce depot, pour l'instant) : catalogue des
+# plugins, modeles et modules, avec Savoire. Ajoute a COMPOSE_FILE dans .env :
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ops.yml:docker-compose.store.yml
+# Le deploiement par la CI l'ajoute seul quand les cles du store sont la.
 #
 # Pas encore de domaine a lui : il repond sous l'adresse de Savoire,
 # https://SAVOIRE_DOMAIN/store/ (Caddy y envoie /store). L'application le
@@ -14,8 +15,9 @@
 # applications refuseraient tous les paquets. Sa cle publique
 # (STORE_PUBLIC_KEY) est donnee a l'application par l'API.
 #
-# Image : ${SAVOIRE_REGISTRY}/savoire-store, ou construite depuis les sources
-# (docker-compose.build.yml, STORE_SOURCE).
+# Image : ${SAVOIRE_REGISTRY}/savoire-store, a la meme version que Savoire
+# (images.yml la construit avec les autres), ou construite depuis les sources
+# (docker-compose.build.yml).
 services:
   # La base du store, dans le PostgreSQL de Savoire. Relance sans risque.
   store-db:
@@ -42,7 +44,7 @@ services:
 
   store:
     restart: unless-stopped
-    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-store:${STORE_VERSION:-latest}
+    image: ${SAVOIRE_REGISTRY:-ghcr.io/jleloupdev}/savoire-store:${SAVOIRE_VERSION:-latest}
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Store: Host=postgres;Port=5432;Database=savoire_store;Username=savoire_store;Password=${STORE_DB_PASSWORD:?};GSS Encryption Mode=Disable

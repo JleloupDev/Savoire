@@ -159,9 +159,8 @@ Rien à installer ni à configurer sur la machine : ni Nginx, ni certificat.
 ## Savoire Store
 
 Le store (plugins, modèles, modules) se déploie avec Savoire
-(`deploy/compose/docker-compose.store.yml`, à ajouter à `COMPOSE_FILE`).
-**Pas encore par défaut** : son image `savoire-store` n'est pas publiée (son
-dépôt n'est pas sur GitHub) ; sans elle, le démarrage échoue. Il répond
+(`deploy/compose/docker-compose.store.yml`, dans `COMPOSE_FILE`). Son code
+est pour l'instant dans ce dépôt (dossier `store/`). Il répond
 sous l'adresse de Savoire, `https://SAVOIRE_DOMAIN/store/`, tant qu'il n'a pas
 de domaine à lui. Ses comptes sont ceux de Savoire ; `ADMIN_EMAIL` relit les
 publications.
@@ -170,9 +169,10 @@ publications.
   publique (`STORE_PUBLIC_KEY`). Elles partent dans la copie hors machine avec
   le `.env`. **Ne jamais les changer** : les applications refuseraient tous
   les paquets.
-- Son image : `savoire-store` dans `SAVOIRE_REGISTRY`, ou construite depuis
-  les sources du dépôt voisin `SavoireStore` (`docker-compose.build.yml`,
-  `STORE_SOURCE`).
+- Son image : `savoire-store` dans `SAVOIRE_REGISTRY`, à la même version que
+  Savoire, ou construite depuis le dossier `store/` (`docker-compose.build.yml`).
+- Le déploiement par la CI l'ajoute à `COMPOSE_FILE` dès que ses clés sont
+  dans les secrets.
 - Sa base, `savoire_store`, est dans le même PostgreSQL : elle est sauvegardée
   avec les autres.
 

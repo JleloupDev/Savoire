@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Jean Leloup
 #
 # Images de Savoire (ADR-028, etape A) : tests du backend sur PostgreSQL, puis
-# les images publiees sur ghcr.io (api, web, indexer, login). Les memes images
+# les images publiees sur ghcr.io (api, web, indexer, login, store).
+# Le store (dossier store/) vit ici pour l'instant ; il aura son depot plus tard. Les memes images
 # servent partout : auto-hebergement, production (deploy/compose).
 #
 # Etiquettes : « latest » (master), « sha-<commit> », et pour une etiquette
@@ -51,13 +52,37 @@ jobs:
       - run: cargo build --locked --all-targets
       - run: cargo test --locked
 
+  store-tests:
+    name: Tests du store (PostgreSQL)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.10-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SAVOIRE_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Username=postgres;Password=postgres
+    defaults:
+      run:
+        working-directory: store
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: store/global.json
+      - run: dotnet test
+
   # Chaque image est construite deux fois, sur une machine native : x86 (amd64)
   # et ARM (arm64). Pas d'emulation : le backend Rust y prendrait des heures.
   # Chaque construction pousse son image sans etiquette ; le job « publish »
   # les reunit ensuite sous les etiquettes (latest, sha-..., v...).
   build:
     name: Image ${{ matrix.name }} (${{ matrix.arch }})
-    needs: backend-tests
+    needs: [backend-tests, store-tests]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -65,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [api, web, indexer, login]
+        name: [api, web, indexer, login, store]
         arch: [amd64, arm64]
         include:
           - { arch: amd64, runner: ubuntu-24.04 }
@@ -77,6 +102,9 @@ jobs:
           - name: login
             context: deploy/compose/zitadel-login
             dockerfile: deploy/compose/zitadel-login/Dockerfile
+          - name: store
+            context: store
+            dockerfile: store/Dockerfile
     steps:
       - uses: actions/checkout@v7
 
@@ -139,7 +167,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [api, web, indexer, login]
+        name: [api, web, indexer, login, store]
     steps:
       - uses: actions/download-artifact@v8
         with:

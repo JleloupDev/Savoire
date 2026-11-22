@@ -60,7 +60,7 @@ fi
 # ── Etape 2 : .env, sauvegarde, images, demarrage ──────────────────────────
 version="$1"
 env_in="$2"
-trap 'rm -f "$env_in" "$env_in.new"' EXIT
+trap 'rm -f "$env_in" "$env_in.new" "$env_in.tmp"' EXIT
 cd "$COMPOSE_DIR"
 
 val() { grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- || true; }
@@ -87,6 +87,23 @@ fi
 
 grep -vE '^SAVOIRE_VERSION=' "$env_in" > "$env_in.new" || true
 echo "SAVOIRE_VERSION=$version" >> "$env_in.new"
+
+# Le store : ajoute a COMPOSE_FILE des que ses cles sont dans les secrets.
+# Sans elles, Savoire part sans store (/store repond 502).
+compose_files="$(val COMPOSE_FILE "$env_in.new")"
+compose_files="${compose_files:-docker-compose.yml:docker-compose.ops.yml}"
+if [ -n "$(val STORE_DB_PASSWORD "$env_in.new")" ] && [ -n "$(val STORE_SIGNING_KEY "$env_in.new")" ] \
+   && [ -n "$(val STORE_PUBLIC_KEY "$env_in.new")" ]; then
+  case ":$compose_files:" in
+    *:docker-compose.store.yml:*) ;;
+    *) compose_files="$compose_files:docker-compose.store.yml" ;;
+  esac
+else
+  echo "Store : STORE_DB_PASSWORD, STORE_SIGNING_KEY ou STORE_PUBLIC_KEY manque dans les secrets GitHub, il ne demarre pas." >&2
+fi
+grep -vE '^COMPOSE_FILE=' "$env_in.new" > "$env_in.tmp" || true
+echo "COMPOSE_FILE=$compose_files" >> "$env_in.tmp"
+mv "$env_in.tmp" "$env_in.new"
 
 running=0
 [ -f .env ] && [ -n "$(docker compose ps -q api 2>/dev/null)" ] && running=1
