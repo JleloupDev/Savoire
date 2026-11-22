@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
+import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
@@ -365,6 +366,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).
         highlightsExtension(),
+        // Cartes de revision par-dessus la note (clic sur un passage surligne).
+        annotationsExtension(),
         suggestionModeExtension(),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
@@ -851,6 +854,17 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Remplace les passages surlignes par l'application. */
   setHighlights(ranges: readonly EditorHighlight[]): void {
     applyHighlights(this.view, ranges)
+  }
+
+  /** Hote des cartes de revision dans la note (null : plus de cartes). */
+  setAnnotationHost(host: AnnotationHost | null): void {
+    if (!host) closeAnnotations(this.view)
+    setAnnotationHost(this.view, host)
+  }
+
+  /** Ouvre un brouillon de commentaire ou de suggestion dans la note ; false si impossible. */
+  openAnnotationDraft(draft: AnnotationDraft): boolean {
+    return openAnnotationDraft(this.view, draft)
   }
 
   /** Le document ouvert dans cet editeur. */

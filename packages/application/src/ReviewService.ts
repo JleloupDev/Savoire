@@ -52,6 +52,18 @@ export class ReviewConflictError extends Error {}
 /** Taille maximale du payload d'une proposition (JSON), comme MAX_PROPOSAL_BYTES de plugin-api. */
 const MAX_PAYLOAD_BYTES = 256 * 1024
 
+/** Taille maximale de la cible d'un commentaire (JSON). */
+const MAX_TARGET_BYTES = 16 * 1024
+
+/** Copie JSON d'une valeur, au plus `max` octets. */
+function asJson(value: unknown, max: number, what: string): unknown {
+  let json: string
+  try { json = JSON.stringify(value) } catch { throw new Error(`${what} illisible (JSON attendu)`) }
+  if (json === undefined) throw new Error(`${what} vide`)
+  if (new TextEncoder().encode(json).length > max) throw new Error(`${what} trop grosse`)
+  return JSON.parse(json)
+}
+
 /** Longueur maximale d'un passage cite. */
 const MAX_QUOTE = 2000
 
@@ -79,6 +91,11 @@ export interface ReviewEntry {
    */
   proposalType?: string
   payload?: unknown
+  /**
+   * Ce que vise un commentaire sur un document de plugin (une cellule, une
+   * forme, un passage d'un texte) : JSON choisi par le plugin.
+   */
+  target?: unknown
   /** Statut d'un fil de commentaires (sur la racine seulement). */
   status?: ReviewStatus
   statusBy?: Actor
@@ -115,9 +132,25 @@ export class ReviewService {
       .map(root => ({ root, replies: all.filter(e => e.parentId === root.id) }))
   }
 
-  /** Ouvre un fil, sur la note entiere ou sur un passage. */
-  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor): ReviewEntry {
-    return this.add({ docId, kind: 'comment', text, author, status: 'open', ...(anchor ? { anchor } : {}) })
+  /** Le fil d'une entree (sa racine et ses reponses) ; undefined s'il n'existe pas. */
+  thread(id: string): ReviewThread | undefined {
+    const all = this.entries()
+    let root = all.find(e => e.id === id)
+    // Borne : une boucle de parents (donnees abimees) ne bloque pas.
+    for (let depth = 0; root?.parentId && depth < 32; depth++) { const parent = root.parentId; root = all.find(e => e.id === parent) }
+    if (root?.parentId) return undefined
+    if (!root) return undefined
+    const rootId = root.id
+    return { root, replies: all.filter(e => e.parentId === rootId).sort(byDate) }
+  }
+
+  /**
+   * Ouvre un fil, sur la note entiere ou sur un passage. `target` : ce que
+   * vise le commentaire dans un document de plugin (JSON).
+   */
+  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor, target?: unknown): ReviewEntry {
+    const aim = target === undefined ? undefined : asJson(target, MAX_TARGET_BYTES, 'cible')
+    return this.add({ docId, kind: 'comment', text, author, status: 'open', ...(anchor ? { anchor } : {}), ...(aim !== undefined ? { target: aim } : {}) })
   }
 
   /**
@@ -138,12 +171,9 @@ export class ReviewService {
    */
   propose(docId: string, type: string, payload: unknown, author: Actor, note = ''): ReviewEntry {
     if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(type)) throw new Error('type de proposition invalide')
-    let json: string
-    try { json = JSON.stringify(payload) } catch { throw new Error('proposition illisible (JSON attendu)') }
-    if (json === undefined) throw new Error('proposition vide')
-    if (new TextEncoder().encode(json).length > MAX_PAYLOAD_BYTES) throw new Error('proposition trop grosse')
+    const json = asJson(payload, MAX_PAYLOAD_BYTES, 'proposition')
     return this.add(
-      { docId, kind: 'proposal', text: note.trim() || 'Proposition', author, status: 'open', proposalType: type, payload: JSON.parse(json) },
+      { docId, kind: 'proposal', text: note.trim() || 'Proposition', author, status: 'open', proposalType: type, payload: json },
       { allowEmpty: true },
     )
   }

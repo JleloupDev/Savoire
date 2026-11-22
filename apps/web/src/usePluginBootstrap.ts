@@ -45,7 +45,8 @@ import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
 import { AssistantWidget } from './agents/AssistantWidget'
 import { moveWithLinks } from '@savoire/plugin-api'
-import { createReviewAPI, isSuggesting, setSuggesting, setSuggestionEditor } from './reviewProposals'
+import { createReviewAPI, isInlineReview, isSuggesting, setInlineReview, setSuggesting, setSuggestionEditor } from './reviewProposals'
+import { openInlineDraft, setInlineReviewEditor } from './inlineReview'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -221,6 +222,12 @@ export function usePluginBootstrap({
 
   // Always-current: notifies the inspector panel whenever an editor becomes active.
   // Reassigned each render so it always closes over fresh refs.
+  // Ouvrir le panneau Revision (lien des cartes de revision dans la note).
+  const reviewManagerRef = useRef<WorkspaceManagerImpl | null>(null)
+  const openReviewPanel = () => {
+    const m = reviewManagerRef.current
+    if (m && (m.getPaneState('right').collapsed || m.getActivePanelId() !== 'review')) m.toggleView('review')
+  }
   const onControllerReadyRef = useRef<(ctrl: EditorController | null) => void>(() => {})
   onControllerReadyRef.current = (ctrl: EditorController | null) => {
     // La revision surligne ses passages dans l'editeur actif ; en mode
@@ -235,6 +242,21 @@ export function usePluginBootstrap({
         return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
       },
       readOnly: () => !!editorAreaRefsHolder.current?.isReadOnly.current,
+    })
+    // Revision dans la note : passages surlignes, cartes au clic.
+    setInlineReviewEditor({
+      editor: ctrl,
+      docId: () => ctrl?.getDocId?.(),
+      session: () => vaultSessionRef.current,
+      actor: () => {
+        const account = editorAreaRefsHolder.current?.activeAccount.current
+        return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
+      },
+      canWrite: () => {
+        const refs = editorAreaRefsHolder.current
+        return !!refs && !refs.isReadOnly.current && refs.selectedVault.current?.role !== 'viewer'
+      },
+      openPanel: openReviewPanel,
     })
     if (!managerRef.current) return
     const activeEditorPlugins: Array<{ id: string; source: 'default' | 'extension' | 'frontmatter' }> =
@@ -254,6 +276,7 @@ export function usePluginBootstrap({
   }
 
   const onBeforeReady = useCallback(async (manager: WorkspaceManagerImpl) => {
+    reviewManagerRef.current = manager
     manager.setDisplayPreferences({ showFileExtensions, linkPreviewDelay, subscribe: subscribeDisplayPreferences })
     // Partager un module : la fenetre de partage de l'application.
     ;(manager as { shareModule?: (path: string) => void }).shareModule = requestModuleShare
@@ -372,6 +395,8 @@ export function usePluginBootstrap({
       // Revision : propositions de modification des plugins, mode suggestion.
       pluginApi.review = createReviewAPI({
         session: () => vaultSessionRef.current,
+        canWrite: () => !editorAreaRefs.isReadOnly.current && editorAreaRefs.selectedVault.current?.role !== 'viewer',
+        openPanel: openReviewPanel,
         editText: (documentId, edit) => noteEditorRef.current!.edit(documentId, edit),
         actor: () => {
           const account = editorAreaRefs.activeAccount.current
@@ -386,6 +411,11 @@ export function usePluginBootstrap({
         id: 'review:toggle-suggest',
         label: 'Mode suggestion (suivi des modifications)',
         run: () => setSuggesting(!isSuggesting()),
+      })
+      pluginApi.commands.register({
+        id: 'review:toggle-inline',
+        label: 'Annotations de révision dans la note',
+        run: () => setInlineReview(!isInlineReview()),
       })
       // Une note modifiee hors editeur (cellule d'une base) est reindexee tout de suite.
       noteEditorRef.current = new NoteTextEditor(() => vaultSessionRef.current, {
@@ -444,8 +474,10 @@ export function usePluginBootstrap({
         const session = vaultSessionRef.current
         const path = manager.getActiveDocument()?.path
         const docId = path ? session?.directory.getAll().find(d => d.path === path || d.path === `${path}.md`)?.id : undefined
+        // Annotations dans la note : le brouillon s'ouvre sur le passage, sans quitter la note.
+        if (sel && openInlineDraft(kind, sel.from, sel.to)) return
         startReviewDraft(kind, session, docId, sel?.from ?? 0, sel?.to ?? 0)
-        if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'review') manager.toggleView('review')
+        openReviewPanel()
       }
       // Dictee (dictation.ts) : la source se choisit dans Parametres → IA.
       pluginApi.commands.register({ id: 'editor:dictate', label: 'Dicter', editor: true, run: ctx => dictation.toggle(ctx.editorView) })

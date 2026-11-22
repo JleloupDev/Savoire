@@ -77,6 +77,10 @@ export interface EditorController {
   selectRange?(from: number, to: number): void
   /** Passages surlignes par l'application (revision). */
   setHighlights?(ranges: readonly import('./Highlights').EditorHighlight[]): void
+  /** Cartes de revision dans la note : l'hote les dessine (null : plus de cartes). */
+  setAnnotationHost?(host: import('./Annotations').AnnotationHost | null): void
+  /** Ouvre un brouillon (commenter, suggerer) dans la note ; false si impossible. */
+  openAnnotationDraft?(draft: import('./Annotations').AnnotationDraft): boolean
   /** Le document ouvert dans cet editeur. */
   getDocId?(): string | undefined
   /** Mode suggestion (suivi des modifications) : la frappe devient des propositions. Null : le couper. */

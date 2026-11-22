@@ -14,10 +14,17 @@
 //    appliquer quand on les accepte.
 //  - Tout vit dans la carte partagee « review » du vault : avec ou sans
 //    serveur, visible de tous les membres.
-import { TEXT_PROPOSAL, type ICRDT, type ProposalInfo, type ProposalTypeSpec, type ReviewAPI, type TextProposalPayload } from '@savoire/plugin-api'
-import { suggestionModeExtension } from '@savoire/editor-core'
+import {
+  TEXT_PROPOSAL, type ICRDT, type ProposalInfo, type ProposalTypeSpec, type ReviewAPI, type ReviewAnnotation,
+  type TextCommentTarget, type TextProposalPayload,
+} from '@savoire/plugin-api'
+import { reviewOverlayExtension, suggestionModeExtension, type EditorHighlight } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
-import { ReviewService, SuggestionModeStore, mergeHunks, type IVaultSyncSession, type ReviewEntry, type ReviewText, type UserActor } from '@savoire/application'
+import {
+  ReviewService, SuggestionModeStore, describeActor, mergeHunks,
+  type IVaultSyncSession, type ReviewEntry, type ReviewText, type ReviewThread, type UserActor,
+} from '@savoire/application'
+import { renderAnnotationCard, type AnnotationCardDeps } from './AnnotationCard'
 
 // ── Un service par session de vault ────────────────────────────────────────
 
@@ -114,6 +121,136 @@ export function attachSuggestionMode(session: IVaultSyncSession | undefined, use
   if (!store) { applySuggesting(false); return }
   applySuggesting(canWrite() && store.get())
   modeOff = store.onChange(on => applySuggesting(on && canWrite()))
+}
+
+// ── Annotations dans le document ───────────────────────────────────────────
+//
+// Choix de la personne, sur cet appareil : voir et traiter la revision dans le
+// document (cartes au clic sur les passages), ou seulement dans le panneau.
+// Actif par defaut.
+
+const INLINE_KEY = 'savoire.review.inline'
+
+function readInline(): boolean {
+  try { return globalThis.localStorage?.getItem(INLINE_KEY) !== 'off' } catch { return true }
+}
+
+let inline = readInline()
+const inlineListeners = new Set<(on: boolean) => void>()
+
+export function isInlineReview(): boolean { return inline }
+
+export function onInlineReviewChange(cb: (on: boolean) => void): () => void {
+  inlineListeners.add(cb)
+  return () => { inlineListeners.delete(cb) }
+}
+
+export function setInlineReview(on: boolean): void {
+  if (on === inline) return
+  inline = on
+  try { globalThis.localStorage?.setItem(INLINE_KEY, on ? 'on' : 'off') } catch { /* stockage indisponible : le choix vaut pour la session */ }
+  for (const cb of inlineListeners) cb(on)
+}
+
+/** Ce que dit une proposition de plugin (son type la decrit). */
+export function describeProposal(entry: ReviewEntry): string {
+  const spec = proposalType(entry.proposalType)
+  if (!spec) return `Proposition « ${entry.proposalType} » (son plugin n’est pas actif).`
+  try { return spec.describe(entry.payload) } catch { return 'Proposition illisible.' }
+}
+
+/**
+ * Accepte une suggestion de note ou une proposition de plugin. `hunks` :
+ * seulement ces blocs de lignes (le reste du passage est garde).
+ */
+export async function acceptEntry(session: IVaultSyncSession, root: ReviewEntry, me: UserActor, hunks?: number[]): Promise<void> {
+  if (root.kind === 'proposal') return acceptProposal(session, root, me, hunks)
+  const done = withReviewText(session, root.docId, text => reviewFor(session).accept(root.id, text, me, hunks))
+  if (!done) throw new Error('Note indisponible : ouvrez-la pour accepter la suggestion.')
+}
+
+/** Ce qu'il faut a la carte d'annotation pour agir au nom de la personne. */
+export function annotationCardDeps(
+  session: IVaultSyncSession,
+  actor: () => UserActor | undefined,
+  canWrite: () => boolean,
+  openPanel?: () => void,
+): AnnotationCardDeps {
+  const review = reviewFor(session)
+  const me = (): UserActor => {
+    const a = actor()
+    if (!a) throw new Error('Aucun compte connecté.')
+    return a
+  }
+  return {
+    review,
+    canWrite: () => canWrite() && !!actor(),
+    describeProposal,
+    accept: root => acceptEntry(session, root, me()),
+    reject: root => { review.setStatus(root.id, 'rejected', me()) },
+    reply: (root, text) => { review.reply(root.id, text, me()) },
+    resolve: (root, resolved) => { review.setStatus(root.id, resolved ? 'resolved' : 'open', me()) },
+    ...(openPanel ? { openPanel } : {}),
+  }
+}
+
+function toAnnotation({ root, replies }: ReviewThread): ReviewAnnotation {
+  const name = (e: ReviewEntry) => describeActor(e.author)
+  const isDefault = (root.kind === 'suggestion' && root.text === 'Suggestion') || (root.kind === 'proposal' && root.text === 'Proposition')
+  return {
+    id: root.id, docId: root.docId, kind: root.kind === 'edit' ? 'comment' : root.kind,
+    text: isDefault ? '' : root.text,
+    authorName: name(root), byAgent: root.author.kind === 'agent', createdAt: root.createdAt,
+    status: root.status ?? 'open',
+    ...(root.anchor ? { quote: root.anchor.quote } : {}),
+    ...(root.replacement !== undefined ? { replacement: root.replacement } : {}),
+    ...(root.proposalType ? { proposalType: root.proposalType, payload: root.payload } : {}),
+    ...(root.target !== undefined ? { target: root.target } : {}),
+    replies: replies.map(r => ({ id: r.id, text: r.text, authorName: name(r), byAgent: r.author.kind === 'agent', createdAt: r.createdAt })),
+  }
+}
+
+/** Suit la revision du vault ouvert, meme quand la session change. */
+function watchReview(session: () => IVaultSyncSession | undefined, cb: () => void): () => void {
+  let stop: (() => void) | null = null
+  let current: IVaultSyncSession | undefined
+  const attach = () => {
+    const s = session()
+    if (s === current) return
+    stop?.(); stop = null; current = s
+    if (s) stop = reviewFor(s).onChange(cb)
+  }
+  attach()
+  const timer = setInterval(attach, 1000)
+  return () => { clearInterval(timer); stop?.() }
+}
+
+const isTextTarget = (v: unknown): v is TextCommentTarget =>
+  !!v && typeof (v as TextCommentTarget).at === 'number' && typeof (v as TextCommentTarget).quote === 'string'
+
+/** Passages d'un texte de plugin : propositions de texte et commentaires TextCommentTarget ouverts. */
+export function pluginTextHighlights(threads: ReviewThread[], text: string): EditorHighlight[] {
+  const out: EditorHighlight[] = []
+  for (const { root } of threads) {
+    if ((root.status ?? 'open') !== 'open') continue
+    if (root.kind === 'proposal' && root.proposalType === TEXT_PROPOSAL) {
+      const p = root.payload as TextProposalPayload | null
+      if (!p || typeof p.before !== 'string' || typeof p.after !== 'string' || typeof p.at !== 'number') continue
+      const at = p.before === '' && p.context?.left
+        ? (() => { const i = locateText(text, p.context!.left, p.at - p.context!.left.length); return i < 0 ? -1 : i + p.context!.left.length })()
+        : locateText(text, p.before, p.at)
+      if (at < 0) continue
+      out.push({
+        from: at, to: at + p.before.length, id: root.id, className: 'review-mark review-mark-suggestion',
+        title: `Proposition de ${describeActor(root.author)}`, ...(p.after ? { insert: p.after } : {}),
+      })
+    } else if (root.kind === 'comment' && isTextTarget(root.target) && root.target.quote) {
+      const at = locateText(text, root.target.quote, root.target.at)
+      if (at < 0) continue
+      out.push({ from: at, to: at + root.target.quote.length, id: root.id, className: 'review-mark', title: `Commentaire : ${root.text.slice(0, 80)}` })
+    }
+  }
+  return out
 }
 
 // ── L'editeur de notes actif ───────────────────────────────────────────────
@@ -228,7 +365,27 @@ export function createReviewAPI(deps: {
   actor(): UserActor | undefined
   /** Modifier un document texte comme une frappe (VaultAPI.editText). */
   editText?(docId: string, edit: (current: string) => string): Promise<boolean>
+  /** La personne peut ecrire dans le vault (sinon : ni commenter, ni decider). */
+  canWrite?(): boolean
+  /** Ouvrir le panneau Revision (lien des cartes). */
+  openPanel?(): void
 }): ReviewAPI {
+  const canWrite = () => deps.canWrite?.() ?? true
+  /** La session, le compte et un fil existant ; refuse si la personne ne peut pas ecrire. */
+  const acting = (id?: string) => {
+    const session = deps.session()
+    const me = deps.actor()
+    if (!session || !me) throw new Error('Aucun vault ouvert.')
+    if (!canWrite()) throw new Error('Lecture seule : vous ne pouvez pas modifier la révision.')
+    const thread = id ? reviewFor(session).thread(id) : undefined
+    if (id && !thread) throw new Error(`fil introuvable : ${id}`)
+    return { session, me, review: reviewFor(session), root: thread?.root }
+  }
+  const cardFor = (ids: string[], container: HTMLElement, onDone?: () => void): () => void => {
+    const session = deps.session()
+    if (!session) return () => {}
+    return renderAnnotationCard(container, ids, annotationCardDeps(session, deps.actor, canWrite, deps.openPanel), onDone)
+  }
   if (deps.editText) {
     const spec = textProposalType(deps.editText)
     types.set(spec.type, spec)
@@ -257,21 +414,61 @@ export function createReviewAPI(deps: {
         .map(toInfo)
     },
     onChange(cb) {
-      let stop: (() => void) | null = null
-      let current: IVaultSyncSession | undefined
       // La session change avec le vault : on se reabonne a la volee.
-      const attach = () => {
-        const session = deps.session()
-        if (session === current) return
-        stop?.(); stop = null; current = session
-        if (session) stop = reviewFor(session).onChange(cb)
-      }
-      attach()
-      const timer = setInterval(attach, 1000)
-      return () => { clearInterval(timer); stop?.() }
+      return watchReview(deps.session, cb)
     },
     get suggesting() { return suggesting },
     onSuggestingChange: onSuggestingChange,
+    get inline() { return inline },
+    onInlineChange: onInlineReviewChange,
+    annotations(docId) {
+      const session = deps.session()
+      if (!session) return []
+      return reviewFor(session).threads(docId).filter(t => t.root.kind !== 'edit').map(toAnnotation)
+    },
+    async comment(docId, text, target) {
+      const { review, me } = acting()
+      return review.comment(docId, text, me, undefined, target).id
+    },
+    async reply(id, text) {
+      const { review, me } = acting(id)
+      review.reply(id, text, me)
+    },
+    async accept(id) {
+      const { session, me, root } = acting(id)
+      if (root!.kind !== 'suggestion' && root!.kind !== 'proposal') throw new Error('ce fil n\'est ni une suggestion ni une proposition')
+      await acceptEntry(session, root!, me)
+    },
+    async reject(id) {
+      const { review, me, root } = acting(id)
+      if (root!.kind !== 'suggestion' && root!.kind !== 'proposal') throw new Error('ce fil n\'est ni une suggestion ni une proposition')
+      if ((root!.status ?? 'open') !== 'open') throw new Error('deja traite')
+      review.setStatus(root!.id, 'rejected', me)
+    },
+    async resolve(id, resolved = true) {
+      const { review, me, root } = acting(id)
+      if (root!.kind !== 'comment') throw new Error('seul un commentaire se resout')
+      review.setStatus(root!.id, resolved ? 'resolved' : 'open', me)
+    },
+    renderAnnotation(ids, container, options) {
+      return cardFor(ids, container, options?.onDone)
+    },
+    inlineAnnotations(docId) {
+      return reviewOverlayExtension(
+        { render: (ids, dom, close) => (inline ? cardFor(ids, dom, close) : () => {}) },
+        {
+          ranges(text) {
+            const session = deps.session()
+            return inline && session ? pluginTextHighlights(reviewFor(session).threads(docId), text) : []
+          },
+          subscribe(onChange) {
+            const offReview = watchReview(deps.session, onChange)
+            const offInline = onInlineReviewChange(onChange)
+            return () => { offReview(); offInline() }
+          },
+        },
+      )
+    },
     textSuggestions(docId) {
       return suggestionModeExtension(() => suggesting ? {
         propose(change, read) {

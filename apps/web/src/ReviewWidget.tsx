@@ -22,21 +22,20 @@ import {
 import { openCompare } from './CompareView'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import {
-  acceptProposal, isSuggesting, onProposalTypesChange, onProposeError, onSuggestingChange, proposalType,
-  reviewFor, setSuggesting, textOfProposal, withReviewText,
+  acceptEntry, acceptProposal, describeProposal, isInlineReview, isSuggesting, onInlineReviewChange, onProposalTypesChange,
+  onProposeError, onSuggestingChange, proposalType, reviewFor, setInlineReview, setSuggesting, textOfProposal, withReviewText,
 } from './reviewProposals'
+import { showReviewHighlights } from './inlineReview'
 
 export { withReviewText } from './reviewProposals'
 
 // ── Editeur actif : selection, passages surlignes ─────────────────────────
 
 let activeEditor: EditorController | null = null
-const editorListeners = new Set<() => void>()
 
 /** L'editeur actif (appele quand un editeur prend la main). */
 export function setReviewEditor(ctrl: EditorController | null): void {
   activeEditor = ctrl
-  for (const cb of editorListeners) cb()
 }
 
 // ── Brouillons demandes depuis l'editeur ──────────────────────────────────
@@ -122,30 +121,11 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
   const docId = path ? client?.resolveDocumentId(path) : undefined
 
-  // Passages vises par les fils ouverts : surlignes dans l'editeur.
-  const [editorTick, setEditorTick] = useState(0)
-  useEffect(() => {
-    const cb = () => setEditorTick(t => t + 1)
-    editorListeners.add(cb)
-    return () => { editorListeners.delete(cb) }
-  }, [])
-  useEffect(() => {
-    if (!review || !session || !docId || !activeEditor?.setHighlights) return
-    const ranges = withReviewText(session, docId, text => review.threads(docId)
-      .filter(t => t.root.anchor && (t.root.status ?? 'open') === 'open')
-      .flatMap(t => {
-        const at = ReviewService.locate(t.root.anchor!, text)
-        const isSuggestion = t.root.kind === 'suggestion'
-        // Une suggestion d'ajout n'a pas de texte remplace : plage vide, texte propose seul.
-        return at && (at.to > at.from || (isSuggestion && t.root.replacement)) ? [{
-          from: at.from, to: at.to, id: t.root.id,
-          className: isSuggestion ? 'review-mark review-mark-suggestion' : 'review-mark',
-          title: isSuggestion ? `Suggestion de ${describeActor(t.root.author)} (panneau Révision)` : `Commentaire : ${t.root.text.slice(0, 80)}`,
-          ...(isSuggestion && t.root.replacement ? { insert: t.root.replacement } : {}),
-        }] : []
-      })) ?? []
-    activeEditor.setHighlights(ranges)
-  }, [review, session, docId, tick, editorTick])
+  // Panneau ouvert : les passages vises sont surlignes dans la note (meme
+  // sans annotations dans la note, voir inlineReview).
+  useEffect(() => showReviewHighlights(), [])
+  const [inline, setInline] = useState(isInlineReview)
+  useEffect(() => onInlineReviewChange(setInline), [])
   const account = refs.activeAccount.current
   const canWrite = !refs.isReadOnly.current && refs.selectedVault.current?.role !== 'viewer'
 
@@ -192,15 +172,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
   /** Accepte une suggestion ou une proposition ; `hunks` : seulement ces blocs de lignes. */
   function accept(root: ReviewEntry, hunks?: number[]) {
-    if (root.kind === 'proposal') {
-      setError(null)
-      void acceptProposal(session!, root, me, hunks).catch(err => setError(err instanceof Error ? err.message : String(err)))
-      return
-    }
-    act(() => {
-      const done = withReviewText(session!, docId!, text => review!.accept(root.id, text, me, hunks))
-      if (!done) throw new Error('Note indisponible : ouvrez-la pour accepter la suggestion.')
-    })
+    setError(null)
+    void acceptEntry(session!, root, me, hunks).catch(err => setError(err instanceof Error ? err.message : String(err)))
   }
 
   /**
@@ -234,8 +207,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     for (const t of open.reverse()) {
       try {
         if (decision === 'reject') review!.setStatus(t.root.id, 'rejected', me)
-        else if (t.root.kind === 'proposal') await acceptProposal(session!, t.root, me)
-        else withReviewText(session!, docId!, text => review!.accept(t.root.id, text, me))
+        else await acceptEntry(session!, t.root, me)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       }
@@ -264,6 +236,16 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             <b>Mode suggestion</b>
             <span style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)' }}>
               {suggestMode ? 'Vos modifications deviennent des propositions à accepter.' : 'Vous modifiez directement.'}
+            </span>
+          </span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 100%', cursor: 'pointer', fontSize: 12 }}>
+          <input type="checkbox" data-testid="review-inline-mode" checked={inline}
+            onChange={e => setInlineReview(e.target.checked)} />
+          <span>
+            <b>Annotations dans la note</b>
+            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)' }}>
+              {inline ? 'Un clic sur un passage surligné ouvre son fil : répondre, accepter, refuser.' : 'Les fils ne se traitent qu’ici.'}
             </span>
           </span>
         </label>
@@ -505,9 +487,7 @@ function ProposalBody({ entry }: { entry: ReviewEntry }) {
     try { cleanup = spec.render(entry.payload, el) } catch (err) { el.textContent = `Aperçu impossible : ${String(err)}` }
     return () => { if (typeof cleanup === 'function') cleanup() }
   }, [spec, entry.payload])
-  let description: string
-  try { description = spec ? spec.describe(entry.payload) : `Proposition « ${entry.proposalType} » (son plugin n’est pas actif).` }
-  catch { description = 'Proposition illisible.' }
+  const description = describeProposal(entry)
   return (
     <div data-testid="review-proposal" data-type={entry.proposalType} style={{ marginTop: 4, fontSize: 12, padding: '3px 8px', borderLeft: '3px solid rgba(34,197,94,.6)', background: 'rgba(34,197,94,.07)', borderRadius: 3 }}>
       <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{spec?.label ?? 'Proposition'}</div>

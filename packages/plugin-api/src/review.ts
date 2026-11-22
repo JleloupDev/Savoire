@@ -16,6 +16,71 @@
 // nouvelle version de la scene, un document LaTeX propose une modification
 // de son texte.
 
+// Annotations dans le document : la personne peut travailler la revision sans
+// quitter ce qu'elle lit. Les commentaires, suggestions et propositions se
+// montrent par-dessus le document, a cote de ce qu'ils visent, et s'y
+// traitent (repondre, accepter, refuser, resoudre). C'est un choix de la
+// personne (inline, onInlineChange) ; le panneau Revision reste la vue
+// d'ensemble. Tout editeur peut l'offrir :
+//  - lister les annotations de son document (annotations) et les placer ou
+//    il veut : `quote` pour un texte, `target` (choisi par le plugin a la
+//    creation du commentaire, ou le payload d'une proposition) pour le reste ;
+//  - y dessiner la carte standard de la revision (renderAnnotation), ou sa
+//    propre interface avec reply / accept / reject / resolve ;
+//  - un editeur de texte CodeMirror n'a qu'une extension a poser
+//    (inlineAnnotations) : passages surlignes, texte propose, cartes au clic.
+
+/** Une reponse dans un fil. */
+export interface ReviewReply {
+  id: string
+  text: string
+  authorName: string
+  /** Ecrite par un agent (IA) au nom d'un membre. */
+  byAgent: boolean
+  createdAt: string
+}
+
+/**
+ * Une annotation : un fil de la revision sur un document. 'comment' : un
+ * commentaire ; 'suggestion' : une modification proposee du texte d'une
+ * note ; 'proposal' : une proposition d'un plugin (voir ProposalTypeSpec).
+ */
+export interface ReviewAnnotation {
+  id: string
+  docId: string
+  kind: 'comment' | 'suggestion' | 'proposal'
+  /** Le commentaire, ou l'explication d'une proposition ('' : aucune). */
+  text: string
+  authorName: string
+  byAgent: boolean
+  createdAt: string
+  status: 'open' | 'resolved' | 'rejected' | 'accepted'
+  /** Passage vise (texte d'une note). */
+  quote?: string
+  /** Suggestion : le texte qui remplacerait le passage ('' : le supprimer). */
+  replacement?: string
+  /** Proposition : son type et son contenu. */
+  proposalType?: string
+  payload?: unknown
+  /** Ce que vise un commentaire, choisi par le plugin (comment) : JSON. */
+  target?: unknown
+  replies: ReviewReply[]
+}
+
+/** Commentaire sur un passage d'un texte de plugin (cible lue par inlineAnnotations). */
+export interface TextCommentTarget {
+  /** Position du passage quand on l'a commente. */
+  at: number
+  /** Le passage ; retrouve le plus pres de `at`. */
+  quote: string
+}
+
+/** Options de la carte standard (renderAnnotation). */
+export interface AnnotationCardOptions {
+  /** Appele quand le fil est traite (accepte, refuse, resolu) : fermer la carte. */
+  onDone?(): void
+}
+
 /** Un type de proposition, declare par le plugin qui sait l'appliquer. */
 export interface ProposalTypeSpec {
   /** Identifiant unique, prefixe par le plugin : « base.cell », « excalidraw.scene ». */
@@ -76,6 +141,41 @@ export interface ReviewAPI {
    */
   textSuggestions?(docId: string): unknown
   onSuggestingChange(cb: (suggesting: boolean) => void): () => void
+
+  // ── Annotations dans le document (voir plus haut) ──
+
+  /** La personne veut voir et traiter la revision dans le document. */
+  readonly inline: boolean
+  onInlineChange(cb: (inline: boolean) => void): () => void
+  /** Fils d'un document : commentaires, suggestions, propositions, avec leurs reponses. */
+  annotations(docId: string): ReviewAnnotation[]
+  /**
+   * Commente le document. `target` : ce que vise le commentaire, en JSON
+   * (une cellule, une forme, TextCommentTarget pour un texte) ; absent : le
+   * document entier. Rend l'identifiant du fil.
+   */
+  comment(docId: string, text: string, target?: unknown): Promise<string>
+  /** Repond dans un fil. */
+  reply(id: string, text: string): Promise<void>
+  /** Accepte une suggestion ou une proposition : le document change. Rejette si le passage a change. */
+  accept(id: string): Promise<void>
+  /** Refuse une suggestion ou une proposition. */
+  reject(id: string): Promise<void>
+  /** Resout un commentaire (false : le rouvre). */
+  resolve(id: string, resolved?: boolean): Promise<void>
+  /**
+   * Dessine la carte standard d'un ou plusieurs fils dans `container` (elle
+   * suit les changements). Rend la fonction qui la retire.
+   */
+  renderAnnotation?(ids: string[], container: HTMLElement, options?: AnnotationCardOptions): () => void
+  /**
+   * Pour un editeur de texte CodeMirror d'un plugin : une extension a
+   * installer. Quand la personne le veut (inline), les propositions de texte
+   * (« savoire.text ») et les commentaires TextCommentTarget s'affichent dans
+   * le texte et s'ouvrent d'un clic dans la carte standard. Type opaque, comme
+   * textSuggestions.
+   */
+  inlineAnnotations?(docId: string): unknown
 }
 
 /** Type de proposition des textes des plugins (voir textSuggestions). */

@@ -32,6 +32,7 @@ class ProposedInsert extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement('span')
     span.className = 'review-insert'
+    if (this.id) span.classList.add('review-clickable')
     span.textContent = this.text
     if (this.id) span.dataset.highlightId = this.id
     if (this.title) span.title = this.title
@@ -48,12 +49,13 @@ function build(ranges: readonly EditorHighlight[], length: number): DecorationSe
   const marks = clamped
     .filter(r => r.to > r.from)
     .map(r => Decoration.mark({
-      class: r.className,
+      class: r.id ? `${r.className} review-clickable` : r.className,
+      highlightId: r.id,
       attributes: { ...(r.title ? { title: r.title } : {}), ...(r.id ? { 'data-highlight-id': r.id } : {}) },
     }).range(r.from, r.to))
   const inserts = clamped
     .filter(r => r.insert)
-    .map(r => Decoration.widget({ widget: new ProposedInsert(r.insert!, r.id, r.title), side: 1 }).range(r.to))
+    .map(r => Decoration.widget({ widget: new ProposedInsert(r.insert!, r.id, r.title), side: 1, highlightId: r.id }).range(r.to))
   return Decoration.set([...marks, ...inserts], true)
 }
 
@@ -78,6 +80,22 @@ export function highlightedRanges(state: EditorState): { from: number; to: numbe
   const out: { from: number; to: number }[] = []
   deco.between(0, state.doc.length, (from, to) => { out.push({ from, to }) })
   return out
+}
+
+/**
+ * Identifiants des passages surlignes a la position `pos` (bornes comprises :
+ * un texte propose s'affiche juste apres son passage). Du plus court au plus
+ * long : le passage le plus precis d'abord.
+ */
+export function highlightIdsAt(state: EditorState, pos: number): string[] {
+  const deco = state.field(field, false)
+  if (!deco) return []
+  const found: { id: string; size: number }[] = []
+  deco.between(pos, pos, (from, to, value) => {
+    const id = (value.spec as { highlightId?: string }).highlightId
+    if (id && !found.some(f => f.id === id)) found.push({ id, size: to - from })
+  })
+  return found.sort((a, b) => a.size - b.size).map(f => f.id)
 }
 
 export function highlightsExtension(): Extension {

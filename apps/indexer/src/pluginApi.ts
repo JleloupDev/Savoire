@@ -137,6 +137,15 @@ function reviewApi(): ReviewAPI {
     onChange: () => () => {},
     suggesting: false,
     onSuggestingChange: () => () => {},
+    // Pas de personne devant un document ici : pas d'annotations a afficher.
+    inline: false,
+    onInlineChange: () => () => {},
+    annotations: () => [],
+    comment: async () => { throw new Error('Commenter n’est pas disponible sur le pair indexeur.') },
+    reply: async () => { throw new Error('Répondre n’est pas disponible sur le pair indexeur.') },
+    accept: async () => { throw new Error('Accepter n’est pas disponible sur le pair indexeur.') },
+    reject: async () => { throw new Error('Refuser n’est pas disponible sur le pair indexeur.') },
+    resolve: async () => { throw new Error('Résoudre n’est pas disponible sur le pair indexeur.') },
   }
 }
 
