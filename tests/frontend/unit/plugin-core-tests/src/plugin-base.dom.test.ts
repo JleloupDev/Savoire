@@ -437,9 +437,15 @@ describe('plugin-base — revision dans la base', () => {
     const rendered: string[][] = []
     const drafts: import('@savoire/plugin-api').AnnotationDraftSpec[] = []
     let inline = true
+    let suggesting = false
+    const decisions: string[] = []
+    const proposed: unknown[] = []
     const review = {
       get inline() { return inline },
-      get suggesting() { return false },
+      get suggesting() { return suggesting },
+      accept: async (id: string) => { decisions.push(`ok ${id}`) },
+      reject: async (id: string) => { decisions.push(`non ${id}`) },
+      propose: async (_doc: string, _type: string, payload: unknown) => { proposed.push(payload); return 'x' },
       registerProposalType: () => () => {},
       onInlineChange: () => () => {},
       onChange: (cb: () => void) => { changes.add(cb); return () => { changes.delete(cb) } },
@@ -447,7 +453,7 @@ describe('plugin-base — revision dans la base', () => {
       renderAnnotation: (ids: string[], el: HTMLElement) => { rendered.push(ids); el.textContent = `fils ${ids.join(',')}`; return () => {} },
       renderDraft: (el: HTMLElement, d: import('@savoire/plugin-api').AnnotationDraftSpec) => { drafts.push(d); el.textContent = 'brouillon'; return () => {} },
     }
-    return { review, rendered, drafts, off() { inline = false; for (const cb of changes) cb() } }
+    return { review, rendered, drafts, decisions, proposed, suggest() { suggesting = true }, off() { inline = false; for (const cb of changes) cb() } }
   }
   const open = (over: Partial<import('@savoire/plugin-api').ReviewAnnotation>) => ({
     docId: 'base1', text: '', authorName: 'Alice', byAgent: false, createdAt: '', status: 'open' as const, replies: [], ...over,
@@ -467,7 +473,10 @@ describe('plugin-base — revision dans la base', () => {
     expect(commented.classList.contains('base-td-annotated')).toBe(true)
     const proposed = cell(el, 'Beta', 'priority')
     expect(proposed.classList.contains('base-td-proposed')).toBe(true)
-    expect(proposed.querySelector('[data-testid="base-cell-annotation"]')!.getAttribute('title')).toBe('Valeur proposée : 3')
+    // La valeur proposee se lit dans la cellule, l'ancienne barree ; une seule proposition : pas de marque.
+    expect(proposed.querySelector('.base-td-before')!.textContent).toBe('1')
+    expect(proposed.querySelector('[data-testid="base-cell-proposal"]')!.textContent).toBe('3')
+    expect(proposed.querySelector('[data-testid="base-cell-annotation"]')).toBeNull()
     // Un fil resolu ne marque plus sa cellule.
     expect(cell(el, 'Beta', 'status').querySelector('[data-testid="base-cell-annotation"]')).toBeNull()
 
@@ -480,8 +489,34 @@ describe('plugin-base — revision dans la base', () => {
     cell(el, 'Beta', 'status').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     expect(fake.drafts[0]).toMatchObject({ docId: 'base1', kind: 'comment', target: { cell: { row: 'n2', key: 'status' }, quote: 'Beta · status' } })
 
+    // Clic sur la valeur proposee : son fil ; accepter ou refuser sur place.
+    click(proposed.querySelector('[data-testid="base-cell-proposal"]'))
+    expect(fake.rendered[1]).toEqual(['p1'])
+    click(cell(el, 'Beta', 'priority').querySelector('[data-testid="base-cell-accept"]'))
+    click(cell(el, 'Beta', 'priority').querySelector('[data-testid="base-cell-reject"]'))
+    await tick()
+    expect(fake.decisions).toEqual(['ok p1', 'non p1'])
+
     fake.off()
     expect(el.querySelector('[data-testid="base-cell-annotation"]')).toBeNull()
+    expect(el.querySelector('[data-testid="base-cell-proposal"]')).toBeNull()
     expect(card.hidden).toBe(true)
+  })
+
+  it('mode suggestion : renommer une ligne propose le nouveau nom', async () => {
+    const w = world(NOTES)
+    const a = w.member(0)
+    const fake = fakeReview([])
+    fake.suggest()
+    const { el } = await mount(w, 0, { ...a.api, review: fake.review } as unknown as PluginAPI)
+    await tick()
+    const title = cell(el, 'Alpha', '@title')
+    title.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    const input = title.querySelector('input') as HTMLInputElement
+    input.value = 'Alpha bis'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await tick()
+    expect(fake.proposed).toEqual([{ row: { kind: 'page', docId: 'n1', path: expect.any(String) }, title: 'Alpha', key: '@title', before: 'Alpha', after: 'Alpha bis' }])
+    expect(w.notes.find(n => n.id === 'n1')!.path).not.toContain('Alpha bis')
   })
 })

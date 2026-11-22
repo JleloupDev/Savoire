@@ -23,6 +23,8 @@ export interface CellAnnotation {
   comments: number
   /** Valeurs proposees, de la plus ancienne a la plus recente. */
   proposals: (PropertyValue | null)[]
+  /** Leurs fils, dans le meme ordre (accepter ou refuser depuis la cellule). */
+  proposalIds: string[]
 }
 
 const cellKey = (row: string, key: string) => `${row}\u0000${key}`
@@ -41,7 +43,7 @@ export class CellAnnotations {
     const at = (row: string, key: string) => {
       const k = cellKey(row, key)
       let a = next.get(k)
-      if (!a) { a = { ids: [], comments: 0, proposals: [] }; next.set(k, a) }
+      if (!a) { a = { ids: [], comments: 0, proposals: [], proposalIds: [] }; next.set(k, a) }
       return a
     }
     for (const a of annotations) {
@@ -57,6 +59,7 @@ export class CellAnnotations {
         const cell = at(row, p.key)
         cell.ids.push(a.id)
         cell.proposals.push(p.after ?? null)
+        cell.proposalIds.push(a.id)
       }
     }
     this.byCell = next

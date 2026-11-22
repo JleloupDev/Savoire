@@ -203,6 +203,15 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const rename = (row: QueryRow, title: string) => {
     if (readOnly || title === row.title) return
+    // Mode suggestion : le nouveau nom est propose, comme une cellule.
+    if (api?.review?.suggesting && baseId) {
+      const proposal: CellProposal = {
+        row: row.path === '' ? { kind: 'light', baseId, rowId: row.id } : { kind: 'page', docId: row.id, path: row.path },
+        title: row.title || row.id, key: TITLE_COLUMN, before: row.title ?? null, after: title,
+      }
+      void api.review.propose(baseId, CELL_PROPOSAL, proposal).catch(report)
+      return
+    }
     const job = row.path === ''
       ? lightRows.setCell(row.id, BASE_ROW_TITLE, title)
       : vault ? renamePageRow(vault, row.id, row.path, title) : Promise.reject(new Error('Aucun vault.'))
@@ -307,6 +316,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     annotation: (row, key) => notes.of(row.id, key),
     annotationSig: row => notes.rowSig(row.id),
     openAnnotations,
+    decide: (id, accept) => {
+      if (!review) return
+      closeCard()
+      void (accept ? review.accept(id) : review.reject(id)).catch(report)
+    },
     ...(review?.renderDraft && baseId ? { commentCell } : {}),
   }) : null
 

@@ -54,7 +54,16 @@ const CSS = `
 .base-td-annotated { background:rgba(234,179,8,0.10); }
 .base-td-proposed { background:rgba(34,197,94,0.10); }
 .base-td-note { margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:2px; border:none; background:transparent; cursor:pointer; font-size:12px; padding:0 2px; color:var(--text-muted,#a6adc8); }
-.base-td-note-proposal { color:#16a34a; }
+.base-td-before { text-decoration:line-through; color:var(--text-muted,#a6adc8); opacity:0.75; min-width:0; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; }
+.base-td-before * { text-decoration:line-through; }
+.base-td-after { color:#15803d; font-weight:500; cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; display:inline-flex; align-items:center; gap:4px; }
+.base-td-empty { color:var(--text-faint,#6c7086); font-weight:400; }
+.base-td-decision { margin-left:auto; flex:0 0 auto; display:inline-flex; gap:2px; }
+.base-td-decide { border:1px solid var(--border,#313244); background:var(--bg,transparent); color:var(--text-muted,#a6adc8); border-radius:4px; cursor:pointer; font-size:11px; line-height:1; padding:2px 4px; }
+.base-td-decide:hover { color:var(--red,#dc2626); border-color:currentColor; }
+.base-td-accept { color:#15803d; }
+.base-td-decision + .base-td-note { margin-left:0; }
+.base-td-accept:hover { color:#fff; background:#16a34a; border-color:#16a34a; }
 .base-td-note-count { font-size:10px; }
 .base-annotation { position:absolute; z-index:35; }
 .base-annotation[hidden] { display:none; }
@@ -89,6 +98,7 @@ const CSS = `
 .base-title { overflow:hidden; text-overflow:ellipsis; }
 .base-title-page { color:var(--text,#cdd6f4); text-decoration:none; }
 .base-title-page:hover { text-decoration:underline; }
+.base-title.base-td-before, .base-title.base-td-before:hover { text-decoration:line-through; color:var(--text-muted,#a6adc8); }
 .base-row-action { border:none; background:transparent; color:var(--text-faint,#6c7086); cursor:pointer; visibility:hidden; padding:0 2px; }
 .base-tr:hover .base-row-action { visibility:visible; }
 .base-editor { width:100%; background:var(--bg-base,#1e1e2e); color:var(--text,#cdd6f4); border:1px solid var(--accent,#7c3aed); border-radius:3px; font:inherit; padding:2px 4px; }

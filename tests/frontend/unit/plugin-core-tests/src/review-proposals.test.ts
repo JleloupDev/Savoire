@@ -96,4 +96,16 @@ describe('proposition de cellule de base', () => {
     await expect(cellProposalType(api).apply('base1', proposal)).rejects.toThrow(/a changé/)
     expect(note.text).toContain('statut: Bloque')
   })
+
+  it('un nouveau nom de ligne-page renomme sa note ; refuse si elle a bouge', async () => {
+    const { api } = vaultWith('')
+    const moveFiles = vi.fn(async () => {})
+    Object.assign(api.vault, { resolveDocumentId: (p: string) => p === 'Taches/Tache.md' ? 'n1' : undefined, renameFile: async () => {}, moveFiles })
+    const rename: CellProposal = { row: { kind: 'page', docId: 'n1', path: 'Taches/Tache.md' }, title: 'Tache', key: '@title', before: 'Tache', after: 'Tache urgente' }
+    const spec = cellProposalType(api)
+    expect(spec.describe(rename)).toBe('Tache · Nom : Tache → Tache urgente')
+    await spec.apply('base1', rename)
+    expect(moveFiles).toHaveBeenCalledWith([{ from: 'Taches/Tache.md', to: 'Taches/Tache urgente.md' }])
+    await expect(spec.apply('base1', { ...rename, row: { kind: 'page', docId: 'n1', path: 'Ailleurs.md' } })).rejects.toThrow(/renommée ou déplacée/)
+  })
 })

@@ -63,6 +63,8 @@ export interface TableHost {
   openAnnotations?(ids: string[], anchor: HTMLElement): void
   /** Commenter une cellule (clic droit) ; absent : pas de commentaire. */
   commentCell?(row: QueryRow, key: string, anchor: HTMLElement): void
+  /** Accepter ou refuser une valeur proposee, depuis la cellule ; absent : pas de boutons. */
+  decide?(id: string, accept: boolean): void
 }
 
 export class BaseTable {
@@ -338,14 +340,20 @@ export class BaseTable {
           }
         }
       }
-      this.markAnnotations(td, row, col.key)
+      this.markAnnotations(td, row, col)
       tr.append(td)
     }
     return tr
   }
 
-  /** Revision : marque de la cellule (clic : ses fils) ; clic droit : la commenter. */
-  private markAnnotations(td: HTMLElement, row: QueryRow, key: string): void {
+  /**
+   * Revision : une valeur proposee se lit dans la cellule (l'ancienne barree,
+   * la nouvelle a cote) et s'accepte ou se refuse sur place ; un commentaire
+   * met une marque. Clic sur la proposition ou la marque : le fil ; clic
+   * droit : commenter la cellule.
+   */
+  private markAnnotations(td: HTMLElement, row: QueryRow, col: TableColumn): void {
+    const key = col.key
     if (this.host.commentCell) {
       td.addEventListener('contextmenu', e => {
         e.preventDefault()
@@ -354,18 +362,62 @@ export class BaseTable {
     }
     const a = this.host.annotation?.(row, key)
     if (!a || a.ids.length === 0) return
-    td.classList.add(a.proposals.length ? 'base-td-proposed' : 'base-td-annotated')
+    const quiet = (node: HTMLElement) => {
+      node.addEventListener('mousedown', e => e.stopPropagation())
+      node.addEventListener('dblclick', e => e.stopPropagation())
+    }
+    const open = (node: HTMLElement) => {
+      quiet(node)
+      node.addEventListener('click', e => { e.stopPropagation(); this.host.openAnnotations?.(a.ids, td) })
+    }
+    if (a.proposals.length) {
+      td.classList.add('base-td-proposed')
+      const value = a.proposals[a.proposals.length - 1]
+      const id = a.proposalIds[a.proposalIds.length - 1]
+      // L'ancienne valeur, barree : le nom de la ligne, ou tout le contenu de la cellule.
+      const title = key === TITLE_COLUMN ? td.querySelector<HTMLElement>('.base-title') : null
+      let before: HTMLElement
+      if (title) { title.classList.add('base-td-before'); before = title }
+      else {
+        before = h('span', { class: 'base-td-before' })
+        before.append(...Array.from(td.childNodes))
+        td.append(before)
+      }
+      const shown = value === null || value === '' || (Array.isArray(value) && value.length === 0)
+        ? h('i', { class: 'base-td-empty' }, 'vide')
+        : key === TITLE_COLUMN ? document.createTextNode(String(value)) : renderValue(col.type, value, this.host.cells())
+      const after = h('span', {
+        class: 'base-td-after', 'data-testid': 'base-cell-proposal',
+        title: a.proposals.length > 1 ? `${a.proposals.length} valeurs proposées : cliquer pour les voir` : 'Valeur proposée : cliquer pour le fil',
+      }, shown)
+      open(after)
+      before.after(after)
+      if (this.host.decide && !this.host.readOnly()) {
+        const decide = (accept: boolean) => {
+          const b = h('button', {
+            class: accept ? 'base-td-decide base-td-accept' : 'base-td-decide', type: 'button',
+            'data-testid': accept ? 'base-cell-accept' : 'base-cell-reject',
+            title: accept ? 'Accepter la valeur proposée' : 'Refuser la valeur proposée',
+          }, accept ? '✓' : '✕')
+          quiet(b)
+          b.addEventListener('click', e => { e.stopPropagation(); this.host.decide!(id, accept) })
+          return b
+        }
+        const box = h('span', { class: 'base-td-decision' }, decide(true), decide(false))
+        after.after(box)
+      }
+    }
+    // Commentaires, ou plusieurs fils : une marque qui les ouvre.
+    if (!a.proposals.length) td.classList.add('base-td-annotated')
+    if (a.comments === 0 && a.ids.length === 1) return
     const parts: string[] = []
     if (a.comments) parts.push(`${a.comments} commentaire${a.comments > 1 ? 's' : ''}`)
-    for (const v of a.proposals) parts.push(`Valeur proposée : ${v === null || v === '' ? '(vide)' : Array.isArray(v) ? v.join(', ') : String(v)}`)
+    if (a.proposals.length) parts.push(`${a.proposals.length} proposition${a.proposals.length > 1 ? 's' : ''}`)
     const badge = h('button', {
-      class: a.proposals.length ? 'base-td-note base-td-note-proposal' : 'base-td-note', type: 'button',
-      'data-testid': 'base-cell-annotation', title: parts.join('\n'),
-    }, a.proposals.length ? '✎' : '💬')
+      class: 'base-td-note', type: 'button', 'data-testid': 'base-cell-annotation', title: parts.join(', '),
+    }, a.comments ? '💬' : '✎')
     if (a.ids.length > 1) badge.append(h('span', { class: 'base-td-note-count' }, String(a.ids.length)))
-    badge.addEventListener('mousedown', e => e.stopPropagation())
-    badge.addEventListener('dblclick', e => e.stopPropagation())
-    badge.addEventListener('click', e => { e.stopPropagation(); this.host.openAnnotations?.(a.ids, td) })
+    open(badge)
     td.append(badge)
   }
 
