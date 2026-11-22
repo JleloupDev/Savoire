@@ -47,7 +47,10 @@ if [ "${SAVOIRE_CI_STAGE:-1}" = 1 ]; then
   [ -s "$env_in" ] || { rm -f "$env_in"; fail "aucun .env recu sur l'entree standard."; }
 
   echo "== Fichiers de deploiement : $ref"
-  git -C "$SAVOIRE_DIR" fetch -q --tags origin
+  # --force : une etiquette deplacee sur GitHub (refaite apres un echec de
+  # Release) remplace la copie locale. Sans lui, git refuse (« would clobber
+  # existing tag ») et plus aucun deploiement ne passe.
+  git -C "$SAVOIRE_DIR" fetch -q --tags --force origin
   git -C "$SAVOIRE_DIR" checkout -q --detach "$ref"
 
   # La suite avec le script de ce commit (il a pu changer).
