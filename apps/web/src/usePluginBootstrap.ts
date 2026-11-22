@@ -446,14 +446,34 @@ export function usePluginBootstrap({
           : undefined
         return moveWithLinks(vaultProxy, moves, citing)
       }
-      // Arbre d'un autre document : base integree dans une note (lecture seule).
+      // Arbre d'un autre document : base integree dans une note, dessin lu ou
+      // modifie par un agent. Son etat arrive apres l'ouverture : on l'attend,
+      // sinon on lirait un dessin vide. Ce qui y est ecrit part avant la
+      // fermeture (un document ferme aussitot ne garde pas ses envois en vol).
+      const openTrees = new Map<string, { crdt: ReturnType<IVaultSyncSession['openDocument']>; dirty: boolean; stop: () => void }[]>()
       vaultProxy.openTree = async documentId => {
         const session = vaultSessionRef.current
         if (!session) throw new Error('Aucun vault ouvert')
-        session.openDocument(documentId)
-        return session.openTree(documentId)
+        const crdt = session.openDocument(documentId)
+        await session.documentLoaded?.(documentId).catch(err => { console.warn('[openTree] contenu pas encore arrivé', documentId, err) })
+        const tree = session.openTree(documentId)
+        const held = { crdt, dirty: false, stop: () => {} }
+        held.stop = tree.onChange((_changes, info) => { if (info.origin === 'local') held.dirty = true })
+        openTrees.set(documentId, [...(openTrees.get(documentId) ?? []), held])
+        return tree
       }
-      vaultProxy.closeTree = documentId => { vaultSessionRef.current?.closeDocument(documentId) }
+      vaultProxy.closeTree = documentId => {
+        const session = vaultSessionRef.current
+        const list = openTrees.get(documentId) ?? []
+        const held = list.shift()
+        if (!list.length) openTrees.delete(documentId)
+        held?.stop()
+        if (!session) return
+        if (!held?.dirty) { session.closeDocument(documentId); return }
+        void session.mergeDocumentState(documentId, held.crdt.getSnapshot())
+          .catch(err => { console.warn('[openTree] envoi du document impossible', documentId, err) })
+          .finally(() => session.closeDocument(documentId))
+      }
       vaultProxy.takeRemoteEditors = documentId => takeRemoteEditors(documentId)
       vaultProxy.getCurrentUser = () => {
         const account = editorAreaRefs.activeAccount.current

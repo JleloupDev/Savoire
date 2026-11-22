@@ -191,15 +191,16 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 
 Les outils d'agent des plugins (`api.agents.registerTool`) tournent aussi sur le pair, pour les IA externes, quand leur fiche déclare `runtimes: ['app', 'server']`. Code : `apps/indexer/src/serverPlugins.ts` et `pluginApi.ts`.
 
-- **Chargement** : au premier appel `tools.*`, le pair appelle `onload` de chaque plugin permis avec une **PluginAPI sans écran**. Vues, blocs, commandes, menu `/` et espace de travail y sont des registres inertes : un `onload` qui en enregistre ne casse pas. Un plugin dont l'interface tire une bibliothèque de page (React, mermaid) donne une entrée `./server` qui n'enregistre que ses outils (agenda, Mermaid, tags).
+- **Chargement** : au premier appel `tools.*`, le pair appelle `onload` de chaque plugin permis avec une **PluginAPI sans écran**. Vues, blocs, commandes, menu `/` et espace de travail y sont des registres inertes : un `onload` qui en enregistre ne casse pas. Un plugin dont l'interface tire une bibliothèque de page (React, mermaid) donne une entrée `./server` qui n'enregistre que ses outils (agenda, Mermaid, tags, Excalidraw).
 - **Ce que l'API sait faire ici**, pour l'appel en cours (personne, ticket, ACL ; porté par un `AsyncLocalStorage`) :
   - `vault.read`, `readDocumentByPath`, `list`, `exists`, `resolveDocumentId`, `getFileTree` : journaux Yjs et arborescence, filtrés par l'ACL, corbeille exclue ;
   - `vault.editText`, `write`, `createFile`, `createFolder` : différence Yjs, envoyée par `…/write` avec le ticket ; chaque écriture laisse une trace `edit` signée de l'agent (le titre de l'outil) ;
   - `vault.moveFiles`, `renameFile` : le canal des déplacements (`relinkAfterMoves`), les liens suivent ;
+  - `vault.openTree` : l'arbre partagé d'un document (un dessin), rejoué depuis son journal Yjs avec le même adaptateur que l'appli (`@savoire/infrastructure-sync/shared-tree`). Il reste ouvert jusqu'à la fin de l'appel ; si l'outil réussit, ce qu'il y a écrit part en une seule différence, avec le ticket et une trace `edit` signée de l'agent (`flushTrees`). Un outil en échec n'écrit rien ;
   - `review.propose` : une entrée `kind: 'proposal'` de la carte `map/review`, même forme que `ReviewService.propose` (`changeNoteText` en mode `propose` y dépose un `savoire.text`) ;
   - `indexer` (liens, tags), `query`, `search` : les pouvoirs locaux.
-- **Ce qu'elle ne sait pas faire** : `openTree`, `sharedData`, les lignes légères des bases. Les outils qui en ont besoin (historique, discussions, bases, dessins Excalidraw) restent `runtime 'app'`, comme ceux qui lisent un état chargé dans la page (Bible).
-- **Outils serveur aujourd'hui** : tâches (`list_tasks`, `add_task`, `check_task`), agenda (`daily_note`, `append_to_daily`), modèles (`list_templates`, `create_from_template`), Mermaid (`insert_diagram`), tags (`add_tag`, `rename_tag`). Un outil de plugin ne remplace jamais un outil du socle de même nom.
+- **Ce qu'elle ne sait pas faire** : `sharedData`, les lignes légères des bases. Les outils qui en ont besoin (historique, discussions, bases) restent `runtime 'app'`, comme ceux qui lisent un état chargé dans la page (Bible).
+- **Outils serveur aujourd'hui** : tâches (`list_tasks`, `add_task`, `check_task`), agenda (`daily_note`, `append_to_daily`), modèles (`list_templates`, `create_from_template`), Mermaid (`insert_diagram`), tags (`add_tag`, `rename_tag`), dessins Excalidraw (`drawing_list`, `drawing_read`, `drawing_add`, `drawing_update`, `drawing_delete`, `drawing_diagram`, `drawing_create`). Un outil de plugin ne remplace jamais un outil du socle de même nom.
 
 #### Niveaux de confiance
 

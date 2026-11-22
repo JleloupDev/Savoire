@@ -22,9 +22,9 @@ export type { NoteInput, NoteRecord, TitleSource, ExtractOptions } from './extra
 export { loadDoc, withDoc, fromBase64 } from './crdt/yjs'
 export type { YjsUpdate } from './crdt/yjs'
 export {
-  NOTE_TEXT, noteText, replaceTextUpdate, newNoteUpdate, treeSetUpdate, treeFoldersUpdate, parentFolders, textAnchor, mapEntryUpdate, mapEntries,
+  NOTE_TEXT, noteText, replaceTextUpdate, newNoteUpdate, treeSetUpdate, treeFoldersUpdate, parentFolders, textAnchor, mapEntryUpdate, mapEntries, editDoc,
 } from './crdt/write'
-export type { TreeEntry } from './crdt/write'
+export type { TreeEntry, DocEdit } from './crdt/write'
 export { readVaultTree, vaultTreeFromUpdates, diffTree, VAULT_MAP, FOLDERS_MAP } from './crdt/tree'
 export type { VaultTree, TreeDiff } from './crdt/tree'
 export {

@@ -271,6 +271,33 @@ export class FakeBackend {
     this.touch(vaultId, 'document', docId)
   }
 
+  /** Cree un dessin Excalidraw : ses elements dans l'arbre du document (cles el:<id> et z:<id>). */
+  writeDrawing(vaultId: string, docId: string, path: string, elements: { id: string; [k: string]: unknown }[]): void {
+    const v = this.vault(vaultId)
+    v.tree.doc.getMap('vault').set(docId, { path })
+    this.touch(vaultId, 'vault')
+    const d = this.docOf(v, docId)
+    const root = d.doc.getMap('tree')
+    d.doc.transact(() => {
+      elements.forEach((e, i) => {
+        root.set(`el:${e.id}`, JSON.stringify({ version: 1, versionNonce: 1, isDeleted: false, ...e }))
+        root.set(`z:${e.id}`, i + 1)
+      })
+    })
+    this.touch(vaultId, 'document', docId)
+  }
+
+  /** Les elements visibles d'un dessin, tels que les clients les liraient. */
+  drawing(vaultId: string, docId: string): Record<string, unknown>[] {
+    const out: Record<string, unknown>[] = []
+    this.vaults.get(vaultId)?.docs.get(docId)?.doc.getMap('tree').forEach((v, k) => {
+      if (!k.startsWith('el:') || typeof v !== 'string') return
+      const e = JSON.parse(v) as Record<string, unknown>
+      if (!e.isDeleted) out.push(e)
+    })
+    return out
+  }
+
   /** Une frappe : ajoute du texte a la fin. */
   type(vaultId: string, docId: string, more: string): void {
     const d = this.vaults.get(vaultId)!.docs.get(docId)!

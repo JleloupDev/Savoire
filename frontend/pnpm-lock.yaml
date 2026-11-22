@@ -115,6 +115,9 @@ importers:
       '@savoire/indexer-core':
         specifier: workspace:*
         version: link:../../packages/indexer-core
+      '@savoire/infrastructure-sync':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure-sync
       '@savoire/plugin-agenda':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agenda
@@ -124,6 +127,9 @@ importers:
       '@savoire/plugin-csv':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-csv
+      '@savoire/plugin-excalidraw':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-excalidraw
       '@savoire/plugin-excel':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-excel

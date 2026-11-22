@@ -22,6 +22,7 @@ import { excalidrawContentExtractor } from './content-extractor'
 import { SceneBinding, applyScenePatch, type ScenePatch, type SceneElement, type SceneFile, type StoredFile } from './binding'
 import { applyPatchToElements, diffSceneJson, diffScenes, sceneJson } from './compare'
 import { SCENE_PROPOSAL, excalidrawAgentTools } from './agentTools'
+import { EXCALIDRAW_MANIFEST } from './manifest'
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>
 type ExcalidrawInitialDataState = NonNullable<ExcalidrawProps['initialData']>
@@ -38,8 +39,13 @@ export { SceneBinding, assignOrder, isBetter, applyScenePatch } from './binding'
 export type { SceneElement, SceneFile, StoredFile, SceneBindingOptions, ScenePatch } from './binding'
 
 export { SCENE_PROPOSAL, excalidrawAgentTools, describeScene, shapeElements } from './agentTools'
+export { EXCALIDRAW_MANIFEST } from './manifest'
 
-const EMPTY_SCENE = { elements: [], appState: { viewBackgroundColor: '#1e1e2e' }, files: {} }
+// Fond de la toile en couleurs « claires », comme Excalidraw les attend : en
+// theme sombre, il inverse toute la toile (fond blanc -> noir, encre noire ->
+// blanche). Un fond deja sombre (#1e1e2e) devenait clair, et l'encre par
+// defaut, inversee elle aussi, ne se voyait plus.
+const EMPTY_SCENE = { elements: [], appState: { viewBackgroundColor: '#ffffff' }, files: {} }
 const STABILIZE_MS = 1000
 /** Temps sans changement de l'arbre avant de conclure qu'il est vide. */
 const SETTLE_MS = 800
@@ -463,20 +469,11 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
 let pluginAPI: PluginAPI | null = null
 
 const plugin: VaultPlugin = {
-  manifest: {
-    id: 'plugin-excalidraw',
-    scope: 'vault',
-    name: 'Excalidraw',
-    version: '0.0.2',
-    description: 'Éditeur de dessin vectoriel Excalidraw pour les fichiers .excalidraw',
-    permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
-    defaultActive: false,
-    trust: 'verified',
-  },
+  manifest: EXCALIDRAW_MANIFEST,
 
   async onload(api: PluginAPI) {
     pluginAPI = api
-    // Agents (ADR-033) : lire un dessin, y ajouter des formes.
+    // Agents (ADR-033) : lire, ajouter, relier, deplacer, effacer, schemas (aussi sur le pair, pour ChatGPT et Claude).
     for (const tool of excalidrawAgentTools(api)) api.agents?.registerTool(tool)
     // Revision : des changements de dessin proposes, appliques a l'acceptation.
     api.review?.registerProposalType({

@@ -15,8 +15,9 @@
 // `export default` un VaultPlugin), filtres par le meme reglage.
 //
 // Seuls les outils qui declarent le runtime 'server' sont proposes : un outil
-// qui a besoin de l'ecran ou d'un document partage (openTree, sharedData)
-// reste dans l'appli.
+// qui a besoin de l'ecran ou des donnees partagees d'un document (sharedData)
+// reste dans l'appli. L'arbre d'un document (openTree : un dessin) est permis ;
+// ce que l'outil y ecrit part a la fin de l'appel, s'il a reussi.
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -28,10 +29,11 @@ import templates from '@savoire/plugin-templates'
 import agenda from '@savoire/plugin-agenda/server'
 import mermaid from '@savoire/plugin-mermaid/server'
 import hashtags from '@savoire/plugin-hashtags/server'
-import { headlessPluginAPI, runInScope, type HeadlessPlugin, type PluginCallScope } from './pluginApi'
+import excalidraw from '@savoire/plugin-excalidraw/server'
+import { flushTrees, headlessPluginAPI, runInScope, type HeadlessPlugin, type PluginCallScope } from './pluginApi'
 
 /** Les plugins livres avec Savoire qui apportent des outils serveur. */
-export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags]
+export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags, excalidraw]
 
 export interface ServerPluginsOptions {
   policy: PeerPluginPolicy
@@ -100,7 +102,15 @@ export function serverPlugins(o: ServerPluginsOptions): ServerPluginSet {
     specs: async () => (await serverTools()).map(t => t.spec),
     tools: async base => (await serverTools()).map(t => ({
       spec: t.spec,
-      run: (args, ctx) => runInScope({ ...base, paths: new Map(base.paths), mode: ctx.mode, tool: t.spec.title }, () => t.run(args, ctx)),
+      run: (args, ctx) => {
+        const scope: PluginCallScope = { ...base, paths: new Map(base.paths), mode: ctx.mode, tool: t.spec.title }
+        return runInScope(scope, async () => {
+          const result = await t.run(args, ctx)
+          // Les arbres ouverts (dessins) : leurs changements partent maintenant, avec le ticket de l'appel.
+          await flushTrees(scope)
+          return result
+        })
+      },
     })),
     refused: async () => (await load()).refused,
   }

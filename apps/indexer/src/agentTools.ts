@@ -328,6 +328,27 @@ export class PeerToolHost implements AgentToolHost {
     return text
   }
 
+  /**
+   * Le journal Yjs d'un document a ouvrir en arbre (un dessin...) : vide s'il
+   * vient d'etre cree par cet appel. Memes regles de visibilite que les notes.
+   */
+  async docUpdates(docId: string): Promise<string[]> {
+    const path = (await this.paths()).get(docId)
+    if (!path || !this.visible(docId, path)) throw new HostError('Document introuvable.', 'not_found')
+    const log = await this.f.docLog(docId)
+    if (!log) {
+      if (this.moved.has(docId)) return []
+      throw new HostError('Document introuvable.', 'not_found')
+    }
+    if (log.format !== 'yjs') throw new HostError('Ce document n’est pas un document partagé modifiable ici.', 'invalid')
+    return log.updates
+  }
+
+  /** Envoie au serveur une modification d'un document (une mise a jour Yjs, la difference seule). */
+  async writeDocument(docId: string, update: Uint8Array): Promise<void> {
+    await this.write({ ops: [{ target: 'document', docId, update: b64(update) }] })
+  }
+
   /** Applique `edit` au texte du moment : la difference seulement part au serveur. */
   async editNote(docId: string, edit: (current: string) => string): Promise<boolean> {
     const fresh = await this.f.docLog(docId)

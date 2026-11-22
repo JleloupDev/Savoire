@@ -7,6 +7,11 @@
       "source": "./src/index.ts",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./shared-tree": {
+      "source": "./src/YjsSharedTree.ts",
+      "import": "./dist/YjsSharedTree.js",
+      "types": "./dist/YjsSharedTree.d.ts"
     }
   },
   "main": "./dist/index.js",

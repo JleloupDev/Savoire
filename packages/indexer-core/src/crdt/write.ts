@@ -127,3 +127,26 @@ export function mapEntries(updates: readonly YjsUpdate[]): { id: string; value: 
     doc.destroy()
   }
 }
+
+/**
+ * Un document a modifier en place (l'arbre d'un dessin, ouvert par un outil
+ * de plugin) : le Y.Doc rejoue, puis ce qui a change depuis, a envoyer.
+ */
+export interface DocEdit {
+  readonly doc: Y.Doc
+  /** Les changements faits depuis l'ouverture (ou le dernier envoi), en une mise a jour ; null : rien. */
+  changes(): Uint8Array | null
+  /** Les changements rendus par changes() sont partis. */
+  sent(): void
+}
+
+export function editDoc(updates: readonly YjsUpdate[]): DocEdit {
+  const doc = loadDoc(updates)
+  let pending: Uint8Array[] = []
+  doc.on('update', (u: Uint8Array) => { pending.push(u) })
+  return {
+    doc,
+    changes: () => (pending.length ? Y.mergeUpdates(pending) : null),
+    sent: () => { pending = [] },
+  }
+}

@@ -15,15 +15,21 @@
 //  - vault.editText, write, createFile, createFolder : difference Yjs, envoyee
 //    au serveur avec le ticket de l'appel ;
 //  - vault.moveFiles : le canal des deplacements (les liens suivent) ;
+//  - vault.openTree : l'arbre partage d'un document (un dessin), rejoue depuis
+//    son journal. Il reste ouvert jusqu'a la fin de l'appel ; ce qu'on y a
+//    ecrit part alors au serveur, en une difference, avec le ticket
+//    (flushTrees) ;
 //  - review.propose : une entree « proposal » de la carte map/review ;
 //  - indexer (liens, tags), query, search : les pouvoirs locaux.
 // Le reste (vues, blocs, commandes, menu /, espace de travail) est inerte : un
 // onload qui enregistre une vue ne casse pas, la vue n'existe simplement pas.
-// Pas d'openTree ni de sharedData : un outil qui en a besoin (historique,
-// discussions, lignes legeres des bases) reste dans l'appli (runtime 'app').
+// Pas de sharedData : un outil qui en a besoin (historique, discussions,
+// lignes legeres des bases) reste dans l'appli (runtime 'app').
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { editDoc, type DocEdit } from '@savoire/indexer-core'
+import { YjsSharedTree } from '@savoire/infrastructure-sync/shared-tree'
 import type {
-  AgentPreset, AgentRegistry, FileTreeEntry, IIndexerAPI, IQueryEngine, ISearchEngine, IndexState,
+  AgentPreset, AgentRegistry, FileTreeEntry, IIndexerAPI, IQueryEngine, ISearchEngine, ISharedTree, IndexState,
   PluginAPI, PluginManifest, PluginTool, ReviewAPI, ToolActor, VaultAPI,
 } from '@savoire/plugin-api'
 import type { PeerToolHost } from './agentTools'
@@ -37,6 +43,8 @@ export interface PluginCallScope {
   tool: string
   /** id -> chemin des notes visibles, lu avant l'appel, tenu a jour par ses ecritures. */
   paths: Map<string, string>
+  /** Les arbres ouverts pendant l'appel (openTree), envoyes a la fin (flushTrees). */
+  trees?: Map<string, { edit: DocEdit; tree: ISharedTree }>
 }
 
 const scopes = new AsyncLocalStorage<PluginCallScope>()
@@ -75,6 +83,21 @@ async function edit(docId: string, change: (text: string) => string): Promise<bo
   const changed = await s.host.editNote(docId, change)
   if (changed) await s.host.recordEdit(docId, s.tool, s.actor)
   return changed
+}
+
+/**
+ * Envoie ce que l'appel a ecrit dans les arbres ouverts (un dessin...), un
+ * document apres l'autre, avec la trace signee de l'agent. A appeler quand
+ * l'outil a fini sans erreur.
+ */
+export async function flushTrees(s: PluginCallScope): Promise<void> {
+  for (const [docId, t] of s.trees ?? []) {
+    const update = t.edit.changes()
+    if (!update) continue
+    await s.host.writeDocument(docId, update)
+    t.edit.sent()
+    await s.host.recordEdit(docId, s.tool, s.actor)
+  }
 }
 
 function vaultApi(): VaultAPI {
@@ -122,6 +145,18 @@ function vaultApi(): VaultAPI {
       await s.host.moveFiles([{ from, to: newPath }])
       s.paths.set(id, newPath)
     },
+    openTree: async docId => {
+      const s = current()
+      s.trees ??= new Map()
+      const open = s.trees.get(docId)
+      if (open) return open.tree
+      const edit = editDoc(await s.host.docUpdates(docId))
+      const tree = new YjsSharedTree(edit.doc) as ISharedTree
+      s.trees.set(docId, { edit, tree })
+      return tree
+    },
+    // Rien a fermer ici : l'arbre vit jusqu'a la fin de l'appel, ses changements partent alors.
+    closeTree: () => {},
     getCurrentUser: () => {
       const s = scopes.getStore()
       return s ? { id: s.actor.onBehalfOf.userId, name: s.actor.onBehalfOf.displayName } : null

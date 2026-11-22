@@ -12,9 +12,11 @@
   "dependencies": {
     "@savoire/agent-core": "workspace:*",
     "@savoire/indexer-core": "workspace:*",
+    "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/plugin-agenda": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",
+    "@savoire/plugin-excalidraw": "workspace:*",
     "@savoire/plugin-excel": "workspace:*",
     "@savoire/plugin-hashtags": "workspace:*",
     "@savoire/plugin-images": "workspace:*",
