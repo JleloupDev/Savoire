@@ -110,10 +110,17 @@ jobs:
           USER_NAME: ${{ vars.DEPLOY_USER || 'savoire' }}
           REF: ${{ steps.ref.outputs.ref }}
         run: |
-          ssh -i ~/.ssh/deploy -p "$PORT" \
+          set -o pipefail
+          # La fin du journal du serveur part aussi en annotation : lisible
+          # par l'API publique, sans ouvrir le journal (compte GitHub requis).
+          if ! ssh -i ~/.ssh/deploy -p "$PORT" \
             -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30 \
-            "$USER_NAME@$HOST" "$REF" < "$RUNNER_TEMP/savoire.env"
+            "$USER_NAME@$HOST" "$REF" < "$RUNNER_TEMP/savoire.env" 2>&1 | tee "$RUNNER_TEMP/deploy.log"; then
+            msg=$(sed -e 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/deploy.log" | tail -n 30 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Deploiement sur le serveur::${msg}"
+            exit 1
+          fi
 
       - name: Nettoyage
         if: always()
-        run: rm -f ~/.ssh/deploy "$RUNNER_TEMP/savoire.env"
+        run: rm -f ~/.ssh/deploy "$RUNNER_TEMP/savoire.env" "$RUNNER_TEMP/deploy.log"
