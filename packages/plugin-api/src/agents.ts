@@ -68,6 +68,20 @@ export interface AgentBudget {
   maxTokensPerChild?: number
 }
 
+/**
+ * Veille : l'agent suit la note ouverte et relit, bloc par bloc, ce qui
+ * change (voir agent-core/watch.ts). Il propose ses corrections dans la
+ * Revision et ses conseils dans la marge ; il n'ecrit jamais directement.
+ */
+export interface AgentWatchSettings {
+  /** Au-dela de ce nombre de blocs a relire d'un coup (gros collage, note ouverte), demander d'abord. Defaut : 30. */
+  askAbove?: number
+  /** Analyses en meme temps : 1 ou 2. Defaut : 1. */
+  concurrency?: number
+  /** Conseils : false n'en donne pas (fautes seulement). Defaut : true. */
+  advice?: boolean
+}
+
 /** Un agent declare. */
 export interface AgentDefinition {
   id: string
@@ -87,6 +101,8 @@ export interface AgentDefinition {
   /** Connexion d'IA a utiliser dans l'appli (AIConnectionInfo.id). Absente : celle par defaut. */
   connectionId?: string
   model?: string
+  /** L'agent peut veiller sur la note ouverte (on l'allume dans le panneau Agents). */
+  watch?: AgentWatchSettings
   /** D'ou il vient : fait a la main, ou d'un modele d'un plugin. */
   source?: { kind: 'manual' } | { kind: 'preset'; pluginId: string; presetId: string }
   createdAt?: string
@@ -103,6 +119,8 @@ export interface AgentPreset {
   budget?: AgentBudget
   /** Agent de vault conseille (ranger, jardiner...) plutot que personnel. */
   vaultScoped?: boolean
+  /** Agent fait pour veiller sur la note ouverte. */
+  watch?: AgentWatchSettings
 }
 
 /** Un outil apporte par un plugin. Il s'execute dans l'application, avec la PluginAPI du plugin. */

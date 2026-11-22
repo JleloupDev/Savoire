@@ -5,6 +5,7 @@
 // jointes, recherche semantique, rappels...) = un module de plus ici, et une
 // ligne dans docs/Architecture/indexer-protocol.md.
 import type { IndexPower } from '../power'
+import { blocksPower } from './blocks'
 import { linksPower } from './links'
 import { queryPower } from './query'
 import { searchPower } from './search'
@@ -12,7 +13,7 @@ import { statusPower } from './status'
 import { tagsPower } from './tags'
 
 export function defaultPowers(): IndexPower[] {
-  return [queryPower, searchPower, linksPower, tagsPower, statusPower]
+  return [queryPower, searchPower, linksPower, tagsPower, blocksPower, statusPower]
 }
 
-export { queryPower, searchPower, linksPower, tagsPower, statusPower }
+export { queryPower, searchPower, linksPower, tagsPower, blocksPower, statusPower }

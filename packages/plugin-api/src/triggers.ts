@@ -33,6 +33,8 @@ export interface TriggerActivation {
 export interface TriggerHandler {
   getItems(query: string): TriggerItem[]
   onCommit?(activation: TriggerActivation, item: TriggerItem): void
+  /** Apres l'insertion ordinaire (sans la remplacer, au contraire d'onCommit). */
+  afterCommit?(activation: TriggerActivation, item: TriggerItem): void
 }
 
 export interface InputTrigger {

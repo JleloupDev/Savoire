@@ -77,6 +77,10 @@ export interface EditorController {
   selectRange?(from: number, to: number): void
   /** Passages surlignes par l'application (revision). */
   setHighlights?(ranges: readonly import('./Highlights').EditorHighlight[]): void
+  /** Marques de blocs d'une source (trait dans la marge, pastille) ; liste vide : les retire. */
+  setBlockMarks?(owner: string, marks: readonly import('./BlockMarks').BlockMark[]): void
+  /** Le passage du texte visible a l'ecran. */
+  getVisibleRange?(): { from: number; to: number }
   /** Cartes de revision dans la note : l'hote les dessine (null : plus de cartes). */
   setAnnotationHost?(host: import('./Annotations').AnnotationHost | null): void
   /** Ouvre un brouillon (commenter, suggerer) dans la note ; false si impossible. */

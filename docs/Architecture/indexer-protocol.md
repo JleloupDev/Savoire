@@ -178,6 +178,9 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 | `links` | `graph` | `{ folder?, limit? }` → `{ nodes: [{ id, path, title }], edges: [{ from, to }] }` : au-delà de `limit` (2 000 par défaut, 20 000 au plus), les notes les plus reliées d'abord ; 100 000 arêtes au plus. |
 | `tags` | `list` | `{ prefix?, limit? }` → `{ items: [{ tag, count }] }` : `count` = nombre de notes ; casse ignorée ; `prefix` : ce tag et ses sous-tags ; `limit` 1 000 par défaut, 10 000 au plus. |
 | `tags` | `notes` | `{ tag, limit? }` → `{ items: [{ id, path, title }] }` : notes du tag, sous-tags compris (`a` donne aussi `a/b`) ; `limit` 500 par défaut, 5 000 au plus. |
+| `blocks` | `list` | `{ id, limit? }` → `{ id, path, items: [{ index, kind, from, to, hash, preview, blockId?, section? }] }` : blocs de la note (`plugin-api/noteBlocks.ts`), sans le frontmatter ; note inconnue : `items` vide ; `limit` 2 000 par défaut. |
+| `blocks` | `find` | `{ hash, limit? }` → `{ items: [{ id, path, title, index, kind, preview, blockId? }] }` : notes où se trouve un bloc de cette empreinte (16 caractères hexadécimaux) ; `limit` 50 par défaut, 500 au plus. |
+| `blocks` | `shared` | `{ id, limit? }` → `{ id, path, items: [{ index, hash, others: [{ id, path, title }] }] }` : blocs de la note (paragraphes, listes, citations, tableaux de 40 caractères et plus) qu'on retrouve à l'identique ailleurs. |
 | `index` | `status` | `{}` → `IndexState` + `{ seq, docs, bytes }` |
 | `documents` | `read` | `{ id }` ou `{ path }` (casse ignorée) → `{ id, path, title, content, truncated }` : le texte d'une note en Markdown, relu dans son CRDT chez le backend (pas dans l'index) ; pour un fichier, le texte extrait ou publié. 512 Ki caractères au plus. 404 `not_found` si absent ou à la corbeille. Pouvoir du pair, hors index : sert l'API ouverte. |
 
@@ -235,7 +238,7 @@ Ce que reçoivent les plugins (tous en permission `vault:read`) :
 | `api.search.global` | `SearchEngineProvider` | `POST /api/v1/search` | absent |
 | `api.indexer` | `IndexerPowersProvider` | pair (`indexerSourceOf`) ou index local (`call`) | `available()` faux : le plugin garde son comportement local |
 
-`api.indexer` (`packages/plugin-api/src/indexer.ts`) : `available()`, `state()`, `onStateChange()`, `links.{backlinks, outgoing, unresolved, graph}`, `tags.{list, notes}`, `status()` ; mêmes paramètres et résultats que le tableau des pouvoirs. Un appel rejette avec un `QueryErrorInfo` : `unavailable` (pair coupé, freiné, appel annulé, pouvoir inconnu) → comportement local. Branchés : rétroliens (`plugin-wikilinks`, `links.backlinks`), graphe (`plugin-graph`, `links.graph`, 2 000 notes au plus), hashtags (`plugin-hashtags`, `tags.list` et `tags.notes`).
+`api.indexer` (`packages/plugin-api/src/indexer.ts`) : `available()`, `state()`, `onStateChange()`, `links.{backlinks, outgoing, unresolved, graph}`, `tags.{list, notes}`, `blocks.{list, find, shared}` (absent d'un hôte ancien), `status()` ; mêmes paramètres et résultats que le tableau des pouvoirs. Un appel rejette avec un `QueryErrorInfo` : `unavailable` (pair coupé, freiné, appel annulé, pouvoir inconnu) → comportement local. Branchés : rétroliens (`plugin-wikilinks`, `links.backlinks`), graphe (`plugin-graph`, `links.graph`, 2 000 notes au plus), hashtags (`plugin-hashtags`, `tags.list` et `tags.notes`), passages partagés (`apps/web/src/sharedPassages.ts`, `blocks.shared`).
 
 `api.search.global` (`IGlobalSearch`, `search.ts`) : `search(query & { vaultIds? })`, `open(hit)` (ouvre le vault de la note, puis la note). Les résultats portent `vaultId` et `vaultName` ; `partial` est affiché.
 

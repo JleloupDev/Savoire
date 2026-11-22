@@ -153,7 +153,7 @@ fn clean_definition(body: &Value) -> AppResult<(String, Option<String>, Value)> 
         "instructions": instructions,
         "permissions": permissions,
     });
-    for k in ["scope", "budget", "source"] {
+    for k in ["scope", "budget", "source", "watch"] {
         if let Some(v) = o.get(k).filter(|v| v.is_object()) {
             def[k] = v.clone();
         }

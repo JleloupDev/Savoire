@@ -9,7 +9,7 @@
 // Sans source, ou source qui ne repond pas, available() est faux et les
 // appels rejettent avec `unavailable` : le plugin garde son comportement local.
 import type {
-  IIndexerAPI, IIndexerLinks, IIndexerTags, IndexerCallOptions, IndexState, IndexStatusInfo, QueryErrorInfo,
+  IIndexerAPI, IIndexerBlocks, IIndexerLinks, IIndexerTags, IndexerCallOptions, IndexState, IndexStatusInfo, QueryErrorInfo,
 } from '@savoire/plugin-api'
 import type { IVaultIndexer } from './VaultIndexer'
 
@@ -55,6 +55,12 @@ export class IndexerPowersProvider implements IIndexerAPI {
   readonly tags: IIndexerTags = {
     list: (params, options) => this.call('tags', 'list', params ?? {}, options),
     notes: (params, options) => this.call('tags', 'notes', params, options),
+  }
+
+  readonly blocks: IIndexerBlocks = {
+    list: (params, options) => this.call('blocks', 'list', params, options),
+    find: (params, options) => this.call('blocks', 'find', params, options),
+    shared: (params, options) => this.call('blocks', 'shared', params, options),
   }
 
   /** Nouvelle source (vault ouvert) ; null : aucune. */

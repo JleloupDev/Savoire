@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
+import { applyBlockMarks, blockMarksExtension, type BlockMark } from './BlockMarks'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
 import { EditorView, keymap } from '@codemirror/view'
@@ -366,6 +367,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).
         highlightsExtension(),
+        // Marques de blocs (modifie depuis la derniere visite, agent en veille).
+        blockMarksExtension(),
         // Cartes de revision par-dessus la note (clic sur un passage surligne).
         annotationsExtension(),
         suggestionModeExtension(),
@@ -854,6 +857,18 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Remplace les passages surlignes par l'application. */
   setHighlights(ranges: readonly EditorHighlight[]): void {
     applyHighlights(this.view, ranges)
+  }
+
+  /** Remplace les marques de blocs d'une source (liste vide : les retire). */
+  setBlockMarks(owner: string, marks: readonly BlockMark[]): void {
+    applyBlockMarks(this.view, owner, marks)
+  }
+
+  /** Le passage du texte visible a l'ecran (a peu pres : la partie dessinee). */
+  getVisibleRange(): { from: number; to: number } {
+    const ranges = this.view.visibleRanges
+    if (!ranges.length) return { from: 0, to: 0 }
+    return { from: ranges[0].from, to: ranges[ranges.length - 1].to }
   }
 
   /** Hote des cartes de revision dans la note (null : plus de cartes). */

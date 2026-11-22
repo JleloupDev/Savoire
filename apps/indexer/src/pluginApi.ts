@@ -166,6 +166,11 @@ function indexerApi(): IIndexerAPI {
       list: async (p = {}) => (await power('tags', 'list', p)) as never,
       notes: async p => { const r = await power('tags', 'notes', p) as { items: never[] }; return { items: visibleItems(r?.items) } },
     },
+    blocks: {
+      list: async p => (await power('blocks', 'list', p)) as never,
+      find: async p => { const r = await power('blocks', 'find', p) as { items: never[] }; return { items: visibleItems(r?.items) } },
+      shared: async p => (await power('blocks', 'shared', p)) as never,
+    },
     status: async () => ({ ...READY, docs: scopes.getStore()?.paths.size ?? 0 }),
   }
 }

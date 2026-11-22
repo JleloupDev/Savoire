@@ -47,6 +47,11 @@ import { AssistantWidget } from './agents/AssistantWidget'
 import { moveWithLinks } from '@savoire/plugin-api'
 import { createReviewAPI, isInlineReview, isSuggesting, setInlineReview, setSuggesting, setSuggestionEditor } from './reviewProposals'
 import { openInlineDraft, setInlineReviewEditor } from './inlineReview'
+import { liveBlocks } from './liveBlocks'
+import { markNoteAsSeen, setVisitMarksEnabled, startVisitMarks, visitMarksEnabled } from './visitMarks'
+import { setSharedPassagesEnabled, sharedPassagesEnabled, startSharedPassages } from './sharedPassages'
+import { copyBlockLink } from './blockLinks'
+import { agentWatch, startAgentWatch, watchMarksEnabled } from './agents/agentWatch'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -242,6 +247,13 @@ export function usePluginBootstrap({
         return account ? { kind: 'user', userId: account.userId, displayName: account.displayName || account.userId } : undefined
       },
       readOnly: () => !!editorAreaRefsHolder.current?.isReadOnly.current,
+    })
+    // Blocs de la note active : derniere visite, passages partages, agents en veille.
+    liveBlocks.setEditor({
+      editor: ctrl,
+      docId: () => ctrl?.getDocId?.(),
+      path: () => ctrl?.getActiveFile?.() ?? undefined,
+      vaultId: () => editorAreaRefsHolder.current?.selectedVault.current?.id,
     })
     // Revision dans la note : passages surlignes, cartes au clic.
     setInlineReviewEditor({
@@ -493,6 +505,21 @@ export function usePluginBootstrap({
         id: 'tb-suggest', label: 'Suggérer une modification', icon: 'pencil-line', group: 'review', menu: 'more', bubble: true,
         run: reviewDraft('suggestion'),
       })
+
+      // Blocs de la note ouverte (liveBlocks) : ce qui a change depuis la
+      // derniere visite, les passages deja ecrits ailleurs (index), les
+      // agents en veille, les liens vers un bloc.
+      liveBlocks.attachHooks(pluginApi.hooks)
+      startVisitMarks()
+      startSharedPassages({ indexer: () => pluginApi.indexer, open: path => { void manager.openFile(path) } })
+      startAgentWatch(editorAreaRefs)
+      const copyLink = () => copyBlockLink(vaultProxy, liveBlocks.selection())
+      pluginApi.commands.register({ id: 'editor:copy-block-link', label: 'Copier le lien vers ce bloc', editor: true, run: () => { void copyLink() } })
+      pluginApi.toolbar.register({ id: 'tb-copy-block-link', label: 'Copier le lien vers ce bloc', icon: 'link', group: 'insert', menu: 'more', commandId: 'editor:copy-block-link', run: () => { void copyLink() } })
+      pluginApi.commands.register({ id: 'notes:mark-seen', label: 'Marquer la note comme lue (effacer « modifié depuis votre visite »)', run: () => markNoteAsSeen() })
+      pluginApi.commands.register({ id: 'notes:toggle-visit-marks', label: 'Montrer ce qui a changé depuis ma dernière visite', run: () => setVisitMarksEnabled(!visitMarksEnabled()) })
+      pluginApi.commands.register({ id: 'notes:toggle-shared-passages', label: 'Montrer les passages qui existent aussi ailleurs', run: () => setSharedPassagesEnabled(!sharedPassagesEnabled()) })
+      pluginApi.commands.register({ id: 'agents:toggle-watch-marks', label: 'Agents en veille : traits de lecture dans la marge', run: () => agentWatch.setMarksEnabled(!watchMarksEnabled()) })
 
       // ContentIndexingService: wires hooks → contributors → storage.
       contentIndexingServiceRef.current = new ContentIndexingService(

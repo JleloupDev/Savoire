@@ -95,6 +95,16 @@ export function filterResult(
     }
   }
   if (capability === 'tags') keep('items')
+  if (capability === 'blocks') {
+    // Les blocs d'une note : la note elle-meme doit etre permise.
+    if ((method === 'list' || method === 'shared') && !visible(a, r)) return null
+    if (method === 'find') keep('items')
+    if (method === 'shared' && Array.isArray(r.items)) {
+      r.items = (r.items as { others?: Ref[] }[])
+        .map(it => ({ ...it, others: Array.isArray(it.others) ? it.others.filter(o => visible(a, o)) : [] }))
+        .filter(it => it.others.length > 0)
+    }
+  }
   return r
 }
 

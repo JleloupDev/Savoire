@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultPlugin, PluginAPI } from '@savoire/plugin-api'
-import { linkTargetFor, noteName, resolveLinkPath } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, NoteBlock, TriggerItem } from '@savoire/plugin-api'
+import { blockIdInsertion, linkTargetFor, noteName, PROSE_BLOCK_KINDS, resolveLinkPath, splitNoteBlocks } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
 import { HeadingIndexContributor } from './HeadingIndexContributor'
 import { allFilePaths } from './vaultFiles'
@@ -95,6 +95,69 @@ export function linkPageOf(href: string): string {
   return linkTargetOf(href).page
 }
 
+/** `Page#morceau` tape apres « [[ » : la page (vide : la note courante) et le morceau. */
+export function splitSubpathQuery(query: string): { page: string; fragment: string } | null {
+  const m = /^([^#|\]]*)#([^|\]]*)$/.exec(query)
+  return m ? { page: m[1].trim(), fragment: m[2] } : null
+}
+
+/**
+ * Identifiant propose pour un bloc qui n'en a pas : tire de son empreinte
+ * (le meme a chaque frappe), allonge s'il est deja pris dans la note.
+ */
+export function proposedBlockId(block: NoteBlock, taken: ReadonlySet<string>): string {
+  for (let n = 6; n <= 16; n++) {
+    const id = block.hash.slice(0, n)
+    if (!taken.has(id)) return id
+  }
+  return `${block.hash}-${block.index}`
+}
+
+/**
+ * Propositions pour `[[Page#...` : les titres de la note, ou ses blocs apres
+ * « ^ ». Un bloc sans identifiant en recoit un (ecrit dans la note visee au
+ * choix, voir afterCommit) ; `canWrite` faux : seulement les blocs qui en ont un.
+ */
+export function subpathItems(target: string, blocks: readonly NoteBlock[], fragment: string, canWrite: boolean): TriggerItem[] {
+  const clip = (t: string, n: number) => { const f = t.replace(/\s+/g, ' ').trim(); return f.length > n ? `${f.slice(0, n - 1)}…` : f }
+  if (!fragment.startsWith('^')) {
+    const q = fragment.trim().toLowerCase()
+    return blocks
+      .filter(b => b.kind === 'heading')
+      .map(b => b.text.replace(/^\s*#+\s*/, '').replace(/\s+\^[A-Za-z0-9-]+\s*$/, '').trim())
+      .filter(h => h && (!q || h.toLowerCase().includes(q)))
+      .slice(0, 20)
+      .map(h => ({ id: `wikiheading:${h}`, label: h, description: 'Titre', icon: 'heading', category: 'Titres', insert: `[[${target}#${h}]]` }))
+  }
+  const q = fragment.slice(1).trim().toLowerCase()
+  const taken = new Set(blocks.flatMap(b => (b.blockId ? [b.blockId] : [])))
+  const items: TriggerItem[] = []
+  for (const b of blocks) {
+    if (b.kind === 'heading' || (!PROSE_BLOCK_KINDS.has(b.kind) && b.kind !== 'code' && b.kind !== 'math')) continue
+    if (!b.blockId && !canWrite) continue
+    if (q && !b.text.toLowerCase().includes(q) && !(b.blockId ?? '').toLowerCase().startsWith(q)) continue
+    const id = b.blockId ?? proposedBlockId(b, taken)
+    items.push({
+      id: b.blockId ? `wikiblock:${id}` : `wikiblock:new:${b.hash}:${id}`,
+      label: clip(b.text, 70),
+      description: b.blockId ? `^${b.blockId}` : (b.section ? `${b.section} · nouvel identifiant` : 'nouvel identifiant'),
+      icon: 'pilcrow',
+      category: 'Blocs',
+      insert: `[[${target}#^${id}]]`,
+    })
+    if (items.length >= 30) break
+  }
+  return items
+}
+
+/** Ecrit « ^id » au bloc de cette empreinte, s'il est toujours la et sans identifiant. */
+export function withBlockId(text: string, hash: string, id: string): string {
+  const block = splitNoteBlocks(text).find(b => b.hash === hash)
+  if (!block || block.blockId) return text
+  const { at, insert } = blockIdInsertion(block, id)
+  return text.slice(0, at) + insert + text.slice(at)
+}
+
 /** Les reglages du panneau des retroliens sont passes a plugin-backlinks : ignores ici. */
 export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: string; belowOf?: string; initialSize?: number } = {}): VaultPlugin {
   let removeListeners: (() => void) | null = null
@@ -128,7 +191,25 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
         }
       }
       void refreshNotes()
-      api.workspace?.subscribeVaultChange?.(() => void refreshNotes())
+      api.workspace?.subscribeVaultChange?.(() => { blockCache.clear(); void refreshNotes() })
+
+      // Blocs des notes visees par [[Page#... : lus a la demande, gardes un moment.
+      const blockCache = new Map<string, { at: number; docId: string; blocks: NoteBlock[] }>()
+      const loading = new Set<string>()
+      const loadBlocks = async (path: string): Promise<void> => {
+        if (loading.has(path)) return
+        const docId = api.vault?.resolveDocumentId?.(path)
+        if (!docId || typeof api.vault?.read !== 'function') return
+        loading.add(path)
+        try {
+          blockCache.set(path, { at: Date.now(), docId, blocks: splitNoteBlocks(await api.vault.read(docId)) })
+        } catch { /* note illisible : pas de propositions */ } finally { loading.delete(path) }
+      }
+      const blocksOf = (path: string): { docId: string; blocks: NoteBlock[] } | null => {
+        const hit = blockCache.get(path)
+        if (!hit || Date.now() - hit.at > 30_000) void loadBlocks(path)
+        return hit ?? null
+      }
 
       const stemOf = noteName
 
@@ -138,6 +219,17 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
         description: 'Lien wiki [[Page]]',
         handler: {
           getItems(query: string) {
+            // [[Page#Titre, [[Page#^bloc : les morceaux de la note visee (vide : la note courante).
+            const sub = splitSubpathQuery(query)
+            if (sub) {
+              const path = sub.page ? resolveLinkPath(sub.page, notePaths) : api.workspace?.getActiveDocument?.()?.path ?? null
+              if (path) {
+                // Premiere demande : les blocs arrivent a la frappe suivante.
+                const found = blocksOf(path)
+                const target = sub.page ? linkTargetFor(path, notePaths) : ''
+                return found ? subpathItems(target, found.blocks, sub.fragment, typeof api.vault?.editText === 'function') : []
+              }
+            }
             const q = query.trim().toLowerCase()
             const scored = notePaths
               .map(path => ({ path, stem: stemOf(path) }))
@@ -177,6 +269,17 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
               })
             }
             return items
+          },
+          // Un bloc choisi sans identifiant : « ^id » est ecrit dans la note visee.
+          afterCommit(_activation, item) {
+            const m = /^wikiblock:new:([0-9a-f]{16}):(.+)$/.exec(item.id)
+            if (!m) return
+            const insert = typeof item.insert === 'string' ? item.insert : ''
+            const page = /^\[\[([^#\]]*)#/.exec(insert)?.[1] ?? ''
+            const path = page ? resolveLinkPath(page, notePaths) : api.workspace?.getActiveDocument?.()?.path ?? null
+            const docId = path ? blockCache.get(path)?.docId ?? api.vault?.resolveDocumentId?.(path) : undefined
+            if (!docId || !path) return
+            void api.vault.editText?.(docId, text => withBlockId(text, m[1], m[2])).then(() => { blockCache.delete(path) }, err => console.warn('[wikilinks] identifiant de bloc non ecrit', err))
           },
         },
       })

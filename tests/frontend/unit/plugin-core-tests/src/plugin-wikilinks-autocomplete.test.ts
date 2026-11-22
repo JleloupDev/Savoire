@@ -62,3 +62,26 @@ describe('retroliens resolus comme Obsidian', () => {
     expect(c.getBacklinks('Bible/Genese/Genèse 2.md', FILES).map(b => b.docId)).toEqual(['d1'])
   })
 })
+
+describe('liens vers un titre ou un bloc', () => {
+  it('Page#morceau', async () => {
+    const { splitSubpathQuery } = await import('@savoire/plugin-wikilinks')
+    expect(splitSubpathQuery('Projet#^ab')).toEqual({ page: 'Projet', fragment: '^ab' })
+    expect(splitSubpathQuery('#Titre')).toEqual({ page: '', fragment: 'Titre' })
+    expect(splitSubpathQuery('Projet')).toBeNull()
+  })
+
+  it('titres et blocs proposes ; un bloc sans identifiant en recoit un, ecrit au choix', async () => {
+    const { subpathItems, withBlockId } = await import('@savoire/plugin-wikilinks')
+    const { splitNoteBlocks } = await import('@savoire/plugin-api')
+    const text = '# Intro\n\nUn passage a citer.\n\nDeja marque ^cite'
+    const blocks = splitNoteBlocks(text)
+    expect(subpathItems('Projet', blocks, 'int', true).map(i => i.insert)).toEqual(['[[Projet#Intro]]'])
+    const items = subpathItems('Projet', blocks, '^', true)
+    expect(items.map(i => i.insert)).toEqual([`[[Projet#^${blocks[1].hash.slice(0, 6)}]]`, '[[Projet#^cite]]'])
+    expect(subpathItems('Projet', blocks, '^', false).map(i => i.insert)).toEqual(['[[Projet#^cite]]'])
+    expect(withBlockId(text, blocks[1].hash, 'abc')).toBe('# Intro\n\nUn passage a citer. ^abc\n\nDeja marque ^cite')
+    // Le bloc a change entre-temps : rien n'est ecrit.
+    expect(withBlockId('# Intro\n\nAutre texte.', blocks[1].hash, 'abc')).toBe('# Intro\n\nAutre texte.')
+  })
+})

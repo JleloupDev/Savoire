@@ -15,8 +15,8 @@
 //  - alias : `aliases` / `alias` du frontmatter ;
 //  - texte brut : sans Markdown ni frontmatter, decoupe en sections.
 import { findFrontmatter, parseFrontmatterYaml } from '@savoire/domain-index'
-import { coercePropertyValue } from '@savoire/plugin-api'
-import type { PropertySchema, PropertyValue } from '@savoire/plugin-api'
+import { coercePropertyValue, splitNoteBlocks } from '@savoire/plugin-api'
+import type { NoteBlock, PropertySchema, PropertyValue } from '@savoire/plugin-api'
 import { extOf, folderOf, stemOf } from '../paths'
 import { parseMarkdownBody } from './markdown'
 import type { LinkRef, Section } from './markdown'
@@ -54,6 +54,8 @@ export interface NoteRecord {
   files?: string[]
   tags: string[]
   aliases: string[]
+  /** Blocs de la note (pouvoir `blocks`), places dans `content`. Absent : pas une note Markdown. */
+  blocks?: NoteBlock[]
   created?: string
   modified?: string
 }
@@ -142,6 +144,7 @@ export function extractNote(input: NoteInput, options: ExtractOptions = {}): Not
     files: parts.files,
     tags: distinctFold([...frontmatterTags(props), ...parts.tags]),
     aliases: distinctFold(frontmatterAliases(props)),
+    ...(ext === 'md' ? { blocks: splitNoteBlocks(input.content) } : {}),
     ...(input.created ? { created: input.created } : {}),
     ...(input.modified ? { modified: input.modified } : {}),
   }

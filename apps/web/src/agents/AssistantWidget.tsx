@@ -5,6 +5,8 @@
 //  - Conversation : on choisit un agent, on lui parle ; il cherche, lit,
 //    repond avec ses sources (liens cliquables) et agit selon ses droits. Une
 //    action « demander » s'arrete ici et attend votre accord.
+//  - Veille : un agent fait pour (Relecteur) suit la note ouverte et relit
+//    ce qui change (agentWatch.ts) ; on l'allume ici.
 //  - Activite : executions, tokens par jour et par agent, accords en attente
 //    venus de l'exterieur (ChatGPT...), journal des actions externes.
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -14,6 +16,7 @@ import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { EditorAreaRefs } from '../EditorAreaWidget'
 import { agentDirectory, onAgentDirectoryChange, type AgentAction, type AgentApproval, type AgentUsageDay } from './agentDirectory'
 import { clearRuns, listRuns, runAgentInApp } from './agentRunner'
+import { agentWatch } from './agentWatch'
 
 const BTN: React.CSSProperties = {
   fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent',
@@ -103,6 +106,38 @@ function Live({ run }: { run: AgentRun }) {
   const last = [...run.steps].reverse().find(s => s.kind === 'model')
   const text = last?.status === 'running' ? last.text : undefined
   return <div data-testid="agent-live" style={{ ...MUTED, whiteSpace: 'pre-wrap' }}>{text || '…'}</div>
+}
+
+/** Veille de l'agent sur la note ouverte : l'allumer, son etat, le gros collage. */
+function WatchControl({ agent }: { agent: AgentDefinition }) {
+  const [, setTick] = useState(0)
+  useEffect(() => agentWatch.onChange(() => setTick(t => t + 1)), [])
+  const on = agentWatch.isWatching(agent.id)
+  const st = agentWatch.status(agent.id)
+  let line = 'Il relit chaque passage qui change, après une pause de frappe.'
+  if (on && st?.error) line = `Arrêtée : ${st.error}`
+  else if (on && st?.asking) line = `${st.asking} passages nouveaux à relire (environ ${fmt(agentWatch.askEstimate(agent.id))} tokens).`
+  else if (on && st?.reading) line = `Relit ${st.reading} passage(s)${st.pending ? `, ${st.pending} en attente` : ''}…`
+  else if (on && st?.pending) line = `${st.pending} passage(s) en attente.`
+  else if (on && st?.docId) line = 'À jour : tout ce qui est affiché a été relu.'
+  else if (on) line = 'Ouvrez une note : il la suivra.'
+  return (
+    <div data-testid="agent-watch-control" style={{ ...CARD, marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button data-testid="agent-watch-toggle" style={on ? BTN : PRIMARY} onClick={() => agentWatch.toggle(agent)}>
+          {on ? 'Arrêter la veille' : '👁 Veiller sur la note'}
+        </button>
+        {on && !st?.error && <button style={BTN} title="Oublier ce qu’il a lu de cette note et tout relire" onClick={() => agentWatch.forget(agent.id)}>Tout relire</button>}
+      </div>
+      <div data-testid="agent-watch-status" style={{ ...MUTED, marginTop: 4 }}>{line}</div>
+      {on && !!st?.asking && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <button style={PRIMARY} onClick={() => agentWatch.answer(agent.id, true)}>Relire</button>
+          <button style={BTN} onClick={() => agentWatch.answer(agent.id, false)}>Passer</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: EditorAreaRefs }) {
@@ -223,6 +258,7 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
               style={{ width: '100%', padding: 4, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', fontSize: 12 }}>
               {usable.map(a => <option key={a.id} value={a.id}>{a.name}{a.description ? ` — ${a.description}` : ''}</option>)}
             </select>
+            {agent?.watch && <WatchControl agent={agent} />}
             <textarea data-testid="assistant-input" value={input} disabled={!agent || busy}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}

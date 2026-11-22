@@ -26,7 +26,7 @@ describe('appels du protocole', () => {
     await expect(index.call('links', 'graph', { limit: 1e9 })).rejects.toMatchObject({ code: 'invalid_query' })
     await expect(index.call('search', 'run', { text: 'x'.repeat(2000) })).rejects.toMatchObject({ code: 'invalid_query' })
     await expect(index.call('search', 'run', { text: Array(40).fill('mot').map((m, i) => m + i).join(' ') })).rejects.toMatchObject({ code: 'too_complex' })
-    expect(index.capabilities().map(c => c.name)).toEqual(['query', 'search', 'links', 'tags', 'index'])
+    expect(index.capabilities().map(c => c.name)).toEqual(['query', 'search', 'links', 'tags', 'blocks', 'index'])
   })
 
   it('aucun texte de la requete n entre dans le SQL', async () => {

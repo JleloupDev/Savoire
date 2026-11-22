@@ -40,7 +40,7 @@ export { PROPERTY_TYPES_NAMESPACE, readPropertySchema, propertySchemaFromUpdates
 
 export { method } from './power'
 export type { IndexPower, PowerContext, PowerMethod, MethodOptions, DocRef, Statements } from './power'
-export { defaultPowers, queryPower, searchPower, linksPower, tagsPower, statusPower } from './powers'
+export { defaultPowers, queryPower, searchPower, linksPower, tagsPower, blocksPower, statusPower } from './powers'
 export { MAX_GROUPS } from './powers/query'
 export type { QueryApi, TextSearchApi } from './powers/query'
 export { parseSearchText, buildSnippets, findMatches } from './powers/snippets'

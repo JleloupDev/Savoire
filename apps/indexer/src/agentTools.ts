@@ -159,7 +159,7 @@ export class PeerToolHost implements AgentToolHost {
   }
 
   async power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null> {
-    if (!['links', 'tags', 'query'].includes(capability)) return null
+    if (!['links', 'tags', 'blocks', 'query'].includes(capability)) return null
     const result = await this.f.call(capability, method, params)
     // Les memes regles d'acces que les appels directs (lignes legeres : celles de leur base).
     const baseId = capability === 'query' ? baseOfQuery(params) : undefined

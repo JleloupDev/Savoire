@@ -725,3 +725,38 @@ html[data-layout="mobile"] .sv-overlay > * {
 }
 html[data-layout="mobile"] .cm-gutters { display: none !important; }
 html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-right: 14px !important; }
+
+/* ── Marques de blocs (editor-core/BlockMarks) ───────────────────────────
+   Un trait dans la marge gauche, le long du bloc ; une pastille en fin de
+   bloc qui s'ouvre sur un texte court. */
+.cm-line.cm-block-changed { box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.85); }
+.cm-line.cm-block-shared { box-shadow: inset 3px 0 0 rgba(99, 102, 241, 0.45); }
+.cm-line.cm-block-watch-pending { box-shadow: inset 2px 0 0 rgba(124, 58, 237, 0.25); }
+.cm-line.cm-block-watch-reading { box-shadow: inset 3px 0 0 rgba(124, 58, 237, 0.8); animation: cm-block-reading 1.4s ease-in-out infinite; }
+.cm-line.cm-block-watch-advice { box-shadow: inset 3px 0 0 rgba(234, 179, 8, 0.8); }
+@keyframes cm-block-reading {
+  0%, 100% { box-shadow: inset 3px 0 0 rgba(124, 58, 237, 0.25); }
+  50% { box-shadow: inset 3px 0 0 rgba(124, 58, 237, 0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-line.cm-block-watch-reading { animation: none; }
+}
+.cm-block-badge { position: relative; display: inline-block; margin-left: 6px; vertical-align: baseline; font-family: var(--font-ui, sans-serif); }
+.cm-block-badge-button {
+  font-size: 11px; line-height: 1.4; padding: 0 6px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted);
+}
+.cm-block-badge-advice .cm-block-badge-button { border-color: rgba(234, 179, 8, 0.6); }
+.cm-block-badge-ask .cm-block-badge-button { border-color: rgba(124, 58, 237, 0.6); color: #7c3aed; }
+.cm-block-badge-panel {
+  position: absolute; z-index: 20; top: 1.6em; left: 0; width: 300px; max-width: 70vw;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); font-size: 12px; line-height: 1.45; color: var(--text); white-space: normal;
+}
+.cm-block-badge-panel[hidden] { display: none; }
+.cm-block-badge-text { display: block; margin-bottom: 6px; }
+.cm-block-badge-action {
+  font-size: 11px; padding: 2px 8px; margin-right: 6px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text);
+}
+.cm-block-badge-action:first-of-type { background: var(--accent); border-color: var(--accent); color: white; }

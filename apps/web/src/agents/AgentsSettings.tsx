@@ -40,7 +40,8 @@ function blank(): AgentDraft {
 function fromPreset(p: AgentPreset, pluginId: string): AgentDraft {
   return {
     name: p.name, description: p.description, instructions: p.instructions, permissions: { ...p.permissions },
-    ...(p.budget ? { budget: { ...p.budget } } : {}), source: { kind: 'preset', pluginId, presetId: p.id },
+    ...(p.budget ? { budget: { ...p.budget } } : {}), ...(p.watch ? { watch: { ...p.watch } } : {}),
+    source: { kind: 'preset', pluginId, presetId: p.id },
   }
 }
 
@@ -162,6 +163,24 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
               onChange={e => set({ budget: { ...draft.budget, [k]: e.target.value ? Math.max(0, Number(e.target.value)) : undefined } })} />
           ))}
         </div>
+
+        <label style={LABEL}>Veille</label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
+          <input data-testid="agent-watch" type="checkbox" checked={!!draft.watch}
+            onChange={e => set({ watch: e.target.checked ? { askAbove: 30, concurrency: 1, advice: true } : undefined })} />
+          Peut veiller sur la note ouverte (relire chaque passage qui change)
+        </label>
+        {draft.watch && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, fontSize: 12 }}>
+            <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input type="checkbox" checked={draft.watch.advice !== false} onChange={e => set({ watch: { ...draft.watch, advice: e.target.checked } })} />
+              Conseils
+            </label>
+            <input style={{ ...INPUT, width: 90 }} type="number" min={1} title="Demander avant de relire plus de passages d'un coup" placeholder="Demander au-delà de"
+              value={draft.watch.askAbove ?? ''} onChange={e => set({ watch: { ...draft.watch, askAbove: e.target.value ? Math.max(1, Number(e.target.value)) : undefined } })} />
+            <span style={MUTED}>passages d’un coup : demander d’abord</span>
+          </div>
+        )}
 
         {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: 12, marginTop: 8 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>

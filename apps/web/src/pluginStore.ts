@@ -360,9 +360,9 @@ export const STORE_CATALOG: StoreEntry[] = [
     manifest: {
       id: 'plugin-agent-proofreader',
       trust: 'verified',
-      name: 'Agent Correcteur',
-      version: '0.1.0',
-      description: 'Un modèle d’agent qui corrige une note, en suggestions à accepter',
+      name: 'Agents Correcteur et Relecteur',
+      version: '0.2.0',
+      description: 'Des modèles d’agents qui corrigent une note, ou veillent sur elle pendant l’écriture',
       scope: 'personal',
       permissions: ['agents'],
     },

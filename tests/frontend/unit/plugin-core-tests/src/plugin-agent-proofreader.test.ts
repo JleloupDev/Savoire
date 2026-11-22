@@ -24,3 +24,14 @@ describe('Correcteur', () => {
     expect(MISTRAL_PROVIDER).toMatchObject({ protocol: 'openai', requiresKey: true })
   })
 })
+
+describe('Relecteur', () => {
+  it('un modele d agent en veille : il commente et propose, jamais d ecriture directe', async () => {
+    const { reviewerPreset } = await import('@savoire/plugin-agent-proofreader')
+    const registerPreset = vi.fn(() => () => {})
+    await proofreader.onload({ agents: { registerPreset } } as never)
+    expect(registerPreset).toHaveBeenCalledWith(reviewerPreset)
+    expect(reviewerPreset.watch).toBeDefined()
+    expect(reviewerPreset.permissions).toEqual({ read: 'direct', comment: 'direct', edit: 'propose' })
+  })
+})

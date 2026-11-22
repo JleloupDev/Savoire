@@ -88,6 +88,28 @@ export interface IIndexerTags {
   notes(params: { tag: string; limit?: number }, options?: IndexerCallOptions): Promise<{ items: IndexedNoteRef[] }>
 }
 
+/** Un bloc d'une note, tel que l'index le range (voir noteBlocks.ts). */
+export interface IndexedBlock {
+  index: number
+  kind: import('./noteBlocks').NoteBlockKind
+  from: number
+  to: number
+  hash: string
+  /** Debut du texte du bloc, sur une ligne (200 caracteres au plus). */
+  preview: string
+  blockId?: string
+  section?: string
+}
+
+export interface IIndexerBlocks {
+  /** Blocs d'une note, dans l'ordre (sans le frontmatter). Note inconnue : liste vide. */
+  list(params: { id: string; limit?: number }, options?: IndexerCallOptions): Promise<{ id: string; path: string; items: IndexedBlock[] }>
+  /** Notes ou se trouve un bloc de cette empreinte. */
+  find(params: { hash: string; limit?: number }, options?: IndexerCallOptions): Promise<{ items: (IndexedNoteRef & { index: number; kind: string; preview: string; blockId?: string })[] }>
+  /** Blocs de cette note (assez longs) que d'autres notes contiennent a l'identique. */
+  shared(params: { id: string; limit?: number }, options?: IndexerCallOptions): Promise<{ id: string; path: string; items: { index: number; hash: string; others: IndexedNoteRef[] }[] }>
+}
+
 export interface IIndexerAPI {
   /** Vrai si un index de tout le vault repond en ce moment. */
   available(): boolean
@@ -97,6 +119,8 @@ export interface IIndexerAPI {
   onStateChange(cb: (state: IndexState) => void): () => void
   readonly links: IIndexerLinks
   readonly tags: IIndexerTags
+  /** Blocs des notes. Absent d'un hote ancien ; un index ancien rejette (`unavailable`). */
+  readonly blocks?: IIndexerBlocks
   /** Etat detaille (sequence, nombre de notes, taille). */
   status(options?: IndexerCallOptions): Promise<IndexStatusInfo>
 }
