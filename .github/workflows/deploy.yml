@@ -11,6 +11,9 @@
 #     GITHUB_* (GitHub refuse ce prefixe) ;
 #   - DEPLOY_HOST, DEPLOY_HOST_KEY (variables), DEPLOY_SSH_KEY (secret),
 #     et au besoin DEPLOY_PORT (22) et DEPLOY_USER (savoire).
+#   - les secrets et variables du depot passent aussi dans l'environnement :
+#     TAURI_* (cle de signature de l'appli de bureau, desktop.yml) n'a rien a
+#     faire sur le serveur et n'entre pas dans le .env.
 # Sans DEPLOY_HOST, rien ne part.
 #
 # La CI se connecte au compte savoire (sans sudo), dont la cle ne lance que
@@ -76,7 +79,7 @@ jobs:
           umask 077
           jq -nr --argjson s "$SECRETS" --argjson v "$VARS" '
             ($v + $s) | to_entries[]
-            | select(.key | test("^(github_token|DEPLOY_.*|SAVOIRE_VERSION)$") | not)
+            | select(.key | test("^(github_token|DEPLOY_.*|SAVOIRE_VERSION|TAURI_.*)$") | not)
             | .key |= sub("^OAUTH_GITHUB_"; "GITHUB_")
             | if (.value | test("[\r\n]")) then error("\(.key) : une valeur sur plusieurs lignes ne va pas dans un .env")
               else "\(.key)=\(.value)" end
