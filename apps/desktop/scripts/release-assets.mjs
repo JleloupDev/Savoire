@@ -45,7 +45,7 @@ export function prepareRelease(inDir, outDir, tag, repo, notes = '') {
   mkdirSync(outDir, { recursive: true })
   for (const asset of ASSETS) {
     const found = files.filter(f => basename(f).endsWith(asset.suffix))
-    if (found.length !== 1) throw new Error(`${asset.name} : ${found.length} fichier(s) en *${asset.suffix} au lieu d'un`)
+    if (found.length !== 1) throw new Error(`${asset.name} : ${found.length} fichier(s) en *${asset.suffix} au lieu d'un (${found.map(f => basename(f)).join(', ')})`)
     copyFileSync(found[0], join(outDir, asset.name))
     if (asset.targets.length === 0) continue
     const sig = files.find(f => f === `${found[0]}.sig`)
@@ -66,6 +66,13 @@ if (process.argv[1] && import.meta.url.endsWith(basename(process.argv[1]))) {
     console.error('usage : node release-assets.mjs <builds> <sortie> <tag> <depot>')
     process.exit(2)
   }
-  const manifest = prepareRelease(inDir, outDir, tag, repo, `Savoire ${tag}`)
+  let manifest
+  try {
+    manifest = prepareRelease(inDir, outDir, tag, repo, `Savoire ${tag}`)
+  } catch (e) {
+    // Annotation GitHub : lisible sans ouvrir le journal.
+    console.log(`::error title=Fichiers de la Release::${String(e?.message ?? e).replace(/%/g, '%25').replace(/\n/g, '%0A')}`)
+    process.exit(1)
+  }
   console.log(`latest.json : ${manifest.version}, ${Object.keys(manifest.platforms).join(', ')}`)
 }

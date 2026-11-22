@@ -94,6 +94,13 @@ jobs:
           set -o pipefail
           cargo test 2>&1 | tee ../test.log
 
+      # Le cache Cargo garde target/, donc les installeurs des builds
+      # precedents (autre version) : on repart d'un dossier vide pour que
+      # seuls ceux de ce build soient joints.
+      - name: Vider les anciens installeurs
+        shell: bash
+        run: rm -rf apps/desktop/src-tauri/target/release/bundle
+
       - name: Construire
         working-directory: apps/desktop
         shell: bash
