@@ -5,7 +5,7 @@
 // La cle reste dans l'application (ce poste) ; les plugins ne la voient pas.
 import { useEffect, useState } from 'react'
 import type { AIConnection, AIService } from '@savoire/application'
-import { DEFAULT_TRANSCRIPTION_MODEL, browserDictationAvailable, loadDictationSettings, saveDictationSettings, type DictationSettings } from './dictation'
+import { DEFAULT_TRANSCRIPTION_MODEL, browserDictationAvailable, dictationSourceLabel, loadDictationSettings, saveDictationSettings, type DictationSettings } from './dictation'
 
 const INPUT: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6,
@@ -125,7 +125,10 @@ function DictationSection({ connections }: { connections: AIConnection[] }) {
   const [s, setS] = useState<DictationSettings>(() => loadDictationSettings())
   const browser = browserDictationAvailable()
   const update = (patch: Partial<DictationSettings>) => { const next = { ...s, ...patch }; setS(next); saveDictationSettings(next) }
-  const value = s.source === 'browser' ? 'browser' : `c:${s.connectionId ?? ''}`
+  // Une connexion choisie puis supprimee : c'est celle par defaut qui sert.
+  const chosen = s.connectionId && connections.some(c => c.id === s.connectionId) ? s.connectionId : ''
+  const fallback = connections.find(c => c.isDefault) ?? connections[0]
+  const value = s.source === 'browser' ? 'browser' : `c:${chosen}`
   return (
     <div data-testid="dictation-settings" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
       <div style={{ fontWeight: 600, fontSize: 13 }}>Dictée</div>
@@ -137,9 +140,13 @@ function DictationSection({ connections }: { connections: AIConnection[] }) {
         <select data-testid="dictation-source" style={INPUT} value={value}
           onChange={e => update(e.target.value === 'browser' ? { source: 'browser' } : { source: 'connection', connectionId: e.target.value.slice(2) || undefined })}>
           <option value="browser" disabled={!browser}>Navigateur (sans clé){browser ? '' : ' — indisponible ici'}</option>
+          {connections.length > 0 && <option value="c:">Connexion par défaut ({fallback?.name})</option>}
           {connections.map(c => <option key={c.id} value={`c:${c.id}`}>Connexion : {c.name}</option>)}
         </select>
       </label>
+      <div data-testid="dictation-current" style={{ fontSize: 12 }}>
+        Utilisée en ce moment : <b>{dictationSourceLabel(s)}</b>
+      </div>
       {s.source === 'browser' && (
         <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Le texte arrive phrase par phrase. Le navigateur peut envoyer le son à son éditeur (Google, Apple, Microsoft).</div>
       )}
@@ -151,7 +158,7 @@ function DictationSection({ connections }: { connections: AIConnection[] }) {
           </label>
           <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>
             OpenAI : gpt-4o-mini-transcribe ou whisper-1. Sur ce poste : un service compatible OpenAI (whisper.cpp, Speaches), avec son nom de modèle ; rien ne quitte alors l’ordinateur.
-            Le texte arrive quand vous arrêtez (10 minutes au plus).
+            Le texte arrive à chaque pause, pendant que vous parlez (10 minutes au plus par dictée).
           </div>
         </>
       )}

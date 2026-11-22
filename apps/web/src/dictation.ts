@@ -84,6 +84,19 @@ export function loadDictationSettings(): DictationSettings {
   }
 }
 
+/** La connexion qui transcrit : celle choisie, sinon (absente ou supprimee) celle par defaut. */
+export function dictationConnection(s: DictationSettings): { id: string; name: string; model: string } | undefined {
+  const all = aiService.connections()
+  return all.find(c => c.id === s.connectionId) ?? all.find(c => c.isDefault) ?? all[0]
+}
+
+/** Ce qui transcrit, en clair (reglages, barre de dictee). */
+export function dictationSourceLabel(s: DictationSettings): string {
+  if (s.source === 'browser') return 'le navigateur'
+  const c = dictationConnection(s)
+  return c ? `${c.name} (${s.model || DEFAULT_TRANSCRIPTION_MODEL})` : 'aucune connexion IA'
+}
+
 export function saveDictationSettings(s: DictationSettings): void {
   try { localStorage.setItem(key(), JSON.stringify(s)) } catch { /* stockage indisponible */ }
 }
@@ -187,6 +200,8 @@ class Dictation {
   /** Texte provisoire (navigateur), montre dans la barre. */
   private interim = ''
   private source: DictationSource = 'browser'
+  /** Qui transcrit, montre dans la barre. */
+  private by = ''
 
   get busy(): boolean {
     return this.pending > 0
@@ -207,9 +222,10 @@ class Dictation {
   private emit(): void {
     try { this.view?.dispatch({}) } catch { /* editeur ferme */ }
     if (this.active || this.pending > 0) {
+      const by = this.by ? ` · ${this.by}` : ''
       const label = this.active
-        ? (this.source === 'browser' ? '🎙 J’écoute…' : this.pending > 0 ? '🎙 J’écoute… (transcription en cours)' : '🎙 J’écoute… le texte arrive à chaque pause')
-        : 'Transcription…'
+        ? (this.source === 'browser' ? `🎙 J’écoute${by}…` : this.pending > 0 ? `🎙 J’écoute${by}… (transcription en cours)` : `🎙 J’écoute${by}… le texte arrive à chaque pause`)
+        : `Transcription${by}…`
       this.bar.show({ label, ...(this.interim ? { interim: this.interim } : {}), busy: this.pending > 0 }, () => this.stop())
     } else {
       this.bar.hide()
@@ -244,6 +260,7 @@ class Dictation {
       return
     }
     this.source = 'browser'
+    this.by = 'navigateur'
     const rec = new R()
     rec.lang = s.language || 'fr'
     rec.continuous = true
@@ -304,6 +321,8 @@ class Dictation {
       return
     }
     this.source = 'connection'
+    const conn = dictationConnection(s)
+    this.by = conn?.name ?? ''
     const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported?.(t))
     // Le texte s'ecrit dans l'ordre de la parole, meme si une transcription revient avant l'autre.
     let order: Promise<void> = Promise.resolve()
@@ -311,7 +330,7 @@ class Dictation {
       const ext = /mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'
       this.pending++
       this.emit()
-      const text = aiService.transcribe(blob, { connectionId: s.connectionId, model: s.model || DEFAULT_TRANSCRIPTION_MODEL, language: s.language, fileName: `dictee.${ext}` })
+      const text = aiService.transcribe(blob, { connectionId: conn?.id, model: s.model || DEFAULT_TRANSCRIPTION_MODEL, language: s.language, fileName: `dictee.${ext}` })
       order = order.then(async () => {
         try {
           const t = await text
