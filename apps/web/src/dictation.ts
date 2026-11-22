@@ -182,6 +182,11 @@ class DictationBar {
     this.text!.textContent = state.interim ? `${state.label} « ${state.interim} »` : state.label
   }
 
+  /** Le volume du micro (0 a 1) : le point grossit quand on parle, preuve que le son arrive. */
+  level(v: number): void {
+    this.el?.style.setProperty('--dictation-level', String(Math.min(1, Math.max(0, v))))
+  }
+
   private onStop: (() => void) | null = null
 
   hide(): void {
@@ -191,8 +196,17 @@ class DictationBar {
   }
 }
 
+/** Journal de la dictee (console du navigateur), pour comprendre ce qui coince. */
+function log(...args: unknown[]): void {
+  console.info('[Dictée]', ...args)
+}
+
 class Dictation {
   private stopFn: (() => void) | null = null
+  /** En attente de l'accord du micro (avant que l'enregistrement commence). */
+  private starting = false
+  /** Mesure du volume, creee au clic : apres un `await`, le navigateur la laisserait suspendue. */
+  private audio: AudioContext | null = null
   private readonly listeners = new Set<() => void>()
   /** Transcriptions en cours (source 'connection'). */
   private pending = 0
@@ -221,7 +235,9 @@ class Dictation {
 
   private emit(): void {
     try { this.view?.dispatch({}) } catch { /* editeur ferme */ }
-    if (this.active || this.pending > 0) {
+    if (this.starting && !this.active) {
+      this.bar.show({ label: '🎙 Autorisez le micro pour Savoire…' }, () => this.cancelStart())
+    } else if (this.active || this.pending > 0) {
       const by = this.by ? ` · ${this.by}` : ''
       const label = this.active
         ? (this.source === 'browser' ? `🎙 J’écoute${by}…` : this.pending > 0 ? `🎙 J’écoute${by}… (transcription en cours)` : `🎙 J’écoute${by}… le texte arrive à chaque pause`)
@@ -236,12 +252,29 @@ class Dictation {
   /** Demarre, ou arrete si elle tourne deja. */
   toggle(view: unknown): void {
     if (this.stopFn) { this.stop(); return }
+    if (this.starting) { this.cancelStart(); return }
     const v = view as DictationView | null | undefined
     if (!v?.dispatch || !v.state?.selection) { notify('warn', 'Dictée', 'Placez le curseur dans une note.'); return }
     this.view = v
     const s = loadDictationSettings()
+    log('démarrage', { source: s.source, connexion: s.source === 'connection' ? dictationConnection(s)?.name ?? '(aucune)' : undefined, modèle: s.model, langue: s.language, reconnaissanceNavigateur: browserDictationAvailable() })
     if (s.source === 'browser') this.startBrowser(v, s)
     else void this.startRecording(v, s)
+  }
+
+  /** On renonce pendant la demande d'acces au micro. */
+  private cancelStart(): void {
+    this.starting = false
+    void this.audio?.close().catch(() => {})
+    this.audio = null
+    log('annulée avant l’accès au micro')
+    this.emit()
+  }
+
+  /** Cree la mesure du volume pendant le clic (sinon elle reste suspendue). */
+  private prepareAudio(): void {
+    if (this.audio) return
+    try { this.audio = new AudioContext() } catch { this.audio = null }
   }
 
   stop(): void {
@@ -268,6 +301,7 @@ class Dictation {
     rec.interimResults = true
     let heard = false
     rec.onresult = e => {
+      if (!heard) log('navigateur : premiers mots reçus')
       heard = true
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -279,6 +313,7 @@ class Dictation {
       this.emit()
     }
     rec.onerror = e => {
+      log('navigateur : erreur', e.error)
       if (e.error === 'no-speech' || e.error === 'aborted') return
       if (e.error === 'not-allowed') { this.stop(); notify('danger', 'Dictée', 'Micro refusé : autorisez-le pour Savoire.'); return }
       // Service de reconnaissance absent ou injoignable (bureau, Brave...) : on passe a la connexion IA.
@@ -296,7 +331,8 @@ class Dictation {
     }
     const stop = () => { rec.onend = null; try { rec.stop() } catch { /* deja arrete */ } }
     this.stopFn = stop
-    try { rec.start() } catch { this.stopFn = null; notify('danger', 'Dictée', 'Impossible de démarrer la dictée.'); return }
+    try { rec.start() } catch (err) { this.stopFn = null; log('navigateur : démarrage impossible', err); notify('danger', 'Dictée', 'Impossible de démarrer la dictée.'); return }
+    log('navigateur : écoute', rec.lang)
     this.emit()
   }
 
@@ -306,36 +342,59 @@ class Dictation {
     const next: DictationSettings = { ...s, source: 'connection' }
     saveDictationSettings(next)
     notify('info', 'Dictée', `${why} Elle passe par votre connexion IA (réglable dans Paramètres → IA → Dictée).`)
+    log('bascule vers la connexion IA :', why)
     void this.startRecording(view, next)
     return true
   }
 
   private async startRecording(view: DictationView, s: DictationSettings): Promise<void> {
     if (aiService.connections().length === 0) { notify('warn', 'Dictée', 'Aucune connexion IA : ajoutez-en une dans Paramètres → IA.'); return }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { notify('warn', 'Dictée', 'Enregistrement du son impossible ici.'); return }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      log('pas d’enregistrement possible', { mediaDevices: !!navigator.mediaDevices, MediaRecorder: typeof MediaRecorder, pageSure: window.isSecureContext })
+      notify('warn', 'Dictée', window.isSecureContext ? 'Enregistrement du son impossible ici.' : 'Le micro n’est permis que sur une adresse https ou localhost.')
+      return
+    }
+    // La mesure du volume naît ici, encore dans le clic ; la barre s'affiche pendant la demande d'accès.
+    this.prepareAudio()
+    this.starting = true
+    this.emit()
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      notify('danger', 'Dictée', 'Micro refusé : autorisez-le pour Savoire.')
+    } catch (err) {
+      log('micro refusé', err)
+      const wasStarting = this.starting
+      this.starting = false
+      void this.audio?.close().catch(() => {})
+      this.audio = null
+      this.emit()
+      if (wasStarting) notify('danger', 'Dictée', 'Micro refusé : autorisez-le pour Savoire.')
       return
     }
+    // Annule pendant la demande : on rend le micro.
+    if (!this.starting) { stream.getTracks().forEach(t => t.stop()); return }
+    this.starting = false
+    log('micro ouvert', stream.getAudioTracks()[0]?.label ?? '')
     this.source = 'connection'
     const conn = dictationConnection(s)
     this.by = conn?.name ?? ''
-    const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported?.(t))
+    const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported?.(t))
+    log('enregistrement', { format: type ?? '(celui du navigateur)', connexion: conn?.name, modèle: s.model || DEFAULT_TRANSCRIPTION_MODEL })
     // Le texte s'ecrit dans l'ordre de la parole, meme si une transcription revient avant l'autre.
     let order: Promise<void> = Promise.resolve()
     const send = (blob: Blob) => {
       const ext = /mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'
       this.pending++
       this.emit()
+      log('morceau envoyé', { octets: blob.size, format: blob.type })
       const text = aiService.transcribe(blob, { connectionId: conn?.id, model: s.model || DEFAULT_TRANSCRIPTION_MODEL, language: s.language, fileName: `dictee.${ext}` })
       order = order.then(async () => {
         try {
           const t = await text
+          log('texte reçu', t ? `${t.length} caractères` : '(vide)')
           if (t) insertDictated(view, t)
         } catch (err) {
+          log('transcription en échec', err)
           notify('danger', 'Dictée', err instanceof Error ? err.message : String(err))
         } finally {
           this.pending--
@@ -367,12 +426,13 @@ class Dictation {
     }
 
     // Les pauses : le volume du micro, mesure ~10 fois par seconde.
-    let audio: AudioContext | null = null
+    const audio = this.audio
+    this.audio = null
     let tick: ReturnType<typeof setInterval> | null = null
     try {
-      audio = new AudioContext()
-      // Cree apres l'accord du micro, il peut naitre suspendu (regles de lecture du navigateur).
+      if (!audio) throw new Error('pas de mesure du volume')
       if (audio.state === 'suspended') void audio.resume().catch(() => {})
+      log('mesure du volume', audio.state)
       const analyser = audio.createAnalyser()
       analyser.fftSize = 2048
       audio.createMediaStreamSource(stream).connect(analyser)
@@ -383,9 +443,12 @@ class Dictation {
         let sum = 0
         for (const x of buf) sum += x * x
         const now = Date.now()
-        const cut = seg.feed(Math.sqrt(sum / buf.length), now)
+        const rms = Math.sqrt(sum / buf.length)
+        this.bar.level(rms * 12)
+        const cut = seg.feed(rms, now)
         if (seg.hasVoice) { piece.voiced = true; everVoiced = true }
         if (cut && recorder) {
+          log('pause : morceau coupé')
           const done = recorder
           startPiece()
           seg.reset(now)
@@ -393,8 +456,9 @@ class Dictation {
         }
       }, 100)
       metered = true
-    } catch {
+    } catch (err) {
       // Pas de mesure du volume : un seul morceau, envoye a l'arret.
+      log('sans mesure du volume (le texte arrivera à l’arrêt)', err)
       metered = false
     }
 
@@ -405,6 +469,7 @@ class Dictation {
       const last = recorder
       recorder = null
       if (!everVoiced) piece.voiced = true
+      log('arrêt', { paroleEntendue: everVoiced })
       if (last && last.state !== 'inactive') {
         // Le dernier morceau part, puis le micro se coupe.
         last.addEventListener('stop', () => stream.getTracks().forEach(t => t.stop()), { once: true })

@@ -805,3 +805,4 @@ html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-
 }
 @keyframes dictation-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .dictation-bar-dot { animation: none; } }
+.dictation-bar-dot { transform: scale(calc(1 + var(--dictation-level, 0) * 0.9)); transition: transform 80ms linear; }
