@@ -42,6 +42,28 @@ export function markdownBlock(text: string, hooks?: HookRegistry | null): HTMLEl
   return div
 }
 
+/**
+ * Le contexte d'un plugin, avec `renderMarkdown` pour rendre son contenu
+ * (le corps d'un callout). Ce contenu est en lecture seule : ses blocs ne
+ * savent pas ou ils sont dans la note, ils n'y ecrivent pas.
+ */
+export function withMarkdown(base: BlockContext, opts: FragmentOptions): BlockContext {
+  if (base.renderMarkdown) return base
+  const inner: BlockContext = {
+    get editorView() { return base.editorView },
+    renderMarkdown: (markdown: string) => {
+      const root = document.createElement('div')
+      root.className = 'plume-fragment'
+      renderFragmentInto(root, markdown, { ...opts, ctx: inner })
+      return root
+    },
+  }
+  // Le reste (edit, locate...) vient de `base`, lu au moment de l'appel.
+  const ctx = Object.create(base) as BlockContext
+  ctx.renderMarkdown = inner.renderMarkdown
+  return ctx
+}
+
 /** Un bloc de premier niveau : rendu de son plugin, sinon Markdown. */
 export function renderUnit(chunk: string, nodeName: string | null, opts: FragmentOptions): HTMLElement {
   const detected = (nodeName === null || BLOCK_NODES.has(nodeName)) && opts.registry
@@ -50,7 +72,7 @@ export function renderUnit(chunk: string, nodeName: string | null, opts: Fragmen
   // Une liste a cocher (rendu ligne par ligne) : Markdown suffit.
   if (detected && !detected.spec.renderLine && !opts.asMarkdown?.has(detected.spec.type)) {
     try {
-      const el = detected.spec.renderClient(detected.spec.deserialize(chunk), opts.ctx ?? { editorView: null })
+      const el = detected.spec.renderClient(detected.spec.deserialize(chunk), withMarkdown(opts.ctx ?? { editorView: null }, opts))
       el.classList.add('plume-plugin-render')
       if (!opts.pluginBoxClass) return el
       const box = document.createElement('div')

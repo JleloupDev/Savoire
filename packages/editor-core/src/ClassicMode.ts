@@ -199,6 +199,7 @@ export function editContext(
     editorView: view,
     edit: base.edit,
     locate: base.locate,
+    renderMarkdown: base.renderMarkdown,
     readOnly: view.state.readOnly,
     source: () => {
       const r = range()

@@ -21,6 +21,13 @@ export interface BlockContext {
   edit?(from: number, to: number, insert: string): void
   /** Ligne du document qui porte ce rendu (pour la reecrire avec edit). Null si introuvable. */
   locate?(el: HTMLElement): { from: number; to: number; text: string } | null
+  /**
+   * Rend du Markdown comme le fait la note : gras, listes, tableaux, et les
+   * blocs des autres plugins. Sert au contenu d'un bloc (le corps d'un
+   * callout). Ce rendu est en lecture seule. Absent hors de l'editeur et de
+   * l'export : le plugin montre alors le texte brut.
+   */
+  renderMarkdown?(markdown: string): HTMLElement
 }
 
 /** Describes an entry in the slash command palette for this block type. */
@@ -110,6 +117,13 @@ export interface BlockSpec {
    * « Supprimer ».
    */
   menu?(data: unknown, ctx: BlockEditContext): BlockMenuItem[]
+  /**
+   * Retirer le bloc en gardant son contenu (menu « Retirer le callout ») :
+   * le cadre part, le contenu reste dans la note en Markdown ordinaire.
+   * `label` est l'entree du menu, `content` le texte qui remplace le bloc.
+   * Absent : pas d'entree.
+   */
+  unwrap?: { label: string; content(data: unknown): string }
   /** If defined, auto-registers slash command entries for this block. */
   trigger?: BlockTrigger | BlockTrigger[]
 }

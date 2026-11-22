@@ -105,6 +105,9 @@ const plugin: VaultPlugin = {
 
       createEditorWidget: (_data, _ctx) => ({ mount: (_el) => {}, destroy: () => {} }),
 
+      // Clic droit « Retirer le diagramme » : sa definition reste, en texte.
+      unwrap: { label: 'Retirer le diagramme', content: (data) => (data as MermaidData).definition },
+
       renderClient: (data, _ctx) => {
         const { definition } = data as MermaidData
 

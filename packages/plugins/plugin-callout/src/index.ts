@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultPlugin, PluginAPI, BlockEditContext } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, BlockContext, BlockEditContext } from '@savoire/plugin-api'
 import { createIcon } from '@savoire/plugin-api'
 
-interface CalloutData { type: string; content: string }
+interface CalloutData { type: string; content: string; title?: string }
 
 const COLORS: Record<string, { border: string; bg: string; icon: string }> = {
   NOTE:    { border: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: 'pencil' },
@@ -27,18 +27,24 @@ const LABELS: Record<string, string> = {
 
 function serializeCallout(d: CalloutData): string {
   const lines = d.content.split('\n').map(l => (l ? `> ${l}` : '>'))
-  return `> [!${d.type.toUpperCase()}]\n${lines.join('\n')}`
+  return `> [!${d.type.toUpperCase()}]${d.title ? ` ${d.title}` : ''}\n${lines.join('\n')}`
 }
 
 function deserializeCallout(raw: string): CalloutData {
   const match = String(raw).match(/\[!(\w+)\]/)
+  const title = /^>\s*\[!\w+\][+-]?[ \t]*(.*)$/.exec(String(raw).split('\n')[0] ?? '')?.[1]?.trim() ?? ''
   const content = String(raw)
     .split('\n')
     .slice(1)                          // drop the [!TYPE] line
     .map(l => l.replace(/^>\s?/, ''))  // strip "> " prefix
     .join('\n')
     .trim()
-  return { type: (match?.[1] ?? 'NOTE').toUpperCase(), content }
+  return { type: (match?.[1] ?? 'NOTE').toUpperCase(), content, ...(title ? { title } : {}) }
+}
+
+/** Le callout sans son cadre : le titre (s'il y en a un), puis le corps. */
+function unwrapCallout(d: CalloutData): string {
+  return [d.title, d.content].filter(Boolean).join('\n\n')
 }
 
 /** Change le type, en gardant le reste de la ligne de titre et le corps. */
@@ -53,7 +59,25 @@ function withContent(raw: string, content: string): string {
   return [first, ...body].join('\n')
 }
 
-function renderCallout(d: CalloutData): HTMLElement {
+/**
+ * Le corps du callout, rendu comme la note (gras, listes, tableaux...) quand
+ * l'editeur sait le faire. Sinon, le texte tel quel.
+ */
+function fillBody(body: HTMLElement, content: string, ctx?: BlockContext): void {
+  let rich: HTMLElement | null = null
+  if (content && ctx?.renderMarkdown) {
+    try { rich = ctx.renderMarkdown(content) } catch { rich = null }
+  }
+  if (rich) {
+    body.style.whiteSpace = 'normal'
+    body.replaceChildren(rich)
+  } else {
+    body.style.whiteSpace = 'pre-wrap'
+    body.textContent = content
+  }
+}
+
+function renderCallout(d: CalloutData, ctx?: BlockContext): HTMLElement {
   const style = COLORS[d.type] ?? DEFAULT
 
   const el = document.createElement('div')
@@ -68,7 +92,7 @@ function renderCallout(d: CalloutData): HTMLElement {
   const body = document.createElement('div')
   body.className = 'callout-body'
   body.style.cssText = 'color:inherit;white-space:pre-wrap'
-  body.textContent = d.content
+  fillBody(body, d.content, ctx)
 
   el.appendChild(title)
   el.appendChild(body)
@@ -83,6 +107,7 @@ function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext): vo
   area.value = deserializeCallout(ctx.source()).content
   area.style.cssText = 'width:100%;box-sizing:border-box;resize:none;overflow:hidden;font:inherit;color:inherit;background:transparent;border:1px dashed currentColor;border-radius:4px;padding:2px 4px;opacity:0.95'
   const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight + 2}px` }
+  body.style.whiteSpace = 'pre-wrap'
   body.replaceChildren(area)
   body.style.opacity = ''
   // Garde l'element pendant l'ecriture (voir BlockEditContext).
@@ -107,9 +132,9 @@ function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext): vo
   area.addEventListener('blur', () => {
     commit()
     delete el.dataset.plumeEditing
-    // Le rendu reprend : le corps redevient du texte.
+    // Le rendu reprend.
     const content = deserializeCallout(ctx.source()).content
-    body.textContent = content || 'Écrire…'
+    fillBody(body, content || 'Écrire…', content ? ctx : undefined)
     body.style.opacity = content ? '' : '0.6'
   })
 }
@@ -152,13 +177,13 @@ const plugin: VaultPlugin = {
         mount: (_el) => {},
         destroy: () => {},
       }),
-      renderClient: (data, _ctx) => renderCallout(data as CalloutData),
+      renderClient: (data, ctx) => renderCallout(data as CalloutData, ctx),
 
       // Mode classique : le type se choisit dans le titre, le corps s'ecrit
       // sur place. La syntaxe > [!TYPE] n'apparait pas.
       renderEditable: (data, ctx) => {
         const d = data as CalloutData
-        const el = renderCallout(d)
+        const el = renderCallout(d, ctx)
         const title = el.querySelector('.callout-title') as HTMLElement
         const body = el.querySelector('.callout-body') as HTMLElement
         const select = document.createElement('select')
@@ -192,12 +217,19 @@ const plugin: VaultPlugin = {
           body.style.opacity = '0.6'
         }
         body.addEventListener('mousedown', e => {
-          if (body.querySelector('textarea')) return
+          // Le clic droit garde le menu du bloc.
+          if (e.button !== 0 || body.querySelector('textarea')) return
+          // Un lien ou une case du rendu garde son clic.
+          if ((e.target as Element | null)?.closest?.('a, input, button')) return
           e.preventDefault()
           editBody(el, body, ctx)
         })
         return el
       },
+
+      // Clic droit « Retirer le callout » : son titre et son corps restent
+      // dans la note, sans le cadre ni les >.
+      unwrap: { label: 'Retirer le callout', content: (data) => unwrapCallout(data as CalloutData) },
 
       menu: (data, ctx) => {
         const d = data as CalloutData

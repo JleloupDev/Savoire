@@ -572,10 +572,16 @@ export function propertiesPanelExtension(host: PropertiesHost) {
     refreshField,
     keepCursorAfterPanel,
     EditorView.baseTheme({
+      // Pas de marge : CodeMirror ne la compte pas, et tout clic plus bas
+      // tomberait a cote. L'espace autour et le trait du bas sont dedans.
       '.plume-props': {
-        margin: '4px 0 10px', padding: '6px 4px 6px 0', borderBottom: '1px solid var(--border, #313244)',
+        margin: '0', padding: '10px 4px 17px 0',
         fontFamily: 'var(--font-ui, sans-serif)', fontSize: '13px', whiteSpace: 'normal', cursor: 'default',
         position: 'relative',
+      },
+      '.plume-props::after': {
+        content: '""', position: 'absolute', left: '0', right: '0', bottom: '10px',
+        borderBottom: '1px solid var(--border, #313244)', pointerEvents: 'none',
       },
       '.plume-props-head': { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', color: 'var(--text-muted, #a6adc8)' },
       '.plume-props-title': { fontWeight: '600', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' },

@@ -104,6 +104,9 @@ const plugin: VaultPlugin = {
 
       createEditorWidget: (_data, _ctx) => ({ mount: (_el) => {}, destroy: () => {} }),
 
+      // Clic droit « Retirer le bloc de code » : le code reste, sans les ```.
+      unwrap: { label: 'Retirer le bloc de code', content: (data) => (data as CodeData).code },
+
       renderClient: (data, _ctx) => renderCode(data as CodeData),
 
       // Mode classique : un clic dans le code l'ouvre en zone de texte, sans
@@ -114,6 +117,8 @@ const plugin: VaultPlugin = {
         const pre = wrapper.querySelector('pre') as HTMLElement
         pre.style.cursor = 'text'
         pre.addEventListener('mousedown', e => {
+          // Le clic droit garde le menu du bloc.
+          if (e.button !== 0) return
           e.preventDefault()
           editCode(wrapper, pre, ctx)
         })
@@ -220,7 +225,7 @@ function editCode(wrapper: HTMLElement, pre: HTMLElement, ctx: BlockEditContext)
     delete wrapper.dataset.plumeEditing
     // Le code redevient colore.
     const fresh = renderCode(deserializeCode(ctx.source())).querySelector('pre')
-    if (fresh) { fresh.style.cursor = 'text'; fresh.addEventListener('mousedown', e => { e.preventDefault(); editCode(wrapper, fresh, ctx) }); area.replaceWith(fresh) }
+    if (fresh) { fresh.style.cursor = 'text'; fresh.addEventListener('mousedown', e => { if (e.button !== 0) return; e.preventDefault(); editCode(wrapper, fresh, ctx) }); area.replaceWith(fresh) }
   })
 }
 

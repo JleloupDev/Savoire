@@ -26,7 +26,7 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 import { marked } from 'marked'
 import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
 import type { BlockRegistry, BlockContext, BlockEditContext, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
-import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, type FragmentOptions } from './NoteFragment'
+import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, type FragmentOptions } from './NoteFragment'
 import { findColumnsBlocks } from './Columns'
 import {
   ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
@@ -85,12 +85,125 @@ class FrontmatterBadge extends WidgetType {
   ignoreEvent(): boolean { return false }
 }
 
+// ── Un clic ne fait pas bouger la note ──────────────────────────────────────
+//
+// Le curseur qui quitte un bloc (code, tableau, callout, liste...) le fait
+// repasser en rendu, et sa hauteur change : tout ce qui est dessous glisse.
+// Si cela arrive entre l'appui et le relachement, le clic tombe une ou deux
+// lignes plus bas, et un glisser selectionne autre chose que ce qu'on vise.
+// Pendant l'appui, les endroits en texte brut le restent (« tenus ») ; la
+// ligne visee passe en texte brut AVANT que CodeMirror ne calcule la position
+// du clic, qui tombe alors sur le caractere vise. Ils se referment un peu
+// apres le relachement, une fois passe le temps d'un double clic.
+
+/** Positions tenues en texte brut pendant un clic (null : aucun clic). */
+const setPointerHold = StateEffect.define<number[] | null>()
+
+const pointerHoldField = StateField.define<number[] | null>({
+  create: () => null,
+  update(held, tr) {
+    let next = held && tr.docChanged ? held.map(p => tr.changes.mapPos(p)) : held
+    for (const e of tr.effects) if (e.is(setPointerHold)) next = e.value
+    // Un glisser : les lignes qu'il traverse restent ouvertes jusqu'au bout.
+    if (next && tr.selection) {
+      const doc = tr.state.doc
+      const p = tr.state.selection.main.from
+      const line = doc.lineAt(p).number
+      if (!next.some(q => doc.lineAt(Math.min(q, doc.length)).number === line)) next = [...next, p]
+    }
+    return next
+  },
+})
+
+/** Le temps d'un double clic (celui de CodeMirror) avant de refermer. */
+const POINTER_RELEASE_MS = 450
+
+/**
+ * Le bloc rendu sous le clic, a ouvrir avant que CodeMirror ne place le
+ * curseur. Pas un lien ni un bouton, ni un bloc dont le rendu ne ressemble
+ * pas au texte (tableau, code, integration...), ni un objet du mode classique.
+ */
+function blockToReveal(view: EditorView, target: EventTarget | null): number | null {
+  const el = target as Element | null
+  const block = el?.closest?.('.vault-rendered-block')
+  if (!block || !view.contentDOM.contains(block)) return null
+  if (el!.closest('a, input, button, select, textarea, iframe, .plume-object')) return null
+  if (block.querySelector('table, pre, iframe, img, .note-embed, .base-q, .board-embed')) return null
+  try { return view.posAtDOM(block) } catch { return null }
+}
+
+const pointerHold = ViewPlugin.fromClass(class {
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private pressed = false
+
+  constructor(private readonly view: EditorView) {
+    // Ecoute directe : CodeMirror ne transmet pas le survol de ses widgets
+    // (ignoreEvent), et il faut passer avant lui.
+    view.contentDOM.addEventListener('mousemove', this.move)
+  }
+
+  press(event: MouseEvent): void {
+    if (event.button !== 0) return
+    const { view } = this
+    if (this.timer) { clearTimeout(this.timer); this.timer = null }
+    this.pressed = true
+    // Un double clic garde ce que le premier clic tenait deja.
+    const held = [...(view.state.field(pointerHoldField, false) ?? []), view.state.selection.main.from]
+    this.hold(held, blockToReveal(view, event.target))
+    window.addEventListener('mouseup', this.up, true)
+    window.addEventListener('dragend', this.up, true)
+  }
+
+  /**
+   * Un glisser passe sur une ligne rendue : elle s'ouvre avant que
+   * CodeMirror ne lise la souris (il ecoute plus haut, sur le document).
+   * La selection peut alors s'arreter au milieu de la ligne.
+   */
+  readonly move = (event: MouseEvent): void => {
+    if (!this.pressed || (event.buttons & 1) === 0) return
+    const reveal = blockToReveal(this.view, event.target)
+    if (reveal !== null) this.hold(this.view.state.field(pointerHoldField, false) ?? [], reveal)
+  }
+
+  private hold(held: number[], reveal: number | null): void {
+    const { view } = this
+    view.dispatch({ effects: setPointerHold.of(reveal === null ? held : [...held, reveal]) })
+    // La ligne ouverte a change le DOM : CodeMirror doit le mesurer avant de
+    // calculer la position (sinon il se fie a des hauteurs estimees).
+    if (reveal !== null) (view as unknown as { measure?: () => void }).measure?.()
+  }
+
+  readonly up = (): void => {
+    this.pressed = false
+    window.removeEventListener('mouseup', this.up, true)
+    window.removeEventListener('dragend', this.up, true)
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = setTimeout(() => {
+      this.timer = null
+      if (this.view.state.field(pointerHoldField, false)) this.view.dispatch({ effects: setPointerHold.of(null) })
+    }, POINTER_RELEASE_MS)
+  }
+
+  destroy(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.view.contentDOM.removeEventListener('mousemove', this.move)
+    window.removeEventListener('mouseup', this.up, true)
+    window.removeEventListener('dragend', this.up, true)
+  }
+}, {
+  eventHandlers: {
+    mousedown(event) {
+      this.press(event)
+      return false
+    },
+  },
+})
+
 // Sans panneau de proprietes (editeur seul), le bloc se replie en « ··· ».
-function buildFrontmatterDecoration(state: EditorState, endPos: number): Range<Decoration> | null {
+function buildFrontmatterDecoration(endPos: number, live: readonly number[]): Range<Decoration> | null {
   if (endPos === 0) return null
   // Reveal when cursor is inside frontmatter block
-  const { from: cursorFrom } = state.selection.main
-  if (cursorFrom <= endPos) return null
+  if (live.some(p => p <= endPos)) return null
   return Decoration.replace({
     widget: new FrontmatterBadge(),
     block: true,
@@ -395,7 +508,11 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   const decorations: Range<Decoration>[] = []
   const objects: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
-  const { from: cursorFrom } = state.selection.main
+  // Endroits en texte brut : le curseur, et pendant un clic ce qui est tenu.
+  const live = [state.selection.main.from, ...(state.field(pointerHoldField, false) ?? [])]
+    .map(p => Math.min(p, state.doc.length))
+  const liveLines = new Set(live.map(p => state.doc.lineAt(p).number))
+  const liveIn = (from: number, to: number): boolean => live.some(p => p >= from && p <= to)
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
   // Passages surlignes par la revision : leurs lignes restent en texte brut.
   const reviewed = highlightedRanges(state)
@@ -411,13 +528,15 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   // le badge replie (null si le curseur y est, ou sans frontmatter).
   const fmEnd = frontmatterEnd(state)
   const panelDecos = propertiesDecorations(state, fmEnd)
-  const fmDeco = panelDecos ? null : buildFrontmatterDecoration(state, fmEnd)
+  const fmDeco = panelDecos ? null : buildFrontmatterDecoration(fmEnd, live)
 
   const detect = (text: string): { type: string; spec: BlockSpec } | null => {
     if (!registry || !ctx) return null
     const ids = getActiveScopeIds?.() ?? null
     return registry.detectActive ? registry.detectActive(text, ids) : registry.detectBlock(text)
   }
+  // Le contexte des plugins, avec le rendu du Markdown (corps d'un callout).
+  const pluginCtx = ctx ? withMarkdown(ctx, { registry, hooks, activeIds: getActiveScopeIds?.() ?? null }) : undefined
   const claimedByPlugin = (text: string): boolean => !!detect(text)
 
   // ── Objets du mode classique ──
@@ -430,7 +549,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   ): void => {
     const widget = new ObjectWidget(key, epochAt(from), (view) => {
       let root: HTMLElement | null = null
-      const edit = editContext(view, ctx ?? { editorView: view }, () => (root ? env.rangeOf(view, root) : null))
+      const edit = editContext(view, pluginCtx ?? { editorView: view }, () => (root ? env.rangeOf(view, root) : null))
       root = build(view, edit)
       return root
     }, fallback)
@@ -442,7 +561,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   const pluginObject = (from: number, to: number, text: string, spec: BlockSpec): void => {
     pushObject(from, to, `${spec.type}|${text}`, (_view, edit) => {
       const data = spec.deserialize(text)
-      return spec.renderEditable && !edit.readOnly ? spec.renderEditable(data, edit) : spec.renderClient(data, ctx!)
+      return spec.renderEditable && !edit.readOnly ? spec.renderEditable(data, edit) : spec.renderClient(data, pluginCtx!)
     }, () => markdownElement(text, hooks))
   }
 
@@ -470,7 +589,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         () => markdownElement(text, hooks))
       continue
     }
-    if (cursorFrom >= block.from && cursorFrom <= block.to) continue
+    if (liveIn(block.from, block.to)) continue
     if (remoteCursors.some(p => p >= block.from && p <= block.to)) continue
     if (underReview(block.from, block.to)) continue
     decorations.push(Decoration.replace({
@@ -480,7 +599,6 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   }
 
   const renderParagraphLines = (firstLine: number, lastLine: number): void => {
-    const cursorLine = state.doc.lineAt(cursorFrom).number
     for (let n = firstLine; n <= lastLine; n++) {
       const line = state.doc.line(n)
       if (inColumns(line.from, line.to)) continue
@@ -494,11 +612,11 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         pluginObject(line.from, line.to, lineText, own.spec)
         continue
       }
-      if (n === cursorLine) continue
+      if (liveLines.has(n)) continue
       if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
       if (underReview(line.from, line.to)) continue
       if (own) {
-        const render = () => own.spec.renderClient(own.spec.deserialize(lineText), ctx!)
+        const render = () => own.spec.renderClient(own.spec.deserialize(lineText), pluginCtx!)
         decorations.push(Decoration.replace({ widget: new PluginWidget(render, lineText, () => markdownElement(lineText, hooks, 'vault-paragraph-line')), block: true }).range(line.from, line.to))
         continue
       }
@@ -515,7 +633,6 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   }
 
   const renderBlockLines = (firstLine: number, lastLine: number, spec?: BlockSpec): void => {
-    const cursorLine = state.doc.lineAt(cursorFrom).number
     for (let n = firstLine; n <= lastLine; n++) {
       const line = state.doc.line(n)
       if (!line.text.trim()) continue
@@ -525,7 +642,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
       const depth = isQuote
         ? Math.max(0, (/^\s*((?:>\s?)+)/.exec(text)![1].match(/>/g) ?? []).length - 1)
         : listDepth(state, line.from + indent)
-      if (n === cursorLine) {
+      if (liveLines.has(n)) {
         // La ligne en edition garde le retrait des lignes rendues : le
         // tiret tombe a la place de la puce.
         if (!isQuote) {
@@ -587,7 +704,6 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
 
       const blockStartLine = state.doc.lineAt(node.from).number
       const blockEndLine   = state.doc.lineAt(Math.min(node.to, state.doc.length)).number
-      const cursorLine     = state.doc.lineAt(cursorFrom).number
       const isSingleLine   = blockStartLine === blockEndLine
       const text = state.doc.sliceString(node.from, node.to)
 
@@ -615,7 +731,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
       // For multi-line blocks (blockquote, list…): raw when cursor is anywhere in the block.
       // EXCEPTION: ATX headings on the cursor line get a Decoration.line() class for live
       // heading styling — so the font/size updates as you type without replacing the text.
-      if (isSingleLine && cursorLine === blockStartLine) {
+      if (isSingleLine && liveLines.has(blockStartLine)) {
         const headingClass = HEADING_LINE_CLASSES[node.type.name]
         if (headingClass) {
           // Line decoration for line-height on the cm-line wrapper.
@@ -644,7 +760,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
           renderParagraphLines(blockStartLine, blockEndLine)
           return false
         }
-        if (cursorFrom >= node.from && cursorFrom <= node.to) return false
+        if (liveIn(node.from, node.to)) return false
       }
 
       const hasRemoteCursor = remoteCursors.some(p => p >= node.from && p <= node.to)
@@ -654,7 +770,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
       // Level 1: ask the plugin BlockRegistry first (scope-filtered when available)
       const detected = detect(text)
       if (detected) {
-        const render = () => detected.spec.renderClient(detected.spec.deserialize(text), ctx!)
+        const render = () => detected.spec.renderClient(detected.spec.deserialize(text), pluginCtx!)
         decorations.push(
           Decoration.replace({
             widget: new PluginWidget(render, text, () => markdownElement(text, hooks)),
@@ -732,6 +848,24 @@ class SingleLineNumberMarker extends GutterMarker {
   }
 }
 
+/** Numero d'un titre : centre sur sa ligne, plus haute que les autres. */
+class HeadingLineNumberMarker extends SingleLineNumberMarker {
+  elementClass = 'plume-gutter-heading'
+}
+
+function isHeadingLine(state: EditorState, from: number): boolean {
+  const name = syntaxTree(state).resolveInner(from, 1)
+  for (let n: SyntaxNode | null = name; n; n = n.parent) {
+    if (HEADING_LINE_CLASSES[n.name]) return true
+  }
+  return false
+}
+
+function lineNumberMarker(state: EditorState, from: number): SingleLineNumberMarker {
+  const n = state.doc.lineAt(from).number
+  return isHeadingLine(state, from) ? new HeadingLineNumberMarker(n) : new SingleLineNumberMarker(n)
+}
+
 class BlockLineNumberMarker extends GutterMarker {
   constructor(private readonly first: number, private readonly last: number) { super() }
   eq(other: BlockLineNumberMarker): boolean {
@@ -752,7 +886,7 @@ const blockAwareLineNumbers = gutter({
   class: 'cm-lineNumbers',
   // Called for each visible TEXT line.
   lineMarker(view, line) {
-    return new SingleLineNumberMarker(view.state.doc.lineAt(line.from).number)
+    return lineNumberMarker(view.state, line.from)
   },
   // Called for each replaced block widget (Decoration.replace({ block: true })).
   widgetMarker(view, widget, block) {
@@ -761,7 +895,7 @@ const blockAwareLineNumbers = gutter({
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number
     // Un widget d'une seule ligne garde le style d'un numero ordinaire.
-    return first === last ? new SingleLineNumberMarker(first) : new BlockLineNumberMarker(first, last)
+    return first === last ? lineNumberMarker(state, block.from) : new BlockLineNumberMarker(first, last)
   },
   initialSpacer(view) {
     return new SingleLineNumberMarker(view.state.doc.lines)
@@ -792,38 +926,6 @@ const blockquoteExitKeymap = Prec.highest(
 
 
 /**
- * Clic sur une ligne rendue : CodeMirror pose le curseur au debut du bloc,
- * qui repasse en texte brut. La ligne garde sa hauteur (voir le theme) :
- * au relachement, le curseur va la ou l'on a clique, dans le texte brut.
- * Un double clic qui suit selectionne donc le mot vise. Pas pour les blocs
- * dont le rendu ne ressemble pas au texte (tableau, code, integration...).
- */
-const clickPlacesCursor = EditorView.domEventHandlers({
-  mousedown(event, view) {
-    if (event.button !== 0 || event.detail !== 1 || event.shiftKey) return false
-    const target = event.target as Element | null
-    const block = target?.closest?.('.vault-rendered-block')
-    if (!block || !view.dom.contains(block)) return false
-    if (target?.closest?.('a, input, button, select, textarea, iframe')) return false
-    if (block.querySelector('table, pre, iframe, img, .note-embed, .base-q, .board-embed')) return false
-    const x = event.clientX
-    const y = event.clientY
-    const up = (e: MouseEvent) => {
-      window.removeEventListener('mouseup', up, true)
-      // Glisse : une selection, on n'y touche pas.
-      if (Math.abs(e.clientX - x) > 4 || Math.abs(e.clientY - y) > 4) return
-      requestAnimationFrame(() => {
-        if (!view.state.selection.main.empty) return
-        const pos = view.posAtCoords({ x, y })
-        if (pos !== null && pos !== view.state.selection.main.head) view.dispatch({ selection: { anchor: pos } })
-      })
-    }
-    window.addEventListener('mouseup', up, true)
-    return false
-  },
-})
-
-/**
  * La cible est dans un element interactif DE L'OBJET. Pas plus haut : la
  * zone de l'editeur elle-meme est contenteditable.
  */
@@ -842,6 +944,36 @@ function ensureColumnsStyle(): void {
 }
 
 // ── Mode classique : clavier, menu, poignees ────────────────────────────────
+
+const CODE_FENCE_LINE_RE = /^\s*(`{3,}|~{3,})/
+
+/**
+ * « Retirer le callout », « Retirer le bloc de code »... : le cadre part, le
+ * contenu reste dans la note en Markdown ordinaire. Le plugin du bloc dit
+ * quoi garder (BlockSpec.unwrap) ; colonnes et code sans plugin, l'editeur.
+ */
+function unwrapOf(state: EditorState, r: BlockRange, text: string, spec?: BlockSpec): { label: string; content: string } | null {
+  if (spec) {
+    if (!spec.unwrap) return null
+    try {
+      return { label: spec.unwrap.label, content: spec.unwrap.content(spec.deserialize(text)) }
+    } catch (err) {
+      console.debug('[LivePreview] unwrap error:', err)
+      return null
+    }
+  }
+  const columns = findColumnsBlocks(state.doc).find(b => b.from === r.from)
+  if (columns) {
+    const parts = columns.columns.map(c => state.sliceDoc(c.from, c.to).trim()).filter(Boolean)
+    return { label: 'Retirer les colonnes', content: parts.join('\n\n') }
+  }
+  const lines = text.split('\n')
+  const open = CODE_FENCE_LINE_RE.exec(lines[0] ?? '')
+  if (open && lines.length >= 2 && lines[lines.length - 1].trim().startsWith(open[1])) {
+    return { label: 'Retirer le bloc de code', content: lines.slice(1, -1).join('\n') }
+  }
+  return null
+}
 
 function classicExtensions(
   env: PreviewEnv,
@@ -881,7 +1013,11 @@ function classicExtensions(
       } catch (err) {
         console.debug('[LivePreview] block menu error:', err)
       }
-      items.push({ id: 'source', label: 'Modifier la source', separatorBefore: items.length > 0, run: () => openSource(view, r) })
+      const unwrap = unwrapOf(view.state, r, text, detected?.spec)
+      if (unwrap) {
+        items.push({ id: 'unwrap', label: unwrap.label, separatorBefore: items.length > 0, run: () => edit.replace(unwrap.content) })
+      }
+      items.push({ id: 'source', label: 'Modifier la source', separatorBefore: !unwrap && items.length > 0, run: () => openSource(view, r) })
     }
     items.push({
       id: 'duplicate',
@@ -1080,7 +1216,7 @@ export function createLivePreviewExtension(
       return buildDecorations(state, env)
     },
     update(value, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
+      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || e.is(setPointerHold) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
         return buildDecorations(tr.state, env)
       }
       return { decorations: value.decorations.map(tr.changes), objects: value.objects.map(tr.changes), hidden: value.hidden.map(tr.changes) }
@@ -1102,6 +1238,9 @@ export function createLivePreviewExtension(
 
   const headingCursorFix = EditorView.updateListener.of((update) => {
     if (!update.selectionSet || update.docChanged) return
+    // Un clic pose le curseur ou l'on vise (la ligne s'ouvre avant), et un
+    // glisser qui part du debut d'un titre ne doit pas etre ecrase.
+    if (!update.state.selection.main.empty || update.transactions.some(tr => tr.isUserEvent('select.pointer'))) return
     const { from } = update.state.selection.main
     const line = update.state.doc.lineAt(from)
     if (from !== line.from) return
@@ -1150,12 +1289,13 @@ export function createLivePreviewExtension(
 
   return [
     remoteCursorPositionsField,
+    pointerHoldField,
     field,
     ...(showLineNumbers ? [blockAwareLineNumbers] : []),
     blockquoteExitKeymap,
     blockNavigationKeymap,
     headingCursorFix,
-    clickPlacesCursor,
+    pointerHold,
     ...(classic ? classicExtensions(env, objectsOf) : []),
     EditorView.baseTheme({
       // Restore lineNumbers() base theme (removed when we replaced the extension).
@@ -1166,10 +1306,25 @@ export function createLivePreviewExtension(
         color: 'var(--cm-lineNumber-color, #6c7086)',
         whiteSpace: 'nowrap',
       },
+      // CodeMirror mesure un bloc rendu sans ses marges : chaque marge
+      // decale tout ce qui est dessous (numeros de ligne, clics). Un callout
+      // et un bloc de code suffisaient a faire tomber les clics une ligne
+      // plus bas. Pas de marge sur ce qui remplace une ligne.
+      '.cm-content > :not(.cm-line)': {
+        marginTop: '0 !important',
+        marginBottom: '0 !important',
+      },
+      '.cm-lineNumbers .cm-gutterElement.plume-gutter-heading': {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+      },
       // Meme boite qu'une ligne brute (.cm-line) : entrer dans une ligne ne
       // change pas sa hauteur, le document ne saute pas. Seuls les blocs
       // particuliers (tableau, code, integration...) gardent leur hauteur.
       '.vault-rendered-block': {
+        // Les marges du contenu (citation, code) restent dans le bloc.
+        display: 'flow-root',
         padding: '0 2px 0 6px',
         margin: '0',
         lineHeight: 'var(--vault-line-height, 1.65)',
