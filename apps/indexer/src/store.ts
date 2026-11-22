@@ -50,6 +50,8 @@ import type { ServerPluginSet } from './serverPlugins'
 import { HttpError, notOwner, unavailable } from './errors'
 import type { Logger } from './log'
 import { Counter, Histogram, gauge } from './metrics'
+import { FileQuarantine } from './quarantine'
+import type { ShardExit } from './quarantine'
 import type { Family } from './metrics'
 import { BUILD, INTERACTIVE, LIVE, PRIORITY_NAMES, PrioritySlot } from './sched'
 import type { Priority } from './sched'
@@ -76,6 +78,10 @@ export interface StoreOptions {
   extractor?: (path: string) => ExtractorSpec | undefined
   /** Outils d'agent des plugins permis sur ce pair (serverPlugins.ts). */
   plugins?: ServerPluginSet
+  /** Version du pair : un fichier mis de cote est relu apres une nouvelle version. */
+  version?: string
+  /** Chutes du fil pendant la lecture d'un meme fichier avant de le mettre de cote (quarantine.ts). */
+  quarantineAfter?: number
 }
 
 /** Pourquoi un vault est (re)construit. */
@@ -280,16 +286,23 @@ export class VaultStore {
   ) {
     this.fetches = new Semaphore(opts.fetchConcurrency)
     this.powers = opts.powers ?? defaultPowers
+    this.quarantine = new FileQuarantine({ dataDir: opts.dataDir, shard: opts.shard, version: opts.version ?? 'dev', after: opts.quarantineAfter ?? 3, log })
     this.backend = backendFactory({ requests: this.m.backendRequests, duration: this.m.backendSeconds })
   }
 
   private readonly backend: BackendClient
+  private readonly quarantine: FileQuarantine
 
   // ── Demarrage, arret ─────────────────────────────────────────────────────
 
-  /** Inventaire du dossier : index existants, marques d'orphelins, constructions interrompues. */
-  start(owns: (vaultId: string) => boolean): void {
+  /**
+   * Inventaire du dossier : index existants, marques d'orphelins,
+   * constructions interrompues ; fichiers pendant la lecture desquels le fil
+   * precedent est tombe (`lastExit` : sa fin, vue du fil principal).
+   */
+  start(owns: (vaultId: string) => boolean, lastExit?: ShardExit): void {
     mkdirSync(this.opts.dataDir, { recursive: true })
+    this.quarantine.start(owns, lastExit)
     for (const name of readdirSync(this.opts.dataDir)) {
       const m = /^(.+)\.sqlite(\.building(-wal|-shm|-journal)?|\.stale)?$/.exec(name)
       if (!m || !isVaultId(m[1]) || !owns(m[1]!)) continue
@@ -326,6 +339,12 @@ export class VaultStore {
       await this.closeHandle(v, 'target')
     }
     if (this.emptyIndex) await (await this.emptyIndex).close().catch(() => undefined)
+    this.quarantine.stop()
+  }
+
+  /** Exception non rattrapee dans le fil, juste avant sa sortie (synchrone). */
+  crashed(err: unknown): void {
+    this.quarantine.crashed(err)
   }
 
   private track<T>(p: Promise<T>, what: string, vaultId?: string): void {
@@ -526,7 +545,7 @@ export class VaultStore {
 
   /** Le texte d'un document, comme l'index le lit : note, fichier extrait, texte publie. */
   private async readText(v: Vault, id: string, path: string, signal?: AbortSignal): Promise<NoteInput | null | undefined> {
-    if (this.extractable(path)) return this.extractFile(v, id, path, signal)
+    if (this.extractable(path)) return this.extractFile(v, id, path, signal, true)
     if (isOtherFile(path)) return this.publishedText(v, id, path, signal)
     const log = await this.fetch(() => this.readDoc(v, id, signal))
     if (!log || log.format !== 'yjs') return undefined
@@ -1013,11 +1032,22 @@ export class VaultStore {
     return !!this.opts.extractor && !isTrashPath(path) && !isNotePath(path) && !!this.opts.extractor(path)
   }
 
-  /** Le texte d'un fichier, par son extracteur : une entree d'index comme une note. */
-  private async extractFile(v: Vault, id: string, path: string, signal?: AbortSignal): Promise<NoteInput | null | undefined> {
+  /**
+   * Le texte d'un fichier, par son extracteur : une entree d'index comme une
+   * note. Un fichier mis de cote (il fait tomber le fil, quarantine.ts) n'est
+   * pas lu : indexe par son nom seulement ; `read` (texte demande par une IA,
+   * un script) : 404 qui le dit.
+   */
+  private async extractFile(v: Vault, id: string, path: string, signal?: AbortSignal, read = false): Promise<NoteInput | null | undefined> {
     const spec = this.opts.extractor!(path)!
     const bytes = await this.fetch(() => this.backend.file(v.id, id, MAX_EXTRACT_BYTES, signal))
     if (!bytes) return undefined
+    const guard = this.quarantine.begin(v.id, id, path, bytes, `${spec.id}@${spec.version}`)
+    if ('quarantined' in guard) {
+      this.m.skipped.inc({ reason: 'quarantined' })
+      if (read) throw new HttpError(404, 'not_found', 'Fichier mis de cote : sa lecture faisait tomber le pair indexeur. Il reste trouvable par son nom ; son texte reviendra avec une correction (ou si le fichier change).')
+      return { id, path, content: '', frontmatter: false }
+    }
     try {
       const content = await spec.extract(bytes, { path })
       return { id, path, content: extractedToMarkdown(content), frontmatter: true }
@@ -1025,6 +1055,8 @@ export class VaultStore {
       this.m.skipped.inc({ reason: 'extract' })
       this.log.warn('fichier illisible', { vault: v.id, doc: id, err })
       return undefined
+    } finally {
+      guard.done()
     }
   }
 
@@ -1509,6 +1541,7 @@ export class VaultStore {
       this.rmIndex(v.file)
       this.rmIndex(v.file + '.building')
       this.rm(this.staleFile(v))
+      this.quarantine.forget(v.id)
       v.orphanSince = undefined
       v.rebuild = undefined
       v.checked = false
@@ -1580,6 +1613,7 @@ export class VaultStore {
       gauge('savoire_indexer_slot_busy_seconds_total', 'Temps passe dans le creneau SQLite, par priorite.',
         PRIORITY_NAMES.map((p, i) => ({ labels: { priority: p }, value: this.slot.busyMs[i]! / 1000 }))),
       gauge('savoire_indexer_vaults', 'Vaults par etat.', [...byStatus].map(([state, n]) => ({ labels: { state }, value: n }))),
+      gauge('savoire_indexer_quarantined_files', 'Fichiers mis de cote : leur lecture faisait tomber le fil (indexes par leur nom seulement).', [{ value: this.quarantine.count() }]),
     ]
     for (const f of families) for (const s of f.samples) s.labels = { ...s.labels, ...shard }
     return {

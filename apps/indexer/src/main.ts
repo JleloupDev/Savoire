@@ -35,7 +35,12 @@ function runWorker(init: ShardInit): void {
   const port = parentPort!
   const shard = new Shard(init, log, (msg: FromShard) => port.postMessage(msg))
   port.on('message', (msg: ToShard) => shard.handle(msg))
-  process.on('uncaughtException', err => { log.error('exception non rattrapee dans un fil', { err }); process.exit(70) })
+  process.on('uncaughtException', err => {
+    // D'abord la cause, a cote des lectures en cours (quarantine.ts) : le fil relance la lira.
+    try { shard.crashed(err) } catch { /* sortir quand meme */ }
+    log.error('exception non rattrapee dans un fil', { err })
+    process.exit(70)
+  })
 }
 
 async function runMain(argv: string[]): Promise<void> {

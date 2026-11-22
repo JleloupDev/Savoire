@@ -66,6 +66,18 @@ groups:
         annotations:
           summary: "Le pair indexeur ne suit plus les modifications"
           description: "Recherche et bases peuvent montrer des resultats anciens."
+      - alert: IndexeurFilInstable
+        expr: increase(savoire_indexer_shard_restarts_total[15m]) > 2
+        labels: { severity: warning }
+        annotations:
+          summary: "Un fil du pair indexeur tombe en boucle"
+          description: "Plus de deux chutes en 15 minutes : la recherche et les IA recoivent « Fil d'indexation en redemarrage ». Voir GlitchTip (projet indexer) et le journal de l'indexeur."
+      - alert: IndexeurFichierMisDeCote
+        expr: sum(savoire_indexer_quarantined_files) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Le pair indexeur a mis de cote {{ $value }} fichier(s) qui le faisaient tomber"
+          description: "Trouvables par leur nom seulement. Le rapport (cause, pile) est dans GlitchTip : « fichier mis de cote ». Relus apres une nouvelle version du pair, ou s'ils changent."
       - alert: ConteneurInstable
         expr: changes(container_start_time_seconds{name=~".+"}[15m]) > 2
         labels: { severity: warning }

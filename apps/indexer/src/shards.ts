@@ -15,6 +15,7 @@ import type { Logger } from './log'
 import { Shard, shardOf, share } from './shard'
 import type { FromShard, ShardInit, ToShard } from './shard'
 import type { StoreSnapshot } from './store'
+import type { ShardExit } from './quarantine'
 
 interface Link {
   send(msg: ToShard): void
@@ -33,6 +34,9 @@ interface Slot {
   pending: Map<number, Pending>
   inflight: number
   restarts: number
+  startedAt: number
+  /** Fin du fil precedent, donnee au suivant (rapport des fichiers qui le font tomber). */
+  lastExit?: ShardExit
 }
 
 export interface PoolOptions {
@@ -50,6 +54,9 @@ export interface PoolOptions {
   powers?: () => IndexPower[]
 }
 
+/** Un fil reste debout ce temps : ses chutes passees sont oubliees (attente de relance remise au plus court). */
+const STABLE_MS = 10 * 60_000
+
 export class ShardPool {
   private readonly slots: Slot[]
   private nextId = 1
@@ -59,7 +66,7 @@ export class ShardPool {
   crashes = 0
 
   constructor(private readonly opts: PoolOptions) {
-    this.slots = Array.from({ length: opts.count }, () => ({ alive: false, pending: new Map(), inflight: 0, restarts: 0 }))
+    this.slots = Array.from({ length: opts.count }, () => ({ alive: false, pending: new Map(), inflight: 0, restarts: 0, startedAt: 0 }))
     for (let i = 0; i < opts.count; i++) this.spawn(i)
   }
 
@@ -85,7 +92,9 @@ export class ShardPool {
 
   private spawn(i: number): void {
     const s = this.slots[i]!
-    const init: ShardInit = { ...this.opts.init, index: i, count: this.slots.length }
+    const init: ShardInit = { ...this.opts.init, index: i, count: this.slots.length, ...(s.lastExit ? { lastExit: s.lastExit } : {}) }
+    s.lastExit = undefined
+    s.startedAt = Date.now()
     const onMessage = (msg: FromShard) => this.receive(i, msg)
     if (!this.opts.workers) {
       const shard = new Shard(init, this.opts.log.child({ shard: i }), m => queueMicrotask(() => onMessage(m)), this.opts.powers)
@@ -97,14 +106,20 @@ export class ShardPool {
     s.link = { send: m => worker.postMessage(m), terminate: async () => { await worker.terminate() } }
     s.alive = true
     worker.on('message', onMessage)
-    worker.on('error', err => this.opts.log.error('fil en erreur', { shard: i, err }))
+    let failure: string | undefined
+    worker.on('error', err => {
+      failure = String((err as Error)?.message ?? err)
+      this.opts.log.error('fil en erreur', { shard: i, err })
+    })
     worker.on('exit', code => {
       s.alive = false
+      s.lastExit = { code, ...(failure ? { error: failure } : {}) }
       for (const p of s.pending.values()) p.reject(unavailable('Fil d\'indexation arrete.', this.opts.unavailableRetryAfterS))
       s.pending.clear()
       s.inflight = 0
       if (this.stopping) return
       this.crashes++
+      if (Date.now() - s.startedAt > STABLE_MS) s.restarts = 0
       s.restarts++
       this.opts.log.error('fil d indexation tombe : relance', { shard: i, code, restarts: s.restarts })
       setTimeout(() => {

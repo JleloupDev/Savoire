@@ -20,6 +20,7 @@ import type { Logger } from './log'
 import { SlotAbortedError } from './sched'
 import { VaultStore } from './store'
 import type { StoreSnapshot } from './store'
+import type { ShardExit } from './quarantine'
 import { fnv1a32 } from './util'
 
 export type ToShard =
@@ -42,6 +43,8 @@ export interface ShardInit {
   count: number
   config: IndexerConfig
   version: string
+  /** Fin du fil precedent de ce rang (relance apres une chute). */
+  lastExit?: ShardExit
 }
 
 export function shardOf(vaultId: string, count: number): number {
@@ -80,6 +83,8 @@ export class Shard {
       feedStaleMs: c.feedStaleMs,
       statsIntervalMs: c.statsIntervalMs,
       unavailableRetryAfterS: c.unavailableRetryAfterS,
+      version: init.version,
+      quarantineAfter: c.quarantineAfter,
       // Fichiers (PDF, Word...) : extracteurs des plugins officiels seulement.
       ...(c.extractFiles === 'on' ? { extractor: officialExtractors({ ocr: c.ocr === 'on', cacheDir: join(c.dataDir, 'ocr') }) } : {}),
       plugins: serverPlugins({ policy: c.pluginTrust, ...(c.pluginDir ? { dir: c.pluginDir } : {}), warn: (msg, fields) => log.warn(msg, fields ?? {}) }),
@@ -88,7 +93,12 @@ export class Shard {
       url: c.backendUrl, token: bearerSourceFor(c), name: c.name, timeoutMs: c.backendTimeoutMs, retries: c.backendRetries,
       maxBytes: c.maxDocBytes, userAgent: `savoire-indexer/${init.version}`,
     }, metrics), log, (vaultId, gen) => this.emit({ t: 'gen', vaultId, gen }))
-    this.store.start(id => shardOf(id, count) === init.index)
+    this.store.start(id => shardOf(id, count) === init.index, init.lastExit)
+  }
+
+  /** Exception non rattrapee, juste avant la sortie du fil : la cause va au journal des lectures. */
+  crashed(err: unknown): void {
+    this.store.crashed(err)
   }
 
   handle(msg: ToShard): void {

@@ -89,6 +89,11 @@ Variables d'environnement, vérifiées au démarrage (toutes les erreurs d'un co
 | `SAVOIRE_INDEXER_CACHE_TTL_MS` | `10000` | Duree de vie d'un resultat en cache. |
 | `SAVOIRE_INDEXER_LAG_WARN_MS` | `5000` | Retard au-dela duquel un index est rendu `lagging` (avec `lagMs`). |
 | `SAVOIRE_INDEXER_STATS_INTERVAL_MS` | `30000` | Rafraichissement des tailles et nombres de notes par vault (metriques). |
+| `SAVOIRE_INDEXER_EXTRACT_FILES` | `on` | Lire le texte des fichiers (PDF, Word, Excel, PowerPoint, LibreOffice, pages web, CSV, images) par les extracteurs des plugins officiels. |
+| `SAVOIRE_INDEXER_QUARANTINE_AFTER` | `3` | Un fichier pendant la lecture duquel le fil d'indexation tombe ce nombre de fois de suite est mis de cote : indexe par son nom seulement, avec un rapport d'erreur (journal `error`, GlitchTip). Relu s'il change ou apres une nouvelle version du pair. |
+| `SAVOIRE_INDEXER_OCR` | `on` | Lire le texte dans les images (OCR, quelques secondes par image ; langues gardees dans `{dataDir}/ocr`). |
+| `SAVOIRE_INDEXER_PLUGIN_TRUST` | `verified` | Plugins dont le pair execute les outils d'agent (IA externes, ADR-033) : `official` (livres avec Savoire), `verified` (plus ceux relus par l'equipe Savoire) ou `all` (tout plugin, maison compris : pair d'organisation sur une VM dediee seulement). |
+| `SAVOIRE_INDEXER_PLUGIN_DIR` | `` | Dossier de plugins en plus (un module ESM `.mjs` par plugin, `export default` un VaultPlugin), filtres par `pluginTrust`. Vide : les plugins livres avec Savoire seulement. |
 | `SAVOIRE_INDEXER_METRICS_AUTH` | `token` | `/metrics` demande le jeton de service (`token`) ou non (`none`, reseau prive seulement). |
 | `SAVOIRE_INDEXER_METRICS_MAX_VAULTS` | `1000` | Vaults detailles dans `/metrics` (les plus gros, en retard ou en construction d'abord) ; 0 : aucun. |
 | `SAVOIRE_INDEXER_SLOW_CALL_MS` | `1000` | Appel journalise en avertissement au-dela de cette duree. |
@@ -128,7 +133,7 @@ Dans une instance, `WORKERS` répartit les vaults sur plusieurs cœurs. Mémoire
 | `_vault_status{vault,status}`, `_vault_build_progress`, `_vault_lag_seconds`, `_vault_pending_changes`, `_vault_size_bytes`, `_vault_docs`, `_vault_seq` | par vault (les `METRICS_MAX_VAULTS` premiers : en construction, en retard, puis les plus gros) |
 | `_changes_total{kind}`, `_docs_indexed_total{origin}`, `_docs_removed_total`, `_docs_skipped_total{reason}`, `_live_units_total{result}` | travail |
 | `_backend_requests_total{route,status}`, `_backend_request_latency_seconds` | appels au backend |
-| `_errors_total{kind}`, `_shard_restarts_total`, `_evictions_total`, `_vaults_deleted_total{reason}` | incidents |
+| `_errors_total{kind}`, `_shard_restarts_total`, `_quarantined_files{shard}`, `_evictions_total`, `_vaults_deleted_total{reason}` | incidents (`_quarantined_files` : fichiers mis de côté, voir Mode dégradé) |
 | `_process_resident_memory_bytes`, `_shard_heap_used_bytes`, `_event_loop_delay_seconds`, `_slot_busy_seconds_total{priority}` | ressources |
 
 Alertes utiles : `ready == 0` plus de 2 min ; `_feed_last_success_age_seconds > 60` ; `_vault_lag_seconds > 30` ; `rate(_rejected_total{reason="overloaded"}[5m]) > 0` (ajouter une instance ou des fils) ; `_call_latency_seconds{quantile="0.95"} > 1`.
@@ -141,7 +146,8 @@ Une ligne JSON par événement sur la sortie standard (`t`, `level`, `msg`, `svc
 
 - **Backend injoignable** : les index répondent toujours (état `lagging` avec `lagMs`), `ready` passe à faux après `FEED_STALE_MS` ; le flux reprend seul (attente croissante jusqu'à 30 s).
 - **Pair arrêté ou tombé** : le backend répond 503 + `Retry-After` ; les clients gardent leur index local et l'affichent. L'édition n'en dépend jamais. Au redémarrage : reprise depuis la position sûre, sans reconstruction.
-- **Fil d'indexation tombé** : relancé (attente croissante), ses appels en cours reçoivent 503, le flux est rejoué depuis la position sûre.
+- **Fil d'indexation tombé** : relancé (attente croissante, remise au plus court après 10 min sans chute), ses appels en cours reçoivent 503, le flux est rejoué depuis la position sûre.
+- **Fichier qui fait tomber le fil** (une bibliothèque d'extraction laisse échapper une erreur, ou manque de mémoire) : chaque lecture de fichier en cours est notée dans `{dataDir}/shard-{n}.reading.json`. Si le fil tombe pendant la lecture du même fichier `QUARANTINE_AFTER` fois de suite (3), ce fichier est mis de côté : indexé par son nom seulement, `documents.read` répond 404 en le disant, et un rapport d'erreur part (ligne `error` « fichier mis de cote », donc GlitchTip, avec la cause et la pile ; `_quarantined_files`). Il est relu s'il change, ou si son extracteur ou le pair changent de version. Détail, chemins compris : `{dataDir}/{vaultId}.quarantine.json` ; le supprimer fait relire le fichier.
 - **Fichier d'index abîmé** : supprimé et reconstruit (`_errors_total{kind="corrupt"}`).
 - **Surcharge** : 429 `overloaded` (le backend le rend tel quel), `ready` faux tant que la file est presque pleine.
 - **Arrêt propre** (SIGTERM) : plus de nouvel appel (503), appels en cours servis, écritures en cours finies, fichiers fermés (WAL reversé), position écrite. Second signal : arrêt immédiat.

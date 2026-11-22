@@ -42,6 +42,8 @@ interface FakeVault {
   types: Journaled
   /** Canal « map/review » : la Revision (carte 'entries'). */
   review: Journaled
+  /** Octets des fichiers envoyes (route files/{id}). */
+  files: Map<string, Uint8Array>
   managed: boolean
 }
 
@@ -157,6 +159,15 @@ export class FakeBackend {
         })
         return
       }
+      m = /^\/internal\/indexer\/vaults\/([^/]+)\/files\/([^/]+)$/.exec(p)
+      if (m) {
+        const v = this.vaults.get(decodeURIComponent(m[1]!))
+        const bytes = v?.managed ? v.files.get(decodeURIComponent(m[2]!)) : undefined
+        if (!bytes) return send(404, { error: { code: 'not_found', message: '' } })
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': bytes.length })
+        res.end(Buffer.from(bytes))
+        return
+      }
       m = /^\/internal\/indexer\/vaults\/([^/]+)\/documents\/([^/]+)$/.exec(p)
       if (m) {
         this.hits.document++
@@ -227,7 +238,7 @@ export class FakeBackend {
   vault(id: string): FakeVault {
     let v = this.vaults.get(id)
     if (!v) {
-      v = { id, tree: new Journaled(), docs: new Map(), types: new Journaled(), review: new Journaled(), managed: true }
+      v = { id, tree: new Journaled(), docs: new Map(), types: new Journaled(), review: new Journaled(), files: new Map(), managed: true }
       this.vaults.set(id, v)
       this.touch(id, 'vault')
     }
@@ -275,11 +286,18 @@ export class FakeBackend {
     this.touch(vaultId, 'settings')
   }
 
-  /** Un fichier envoye (binaire) : une entree d'arbre, sans document CRDT. */
-  addFile(vaultId: string, docId: string, path: string): void {
+  /** Un fichier envoye (binaire) : une entree d'arbre, sans document CRDT ; ses octets si donnes. */
+  addFile(vaultId: string, docId: string, path: string, bytes?: Uint8Array): void {
     const v = this.vault(vaultId)
+    if (bytes) v.files.set(docId, bytes)
     v.tree.doc.getMap('vault').set(docId, { path, binary: true })
     this.touch(vaultId, 'vault')
+  }
+
+  /** Nouveau contenu d'un fichier (le flux le signale comme un document). */
+  replaceFile(vaultId: string, docId: string, bytes: Uint8Array): void {
+    this.vault(vaultId).files.set(docId, bytes)
+    this.touch(vaultId, 'document', docId)
   }
 
   /** Le texte qu'un membre publie dans l'annexe « texte » d'un fichier (ExtractedTextPublisher). */
