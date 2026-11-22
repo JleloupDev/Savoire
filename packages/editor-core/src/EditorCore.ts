@@ -24,6 +24,7 @@ import { EventBus } from './EventBus'
 import { CommandRegistry, type CommandContext } from './CommandRegistry'
 import { DocumentPipeline } from './DocumentPipeline'
 import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
+import { foldAllHeadings, foldStorage, toggleFoldAtCursor, unfoldAll } from './Folding'
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
 import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
 import type { PropertiesHost } from './PropertiesPanel'
@@ -129,6 +130,10 @@ export function plumeCommands(): PluginCommand[] {
     // Panneau des proprietes (frontmatter).
     { id: 'editor:add-property',          label: 'Ajouter une propriété',    hotkeys: mod(';'), run: on(addProperty) },
     { id: 'editor:toggle-properties-source', label: 'Propriétés : basculer panneau / YAML source', run: on(toggleYamlSource) },
+    // Repli des titres et des listes (Folding.ts).
+    { id: 'editor:toggle-fold',           label: 'Replier / déplier le bloc',                          run: on(v => { toggleFoldAtCursor(v) }) },
+    { id: 'editor:fold-all',              label: 'Replier tous les titres',                            run: on(v => { foldAllHeadings(v) }) },
+    { id: 'editor:unfold-all',            label: 'Tout déplier',                                       run: on(v => { unfoldAll(v) }) },
   ]
   return commands.map(cmd => ({ ...cmd, editor: true }))
 }
@@ -382,6 +387,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
           ? []
           : [
               ...propertiesPanelExtension(propertiesHost),
+              // Les blocs replies d'une note, retenus sur l'appareil.
+              foldStorage.of(options.docId ?? null),
               ...createLivePreviewExtension(
                 this.pluginAPI.blocks, this.pluginAPI.hooks, ctx, options.showLineNumbers ?? true,
                 () => { this.syncDefaults(); return new Set(this.activationMap.keys()) },

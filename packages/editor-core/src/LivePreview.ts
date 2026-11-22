@@ -4,7 +4,7 @@
 // see ADR-005
 
 import { EditorView, Decoration, DecorationSet, WidgetType, ViewPlugin, keymap, gutter, GutterMarker } from '@codemirror/view'
-import { StateField, StateEffect, EditorState, Range, Prec } from '@codemirror/state'
+import { StateField, StateEffect, EditorState, Range, Prec, type Transaction } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 // Type des noeuds de l'arbre syntaxique (@lezer/common n'est pas une
 // dependance directe).
@@ -38,6 +38,7 @@ import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './Pro
 import { lineColorOf } from './FormattingService'
 import { appendTableRow, tableColumnCount } from './TableRows'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
+import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
 export const pluginsLoadedEffect = StateEffect.define<void>()
@@ -513,6 +514,10 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
     .map(p => Math.min(p, state.doc.length))
   const liveLines = new Set(live.map(p => state.doc.lineAt(p).number))
   const liveIn = (from: number, to: number): boolean => live.some(p => p >= from && p <= to)
+  // Blocs replies : leur ligne de tete porte « … », leurs lignes sont cachees (en fin de calcul).
+  const folds = hiddenRanges(state)
+  const foldedAnchors = new Set(folds.map(f => f.anchor))
+  const folded = (pos: number): boolean => foldedAnchors.has(state.doc.lineAt(pos).from)
   const remoteCursors = state.field(remoteCursorPositionsField, false) ?? []
   // Passages surlignes par la revision : leurs lignes restent en texte brut.
   const reviewed = highlightedRanges(state)
@@ -647,14 +652,15 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         // tiret tombe a la place de la puce.
         if (!isQuote) {
           const pad = spec?.renderLine ? 2 * depth + 2 : depth * 1.5
-          decorations.push(Decoration.line({ attributes: { style: `padding-left: calc(${pad}em + 4px)` } }).range(line.from))
+          decorations.push(Decoration.line({ class: folded(line.from) ? 'plume-folded' : undefined, attributes: { style: `padding-left: calc(${pad}em + 4px)` } }).range(line.from))
         }
         continue
       }
       if (remoteCursors.some(p => p >= line.from && p <= line.to)) continue
       if (underReview(line.from, line.to)) continue
       const from = line.from
-      const build = (): HTMLElement => {
+      const isFolded = folded(from)
+      const render = (): HTMLElement => {
         try {
           const el = spec?.renderLine?.({ text, depth, from }, ctx!)
           if (el) return el
@@ -663,8 +669,13 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         }
         return renderCoreLine(text, depth, from, hooks, ctx)
       }
+      const build = (): HTMLElement => {
+        const el = render()
+        if (isFolded) el.classList.add('plume-folded', 'vault-line-block')
+        return el
+      }
       decorations.push(
-        Decoration.replace({ widget: new LineWidget(`${spec?.type ?? ''}|${depth}|${from}|${text}`, build), block: true })
+        Decoration.replace({ widget: new LineWidget(`${spec?.type ?? ''}|${depth}|${from}|${isFolded ? 'folded|' : ''}${text}`, build), block: true })
           .range(line.from, line.to),
       )
     }
@@ -736,7 +747,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         if (headingClass) {
           // Line decoration for line-height on the cm-line wrapper.
           const lineStart = state.doc.lineAt(node.from).from
-          decorations.push(Decoration.line({ class: headingClass }).range(lineStart))
+          decorations.push(Decoration.line({ class: folded(lineStart) ? `${headingClass} plume-folded` : headingClass }).range(lineStart))
           // Mode classique : pas de # sous le curseur, le titre reste un titre.
           const mark = classic ? /^(#{1,6})(?:[ \t]+|$)/.exec(state.doc.lineAt(node.from).text) : null
           if (mark && mark[0].length > 0) {
@@ -790,7 +801,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(
           Decoration.replace({
-            widget: node.type.name === 'Table' ? new TableWidget(html) : new MarkdownWidget(html),
+            widget: node.type.name === 'Table' ? new TableWidget(html) : new MarkdownWidget(html, folded(node.from) ? 'plume-folded' : ''),
             block: true,
           }).range(node.from, node.to),
         )
@@ -834,7 +845,21 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   if (fmDeco) decorations.unshift(fmDeco)
   if (panelDecos) decorations.unshift(...panelDecos)
 
-  return { decorations: Decoration.set(decorations, true), objects: Decoration.set(objects, true), hidden: Decoration.set(hidden, true) }
+  // Lignes repliees : un seul bloc vide a leur place, rien d'autre dedans.
+  let shown = decorations
+  let shownObjects = objects
+  let shownHidden = hidden
+  for (const f of folds) {
+    // Un bloc rendu d'un tenant a cheval sur le repli : pas de repli ici.
+    if (shown.some(d => (d.from < f.from && d.to > f.from) || (d.from <= f.to && d.to > f.to))) continue
+    const outside = (d: Range<Decoration>) => d.from < f.from || d.from > f.to
+    shown = shown.filter(outside)
+    shownObjects = shownObjects.filter(outside)
+    shownHidden = shownHidden.filter(outside)
+    shown.push(Decoration.replace({ widget: new FoldedGap(), block: true }).range(f.from, f.to))
+  }
+
+  return { decorations: Decoration.set(shown, true), objects: Decoration.set(shownObjects, true), hidden: Decoration.set(shownHidden, true) }
 }
 
 // see ADR-005
@@ -890,7 +915,7 @@ const blockAwareLineNumbers = gutter({
   },
   // Called for each replaced block widget (Decoration.replace({ block: true })).
   widgetMarker(view, widget, block) {
-    if (widget instanceof SourceDoneWidget) return null
+    if (widget instanceof SourceDoneWidget || widget instanceof FoldedGap) return null
     const { state } = view
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number
@@ -1189,6 +1214,17 @@ function classicExtensions(
   ]
 }
 
+/**
+ * Les blocs replies changent, ou l'analyse de la note les trouve enfin (elle
+ * arrive apres le texte : a l'ouverture, les blocs retenus attendent).
+ */
+function foldsChanged(tr: Transaction): boolean {
+  const folded = tr.state.field(foldedField, false)
+  if (!folded) return false
+  if (folded !== tr.startState.field(foldedField, false)) return true
+  return folded.anchors.length > 0 && tr.state.field(foldablesField) !== tr.startState.field(foldablesField)
+}
+
 export function createLivePreviewExtension(
   registry?: BlockRegistry,
   hooks?: HookRegistry,
@@ -1216,7 +1252,8 @@ export function createLivePreviewExtension(
       return buildDecorations(state, env)
     },
     update(value, tr) {
-      if (tr.docChanged || tr.selection || tr.effects.some(e => e.is(pluginsLoadedEffect) || e.is(setPointerHold) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
+      if (tr.docChanged || tr.selection || foldsChanged(tr)
+        || tr.effects.some(e => e.is(pluginsLoadedEffect) || e.is(setPointerHold) || isPropertiesEffect(e) || isHighlightsEffect(e) || isClassicEffect(e))) {
         return buildDecorations(tr.state, env)
       }
       return { decorations: value.decorations.map(tr.changes), objects: value.objects.map(tr.changes), hidden: value.hidden.map(tr.changes) }
@@ -1265,6 +1302,16 @@ export function createLivePreviewExtension(
     if (targetLineNum < 1 || targetLineNum > state.doc.lines) return false
     let targetLine = state.doc.line(targetLineNum)
     const col = pos - line.from
+    // Les lignes d'un bloc replie se sautent (y entrer l'ouvrirait).
+    const skipFolded = (): boolean => {
+      const f = hiddenAt(state, targetLine.from)
+      if (!f) return true
+      const beyond = dir === 1 ? state.doc.lineAt(f.to).number + 1 : state.doc.lineAt(f.from).number - 1
+      if (beyond < 1 || beyond > state.doc.lines) return false
+      targetLine = state.doc.line(beyond)
+      return true
+    }
+    if (!skipFolded()) return true
     if (classic) {
       const obj = objectAround(state, targetLine.from)
       if (obj && !(dir === -1 && pos === obj.to)) {
@@ -1274,6 +1321,7 @@ export function createLivePreviewExtension(
           return true
         }
         targetLine = state.doc.line(beyond)
+        if (!skipFolded()) return true
       }
     }
     // Preserve horizontal column within the target line.
@@ -1285,6 +1333,9 @@ export function createLivePreviewExtension(
   const blockNavigationKeymap = Prec.highest(keymap.of([
     { key: 'ArrowDown', run: (view) => moveOneLine(view, 1) },
     { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1) },
+    // Un bloc replie se saute, il ne s'ouvre pas.
+    { key: 'ArrowRight', run: (view) => skipFold(view, 1) },
+    { key: 'ArrowLeft',  run: (view) => skipFold(view, -1) },
   ]))
 
   return [
@@ -1292,6 +1343,7 @@ export function createLivePreviewExtension(
     pointerHoldField,
     field,
     ...(showLineNumbers ? [blockAwareLineNumbers] : []),
+    ...foldingExtension(),
     blockquoteExitKeymap,
     blockNavigationKeymap,
     headingCursorFix,
