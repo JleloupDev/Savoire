@@ -72,6 +72,12 @@ export interface AgentToolHost {
   moveNote(docId: string, newPath: string, actor: ToolActor): Promise<string>
   /** Rend le chemin dans la corbeille. */
   trashNote(docId: string, actor: ToolActor): Promise<string>
+  /**
+   * Inscrit au vault un fichier dont le serveur a deja range les octets sous
+   * `fileId` (image envoyee par une IA), a ce chemin, range avec sa note.
+   * Absent : l'hote ne sait pas recevoir de fichier (l'appli).
+   */
+  attachFile?(fileId: string, path: string, noteId: string, actor: ToolActor): Promise<HostNoteRef>
 
   // ── Revision ──
   comment(docId: string, text: string, actor: ToolActor, range?: { from: number; to: number }): Promise<string>

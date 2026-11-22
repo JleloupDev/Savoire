@@ -73,6 +73,8 @@ export interface WriteBody {
   ticket: string
   register?: string[]
   folders?: { docId: string; folder: string }[]
+  /** Fichiers recus par le serveur (images des IA) : rangement avec leur note. */
+  attach?: { docId: string; noteId: string; name: string }[]
   ops: ({ target: 'document'; docId: string; update: string } | { target: 'vault'; update: string } | { target: 'index'; ns: string; update: string })[]
 }
 

@@ -208,6 +208,20 @@ export class PeerToolHost implements AgentToolHost {
     return { id, path }
   }
 
+  async attachFile(fileId: string, path: string, noteId: string): Promise<HostNoteRef> {
+    const tree = await this.f.treeLog()
+    const folders = parentFolders(path)
+    // Le serveur verifie que fileId est un fichier qu'il vient de recevoir, pas encore inscrit.
+    await this.write({
+      register: [fileId],
+      folders: [{ docId: fileId, folder: folders.at(-1) ?? '' }],
+      attach: [{ docId: fileId, noteId, name: path.slice(path.lastIndexOf('/') + 1) }],
+      ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], fileId, { path }, folders)) }],
+    })
+    this.moved.set(fileId, path)
+    return { id: fileId, path }
+  }
+
   async createFolder(path: string): Promise<void> {
     const tree = await this.f.treeLog()
     // Un dossier vide n'a pas de document : seule l'arborescence change (droit d'ecrire dans le vault).

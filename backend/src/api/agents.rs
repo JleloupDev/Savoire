@@ -340,6 +340,9 @@ pub async fn decide(State(st): State<AppState>, Auth(p): Auth, Path(id): Path<St
     } else {
         out.status = "refused".into();
     }
+    if a.tool == crate::api::open::ADD_IMAGE && out.status != "done" {
+        crate::api::open::drop_received_image(&st, &a.vault_id, &a.args).await;
+    }
     out.decided_at = Some(now());
     Ok(ok(&approval_dto(&out, &name)))
 }
@@ -524,6 +527,8 @@ pub struct WriteRequest {
     register: Option<Vec<String>>,
     /// Dossier de chaque document touche (ACL) : { docId, folder }.
     folders: Option<Vec<Placement>>,
+    /// Fichiers recus par le serveur (images des IA), inscrits par cet appel : leur note.
+    attach: Option<Vec<Attach>>,
     ops: Option<Vec<WriteOp>>,
 }
 
@@ -532,6 +537,14 @@ pub struct WriteRequest {
 pub struct Placement {
     doc_id: String,
     folder: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attach {
+    doc_id: String,
+    note_id: String,
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -576,6 +589,25 @@ pub async fn internal_write(
     let mut c = st.db.acquire().await?;
     let vault = repos::vault_get(&mut c, &vault_id).await?.ok_or_else(|| AppError::VaultNotFound(vault_id.clone()))?;
 
+    // 0. Un fichier recu ne s'inscrit que neuf : ses octets sont la, il n'est encore
+    // le document de personne, et il est inscrit par ce meme appel.
+    let attach = req.attach.unwrap_or_default();
+    for a in &attach {
+        if propose_only {
+            return Ok(internal_error(403, "denied", "Mode proposition : l'agent n'ajoute pas de fichier."));
+        }
+        if !crate::api::open::FILE_ID_SHAPE.is_match(&a.doc_id) || !req.register.as_ref().is_some_and(|r| r.contains(&a.doc_id)) || a.name.contains('/') || a.name.encode_utf16().count() > 255 {
+            return Ok(internal_error(400, "invalid_query", "Fichier joint mal décrit."));
+        }
+        if repos::doc_get(&mut c, &a.doc_id).await?.is_some() || st.store.read(&vault_id, &a.doc_id).await?.is_none() {
+            return Ok(internal_error(403, "denied", "Ce fichier n'est pas un envoi en attente."));
+        }
+        match repos::doc_get(&mut c, &a.note_id).await? {
+            Some(n) if n.vault_id == vault_id => {}
+            _ => return Ok(internal_error(403, "denied", "Note inconnue dans ce vault.")),
+        }
+    }
+
     // 1. Inscrire les notes creees, puis verifier les dossiers vises (ACL).
     if let Some(ids) = req.register.filter(|r| !r.is_empty()) {
         if propose_only {
@@ -594,6 +626,11 @@ pub async fn internal_write(
         }
         access::check_document(&mut c, user, &vault_id, &p.doc_id, Level::Write).await?;
         repos::doc_set_folder(&mut c, &p.doc_id, &folder).await?;
+    }
+    for a in &attach {
+        // Range avec sa note (partage), puis relu par le pair (texte d'une image).
+        repos::doc_set_placement(&mut c, &a.doc_id, Some(&a.note_id), Some(&a.name)).await?;
+        repos::indexer_record_file(&mut c, &a.doc_id).await?;
     }
 
     // 2. Les operations, chacune verifiee, enregistrees avec leur auteur, diffusees.

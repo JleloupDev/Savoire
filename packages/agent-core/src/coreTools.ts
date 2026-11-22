@@ -448,6 +448,64 @@ const trashNote: CoreTool = {
   },
 }
 
+// ── Images ─────────────────────────────────────────────────────────────────
+
+/** Extensions des images qu'un agent peut ajouter (celles que l'appli affiche). */
+export const AGENT_IMAGE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif']
+
+/** Nom de fichier sur pour un lien `![[...]]` (memes regles que l'appli). */
+function imageFileName(raw: string | undefined, ext: string): string {
+  const clean = (raw ?? '').replace(/[[\]|#^\\/:]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const stem = clean.replace(/\.[a-z0-9]{1,8}$/i, '').replace(/^\.+/, '').slice(0, 120).trim() || 'image'
+  return `${stem}.${ext}`
+}
+
+/**
+ * Le serveur a deja telecharge et verifie l'image (ChatGPT la donne en
+ * fichier, d'autres IA par une adresse) et rangee sous fileId : l'outil
+ * l'inscrit dans le dossier de la note, puis met le lien dans la note.
+ * Seul le serveur l'offre : les octets n'arrivent que par lui.
+ */
+const addImage: CoreTool = {
+  spec: {
+    name: 'add_image', title: 'Ajouter une image', action: 'edit', runtimes: ['server'],
+    description: 'Ajoute une image à une note : elle est rangée dans le dossier de la note et son lien est ajouté à la fin (sauf insert=false).',
+    inputSchema: schema({
+      ...NOTE_REF,
+      fileId: str('Id du fichier, donné par Savoire.'),
+      fileName: str('Nom de l’image (ex. Tableau blanc.jpg).'),
+      insert: { type: 'boolean', description: 'Ajouter le lien à la fin de la note (oui par défaut).' },
+      why: str('Raison courte, montrée à la personne.'),
+    }, ['fileId']),
+  },
+  async run(args, ctx) {
+    if (ctx.mode === 'propose') throw new HostError('En mode proposition, un agent ne peut pas ajouter d’image : il faut le droit de modifier en direct, ou « demander ».', 'denied')
+    if (!ctx.host.attachFile) throw new HostError('Ajout d’image indisponible ici.', 'unavailable')
+    const fileId = reqString(args, 'fileId', 64)
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(fileId)) throw new HostError('fileId invalide.')
+    const note = await noteArg(args, ctx)
+    const rawName = optString(args, 'fileName', 255)
+    const given = rawName?.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase()
+    const ext = given && AGENT_IMAGE_EXTENSIONS.includes(given) ? given : 'png'
+    const name = imageFileName(rawName, ext)
+    // Le dossier de la note : « A/Ma note.md » -> « A/Ma note/ ».
+    const folder = `${note.path.replace(/\.[a-z0-9]{1,8}$/i, '')}/`
+    const dot = name.lastIndexOf('.')
+    let path = `${folder}${name}`
+    for (let n = 1; await ctx.host.findNote({ path }); n++) path = `${folder}${name.slice(0, dot)} ${n}${name.slice(dot)}`
+    guard(ctx, path)
+    const file = await ctx.host.attachFile(fileId, path, note.id, ctx.actor)
+    if (args.insert === false) return ok(`Image ajoutée : ${file.path}.`, { data: file, sources: [source(note)] })
+    const fresh = await ctx.host.readNote({ id: note.id }) ?? note
+    const sep = fresh.content === '' || fresh.content.endsWith('\n\n') ? '' : fresh.content.endsWith('\n') ? '\n' : '\n\n'
+    const end = fresh.content.length
+    await ctx.host.replaceText(fresh.id, end, end, `${sep}![[${file.path}]]\n`, ctx.actor)
+    const why = optString(args, 'why', 500)
+    await ctx.host.recordEdit(fresh.id, why ? `image ajoutée (${name}) : ${why}` : `image ajoutée (${name})`, ctx.actor)
+    return ok(`Image ajoutée : ${file.path}, avec son lien à la fin de ${note.path}.`, { data: file, sources: [source(note)] })
+  },
+}
+
 /** Tous les outils du socle, dans l'ordre ou l'IA les voit. */
 export const CORE_TOOLS: readonly CoreTool[] = [
   search, readNote, listNotes, backlinks, outgoingLinks, brokenLinks, listTags, notesWithTag, queryNotes, listComments,
@@ -455,4 +513,5 @@ export const CORE_TOOLS: readonly CoreTool[] = [
   editNote, appendNote, setProperty,
   createNote, createFolder, moveNote,
   trashNote,
+  addImage,
 ]

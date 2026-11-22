@@ -20,6 +20,8 @@ struct Peer {
     calls: Arc<Mutex<Vec<Value>>>,
     server: Arc<Mutex<String>>,
     last_write: Arc<Mutex<Option<(u16, Value)>>>,
+    /// Le catalogue offre aussi add_image.
+    image: Arc<std::sync::atomic::AtomicBool>,
 }
 
 fn catalog() -> Value {
@@ -42,7 +44,12 @@ async fn fake_peer() -> (String, Peer) {
                     return axum::Json(json!({ "result": {} }));
                 }
                 if call["method"] == "list" {
-                    return axum::Json(json!({ "result": catalog() }));
+                    let mut cat = catalog();
+                    if p.image.load(std::sync::atomic::Ordering::Relaxed) {
+                        cat["tools"].as_array_mut().unwrap().push(json!({ "name": "add_image", "title": "Ajouter une image", "description": "Ajoute une image.", "action": "edit",
+                            "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "fileId": { "type": "string" }, "fileName": { "type": "string" } }, "required": ["fileId"], "additionalProperties": false } }));
+                    }
+                    return axum::Json(json!({ "result": cat }));
                 }
                 let params = &call["params"];
                 if params["name"] == "append" || params["name"] == "move_note" {
@@ -246,4 +253,36 @@ async fn oauth_token_carries_the_chosen_agent() {
     assert_eq!(r["result"]["isError"], false, "{r}");
     let author: Value = sqlx::query_scalar("SELECT author FROM operations_log WHERE resource_id = $1").bind(&doc).fetch_one(&app.state.db).await.unwrap();
     assert_eq!(author["agentName"], "Secrétaire");
+}
+
+#[tokio::test]
+async fn add_image_takes_a_chatgpt_file_and_never_fetches_a_private_address() {
+    let (url, peer) = fake_peer().await;
+    peer.image.store(true, std::sync::atomic::Ordering::Relaxed);
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Photographe", "permissions": { "read": "direct", "edit": "direct" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "g", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+
+    // ChatGPT voit un champ fichier (openai/fileParams) a la place de fileId.
+    let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
+    let t = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "add_image").unwrap().clone();
+    assert_eq!(t["_meta"]["openai/fileParams"], json!(["image"]));
+    assert!(t["inputSchema"]["properties"].get("fileId").is_none());
+    assert_eq!(t["inputSchema"]["properties"]["image"]["required"], json!(["download_url", "file_id"]));
+    assert_eq!(t["inputSchema"]["required"], json!(["vault"]));
+
+    // Adresse locale, http, rien : refuse avant le pair.
+    for args in [
+        json!({ "vault": v, "path": "a.md", "image": { "download_url": "https://127.0.0.1/x.png", "file_id": "f" } }),
+        json!({ "vault": v, "path": "a.md", "url": "http://exemple.org/x.png" }),
+        json!({ "vault": v, "path": "a.md", "url": "https://localhost/x.png" }),
+        json!({ "vault": v, "path": "a.md" }),
+    ] {
+        let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "add_image", "arguments": args })).await;
+        assert_eq!(r["result"]["isError"], true, "{r}");
+    }
+    assert!(!peer.calls.lock().unwrap().iter().any(|c| c["params"]["name"] == "add_image"));
 }

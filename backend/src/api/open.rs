@@ -321,17 +321,103 @@ async fn list_tools(st: &AppState, p: &Principal) -> Value {
         let mut required: Vec<Value> = schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default();
         required.insert(0, json!("vault"));
         schema["required"] = json!(required);
-        out.push(json!({
-            "name": t.get("name"), "title": t.get("title"), "description": t.get("description"), "inputSchema": schema,
+        let name = t.get("name").and_then(Value::as_str).unwrap_or_default();
+        let mut entry = json!({
+            "name": name, "title": t.get("title"), "description": t.get("description"), "inputSchema": schema,
             "annotations": {
                 "readOnlyHint": action == "read",
                 "destructiveHint": action == "delete" || action == "organize",
                 "openWorldHint": false,
             },
-        }));
+        });
+        if name == ADD_IMAGE {
+            image_tool_schema(&mut entry);
+        }
+        out.push(entry);
     }
     json!(out)
 }
+
+// ── Images (add_image) ───────────────────────────────────────────────────────
+//
+// Le pair ne recoit pas d'octets : le serveur telecharge l'image, la verifie,
+// la range sous un id neuf, puis passe cet id a l'outil (fileId). ChatGPT
+// donne un fichier joint a la discussion (champ « image », declare dans
+// _meta « openai/fileParams ») ; une autre IA peut donner une adresse (« url »).
+
+pub const ADD_IMAGE: &str = "add_image";
+
+/// Le schema vu par l'IA : image (fichier) ou url, a la place de fileId.
+fn image_tool_schema(entry: &mut Value) {
+    let schema = &mut entry["inputSchema"];
+    if let Some(props) = schema["properties"].as_object_mut() {
+        props.remove("fileId");
+        props.insert("image".into(), json!({
+            "type": "object",
+            "description": "L'image jointe à la discussion.",
+            "properties": {
+                "download_url": { "type": "string" }, "file_id": { "type": "string" },
+                "mime_type": { "type": "string" }, "file_name": { "type": "string" },
+            },
+            "required": ["download_url", "file_id"],
+        }));
+        props.insert("url".into(), s("Ou : adresse https d'une image publique (si l'image n'est pas jointe)."));
+    }
+    schema["required"] = json!(["vault"]);
+    entry["description"] = json!(format!("{} Donner image (fichier joint) ou url. PNG, JPEG, GIF, WebP ou AVIF, 20 Mo au plus.", entry["description"].as_str().unwrap_or("")));
+    entry["_meta"] = json!({ "openai/fileParams": ["image"] });
+    entry["annotations"]["openWorldHint"] = json!(true);
+}
+
+/// Telecharge l'image de l'appel, la range sous un id neuf ; rend les arguments pour le pair.
+async fn receive_image(st: &AppState, vault_id: &str, args: &Map<String, Value>) -> Result<(Map<String, Value>, String, i64), Value> {
+    let file = args.get("image").and_then(Value::as_object);
+    let url = file.and_then(|f| f.get("download_url")).and_then(Value::as_str).map(str::to_string).or_else(|| opt_str(args, "url"));
+    let Some(url) = url else {
+        return Err(tool_error("Donner l'image : image (fichier joint) ou url (adresse https)."));
+    };
+    let img = crate::services::remote_image::fetch(&url).await.map_err(|m| tool_error(&m))?;
+    let size = img.bytes.len() as i64;
+    if st.quota.ensure_room(&st.limits(), vault_id, size).await.is_err() {
+        return Err(tool_error("Plus de place dans ce vault pour cette image."));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    if let Err(e) = st.store.put(vault_id, &id, &img.bytes).await {
+        tracing::error!(error = %e, "MCP : image non rangee");
+        return Err(tool_error("Erreur interne de Savoire."));
+    }
+    st.quota.added(vault_id, size);
+    let given = opt_str(args, "fileName").or_else(|| file.and_then(|f| f.get("file_name")).and_then(Value::as_str).map(str::to_string)).or(img.url_name);
+    let stem = given.as_deref().map(|n| n.rsplit_once('.').map(|(a, _)| a).unwrap_or(n).trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Image".into());
+    let mut out = args.clone();
+    for k in ["vault", "image", "url", "fileId", "fileName"] {
+        out.remove(k);
+    }
+    out.insert("fileId".into(), json!(id));
+    out.insert("fileName".into(), json!(format!("{stem}.{}", img.ext)));
+    Ok((out, id, size))
+}
+
+/// L'image n'a pas ete inscrite (refus, echec) : on rend la place.
+pub async fn drop_received_image(st: &AppState, vault_id: &str, args: &Value) {
+    let Some(id) = args.get("fileId").and_then(Value::as_str) else { return };
+    if !FILE_ID_SHAPE.is_match(id) {
+        return;
+    }
+    let Ok(mut c) = st.db.acquire().await else { return };
+    // Inscrite entre-temps : c'est un document du vault, on n'y touche pas.
+    if !matches!(crate::db::repos::doc_get(&mut c, id).await, Ok(None)) {
+        return;
+    }
+    if let Ok(Some(f)) = st.store.read(vault_id, id).await
+        && let Ok(meta) = f.metadata().await
+    {
+        st.quota.added(vault_id, -(meta.len() as i64));
+    }
+    let _ = st.store.delete(vault_id, id).await;
+}
+
+pub(crate) static FILE_ID_SHAPE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9-]{1,64}$").unwrap());
 
 /// Un outil du catalogue. None : catalogue indisponible (l'appelant se rabat sur la lecture d'avant).
 async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String, Value>) -> Result<Option<Value>, ToolFailure> {
@@ -343,10 +429,30 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
     }
     let mut rest = args.clone();
     rest.remove("vault");
-    let rest = Value::Object(rest);
     let display = p.display_name.clone().unwrap_or_else(|| p.sub.clone());
+    let plan = {
+        let probe = Value::Object(rest.clone());
+        let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &probe };
+        agents::plan(st, &call).await?
+    };
+    if let agents::Plan::Deny(m) = &plan {
+        return Ok(Some(tool_error(m)));
+    }
+    // L'image d'abord (seulement si l'agent en a le droit) : l'accord eventuel porte sur une image deja recue.
+    let image = if name == ADD_IMAGE {
+        match receive_image(st, &vault.id, &rest).await {
+            Ok((a, _, _)) => {
+                rest = a;
+                true
+            }
+            Err(v) => return Ok(Some(v)),
+        }
+    } else {
+        false
+    };
+    let rest = Value::Object(rest);
     let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &rest };
-    Ok(Some(match agents::plan(st, &call).await? {
+    Ok(Some(match plan {
         agents::Plan::Deny(m) => tool_error(&m),
         agents::Plan::Ask { action } => {
             let id = agents::hold(st, &call, &action).await?;
@@ -356,6 +462,9 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
         }
         agents::Plan::Run { action, mode } => {
             let r = agents::execute(st, &call, &action, &mode).await?;
+            if r.is_error && image {
+                drop_received_image(st, &vault.id, &rest).await;
+            }
             if r.is_error { tool_error(&r.text) } else { tool_text(&r.text) }
         }
     }))

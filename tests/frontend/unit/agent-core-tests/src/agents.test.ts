@@ -98,6 +98,22 @@ describe('outils du socle', () => {
     expect((await tb.call('query', { base: 'Inconnue.base' })).result.text).toContain('Base introuvable')
   })
 
+  it('ajouter une image : rangee dans le dossier de la note, lien a la fin, serveur seulement', async () => {
+    const host = new MemoryHost({ 'Projets/Plan.md': 'Le plan.', 'Projets/Plan/Tableau.jpg': '' })
+    const a = agent({ permissions: { read: 'direct', edit: 'direct' } })
+    expect(box(host, a).specs().map(s => s.name)).not.toContain('add_image')
+    const server = new ToolBox({ agent: a, person: { canWrite: true }, actor, runtime: 'server', host })
+    const r = await server.call('add_image', { path: 'Projets/Plan.md', fileId: 'f-1', fileName: 'Tableau.JPG' })
+    expect(r.result.isError).toBeFalsy()
+    expect(host.notes.get('f-1')?.path).toBe('Projets/Plan/Tableau 1.jpg')
+    expect(host.attached.get('f-1')).toBe(host.idOf('Projets/Plan.md'))
+    expect(host.content('Projets/Plan.md')).toBe('Le plan.\n\n![[Projets/Plan/Tableau 1.jpg]]\n')
+    const bad = await server.call('add_image', { path: 'Projets/Plan.md', fileId: '../x' })
+    expect(bad.result.isError).toBe(true)
+    const propose = new ToolBox({ agent: agent({ permissions: { read: 'direct', edit: 'propose' } }), person: { canWrite: true }, actor, runtime: 'server', host })
+    expect((await propose.call('add_image', { path: 'Projets/Plan.md', fileId: 'f-2' })).result.text).toContain('mode proposition')
+  })
+
   it('modifier en direct : la note change, la trace porte le nom de l agent', async () => {
     const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
     const r = await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } })).call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })

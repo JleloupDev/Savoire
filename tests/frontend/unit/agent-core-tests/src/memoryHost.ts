@@ -103,6 +103,15 @@ export class MemoryHost implements AgentToolHost {
     return n.path
   }
 
+  /** Fichiers inscrits par attachFile : id -> note. */
+  attached = new Map<string, string>()
+
+  async attachFile(fileId: string, path: string, noteId: string): Promise<HostNoteRef> {
+    this.notes.set(fileId, { path, content: '' })
+    this.attached.set(fileId, noteId)
+    return { id: fileId, path }
+  }
+
   private entry(docId: string, kind: HostReviewEntry['kind'], text: string, actor: ToolActor, extra: Partial<HostReviewEntry & { from: number; to: number }> = {}): string {
     const id = `r-${this.review.length + 1}`
     this.review.push({ id, docId, kind, text, author: `${actor.agentName} (IA), pour ${actor.onBehalfOf.displayName}`, authorIsAgent: true, createdAt: '2026-11-18T00:00:00Z', ...extra })
