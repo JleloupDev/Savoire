@@ -84,6 +84,24 @@ function sse(events: unknown[], cut = 7): Response {
   return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
 
+describe('Dictée', () => {
+  it('envoie le son a /audio/transcriptions, en formulaire, avec la cle', async () => {
+    const f = fakeFetch(() => json({ text: ' Bonjour à tous. ' }))
+    const ai = new AIService(memoryStore(), f.fn)
+    const c = ai.saveConnection({ name: 'Local', providerId: 'openai-compatible', baseUrl: 'http://localhost:8000/v1', apiKey: 'k', model: 'chat' })
+    const text = await ai.transcribe(new Blob(['son'], { type: 'audio/webm' }), { connectionId: c.id, model: 'whisper-1', language: 'fr' })
+    expect(text).toBe('Bonjour à tous.')
+    expect(f.calls[0].url).toBe('http://localhost:8000/v1/audio/transcriptions')
+    const headers = f.calls[0].init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer k')
+    expect(headers['content-type']).toBeUndefined()
+    const form = f.calls[0].init.body as FormData
+    expect([form.get('model'), form.get('language')]).toEqual(['whisper-1', 'fr'])
+    expect(form.get('file')).toBeInstanceOf(Blob)
+    await expect(ai.transcribe(new Blob(['x']), { connectionId: c.id, model: ' ' })).rejects.toBeInstanceOf(AIRequestError)
+  })
+})
+
 describe('IA en flux', () => {
   const setup = (reply: (url: string, init: RequestInit) => Response) => {
     const f = fakeFetch(reply)

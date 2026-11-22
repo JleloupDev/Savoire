@@ -19,6 +19,11 @@ const store: AIConnectionStore = {
 
 export const aiService = new AIService(store)
 
+/** Le compte dont les connexions sont chargees (reglages de la dictee). */
+export function aiAccount(): string {
+  return accountId
+}
+
 /** Le compte actif change : ses connexions a lui. */
 export function setAIAccount(id: string | null | undefined): void {
   accountId = id || 'anonyme'

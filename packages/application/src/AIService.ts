@@ -188,6 +188,26 @@ export class AIService {
     return protocol.readStream(res, onDelta)
   }
 
+  /**
+   * Dictee : du son vers du texte, par l'API de transcription compatible
+   * OpenAI (POST /audio/transcriptions, multipart). Sert pour OpenAI comme
+   * pour un service local qui parle la meme API (whisper.cpp, Speaches...).
+   */
+  async transcribe(audio: Blob, opts: { connectionId?: string; model: string; language?: string; fileName?: string; signal?: AbortSignal }): Promise<string> {
+    const conn = opts.connectionId ? this.connections().find(c => c.id === opts.connectionId) : this.defaultConnection()
+    if (!conn) throw new AINotConfiguredError()
+    if (!opts.model.trim()) throw new AIRequestError('Choisissez un modèle de transcription (Paramètres → IA → Dictée).')
+    const form = new FormData()
+    form.append('file', audio, opts.fileName ?? 'dictee.webm')
+    form.append('model', opts.model.trim())
+    if (opts.language) form.append('language', opts.language)
+    form.append('response_format', 'json')
+    const res = await this.call(conn, '/audio/transcriptions', { method: 'POST', body: form, signal: opts.signal })
+    const body = await res.json().catch(() => null) as { text?: unknown } | null
+    if (typeof body?.text !== 'string') throw new AIRequestError(`Réponse inattendue de « ${conn.name} » pour la dictée.`)
+    return body.text.trim()
+  }
+
   /** Modeles proposes par le service (pour les reglages). */
   async listModels(conn: Pick<AIConnection, 'name' | 'baseUrl' | 'apiKey'> & { providerId?: string }): Promise<string[]> {
     const protocol = this.protocolOf(conn)
@@ -212,7 +232,8 @@ export class AIService {
   }
 
   private async call(conn: Pick<AIConnection, 'name' | 'baseUrl' | 'apiKey'>, path: string, init: RequestInit): Promise<Response> {
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    // Un formulaire (son a transcrire) pose lui-meme son type et sa frontiere.
+    const headers: Record<string, string> = typeof FormData !== 'undefined' && init.body instanceof FormData ? {} : { 'content-type': 'application/json' }
     if (conn.apiKey) headers.authorization = `Bearer ${conn.apiKey}`
     let res: Response
     try {

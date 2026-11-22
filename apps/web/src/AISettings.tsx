@@ -5,6 +5,7 @@
 // La cle reste dans l'application (ce poste) ; les plugins ne la voient pas.
 import { useEffect, useState } from 'react'
 import type { AIConnection, AIService } from '@savoire/application'
+import { DEFAULT_TRANSCRIPTION_MODEL, browserDictationAvailable, loadDictationSettings, saveDictationSettings, type DictationSettings } from './dictation'
 
 const INPUT: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', padding: '5px 8px', borderRadius: 6,
@@ -114,6 +115,50 @@ export function AISettings({ ai }: { ai: AIService }) {
         </div>
       )}
       {status && <div data-testid="ai-status" style={{ fontSize: 12, color: status.ok ? 'var(--green, #16a34a)' : 'var(--danger, #dc2626)' }}>{status.text}</div>}
+      <DictationSection connections={connections} />
+    </div>
+  )
+}
+
+/** Dictee : d'ou vient le texte dicte (bouton micro de la barre de l'editeur). */
+function DictationSection({ connections }: { connections: AIConnection[] }) {
+  const [s, setS] = useState<DictationSettings>(() => loadDictationSettings())
+  const browser = browserDictationAvailable()
+  const update = (patch: Partial<DictationSettings>) => { const next = { ...s, ...patch }; setS(next); saveDictationSettings(next) }
+  const value = s.source === 'browser' ? 'browser' : `c:${s.connectionId ?? ''}`
+  return (
+    <div data-testid="dictation-settings" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontWeight: 600, fontSize: 13 }}>Dictée</div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>
+        Le bouton micro de la barre de l’éditeur écrit ce que vous dites, au curseur. Choisissez qui transcrit.
+      </div>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+        Source
+        <select data-testid="dictation-source" style={INPUT} value={value}
+          onChange={e => update(e.target.value === 'browser' ? { source: 'browser' } : { source: 'connection', connectionId: e.target.value.slice(2) || undefined })}>
+          <option value="browser" disabled={!browser}>Navigateur (sans clé){browser ? '' : ' — indisponible ici'}</option>
+          {connections.map(c => <option key={c.id} value={`c:${c.id}`}>Connexion : {c.name}</option>)}
+        </select>
+      </label>
+      {s.source === 'browser' && (
+        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Le texte arrive phrase par phrase. Le navigateur peut envoyer le son à son éditeur (Google, Apple, Microsoft).</div>
+      )}
+      {s.source === 'connection' && (
+        <>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+            Modèle de transcription
+            <input data-testid="dictation-model" style={INPUT} value={s.model} placeholder={DEFAULT_TRANSCRIPTION_MODEL} onChange={e => update({ model: e.target.value })} />
+          </label>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>
+            OpenAI : gpt-4o-mini-transcribe ou whisper-1. Sur ce poste : un service compatible OpenAI (whisper.cpp, Speaches), avec son nom de modèle ; rien ne quitte alors l’ordinateur.
+            Le texte arrive quand vous arrêtez (10 minutes au plus).
+          </div>
+        </>
+      )}
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, maxWidth: 160 }}>
+        Langue
+        <input data-testid="dictation-language" style={INPUT} value={s.language} placeholder="fr" onChange={e => update({ language: e.target.value.trim() })} />
+      </label>
     </div>
   )
 }

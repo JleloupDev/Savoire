@@ -39,6 +39,7 @@ import { requestModuleShare } from './moduleShare'
 import { setDiskTypeResolver } from './diskShapes'
 import { publications } from './publication'
 import { aiService } from './aiService'
+import { dictation } from './dictation'
 import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
@@ -446,6 +447,12 @@ export function usePluginBootstrap({
         startReviewDraft(kind, session, docId, sel?.from ?? 0, sel?.to ?? 0)
         if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'review') manager.toggleView('review')
       }
+      // Dictee (dictation.ts) : la source se choisit dans Parametres → IA.
+      pluginApi.commands.register({ id: 'editor:dictate', label: 'Dicter', editor: true, run: ctx => dictation.toggle(ctx.editorView) })
+      pluginApi.toolbar.register({
+        id: 'tb-dictate', label: 'Dicter', icon: 'mic', group: 'insert', commandId: 'editor:dictate',
+        run: ctx => dictation.toggle(ctx.view), isActive: () => dictation.active || dictation.busy,
+      })
       pluginApi.toolbar.register({
         id: 'tb-comment', label: 'Commenter', icon: 'message-square-plus', group: 'review', menu: 'more', bubble: true,
         run: reviewDraft('comment'),
