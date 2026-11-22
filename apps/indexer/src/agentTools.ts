@@ -145,6 +145,10 @@ export class PeerToolHost implements AgentToolHost {
     return (r.hits ?? []).filter(h => this.visible(h.id, h.path)).map(h => ({ id: h.id, path: h.path, ...(h.title ? { title: h.title } : {}), snippets: (h.snippets ?? []).map(s => s.text) }))
   }
 
+  async findNote(ref: { id?: string; path?: string }): Promise<HostNoteRef | null> {
+    return (await this.find(ref)) ?? null
+  }
+
   async readNote(ref: { id?: string; path?: string }): Promise<HostNote | null> {
     const n = await this.find(ref)
     if (!n) return null

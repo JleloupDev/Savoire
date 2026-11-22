@@ -94,6 +94,10 @@ export class AppToolHost implements AgentToolHost {
     return r.hits.map(h => ({ id: h.id, path: h.path, title: h.title, snippets: h.snippets.map(s => s.text) }))
   }
 
+  async findNote(ref: { id?: string; path?: string }): Promise<HostNoteRef | null> {
+    return this.find(ref) ?? null
+  }
+
   async readNote(ref: { id?: string; path?: string }): Promise<HostNote | null> {
     const n = this.find(ref)
     if (!n) return null

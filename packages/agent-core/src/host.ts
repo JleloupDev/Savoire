@@ -49,6 +49,11 @@ export interface AgentToolHost {
   // ── Lecture ──
   listNotes(p: { folder?: string; limit: number; cursor?: string }): Promise<{ items: HostNoteRef[]; total?: number; next?: string }>
   search(p: { text: string; limit: number; folder?: string }): Promise<HostHit[]>
+  /**
+   * Le document seul, sans lire son contenu : une base (.base) ou un fichier
+   * n'a pas toujours de texte. Null : introuvable, ou cache a la personne.
+   */
+  findNote(ref: { id?: string; path?: string }): Promise<HostNoteRef | null>
   /** Null : introuvable, ou cachee a la personne. */
   readNote(ref: { id?: string; path?: string }): Promise<HostNote | null>
   /**

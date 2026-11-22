@@ -83,6 +83,21 @@ describe('outils du socle', () => {
     expect((await tb.call('list_notes', {})).result.data).toMatchObject({ items: [{ path: 'Projets/b.md' }] })
   })
 
+  it('requete sur une base sans texte (vide, sans ligne) : la base est trouvee par son chemin ou son nom', async () => {
+    const host = new MemoryHost({ 'Projets/DB.base': '' })
+    const asked: unknown[] = []
+    host.readNote = async () => null
+    host.power = async (_c, _m, params) => { asked.push(params.from); return { rows: [], total: 0 } }
+    const tb = box(host, agent())
+    for (const base of ['Projets/DB.base', 'Projets/DB']) {
+      const r = await tb.call('query', { base })
+      expect(r.result.isError).toBeFalsy()
+      expect(r.result.text).toContain('0 résultat')
+    }
+    expect(asked).toEqual([{ base: host.idOf('Projets/DB.base') }, { base: host.idOf('Projets/DB.base') }])
+    expect((await tb.call('query', { base: 'Inconnue.base' })).result.text).toContain('Base introuvable')
+  })
+
   it('modifier en direct : la note change, la trace porte le nom de l agent', async () => {
     const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
     const r = await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } })).call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })

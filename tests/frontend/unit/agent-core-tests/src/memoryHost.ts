@@ -45,6 +45,11 @@ export class MemoryHost implements AgentToolHost {
       .map(([id, n]) => ({ id, path: n.path, title: titleOf(n.path), snippets: [n.content.slice(0, 60)] }))
   }
 
+  async findNote(ref: { id?: string; path?: string }): Promise<HostNoteRef | null> {
+    const hit = this.visible().find(([id, n]) => (ref.id && id === ref.id) || (ref.path && n.path.toLowerCase() === ref.path.toLowerCase()))
+    return hit ? { id: hit[0], path: hit[1].path } : null
+  }
+
   async readNote(ref: { id?: string; path?: string }): Promise<HostNote | null> {
     const hit = this.visible().find(([id, n]) => (ref.id && id === ref.id) || (ref.path && n.path.toLowerCase() === ref.path.toLowerCase()))
     return hit ? { id: hit[0], path: hit[1].path, title: titleOf(hit[1].path), content: hit[1].content } : null

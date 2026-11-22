@@ -257,8 +257,9 @@ const queryNotes: CoreTool = {
     let from: Record<string, unknown> = { notes: true, ...(optString(args, 'folder', 1024) ? { folder: optString(args, 'folder', 1024) } : {}) }
     const base = optString(args, 'base', 1024)
     if (base) {
-      const b = await ctx.host.readNote(/\.base$/i.test(base) || base.includes('/') ? { path: base } : { id: base })
-      if (!b) throw new HostError(`Base introuvable : ${base}.`, 'not_found')
+      // Pas readNote : une base n'a pas de texte (vide tant qu'elle n'a pas de ligne).
+      const b = await ctx.host.findNote({ path: base }) ?? await ctx.host.findNote({ path: `${base}.base` }) ?? await ctx.host.findNote({ id: base })
+      if (!b || !/\.base$/i.test(b.path)) throw new HostError(`Base introuvable : ${base}.`, 'not_found')
       guard(ctx, b.path)
       from = { base: b.id }
     }
