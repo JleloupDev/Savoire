@@ -198,7 +198,17 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
     load()
     return onAgentDirectoryChange(load)
   }, [])
-  useEffect(() => manager.subscribeVaultChange(() => { setVaultTick(t => t + 1); setTurns([]) }), [manager])
+  // notifyVaultChange part aussi a chaque note creee, renommee ou supprimee :
+  // la conversation ne repart a zero que si le vault change vraiment (sinon un
+  // agent qui cree une note ou un dessin effacerait sa propre conversation).
+  const lastVaultId = useRef<string | null>(refs.selectedVault.current?.id ?? null)
+  useEffect(() => manager.subscribeVaultChange(() => {
+    setVaultTick(t => t + 1)
+    const id = refs.selectedVault.current?.id ?? null
+    if (id === lastVaultId.current) return
+    lastVaultId.current = id
+    setTurns([])
+  }), [manager, refs])
 
   const vault = refs.selectedVault.current
   const usable = useMemo(() => agents.filter(a => (!a.vaultId || a.vaultId === vault?.id) && (!a.scope?.vaultIds?.length || (vault && a.scope.vaultIds.includes(vault.id)))), [agents, vault?.id, vaultTick])

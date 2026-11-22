@@ -10,7 +10,8 @@ import type { SceneElement, ScenePatch } from './binding'
 
 interface Scene { elements: SceneElement[]; appState?: Record<string, unknown>; files?: Record<string, unknown> }
 
-const BG = { viewBackgroundColor: '#1e1e2e' }
+// Fond clair : le theme sombre d'Excalidraw l'inverse (voir EMPTY_SCENE, index.tsx).
+const BG = { viewBackgroundColor: '#ffffff' }
 
 export function parseScene(raw: string): Scene {
   try {
