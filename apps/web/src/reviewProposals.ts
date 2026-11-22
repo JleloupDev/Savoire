@@ -24,7 +24,7 @@ import {
   ReviewService, SuggestionModeStore, describeActor, mergeHunks,
   type IVaultSyncSession, type ReviewEntry, type ReviewText, type ReviewThread, type UserActor,
 } from '@savoire/application'
-import { renderAnnotationCard, type AnnotationCardDeps } from './AnnotationCard'
+import { renderAnnotationCard, renderDraftCard, type AnnotationCardDeps } from './AnnotationCard'
 
 // ── Un service par session de vault ────────────────────────────────────────
 
@@ -452,6 +452,19 @@ export function createReviewAPI(deps: {
     },
     renderAnnotation(ids, container, options) {
       return cardFor(ids, container, options?.onDone)
+    },
+    renderDraft(container, draft, options) {
+      const done = () => options?.onDone?.()
+      if (draft.kind === 'suggestion' && (!draft.proposalType || !draft.toPayload)) throw new Error('suggestion sans type de proposition')
+      return renderDraftCard(container, { kind: draft.kind, quote: draft.quote ?? '' }, (text, replacement) => {
+        const { review, me } = acting()
+        if (draft.kind === 'suggestion') {
+          if (replacement === (draft.quote ?? '')) throw new Error('La suggestion ne change rien.')
+          review.propose(draft.docId, draft.proposalType!, draft.toPayload!(replacement), me, text)
+        } else {
+          review.comment(draft.docId, text, me, undefined, draft.target)
+        }
+      }, done)
     },
     inlineAnnotations(docId) {
       return reviewOverlayExtension(

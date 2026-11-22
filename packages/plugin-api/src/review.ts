@@ -81,6 +81,22 @@ export interface AnnotationCardOptions {
   onDone?(): void
 }
 
+/**
+ * Brouillon dans la carte standard (renderDraft) : commenter ce que vise
+ * l'editeur, ou proposer un autre texte.
+ */
+export interface AnnotationDraftSpec {
+  docId: string
+  kind: 'comment' | 'suggestion'
+  /** Ce qui est vise, montre en tete (et texte de depart d'une suggestion). */
+  quote?: string
+  /** Commentaire : sa cible (voir comment). */
+  target?: unknown
+  /** Suggestion : le type de proposition, et son payload a partir du texte propose. */
+  proposalType?: string
+  toPayload?(replacement: string): unknown
+}
+
 /** Un type de proposition, declare par le plugin qui sait l'appliquer. */
 export interface ProposalTypeSpec {
   /** Identifiant unique, prefixe par le plugin : « base.cell », « excalidraw.scene ». */
@@ -168,6 +184,11 @@ export interface ReviewAPI {
    * suit les changements). Rend la fonction qui la retire.
    */
   renderAnnotation?(ids: string[], container: HTMLElement, options?: AnnotationCardOptions): () => void
+  /**
+   * Dessine un brouillon (commenter, suggerer) dans `container`. Enregistre,
+   * puis appelle options.onDone (aussi a l'annulation). Rend le nettoyage.
+   */
+  renderDraft?(container: HTMLElement, draft: AnnotationDraftSpec, options?: AnnotationCardOptions): () => void
   /**
    * Pour un editeur de texte CodeMirror d'un plugin : une extension a
    * installer. Quand la personne le veut (inline), les propositions de texte

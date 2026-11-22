@@ -99,6 +99,9 @@ export const PAGE_CSS = `
   background: var(--text-highlight-bg, rgba(255, 208, 0, 0.4)); color: inherit; border-radius: 2px; padding: 0 1px;
 }
 ${HIGHLIGHT_CSS}
+/* Carte de revision posee sur la page (style commun : .annotation-card de l'application). */
+.savoire-page .page-annotation { position: absolute; z-index: 30; }
+.savoire-page .page-annotation[hidden] { display: none; }
 .savoire-page .page-toolbar {
   position: absolute; z-index: 25; display: flex; align-items: center; gap: 1px; padding: 4px;
   background: #1f2329; color: #a3abb8; border: 1px solid rgba(255,255,255,.09);

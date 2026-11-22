@@ -443,6 +443,12 @@ function Quote({ text, strike, onClick }: { text: string; strike?: boolean; onCl
   )
 }
 
+/** Le passage vise par un commentaire de plugin (TextCommentTarget, cellule...), s'il le dit. */
+function targetQuote(target: unknown): string | null {
+  const q = (target as { quote?: unknown } | null)?.quote
+  return typeof q === 'string' && q ? q : null
+}
+
 function Entry({ entry, onReveal }: { entry: ReviewEntry; onReveal?: () => void }) {
   const isAgent = entry.author.kind === 'agent'
   return (
@@ -459,6 +465,9 @@ function Entry({ entry, onReveal }: { entry: ReviewEntry; onReveal?: () => void 
       </div>
       {entry.anchor && (
         <div style={{ marginTop: 4 }}><Quote text={entry.anchor.quote} strike={entry.kind === 'suggestion'} onClick={onReveal} /></div>
+      )}
+      {!entry.anchor && targetQuote(entry.target) && (
+        <div style={{ marginTop: 4 }}><Quote text={targetQuote(entry.target)!} /></div>
       )}
       {entry.kind === 'suggestion' && (
         <div data-testid="review-replacement-text" style={{ marginTop: 3, fontSize: 12, padding: '3px 8px', borderLeft: '3px solid rgba(34,197,94,.6)', background: 'rgba(34,197,94,.07)', whiteSpace: 'pre-wrap', borderRadius: 3 }}>

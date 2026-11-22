@@ -8,6 +8,7 @@
 import type { CompiledFormula, IQueryEngine, PropertyType, PropertyValue, Query, QueryResult, QueryRow } from '@savoire/plugin-api'
 import { h, openEditor, renderValue, type CellContext } from './cells'
 import { TITLE_COLUMN } from './manifest'
+import type { CellAnnotation } from './annotations'
 
 export const ROW_HEIGHT = 32
 export const PAGE_SIZE = 200
@@ -54,6 +55,14 @@ export interface TableHost {
   totalMenu?(key: string, anchor: HTMLElement): void
   /** « + Nouvelle page » sous la derniere ligne, comme dans Notion ; absent : pas de bouton. */
   addRow?(): void
+  /** Revision : ce qui vise une cellule (commentaires, valeurs proposees). */
+  annotation?(row: QueryRow, key: string): CellAnnotation | null
+  /** Signature de ce qui vise une ligne : elle se redessine quand elle change. */
+  annotationSig?(row: QueryRow): string
+  /** Ouvre les fils d'une cellule, pres de `anchor`. */
+  openAnnotations?(ids: string[], anchor: HTMLElement): void
+  /** Commenter une cellule (clic droit) ; absent : pas de commentaire. */
+  commentCell?(row: QueryRow, key: string, anchor: HTMLElement): void
 }
 
 export class BaseTable {
@@ -261,7 +270,7 @@ export class BaseTable {
         continue
       }
       // Meme contenu : meme element (un double-clic n'est pas perdu quand l'index bouge).
-      const sig = JSON.stringify([row.title, row.path, row.values]) + colSig
+      const sig = JSON.stringify([row.title, row.path, row.values, this.host.annotationSig?.(row) ?? '']) + colSig
       const prev = this.drawn.get(row.id)
       const el = prev && prev.sig === sig ? prev.el : this.renderRow(row, i, cols)
       el.style.top = `${i * ROW_HEIGHT}px`
@@ -329,9 +338,35 @@ export class BaseTable {
           }
         }
       }
+      this.markAnnotations(td, row, col.key)
       tr.append(td)
     }
     return tr
+  }
+
+  /** Revision : marque de la cellule (clic : ses fils) ; clic droit : la commenter. */
+  private markAnnotations(td: HTMLElement, row: QueryRow, key: string): void {
+    if (this.host.commentCell) {
+      td.addEventListener('contextmenu', e => {
+        e.preventDefault()
+        this.host.commentCell!(row, key, td)
+      })
+    }
+    const a = this.host.annotation?.(row, key)
+    if (!a || a.ids.length === 0) return
+    td.classList.add(a.proposals.length ? 'base-td-proposed' : 'base-td-annotated')
+    const parts: string[] = []
+    if (a.comments) parts.push(`${a.comments} commentaire${a.comments > 1 ? 's' : ''}`)
+    for (const v of a.proposals) parts.push(`Valeur proposée : ${v === null || v === '' ? '(vide)' : Array.isArray(v) ? v.join(', ') : String(v)}`)
+    const badge = h('button', {
+      class: a.proposals.length ? 'base-td-note base-td-note-proposal' : 'base-td-note', type: 'button',
+      'data-testid': 'base-cell-annotation', title: parts.join('\n'),
+    }, a.proposals.length ? '✎' : '💬')
+    if (a.ids.length > 1) badge.append(h('span', { class: 'base-td-note-count' }, String(a.ids.length)))
+    badge.addEventListener('mousedown', e => e.stopPropagation())
+    badge.addEventListener('dblclick', e => e.stopPropagation())
+    badge.addEventListener('click', e => { e.stopPropagation(); this.host.openAnnotations?.(a.ids, td) })
+    td.append(badge)
   }
 
   private editCell(td: HTMLElement, col: TableColumn, value: PropertyValue | undefined, commit: (v: PropertyValue) => void): void {

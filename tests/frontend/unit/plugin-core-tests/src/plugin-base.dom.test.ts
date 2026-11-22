@@ -430,3 +430,58 @@ describe('plugin-base', () => {
     expect(block.querySelector('[data-testid="base-query-value"]')!.textContent).toBe('9')
   })
 })
+
+describe('plugin-base — revision dans la base', () => {
+  function fakeReview(annotations: import('@savoire/plugin-api').ReviewAnnotation[]) {
+    const changes = new Set<() => void>()
+    const rendered: string[][] = []
+    const drafts: import('@savoire/plugin-api').AnnotationDraftSpec[] = []
+    let inline = true
+    const review = {
+      get inline() { return inline },
+      get suggesting() { return false },
+      registerProposalType: () => () => {},
+      onInlineChange: () => () => {},
+      onChange: (cb: () => void) => { changes.add(cb); return () => { changes.delete(cb) } },
+      annotations: () => annotations,
+      renderAnnotation: (ids: string[], el: HTMLElement) => { rendered.push(ids); el.textContent = `fils ${ids.join(',')}`; return () => {} },
+      renderDraft: (el: HTMLElement, d: import('@savoire/plugin-api').AnnotationDraftSpec) => { drafts.push(d); el.textContent = 'brouillon'; return () => {} },
+    }
+    return { review, rendered, drafts, off() { inline = false; for (const cb of changes) cb() } }
+  }
+  const open = (over: Partial<import('@savoire/plugin-api').ReviewAnnotation>) => ({
+    docId: 'base1', text: '', authorName: 'Alice', byAgent: false, createdAt: '', status: 'open' as const, replies: [], ...over,
+  }) as import('@savoire/plugin-api').ReviewAnnotation
+
+  it('cellules commentees ou proposees : une marque, un clic ouvre leur fil ; clic droit : commenter', async () => {
+    const w = world(NOTES)
+    const a = w.member(0)
+    const fake = fakeReview([
+      open({ id: 'c1', kind: 'comment', target: { cell: { row: 'n1', key: 'status' }, quote: 'Alpha · status' } }),
+      open({ id: 'p1', kind: 'proposal', proposalType: 'base.cell', payload: { row: { kind: 'page', docId: 'n2' }, title: 'Beta', key: 'priority', before: 1, after: 3 } }),
+      open({ id: 'done', kind: 'comment', status: 'resolved', target: { cell: { row: 'n2', key: 'status' }, quote: '' } }),
+    ])
+    const { el } = await mount(w, 0, { ...a.api, review: fake.review } as unknown as PluginAPI)
+    await tick()
+    const commented = cell(el, 'Alpha', 'status')
+    expect(commented.classList.contains('base-td-annotated')).toBe(true)
+    const proposed = cell(el, 'Beta', 'priority')
+    expect(proposed.classList.contains('base-td-proposed')).toBe(true)
+    expect(proposed.querySelector('[data-testid="base-cell-annotation"]')!.getAttribute('title')).toBe('Valeur proposée : 3')
+    // Un fil resolu ne marque plus sa cellule.
+    expect(cell(el, 'Beta', 'status').querySelector('[data-testid="base-cell-annotation"]')).toBeNull()
+
+    click(commented.querySelector('[data-testid="base-cell-annotation"]'))
+    expect(fake.rendered).toEqual([['c1']])
+    const card = el.querySelector('[data-testid="base-annotation"]') as HTMLElement
+    expect(card.hidden).toBe(false)
+    expect(card.textContent).toBe('fils c1')
+
+    cell(el, 'Beta', 'status').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    expect(fake.drafts[0]).toMatchObject({ docId: 'base1', kind: 'comment', target: { cell: { row: 'n2', key: 'status' }, quote: 'Beta · status' } })
+
+    fake.off()
+    expect(el.querySelector('[data-testid="base-cell-annotation"]')).toBeNull()
+    expect(card.hidden).toBe(true)
+  })
+})

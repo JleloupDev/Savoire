@@ -28,6 +28,7 @@ import { fetchBaseRows } from './queryBlock'
 import { TOTAL_KINDS, computeTotal, totalText, type TotalKind } from './totals'
 import { ensureStyle } from './style'
 import { CELL_PROPOSAL, type CellProposal } from './proposals'
+import { CellAnnotations, type CellCommentTarget } from './annotations'
 
 const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
   { op: 'eq', label: 'est', needsValue: true },
@@ -234,6 +235,56 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     } catch (err) { report(err) }
   }
 
+  // ── Revision dans la base ────────────────────────────────────────────────
+  // Cellules commentees ou avec une valeur proposee : une marque, et leur fil
+  // dans une carte posee sur la base (api.review), sans ouvrir le panneau.
+
+  const review = api?.review
+  const notes = new CellAnnotations()
+  let card: HTMLElement | null = null
+  let cardCleanup: (() => void) | null = null
+  const inlineReview = () => !!review?.inline && !!baseId
+
+  const closeCard = () => {
+    cardCleanup?.()
+    cardCleanup = null
+    if (card) { card.hidden = true; card.replaceChildren() }
+  }
+
+  /** Place la carte sous la cellule `anchor`. */
+  const placeCard = (anchor: HTMLElement): boolean => {
+    if (!card || !container) return false
+    const root = card.parentElement!.getBoundingClientRect()
+    const rect = anchor.getBoundingClientRect()
+    card.style.left = `${Math.max(0, Math.min(rect.left - root.left, root.width - 340))}px`
+    card.style.top = `${rect.bottom - root.top + 4}px`
+    card.hidden = false
+    return true
+  }
+
+  const openAnnotations = (ids: string[], anchor: HTMLElement) => {
+    if (!review?.renderAnnotation || !inlineReview()) return
+    closeCard()
+    if (!placeCard(anchor)) return
+    cardCleanup = review.renderAnnotation(ids, card!, { onDone: closeCard })
+  }
+
+  const commentCell = (row: QueryRow, key: string, anchor: HTMLElement) => {
+    if (!review?.renderDraft || !baseId || readOnly) return
+    closeCard()
+    if (!placeCard(anchor)) return
+    const target: CellCommentTarget = { cell: { row: row.id, key }, quote: `${row.title || 'Sans titre'} · ${label(key)}` }
+    try {
+      cardCleanup = review.renderDraft(card!, { docId: baseId, kind: 'comment', quote: target.quote, target }, { onDone: closeCard })
+    } catch (err) { closeCard(); report(err) }
+  }
+
+  const refreshAnnotations = () => {
+    if (inlineReview()) notes.update(review!.annotations(baseId!))
+    else { notes.clear(); closeCard() }
+    table?.refresh()
+  }
+
   // ── Rendu ────────────────────────────────────────────────────────────────
 
   const table = rowsEngine ? new BaseTable({
@@ -253,6 +304,10 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     totals: () => totalTexts,
     totalMenu: (key, anchor) => openTotalMenu(key, anchor),
     addRow: () => void addPage(),
+    annotation: (row, key) => notes.of(row.id, key),
+    annotationSig: row => notes.rowSig(row.id),
+    openAnnotations,
+    ...(review?.renderDraft && baseId ? { commentCell } : {}),
   }) : null
 
   // ── Totaux des colonnes ──────────────────────────────────────────────────
@@ -760,9 +815,16 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         h('span', { 'data-testid': 'base-count' }),
         h('span', { class: 'base-error', 'data-testid': 'base-error' }),
         !store.writable ? h('span', { class: 'base-hint' }, 'Base non synchronisée : réglages en lecture seule.') : null)
-      const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, body, footer)
+      card = h('div', { class: 'base-annotation annotation-card', 'data-testid': 'base-annotation' })
+      card.hidden = true
+      card.addEventListener('keydown', e => {
+        e.stopPropagation()
+        if (e.key === 'Escape') { e.preventDefault(); closeCard() }
+      })
+      const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, body, footer, card)
       root.addEventListener('focusin', () => { activeBaseView = handle })
       root.addEventListener('mousedown', e => {
+        if (card && !card.hidden && !card.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-testid="base-cell-annotation"]')) closeCard()
         if (popoverKind && !popover.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.base-btn, .base-th-label, .base-th-add, .base-tf')) closePopover()
       })
       el.replaceChildren(root)
@@ -773,6 +835,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         update()
       }))
       if (types) unsubs.push(types.onChange(() => update()))
+      if (review && baseId) {
+        unsubs.push(review.onChange(refreshAnnotations))
+        unsubs.push(review.onInlineChange(refreshAnnotations))
+        if (inlineReview()) notes.update(review.annotations(baseId))
+      }
       if (engine) unsubs.push(engine.onStateChange(s => { if (stateEl) stateEl.textContent = stateText(s) }))
       void types?.members?.().then(m => { members = m; table?.refresh(); kanban?.refresh() }).catch(() => {})
       update()
@@ -783,6 +850,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       table?.refresh()
     },
     destroy() {
+      closeCard()
       for (const u of unsubs) u()
       unsubs.length = 0
       stopTotals()

@@ -80,6 +80,15 @@ function itemLabel(item: MenuItem): string {
   return (item as { name?: string }).name ?? pageCommandLabel(item.command)
 }
 
+/** Bouton ajoute par la vue (Commenter, Suggerer) : il agit sur la selection. */
+export interface ToolbarAction {
+  key: string
+  icon: string
+  lucide?: string
+  label: string
+  run(): void
+}
+
 export interface SelectionToolbar {
   readonly el: HTMLElement
   /** Recalcule visibilite, etats et position. */
@@ -97,6 +106,7 @@ export function createSelectionToolbar(
   host: HTMLElement,
   hotkeys?: Partial<Pick<HotkeyAPI, 'get' | 'format'>>,
   icons?: IconAPI,
+  actions: readonly ToolbarAction[] = [],
 ): SelectionToolbar {
   /** Icone Lucide si l'hote en fournit, sinon le texte d'origine. */
   function glyph(lucide: string | undefined, text: string, size = 16): Node {
@@ -209,6 +219,25 @@ export function createSelectionToolbar(
         btn.setAttribute('aria-expanded', String(openMenu === b.key))
       }
     })
+    bar.append(wrap)
+  }
+
+  for (const a of actions) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'page-toolbar-button'
+    btn.dataset.testid = 'page-toolbar-button'
+    btn.dataset.key = a.key
+    btn.title = a.label
+    btn.replaceChildren(glyph(a.lucide, a.icon))
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      hide()
+      a.run()
+    })
+    const wrap = document.createElement('span')
+    wrap.className = 'page-toolbar-group'
+    wrap.append(btn)
     bar.append(wrap)
   }
 

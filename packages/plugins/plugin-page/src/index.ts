@@ -16,6 +16,7 @@ import type { FileContext, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { createPageView } from './view'
 import { pageCommands } from './commands'
 import { pageFileToMarkdown } from './markdown'
+import { pageProposalType } from './review'
 
 export { createPageView, pageEditorOf } from './view'
 export { pageCommands, focusedPageEditor, runPageCommand } from './commands'
@@ -23,10 +24,12 @@ export { Highlight, PAGE_COLORS } from './highlight'
 export { pageExtensions, PageLink } from './schema'
 export { filterBlocks, matchSlash, BLOCK_ITEMS } from './blocks'
 export { pageToMarkdown, pageFileToMarkdown } from './markdown'
+export { PAGE_TEXT_PROPOSAL, flatten, locateInDoc, pageProposalType, type PageTextProposal } from './review'
 export { subPagePath, subPageFolder, linkTargetOf, resolveLinkTarget, cleanPageName } from './subpage'
 
 let registeredCommands: string[] = []
 let unregister: ((id: string) => void) | null = null
+let unregisterProposal: (() => void) | null = null
 
 const plugin: VaultPlugin = {
   manifest: {
@@ -51,7 +54,7 @@ const plugin: VaultPlugin = {
       creatable: true,
       // Page vide : pas de titre dans le contenu, c'est le nom du fichier.
       create: async () => '',
-      open: (path: string, ctx: FileContext) => createPageView(path, ctx, { workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys, icons: api.icons }),
+      open: (path: string, ctx: FileContext) => createPageView(path, ctx, { workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys, icons: api.icons, review: api.review }),
       contentExtractor: { toShadowDocument: pageFileToMarkdown },
     })
     const commands = pageCommands()
@@ -59,12 +62,16 @@ const plugin: VaultPlugin = {
     for (const c of commands) api.commands?.register(c)
     registeredCommands = commands.map(c => c.id)
     unregister = id => api.commands?.unregister(id)
+    // Suggestions dans une page : la revision sait les decrire et les appliquer.
+    unregisterProposal = api.review?.registerProposalType(pageProposalType) ?? null
   },
 
   async onunload() {
     for (const id of registeredCommands) unregister?.(id)
     registeredCommands = []
     unregister = null
+    unregisterProposal?.()
+    unregisterProposal = null
   },
 }
 

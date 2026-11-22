@@ -14,7 +14,7 @@ import { Editor, Extension } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import * as Y from 'yjs'
 import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror'
-import type { FileContext, FileView, HotkeyAPI, IconAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
+import type { FileContext, FileView, HotkeyAPI, IconAPI, ReviewAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
 import { PAGE_EDITOR_OPTIONS, pageExtensions, PageLink, pageLinkLabel } from './schema'
 import { filterBlocks, matchSlash, type BlockItem } from './blocks'
 import { trackPageEditor, type PageController } from './commands'
@@ -24,7 +24,8 @@ import { VaultMirror } from './adapter/VaultMirror'
 import { PageFileError } from './adapter/pageFile'
 import { linkTargetOf, resolveLinkTarget, subPageFolder, subPagePath } from './subpage'
 import { PAGE_CSS } from './style'
-import { createSelectionToolbar, type SelectionToolbar } from './toolbar'
+import { createSelectionToolbar, type SelectionToolbar, type ToolbarAction } from './toolbar'
+import { PAGE_TEXT_PROPOSAL, pageReviewExtension, setPageAnnotations, trackReviewEditor, type PageTextProposal } from './review'
 
 export interface PageViewDeps {
   workspace?: Pick<WorkspaceAPI, 'openFile'>
@@ -37,6 +38,8 @@ export interface PageViewDeps {
   hotkeys?: Pick<HotkeyAPI, 'handleKeyEvent'> & Partial<Pick<HotkeyAPI, 'get' | 'format'>>
   /** Icones de l'hote (Lucide). Sans elles, les symboles texte d'origine. */
   icons?: IconAPI
+  /** Revision : commentaires et suggestions dans la page. Sans elle, rien. */
+  review?: ReviewAPI
 }
 
 /** Editeur d'une vue montee, par conteneur (tests, outils). */
@@ -347,6 +350,76 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     return true
   }
 
+  // ── Revision dans la page ────────────────────────────────────────────
+
+  const review = deps.review
+  const docId = review ? vault?.resolveDocumentId(path) : undefined
+  /** Carte de revision posee sur la page (fil, ou brouillon). */
+  let card: HTMLElement | null = null
+  let cardCleanup: (() => void) | null = null
+
+  function closeCard(): void {
+    cardCleanup?.()
+    cardCleanup = null
+    if (card) { card.hidden = true; card.replaceChildren() }
+  }
+
+  /** Place la carte sous la position `pos` de la page. */
+  function placeCard(pos: number): boolean {
+    if (!card || !editor || !root) return false
+    let coords: { left: number; bottom: number }
+    try { coords = editor.view.coordsAtPos(pos) } catch { return false }
+    const box = root.querySelector<HTMLElement>('.page-body')!.getBoundingClientRect()
+    const width = 340
+    card.style.left = `${Math.max(0, Math.min(coords.left - box.left, box.width - width))}px`
+    card.style.top = `${coords.bottom - box.top + 6}px`
+    card.hidden = false
+    return true
+  }
+
+  function openThreads(ids: string[], pos: number): void {
+    if (!review?.inline || !review.renderAnnotation) return
+    closeCard()
+    if (!placeCard(pos)) return
+    cardCleanup = review.renderAnnotation(ids, card!, { onDone: closeCard })
+  }
+
+  /** « Commenter » / « Suggérer » sur la selection : le brouillon s'ouvre sur la page. */
+  function openDraft(kind: 'comment' | 'suggestion'): void {
+    if (!editor || !review?.renderDraft || !docId) return
+    const { from, to } = editor.state.selection
+    const quote = editor.state.doc.textBetween(from, to, '\n')
+    if (!quote.trim()) return
+    if (kind === 'suggestion' && quote.includes('\n')) {
+      setStatus('Une suggestion vise un passage d’un seul bloc.', 'error')
+      return
+    }
+    closeCard()
+    if (!placeCard(to)) return
+    try {
+      cardCleanup = review.renderDraft(card!, {
+        docId, kind, quote,
+        target: { at: from, quote },
+        proposalType: PAGE_TEXT_PROPOSAL,
+        toPayload: (after: string): PageTextProposal => ({ at: from, before: quote, after }),
+      }, { onDone: closeCard })
+    } catch (err) {
+      closeCard()
+      setStatus(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  function refreshAnnotations(): void {
+    if (!editor || !review || !docId) return
+    setPageAnnotations(editor, review.inline ? review.annotations(docId) : [])
+    if (!review.inline) closeCard()
+  }
+
+  const reviewActions: ToolbarAction[] = review?.renderDraft && docId ? [
+    { key: 'comment', icon: '💬', lucide: 'message-square-plus', label: 'Commenter', run: () => openDraft('comment') },
+    { key: 'suggest', icon: '✎', lucide: 'pencil-line', label: 'Suggérer une modification', run: () => openDraft('suggestion') },
+  ] : []
+
   // ── Montage ──────────────────────────────────────────────────────────
 
   async function connectStorage(): Promise<void> {
@@ -406,14 +479,32 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       menu.el = el('div', 'page-menu')
       menu.el.dataset.testid = 'page-slash-menu'
       menu.el.hidden = true
-      body.append(editorEl, handle, menu.el)
+      card = el('div', 'page-annotation annotation-card')
+      card.dataset.testid = 'page-annotation'
+      card.hidden = true
+      card.addEventListener('keydown', (e) => {
+        e.stopPropagation()
+        if (e.key === 'Escape') { e.preventDefault(); closeCard(); editor?.commands.focus() }
+      })
+      body.append(editorEl, handle, menu.el, card)
+      // Un clic ailleurs ferme la carte (un clic sur un passage la rouvre).
+      const outside = (e: MouseEvent) => { if (card && !card.hidden && !card.contains(e.target as Node)) closeCard() }
+      document.addEventListener('mousedown', outside, true)
+      cleanups.push(() => document.removeEventListener('mousedown', outside, true))
+      cleanups.push(() => closeCard())
       root.append(style, header, status, body)
       container.replaceChildren(root)
 
       editor = new Editor({
         element: editorEl,
         editable: !readOnly,
-        extensions: pageExtensions({ pageLink: PageLinkCard, extra: [privateYSync(fragment)] }),
+        extensions: pageExtensions({
+          pageLink: PageLinkCard,
+          extra: [
+            privateYSync(fragment),
+            ...(review && docId ? [pageReviewExtension((ids, pos) => openThreads(ids, pos))] : []),
+          ],
+        }),
         ...PAGE_EDITOR_OPTIONS,
         editorProps: {
           attributes: { class: 'page-prosemirror', 'data-testid': 'page-editor' },
@@ -425,7 +516,13 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       cleanups.push(trackPageEditor(editor, controller))
       editorsByContainer.set(container, editor)
       cleanups.push(() => editorsByContainer.delete(container))
-      toolbar = createSelectionToolbar(editor, body, deps.hotkeys, deps.icons)
+      toolbar = createSelectionToolbar(editor, body, deps.hotkeys, deps.icons, reviewActions)
+      if (review && docId) {
+        cleanups.push(trackReviewEditor(docId, editor))
+        cleanups.push(review.onChange(refreshAnnotations))
+        cleanups.push(review.onInlineChange(refreshAnnotations))
+        refreshAnnotations()
+      }
       const bar = toolbar
       cleanups.push(() => bar.destroy())
       editor.on('transaction', () => updateMenu())

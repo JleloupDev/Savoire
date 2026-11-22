@@ -50,6 +50,14 @@ const CSS = `
 .base-td { flex:0 0 auto; padding:0 8px; display:flex; align-items:center; gap:4px; overflow:hidden; white-space:nowrap; border-right:1px solid color-mix(in srgb, var(--border,#313244) 50%, transparent); box-sizing:border-box; }
 .base-td:focus { outline:1px solid var(--accent,#7c3aed); outline-offset:-1px; }
 .base-td-check { cursor:pointer; }
+.base-td { position:relative; }
+.base-td-annotated { background:rgba(234,179,8,0.10); }
+.base-td-proposed { background:rgba(34,197,94,0.10); }
+.base-td-note { margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:2px; border:none; background:transparent; cursor:pointer; font-size:12px; padding:0 2px; color:var(--text-muted,#a6adc8); }
+.base-td-note-proposal { color:#16a34a; }
+.base-td-note-count { font-size:10px; }
+.base-annotation { position:absolute; z-index:35; }
+.base-annotation[hidden] { display:none; }
 .base-q { margin:6px 0; font-size:13px; font-family:var(--font-ui,sans-serif); color:var(--text,#cdd6f4); line-height:1.4; }
 .base-q a { color:var(--text,#cdd6f4); text-decoration:none; }
 .base-q a:hover { text-decoration:underline; }
