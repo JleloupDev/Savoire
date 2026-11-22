@@ -512,7 +512,9 @@ export function usePluginBootstrap({
       liveBlocks.attachHooks(pluginApi.hooks)
       startVisitMarks()
       startSharedPassages({ indexer: () => pluginApi.indexer, open: path => { void manager.openFile(path) } })
-      startAgentWatch(editorAreaRefs)
+      startAgentWatch(editorAreaRefs, () => {
+        if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'assistant') manager.toggleView('assistant')
+      })
       const copyLink = () => copyBlockLink(vaultProxy, liveBlocks.selection())
       pluginApi.commands.register({ id: 'editor:copy-block-link', label: 'Copier le lien vers ce bloc', editor: true, run: () => { void copyLink() } })
       pluginApi.toolbar.register({ id: 'tb-copy-block-link', label: 'Copier le lien vers ce bloc', icon: 'link', group: 'insert', menu: 'more', commandId: 'editor:copy-block-link', run: () => { void copyLink() } })

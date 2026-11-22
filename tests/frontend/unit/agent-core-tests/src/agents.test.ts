@@ -129,6 +129,16 @@ describe('outils du socle', () => {
     expect(host.review).toMatchObject([{ kind: 'suggestion', quote: 'le monde', replacement: 'tout le monde' }])
   })
 
+  it('une correction deja proposee ou refusee n est pas reproposee', async () => {
+    const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
+    const b = box(host, agent({ permissions: { read: 'direct', edit: 'propose' } }))
+    await b.call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })
+    host.review[0]!.status = 'rejected'
+    const again = await b.call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })
+    expect(again.result.text).toContain('déjà dans la Révision')
+    expect(host.review.filter(e => e.kind === 'suggestion')).toHaveLength(1)
+  })
+
   it('le serveur peut imposer la proposition, jamais l inverse', async () => {
     const host = new MemoryHost({ 'a.md': 'x' })
     await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } }), { imposedMode: 'propose' }).call('append', { path: 'a.md', text: 'y' })

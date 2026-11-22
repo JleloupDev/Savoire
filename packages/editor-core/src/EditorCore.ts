@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
 import { applyBlockMarks, blockMarksExtension, type BlockMark } from './BlockMarks'
+import { agentPresenceExtension, applyAgentPresence, type AgentPresence } from './AgentPresence'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
 import { EditorView, keymap } from '@codemirror/view'
@@ -369,6 +370,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         highlightsExtension(),
         // Marques de blocs (modifie depuis la derniere visite, agent en veille).
         blockMarksExtension(),
+        // Agent en veille sur la note : un robot en bas a droite.
+        agentPresenceExtension(),
         // Cartes de revision par-dessus la note (clic sur un passage surligne).
         annotationsExtension(),
         suggestionModeExtension(),
@@ -862,6 +865,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Remplace les marques de blocs d'une source (liste vide : les retire). */
   setBlockMarks(owner: string, marks: readonly BlockMark[]): void {
     applyBlockMarks(this.view, owner, marks)
+  }
+
+  /** Presence d'un agent sur la note (null : la retire). */
+  setAgentPresence(owner: string, presence: AgentPresence | null): void {
+    applyAgentPresence(this.view, owner, presence)
   }
 
   /** Le passage du texte visible a l'ecran (a peu pres : la partie dessinee). */

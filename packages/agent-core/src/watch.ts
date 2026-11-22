@@ -18,6 +18,12 @@
 //    change pas d'un bloc a l'autre : le fournisseur le garde en cache) ;
 //    sinon son plan (titres, une ligne par bloc), les blocs voisins en entier.
 //  - Reponse rangee : fautes (en suggestions), un conseil ou rien, un resume.
+//  - Revisions de la note (reviews) : l'IA voit les suggestions et
+//    commentaires deja faits, en attente, acceptes ou REFUSES ; une faute deja
+//    proposee ou refusee n'est jamais reproposee (filtre ici, pas seulement
+//    demande a l'IA). Un conseil ecarte non plus.
+//  - Contexte donne par la personne (addContext) : garde avec la note,
+//    joint a chaque analyse, sans arreter la veille.
 //
 // Sans DOM, sans reseau : l'hote donne l'IA (chat), dessine l'etat (onState)
 // et range les trouvailles (onFinding).
@@ -28,6 +34,9 @@ export const WATCH_ASK_ABOVE = 30
 export const WATCH_FULL_NOTE_CHARS = 12_000
 const NEIGHBORS = 2
 const MAX_REMARKS = 8
+const MAX_DISMISSED = 20
+const MAX_CONTEXT = 10
+const MAX_REVIEWS_IN_PROMPT = 40
 const MAX_FAULTS = 10
 /** Un bloc plus court n'est pas relu (« Oui. », une puce vide). */
 const MIN_BLOCK_CHARS = 3
@@ -57,6 +66,24 @@ export interface WatchMemory {
   seen: Map<string, string>
   /** Les dernieres remarques faites sur la note (pour ne pas se repeter). */
   remarks: string[]
+  /** Conseils ecartes par la personne (« Ignorer ») : a ne pas redonner. */
+  dismissed?: string[]
+  /** Contexte donne par la personne pour cette note (« c'est un courrier formel »...). */
+  context?: string[]
+}
+
+/** Une revision de la note (Revision), telle que la veille la voit. */
+export interface WatchReview {
+  kind: 'suggestion' | 'comment'
+  status: 'open' | 'accepted' | 'rejected' | 'resolved'
+  /** Passage vise. */
+  quote: string
+  /** Suggestion : le texte propose. */
+  replacement?: string
+  /** Commentaire : son texte ; suggestion : sa raison. */
+  text?: string
+  /** Fait par cet agent (et non par une personne ou un autre agent). */
+  mine?: boolean
 }
 
 export interface WatchMemoryStore {
@@ -91,6 +118,8 @@ export interface BlockWatcherDeps {
   onState?(status: WatchStatus): void
   /** Gros collage : demander avant de relire `count` blocs. Rend l'accord. */
   askLarge?(count: number, estimatedTokens: number): Promise<boolean>
+  /** Revisions de la note (suggestions, commentaires, avec leur statut). */
+  reviews?(note: WatchNote): WatchReview[]
 }
 
 /** Les blocs que la veille relit. */
@@ -105,7 +134,8 @@ Réponds en JSON seulement, sans texte autour :
 - fautes : les fautes d'orthographe, de grammaire, de typographie du BLOC À RELIRE seulement. "find" est recopié à l'identique depuis le bloc (quelques mots, unique dans le bloc), "replace" est la correction, "why" dit pourquoi en quelques mots. Liste vide s'il n'y en a pas.
 - conseil : une seule remarque vraiment utile sur ce bloc (fond, clarté, structure, lien avec le reste de la note), en une ou deux phrases, en tutoyant. null s'il n'y a rien d'utile à dire : c'est la réponse la plus fréquente.
 - resume : le bloc résumé en une ligne (10 à 20 mots), pour le plan de la note.
-Ne touche ni au Markdown, ni aux liens [[...]], ni au code. Ne répète pas une remarque déjà faite.`
+Ne touche ni au Markdown, ni aux liens [[...]], ni au code. Ne répète pas une remarque déjà faite.
+Ne repropose jamais une correction déjà suggérée, acceptée ou refusée (voir les révisions de la note), ni un conseil écarté.`
 
 function clip(s: string, n: number): string {
   const flat = s.replace(/\s+/g, ' ').trim()
@@ -127,22 +157,73 @@ export function noteOutline(note: WatchNote, memory: WatchMemory, around: NoteBl
   return lines.join('\n')
 }
 
-/** Les messages d'une analyse : consignes, note (ou son plan), remarques deja faites, bloc. */
-export function watchMessages(agent: AgentDefinition, note: WatchNote, block: NoteBlock, memory: WatchMemory): AIMessage[] {
-  const system = [agent.instructions.trim(), WATCH_PROTOCOL].filter(Boolean).join('\n\n')
+const STATUS_LABEL: Record<WatchReview['status'], string> = { open: 'en attente', accepted: 'acceptée', rejected: 'REFUSÉE', resolved: 'résolue' }
+
+/** Les revisions utiles pour ce bloc d'abord (celles qui citent son texte), puis les plus recentes. */
+function reviewLines(reviews: readonly WatchReview[], block: NoteBlock): string[] {
+  const near = (r: WatchReview) => !!r.quote && (block.text.includes(r.quote) || r.quote.includes(block.text))
+  const sorted = [...reviews.filter(near), ...reviews.filter(r => !near(r)).reverse()].slice(0, MAX_REVIEWS_IN_PROMPT)
+  return sorted.map(r => {
+    const who = r.mine ? ' (par toi)' : ''
+    if (r.kind === 'suggestion') {
+      return `- suggestion ${STATUS_LABEL[r.status]}${who} : « ${clip(r.quote, 120)} » → « ${clip(r.replacement ?? '', 120)} »${r.text ? ` (${clip(r.text, 80)})` : ''}`
+    }
+    const status = r.status === 'open' ? 'ouvert' : r.status === 'resolved' ? 'résolu' : r.status === 'rejected' ? 'REJETÉ' : 'accepté'
+    return `- commentaire ${status}${who}${r.quote ? ` sur « ${clip(r.quote, 80)} »` : ''} : ${clip(r.text ?? '', 160)}`
+  })
+}
+
+/** Les messages d'une analyse : consignes, note (ou son plan), revisions, remarques deja faites, bloc. */
+export function watchMessages(agent: AgentDefinition, note: WatchNote, block: NoteBlock, memory: WatchMemory, reviews: readonly WatchReview[] = []): AIMessage[] {
+  const personContext = memory.context?.length
+    ? `Contexte donné par la personne pour cette note :\n${memory.context.map(c => `- ${c}`).join('\n')}`
+    : ''
+  const system = [agent.instructions.trim(), WATCH_PROTOCOL, personContext].filter(Boolean).join('\n\n')
   const full = note.text.length <= WATCH_FULL_NOTE_CHARS
   const context = full
     ? `Note « ${note.path} », en entier :\n<<<\n${note.text}\n>>>`
     : `Note « ${note.path} », trop longue pour être donnée en entier. Son plan, avec les blocs voisins en entier :\n<<<\n${noteOutline(note, memory, block)}\n>>>`
+  const lines = reviewLines(reviews, block)
+  const revs = lines.length ? `\n\nRévisions de la note (ne pas reproposer ce qui est en attente, accepté ou refusé) :\n${lines.join('\n')}` : ''
   const remarks = memory.remarks.length
     ? `\n\nRemarques déjà faites sur cette note (ne pas les répéter) :\n${memory.remarks.map(r => `- ${r}`).join('\n')}`
+    : ''
+  const dismissed = memory.dismissed?.length
+    ? `\n\nConseils écartés par la personne (ne plus les donner) :\n${memory.dismissed.map(r => `- ${r}`).join('\n')}`
     : ''
   const where = block.section ? `, section « ${block.section} »` : ''
   return [
     { role: 'system', content: system },
     // La note d'abord : ce debut ne change pas d'un bloc a l'autre (cache du fournisseur).
-    { role: 'user', content: `${context}${remarks}\n\nBloc à relire (n° ${block.index}${where}) :\n<<<\n${block.text}\n>>>` },
+    { role: 'user', content: `${context}${revs}${remarks}${dismissed}\n\nBloc à relire (n° ${block.index}${where}) :\n<<<\n${block.text}\n>>>` },
   ]
+}
+
+const fold = (t: string): string => t.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase()
+
+/**
+ * Une faute deja traitee dans la Revision : meme correction deja proposee
+ * (quel que soit son statut), ou passage dont la personne a refuse une
+ * correction.
+ */
+export function alreadyReviewed(fault: WatchFault, reviews: readonly WatchReview[]): boolean {
+  const find = fold(fault.find)
+  const replace = fold(fault.replace)
+  return reviews.some(r => {
+    if (r.kind !== 'suggestion') return false
+    const quote = fold(r.quote)
+    const repl = fold(r.replacement ?? '')
+    if (!quote) return false
+    if (quote === find && repl === replace) return true
+    if (replace && quote.includes(find) && repl.includes(replace) && quote !== repl) return true
+    return r.status === 'rejected' && (quote.includes(find) || find.includes(quote))
+  })
+}
+
+/** Un conseil deja ecarte (ou deja donne) : meme texte, a la casse et aux espaces pres. */
+function sameAdvice(advice: string, list: readonly string[] | undefined): boolean {
+  const a = fold(advice)
+  return !!list?.some(x => { const b = fold(x).replace(/…$/, ''); return b && (a === b || a.startsWith(b)) })
 }
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '')
@@ -252,11 +333,43 @@ export class BlockWatcher {
     const note = this.note
     if (!note) return
     this.cancelAll()
-    this.memory = { seen: new Map(), remarks: [] }
+    // Ce qui est oublie : ce qu'il a lu. Le contexte et les conseils ecartes restent.
+    this.memory = { seen: new Map(), remarks: [], ...(this.memory.dismissed ? { dismissed: this.memory.dismissed } : {}), ...(this.memory.context ? { context: this.memory.context } : {}) }
     this.d.memory.save(this.d.agent.id, note.vaultId, note.docId, this.memory)
     this.asking = null
     this.askedFor = new Set()
     this.update(note)
+  }
+
+  /** Le contexte donne par la personne pour la note active. */
+  context(): string[] {
+    return [...(this.memory.context ?? [])]
+  }
+
+  /** Ajoute du contexte pour la note active, sans arreter la veille ; joint aux prochaines analyses. */
+  addContext(text: string): void {
+    const t = text.trim().slice(0, 1000)
+    const note = this.note
+    if (!t || !note) return
+    this.memory.context = [...(this.memory.context ?? []), t].slice(-MAX_CONTEXT)
+    this.d.memory.save(this.d.agent.id, note.vaultId, note.docId, this.memory)
+    this.emit()
+  }
+
+  removeContext(index: number): void {
+    const note = this.note
+    if (!note || !this.memory.context?.[index]) return
+    this.memory.context = this.memory.context.filter((_, i) => i !== index)
+    this.d.memory.save(this.d.agent.id, note.vaultId, note.docId, this.memory)
+    this.emit()
+  }
+
+  /** La personne ecarte un conseil : il ne sera plus donne sur cette note. */
+  dismissAdvice(advice: string): void {
+    const note = this.note
+    if (!note) return
+    this.memory.dismissed = [...(this.memory.dismissed ?? []), clip(advice, 160)].slice(-MAX_DISMISSED)
+    this.d.memory.save(this.d.agent.id, note.vaultId, note.docId, this.memory)
   }
 
   status(): WatchStatus {
@@ -321,8 +434,9 @@ export class BlockWatcher {
     this.emit()
     const memory = this.memory
     try {
+      const reviews = this.d.reviews?.(note) ?? []
       const answer = await this.d.chat({
-        messages: watchMessages(this.d.agent, note, block, memory),
+        messages: watchMessages(this.d.agent, note, block, memory, reviews),
         json: true, temperature: 0.2, maxTokens: 700,
         ...(this.d.agent.model ? { model: this.d.agent.model } : {}),
         signal: ac.signal,
@@ -332,6 +446,10 @@ export class BlockWatcher {
       this.running.delete(block.hash)
       const reply = parseWatchReply(answer.text, block.text) ?? { faults: [], advice: null, summary: '' }
       if (this.d.agent.watch?.advice === false) reply.advice = null
+      // Deja propose, accepte ou refuse dans la Revision : jamais repropose. Conseil ecarte : non plus.
+      const latest = this.d.reviews?.(note) ?? reviews
+      reply.faults = reply.faults.filter(f => !alreadyReviewed(f, latest))
+      if (reply.advice && (sameAdvice(reply.advice, memory.dismissed) || sameAdvice(reply.advice, memory.remarks))) reply.advice = null
       // La note a pu changer pendant l'analyse : le bloc doit y etre encore, tel quel.
       const current = this.note
       if (!current || current.docId !== note.docId || memory !== this.memory) return

@@ -15,7 +15,8 @@
 import type { AgentPreset, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 
 export const PROOFREADER_INSTRUCTIONS = `Tu es un correcteur pour des notes en Markdown, dans leur langue.
-Quand on te donne une note (ou la note ouverte), lis-la avec read_note.
+Quand on te donne une note (ou la note ouverte), lis-la avec read_note, puis regarde sa Révision avec list_comments.
+Ne repropose jamais une correction déjà suggérée, acceptée ou refusée.
 Relève les fautes d'orthographe, de grammaire, de typographie et les tournures maladroites.
 Ne touche pas au Markdown, aux liens [[...]], au code, ni au sens.
 Pour chaque faute, appelle edit_note : find recopié à l'identique depuis la note (assez long pour être unique), replace corrigé, why en quelques mots.

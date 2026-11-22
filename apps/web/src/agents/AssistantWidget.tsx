@@ -108,32 +108,73 @@ function Live({ run }: { run: AgentRun }) {
   return <div data-testid="agent-live" style={{ ...MUTED, whiteSpace: 'pre-wrap' }}>{text || '…'}</div>
 }
 
-/** Veille de l'agent sur la note ouverte : l'allumer, son etat, le gros collage. */
-function WatchControl({ agent }: { agent: AgentDefinition }) {
+/** Suit l'etat des veilles (re-rendu a chaque changement). */
+function useWatchTick(): void {
   const [, setTick] = useState(0)
   useEffect(() => agentWatch.onChange(() => setTick(t => t + 1)), [])
+}
+
+/** Ce que fait la veille, en une ligne. */
+function watchLine(agentId: string): string {
+  const st = agentWatch.status(agentId)
+  if (!agentWatch.isWatching(agentId)) return 'Il relit chaque passage qui change, après une pause de frappe.'
+  if (st?.error) return `Arrêtée : ${st.error}`
+  if (st?.asking) return `${st.asking} passages nouveaux à relire (environ ${fmt(agentWatch.askEstimate(agentId))} tokens).`
+  if (st?.reading) return `Relit ${st.reading} passage(s)${st.pending ? `, ${st.pending} en attente` : ''}…`
+  if (st?.pending) return `${st.pending} passage(s) en attente.`
+  if (st?.docId) return 'À jour : il attend la prochaine pause de frappe.'
+  return 'Ouvrez une note : il la suivra.'
+}
+
+/** En haut du panneau : les agents qui regardent la note en ce moment. */
+function WatchBanner() {
+  useWatchTick()
+  const live = agentWatch.anyWatching().filter(w => !w.status.error)
+  if (!live.length) return null
+  return (
+    <div data-testid="agent-watch-banner" style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 12px', borderBottom: '1px solid var(--border)', background: 'rgba(124, 58, 237, 0.08)', fontSize: 12 }}>
+      {live.map(({ agent, status }) => (
+        <div key={agent.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className={`agent-watch-dot${status.reading ? ' is-busy' : ''}`} />
+          <b>En cours</b>
+          <span style={{ color: 'var(--text-muted)' }}>{agent.name} · {watchLine(agent.id)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Veille de l'agent sur la note ouverte : l'allumer, son etat, le gros collage, le contexte donne. */
+function WatchControl({ agent }: { agent: AgentDefinition }) {
+  useWatchTick()
   const on = agentWatch.isWatching(agent.id)
   const st = agentWatch.status(agent.id)
-  let line = 'Il relit chaque passage qui change, après une pause de frappe.'
-  if (on && st?.error) line = `Arrêtée : ${st.error}`
-  else if (on && st?.asking) line = `${st.asking} passages nouveaux à relire (environ ${fmt(agentWatch.askEstimate(agent.id))} tokens).`
-  else if (on && st?.reading) line = `Relit ${st.reading} passage(s)${st.pending ? `, ${st.pending} en attente` : ''}…`
-  else if (on && st?.pending) line = `${st.pending} passage(s) en attente.`
-  else if (on && st?.docId) line = 'À jour : tout ce qui est affiché a été relu.'
-  else if (on) line = 'Ouvrez une note : il la suivra.'
+  const context = on ? agentWatch.context(agent.id) : []
   return (
     <div data-testid="agent-watch-control" style={{ ...CARD, marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button data-testid="agent-watch-toggle" style={on ? BTN : PRIMARY} onClick={() => agentWatch.toggle(agent)}>
           {on ? 'Arrêter la veille' : '👁 Veiller sur la note'}
         </button>
-        {on && !st?.error && <button style={BTN} title="Oublier ce qu’il a lu de cette note et tout relire" onClick={() => agentWatch.forget(agent.id)}>Tout relire</button>}
+        {on && !st?.error && <span data-testid="agent-watch-running" style={{ display: 'flex', gap: 4, alignItems: 'center', fontWeight: 600, color: '#7c3aed' }}><span className={`agent-watch-dot${st?.reading ? ' is-busy' : ''}`} />En cours</span>}
+        {on && !st?.error && <button style={{ ...BTN, marginLeft: 'auto' }} title="Oublier ce qu’il a lu de cette note et tout relire (le contexte reste)" onClick={() => agentWatch.forget(agent.id)}>Tout relire</button>}
       </div>
-      <div data-testid="agent-watch-status" style={{ ...MUTED, marginTop: 4 }}>{line}</div>
+      <div data-testid="agent-watch-status" style={{ ...MUTED, marginTop: 4 }}>{watchLine(agent.id)}</div>
       {on && !!st?.asking && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
           <button style={PRIMARY} onClick={() => agentWatch.answer(agent.id, true)}>Relire</button>
           <button style={BTN} onClick={() => agentWatch.answer(agent.id, false)}>Passer</button>
+        </div>
+      )}
+      {context.length > 0 && (
+        <div data-testid="agent-watch-context" style={{ marginTop: 6 }}>
+          <div style={MUTED}>Contexte donné pour cette note :</div>
+          {context.map((c, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginTop: 2 }}>
+              <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>• {c}</span>
+              <button style={{ ...BTN, padding: '0 5px', fontSize: 11 }} title="Retirer" onClick={() => agentWatch.removeContext(agent.id, i)}>✕</button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -218,6 +259,7 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
           </button>
         ))}
       </div>
+      <WatchBanner />
       {tab === 'activity' ? <Activity userId={refs.activeAccount.current?.userId ?? ''} /> : (
         <>
           <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px' }}>
@@ -268,6 +310,10 @@ function AssistantPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs
               {input.trim() || !agent?.instructions?.trim()
                 ? <button data-testid="assistant-send" style={PRIMARY} disabled={!agent || busy || !input.trim()} onClick={() => void send()}>Envoyer</button>
                 : <button data-testid="assistant-launch" style={PRIMARY} disabled={busy} title="Lancer l’agent avec ses seules instructions" onClick={() => void send(true)}>▶ Lancer</button>}
+              {agent && agentWatch.isWatching(agent.id) && input.trim() && (
+                <button data-testid="assistant-add-context" style={BTN} title="Donner ce texte comme contexte à la veille, sans l’arrêter ; il servira aux prochaines relectures de cette note"
+                  onClick={() => { if (agentWatch.addContext(agent.id, input)) setInput('') }}>＋ Contexte de la veille</button>
+              )}
               {busy && <button style={BTN} onClick={() => abort.current?.abort()}>Arrêter</button>}
               {!busy && turns.length > 0 && <button style={BTN} onClick={() => setTurns([])}>Nouvelle conversation</button>}
             </div>

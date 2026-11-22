@@ -17,8 +17,9 @@
 //    celui qu'il lit (desactivable).
 //  - Sa consommation compte dans son budget (tokens par jour).
 import {
-  BlockWatcher, type WatchMemory, type WatchMemoryStore, type WatchReply, type WatchStatus,
+  BlockWatcher, type WatchMemory, type WatchMemoryStore, type WatchReply, type WatchReview, type WatchStatus,
 } from '@savoire/agent-core'
+import { reviewFor } from '../reviewProposals'
 import type { AgentDefinition, NoteBlock, ToolActor } from '@savoire/plugin-api'
 import type { BlockMark } from '@savoire/editor-core'
 import { notify } from '@savoire/notifications'
@@ -47,8 +48,11 @@ export const localWatchMemory: WatchMemoryStore = {
     const raw = storage()?.getItem(`${MEMORY_PREFIX}${agentId}:${vaultId}:${docId}`)
     if (!raw) return { seen: new Map(), remarks: [] }
     try {
-      const v = JSON.parse(raw) as { s?: [string, string][]; r?: string[] }
-      return { seen: new Map(Array.isArray(v.s) ? v.s : []), remarks: Array.isArray(v.r) ? v.r : [] }
+      const v = JSON.parse(raw) as { s?: [string, string][]; r?: string[]; d?: string[]; c?: string[] }
+      return {
+        seen: new Map(Array.isArray(v.s) ? v.s : []), remarks: Array.isArray(v.r) ? v.r : [],
+        ...(Array.isArray(v.d) ? { dismissed: v.d } : {}), ...(Array.isArray(v.c) ? { context: v.c } : {}),
+      }
     } catch { return { seen: new Map(), remarks: [] } }
   },
   save(agentId, vaultId, docId, memory: WatchMemory) {
@@ -60,7 +64,10 @@ export const localWatchMemory: WatchMemoryStore = {
     index = [...index.filter(k => k !== key), key]
     while (index.length > MAX_MEMORY_NOTES) s.removeItem(index.shift()!)
     try {
-      s.setItem(key, JSON.stringify({ s: [...memory.seen].slice(-MAX_MEMORY_BLOCKS), r: memory.remarks }))
+      s.setItem(key, JSON.stringify({
+        s: [...memory.seen].slice(-MAX_MEMORY_BLOCKS), r: memory.remarks,
+        ...(memory.dismissed?.length ? { d: memory.dismissed } : {}), ...(memory.context?.length ? { c: memory.context } : {}),
+      }))
       s.setItem(MEMORY_INDEX, JSON.stringify(index))
     } catch { /* stockage plein : la veille relira */ }
   },
@@ -90,9 +97,13 @@ class AgentWatchService {
   private readonly watches = new Map<string, Watch>()
   private readonly listeners = new Set<() => void>()
 
-  start(refs: EditorAreaRefs): void {
+  /** Ouvre le panneau Agents (clic sur le robot de la note). */
+  private openPanel: () => void = () => {}
+
+  start(refs: EditorAreaRefs, openPanel?: () => void): void {
     if (this.refs) return
     this.refs = refs
+    if (openPanel) this.openPanel = openPanel
     const load = () => {
       void agentDirectory()?.list().then(list => { this.agents = list; this.sync() }, () => {})
     }
@@ -101,14 +112,14 @@ class AgentWatchService {
     liveBlocks.onSwitch(snap => {
       // Autre vault, autre compte : les veilles permises ne sont plus les memes.
       const key = `${this.userId()}|${this.refs?.selectedVault.current?.id ?? ''}`
-      if (key !== this.context) { this.context = key; this.sync(); return }
+      if (key !== this.placed) { this.placed = key; this.sync(); return }
       this.updateAll(snap)
     })
     liveBlocks.onStable(snap => this.updateAll(snap))
   }
 
   /** Compte et vault des veilles en place. */
-  private context = ''
+  private placed = ''
 
   onChange(cb: () => void): () => void {
     this.listeners.add(cb)
@@ -160,6 +171,28 @@ class AgentWatchService {
     this.watches.get(agentId)?.watcher.forget()
   }
 
+  /** Un agent en veille lit en ce moment (pour le panneau). */
+  anyWatching(): { agent: AgentDefinition; status: WatchStatus }[] {
+    return [...this.watches.values()].map(w => ({ agent: w.agent, status: w.status }))
+  }
+
+  /** Le contexte donne pour la note active. */
+  context(agentId: string): string[] {
+    return this.watches.get(agentId)?.watcher.context() ?? []
+  }
+
+  /** Ajoute du contexte pour la note active, sans arreter la veille. */
+  addContext(agentId: string, text: string): boolean {
+    const w = this.watches.get(agentId)
+    if (!w || !w.status.docId) return false
+    w.watcher.addContext(text)
+    return true
+  }
+
+  removeContext(agentId: string, index: number): void {
+    this.watches.get(agentId)?.watcher.removeContext(index)
+  }
+
   /** Repond a la question du gros collage. */
   answer(agentId: string, ok: boolean): void {
     const w = this.watches.get(agentId)
@@ -202,6 +235,7 @@ class AgentWatchService {
     w.watcher.stop()
     this.flushUsage(w)
     liveBlocks.setMarks(`watch:${id}`, [])
+    liveBlocks.setPresence(`watch:${id}`, null)
     this.watches.delete(id)
   }
 
@@ -238,6 +272,7 @@ class AgentWatchService {
         this.paint(w)
         this.changed()
       },
+      reviews: note => this.reviews(agent, note.docId),
       askLarge: (_count, estimated) => new Promise<boolean>(resolve => {
         w.asking = resolve
         w.askEstimate = estimated
@@ -267,6 +302,25 @@ class AgentWatchService {
       const usable = !!snap && (!vaultId || vaultId === snap.vaultId)
       w.watcher.update(usable ? snap : null, liveBlocks.visibleRange())
     }
+  }
+
+  /** Les revisions de la note (suggestions, commentaires), avec leur statut : l'agent ne repropose pas. */
+  private reviews(agent: AgentDefinition, docId: string): WatchReview[] {
+    const session = this.refs?.vaultSession.current
+    if (!session) return []
+    try {
+      return reviewFor(session).threads(docId).flatMap(t => {
+        const r = t.root
+        if (r.kind !== 'suggestion' && r.kind !== 'comment') return []
+        const author = r.author as { kind?: string; agentId?: string }
+        return [{
+          kind: r.kind, status: r.status ?? 'open', quote: r.anchor?.quote ?? '',
+          ...(r.replacement !== undefined ? { replacement: r.replacement } : {}),
+          ...(r.text ? { text: r.text } : {}),
+          ...(author.kind === 'agent' && author.agentId === agent.id ? { mine: true } : {}),
+        }]
+      })
+    } catch { return [] }
   }
 
   private actor(agent: AgentDefinition): ToolActor | null {
@@ -333,7 +387,23 @@ class AgentWatchService {
   private paint(w: Watch): void {
     const snap = liveBlocks.current()
     const owner = `watch:${w.agent.id}`
-    if (!snap || snap.docId !== w.status.docId) { liveBlocks.setMarks(owner, []); return }
+    if (!snap || snap.docId !== w.status.docId || w.status.error) {
+      liveBlocks.setMarks(owner, [])
+      liveBlocks.setPresence(owner, null)
+      return
+    }
+    // Le robot de la note : il lit, ou il attend la prochaine pause de frappe.
+    const st = w.status
+    liveBlocks.setPresence(owner, {
+      label: w.agent.name,
+      busy: st.reading > 0,
+      title: st.reading > 0
+        ? `${w.agent.name} relit ${st.reading} passage(s)${st.pending ? `, ${st.pending} en attente` : ''}`
+        : st.asking ? `${w.agent.name} attend votre accord pour relire ${st.asking} passages`
+          : st.pending ? `${w.agent.name} : ${st.pending} passage(s) en attente`
+            : `${w.agent.name} veille sur la note (cliquer : panneau Agents)`,
+      onClick: () => this.openPanel(),
+    })
     const name = w.agent.name
     const marks: BlockMark[] = []
     const states = watchMarksEnabled() ? w.status.blocks : new Map()
@@ -348,7 +418,8 @@ class AgentWatchService {
             label: '💡', className: 'cm-block-badge-advice', text: `${name} : ${advice}`,
             actions: [
               ...(canKeep ? [{ label: 'Garder', run: () => { void this.keep(w, b.hash) } }] : []),
-              { label: 'Ignorer', run: () => { w.advice.delete(b.hash); this.paint(w) } },
+              // Ecarte : il ne sera plus donne sur cette note.
+              { label: 'Ignorer', run: () => { w.watcher.dismissAdvice(advice); w.advice.delete(b.hash); this.paint(w) } },
             ],
           },
         })
@@ -387,6 +458,6 @@ class AgentWatchService {
 export const agentWatch = new AgentWatchService()
 
 /** Branche la veille des agents (une fois, au demarrage). */
-export function startAgentWatch(refs: EditorAreaRefs): void {
-  agentWatch.start(refs)
+export function startAgentWatch(refs: EditorAreaRefs, openPanel?: () => void): void {
+  agentWatch.start(refs, openPanel)
 }

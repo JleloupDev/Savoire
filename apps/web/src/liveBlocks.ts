@@ -13,7 +13,7 @@
 //  - onTyping : la personne tape (pour annuler une analyse en cours) ;
 //  - onSwitch : une autre note devient active (ou plus aucune).
 import { splitNoteBlocks, type HookRegistry, type NoteBlock } from '@savoire/plugin-api'
-import type { BlockMark, EditorController } from '@savoire/editor-core'
+import type { AgentPresence, BlockMark, EditorController } from '@savoire/editor-core'
 
 export interface BlocksSnapshot {
   vaultId: string
@@ -96,6 +96,11 @@ class LiveBlocks {
   /** Les marques d'une source dans l'editeur actif. */
   setMarks(owner: string, marks: readonly BlockMark[]): void {
     try { this.ctx?.editor?.setBlockMarks?.(owner, marks) } catch { /* editeur deja detruit */ }
+  }
+
+  /** La presence d'un agent sur la note active (null : la retire). */
+  setPresence(owner: string, presence: AgentPresence | null): void {
+    try { this.ctx?.editor?.setAgentPresence?.(owner, presence) } catch { /* editeur deja detruit */ }
   }
 
   /** La selection dans l'editeur actif. */

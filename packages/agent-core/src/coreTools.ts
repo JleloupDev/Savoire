@@ -11,6 +11,7 @@ import type { AgentScope, ToolActor, ToolInputSchema, ToolParamSchema, ToolResul
 import { HostError, type AgentToolHost, type HostNote, type HostNoteRef } from './host'
 import { pathInScope } from './policy'
 import { countOccurrences, findOccurrence, folderOf, notePath, setPropertyChange, titleOf } from './text'
+import { alreadyReviewed, type WatchReview } from './watch'
 
 export interface CoreToolContext {
   mode: 'direct' | 'propose'
@@ -348,6 +349,15 @@ const editNote: CoreTool = {
       throw new HostError('Ce passage revient plusieurs fois : allongez find, ou donnez occurrence.')
     }
     if (find === replacement) return ok('Rien à changer.')
+    if (ctx.mode === 'propose') {
+      // Deja propose, accepte ou refuse dans la Revision : on ne repropose pas.
+      const prior: WatchReview[] = (await ctx.host.listReview(note.id).catch(() => []))
+        .filter(e => e.kind === 'suggestion' && !e.parentId)
+        .map(e => ({ kind: 'suggestion', status: (e.status as WatchReview['status']) ?? 'open', quote: e.quote ?? '', ...(e.replacement !== undefined ? { replacement: e.replacement } : {}) }))
+      if (alreadyReviewed({ find, replace: replacement, why: '' }, prior)) {
+        return ok('Cette correction est déjà dans la Révision (en attente, acceptée ou refusée) : pas de nouvelle proposition.')
+      }
+    }
     return change(ctx, note, at, at + find.length, replacement, 'passage remplacé', optString(args, 'why', 500) ?? '')
   },
 }
