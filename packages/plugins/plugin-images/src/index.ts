@@ -118,12 +118,34 @@ function browserAssets(): Record<string, unknown> {
 type TesseractWorker = { recognize(image: unknown): Promise<{ data: { text: string } }>; terminate(): Promise<unknown> }
 let worker: Promise<TesseractWorker> | null = null
 
-/** L'OCR par Tesseract (un seul moteur, garde pour les images suivantes). */
+/**
+ * Le moteur Tesseract. Sans `errorHandler`, tesseract.js relance l'erreur
+ * d'une tache rejetee (image illisible, langue non telechargee) depuis son
+ * gestionnaire de messages, hors de toute promesse : une exception non
+ * rattrapee, qui fait tomber le fil d'indexation du serveur (et le relance
+ * sur la meme image, sans fin). Le gestionnaire la fait taire ; la tache
+ * reste rejetee. Mais un echec au chargement des langues laisserait alors
+ * createWorker en attente pour toujours : il est rejete ici.
+ */
+async function startTesseract(): Promise<TesseractWorker> {
+  const { createWorker } = await import('tesseract.js')
+  let fail: (err: unknown) => void = () => {}
+  const failed = new Promise<never>((_, reject) => { fail = reject })
+  const created = createWorker(OCR_LANGUAGES, 1, {
+    ...browserAssets(),
+    ...(ocrSettings.cachePath ? { cachePath: ocrSettings.cachePath } : {}),
+    errorHandler: (err: unknown) => fail(err),
+  }) as unknown as Promise<TesseractWorker>
+  return Promise.race([created, failed])
+}
+
+/**
+ * L'OCR par Tesseract (un seul moteur, garde pour les images suivantes). Si
+ * le moteur ne demarre pas (langues introuvables...), l'OCR reste coupe
+ * jusqu'au prochain demarrage : chaque essai laisserait un fil de plus.
+ */
 export const tesseractOcr: Ocr = async bytes => {
-  worker ??= (async () => {
-    const { createWorker } = await import('tesseract.js')
-    return createWorker(OCR_LANGUAGES, 1, { ...browserAssets(), ...(ocrSettings.cachePath ? { cachePath: ocrSettings.cachePath } : {}) }) as unknown as Promise<TesseractWorker>
-  })().catch(err => { worker = null; throw err })
+  worker ??= startTesseract()
   const w = await worker
   // Navigateur : un Blob ; Node (pair indexeur) : un Buffer.
   const NodeBuffer = (globalThis as { Buffer?: { from(b: Uint8Array): unknown } }).Buffer
