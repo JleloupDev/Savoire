@@ -130,7 +130,8 @@ const env = (import.meta as { env?: Record<string, string | boolean | undefined>
 
 export function storeBaseUrl(): string {
   const configured = typeof env.VITE_SAVOIRE_STORE_URL === 'string' ? env.VITE_SAVOIRE_STORE_URL : ''
-  return (configured || '/store').replace(/\/+$/, '')
+  // Sans reglage : /store du serveur Savoire (au bureau, le serveur choisi).
+  return (configured || serverUrl('/store')).replace(/\/+$/, '')
 }
 
 /**
