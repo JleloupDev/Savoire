@@ -419,3 +419,8 @@ class Dictation {
 }
 
 export const dictation = new Dictation()
+
+// Etat de toute la session (editeur actif, abonnements, veilles) : un
+// remplacement a chaud (Vite) en ferait un second exemplaire, jamais branche.
+// Modifie pendant le developpement : on recharge la page.
+if (import.meta.hot) import.meta.hot.accept(() => { window.location.reload() })

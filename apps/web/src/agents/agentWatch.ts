@@ -457,6 +457,11 @@ class AgentWatchService {
 
 export const agentWatch = new AgentWatchService()
 
+// Etat de toute la session (editeur actif, abonnements, veilles) : un
+// remplacement a chaud (Vite) en ferait un second exemplaire, jamais branche.
+// Modifie pendant le developpement : on recharge la page.
+if (import.meta.hot) import.meta.hot.accept(() => { window.location.reload() })
+
 /** Branche la veille des agents (une fois, au demarrage). */
 export function startAgentWatch(refs: EditorAreaRefs, openPanel?: () => void): void {
   agentWatch.start(refs, openPanel)
