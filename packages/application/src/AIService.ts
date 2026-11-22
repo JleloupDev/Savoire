@@ -32,9 +32,38 @@ export interface AIConnectionStore {
 }
 
 export class AIRequestError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(message: string, readonly status?: number, readonly detail?: string) {
     super(message)
   }
+}
+
+/**
+ * Parametres qu'un modele refuse, appris d'une erreur 400 : les modeles
+ * recents d'OpenAI (gpt-5, o1, o3...) veulent max_completion_tokens au lieu
+ * de max_tokens, et n'acceptent pas de temperature. Les autres services
+ * compatibles (Mistral, Ollama...) gardent max_tokens : on n'adapte la
+ * demande qu'apres un refus, et on s'en souvient pour ce modele.
+ */
+export interface ChatBodyFix {
+  maxCompletionTokens?: boolean
+  noTemperature?: boolean
+}
+
+/** Ce qu'une erreur 400 demande de changer ; null : rien a faire. */
+export function chatBodyFixFor(detail: string, body: Record<string, unknown>): ChatBodyFix | null {
+  const fix: ChatBodyFix = {}
+  if ('max_tokens' in body && /max_tokens/.test(detail) && /max_completion_tokens|unsupported|not supported/i.test(detail)) fix.maxCompletionTokens = true
+  if ('temperature' in body && /temperature/.test(detail) && /unsupported|not supported|only the default/i.test(detail)) fix.noTemperature = true
+  return fix.maxCompletionTokens || fix.noTemperature ? fix : null
+}
+
+/** Applique les corrections connues au corps d'une demande. */
+export function applyChatBodyFix(body: Record<string, unknown>, fix: ChatBodyFix | undefined): Record<string, unknown> {
+  if (!fix) return body
+  const out = { ...body }
+  if (fix.maxCompletionTokens && 'max_tokens' in out) { out.max_completion_tokens = out.max_tokens; delete out.max_tokens }
+  if (fix.noTemperature) delete out.temperature
+  return out
 }
 
 /** Fournisseurs livres avec l'application. Les plugins en ajoutent. */
@@ -150,7 +179,7 @@ export class AIService {
     if (request.onDelta) result = await this.streamed(conn, protocol, model, request)
     if (!result) {
       const { path, body } = protocol.chatRequest(model, request, false)
-      const res = await this.call(conn, path, { method: 'POST', body: JSON.stringify(body), signal: request.signal })
+      const res = await this.postChat(conn, model, path, body, request.signal)
       result = protocol.readResponse(await res.json().catch(() => null))
       // Pas de flux : le texte arrive d'un coup, l'ecran le montre quand meme.
       if (result?.text && request.onDelta) request.onDelta({ text: result.text })
@@ -173,7 +202,7 @@ export class AIService {
     const { path, body } = protocol.chatRequest(model, request, true)
     let res: Response
     try {
-      res = await this.call(conn, path, { method: 'POST', body: JSON.stringify(body), signal: request.signal })
+      res = await this.postChat(conn, model, path, body, request.signal)
     } catch (err) {
       const status = (err as AIRequestError)?.status
       if (err instanceof AIRequestError && status !== undefined && STREAM_REFUSED.has(status)) return null
@@ -186,6 +215,33 @@ export class AIService {
       return result
     }
     return protocol.readStream(res, onDelta)
+  }
+
+  /** Corrections apprises, par connexion et modele. */
+  private readonly bodyFixes = new Map<string, ChatBodyFix>()
+
+  /**
+   * Envoie une demande de reponse. Refusee (400) pour un parametre que le
+   * modele n'accepte pas : corrigee et renvoyee, et la correction est
+   * gardee pour ce modele (le temps de la session).
+   */
+  private async postChat(conn: AIConnection, model: string, path: string, raw: unknown, signal?: AbortSignal): Promise<Response> {
+    const key = `${conn.id}|${model}`
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : null
+    if (!body) return this.call(conn, path, { method: 'POST', body: JSON.stringify(raw), signal })
+    // Un refus peut en cacher un autre (max_tokens, puis temperature) : deux corrections au plus.
+    for (let attempt = 0; ; attempt++) {
+      const fix = this.bodyFixes.get(key)
+      const sent = applyChatBodyFix(body, fix)
+      try {
+        return await this.call(conn, path, { method: 'POST', body: JSON.stringify(sent), signal })
+      } catch (err) {
+        if (attempt >= 2 || !(err instanceof AIRequestError) || err.status !== 400 || !err.detail) throw err
+        const more = chatBodyFixFor(err.detail, sent)
+        if (!more) throw err
+        this.bodyFixes.set(key, { ...fix, ...more })
+      }
+    }
   }
 
   /**
@@ -248,7 +304,7 @@ export class AIService {
       : res.status === 404 ? 'adresse ou modèle introuvable'
       : res.status === 429 ? 'trop de demandes ou quota épuisé'
       : `erreur ${res.status}`
-    throw new AIRequestError(`« ${conn.name} » : ${reason}.${detail ? ` ${detail.slice(0, 200)}` : ''}`, res.status)
+    throw new AIRequestError(`« ${conn.name} » : ${reason}.${detail ? ` ${detail.slice(0, 200)}` : ''}`, res.status, detail)
   }
 
   private emit(): void {

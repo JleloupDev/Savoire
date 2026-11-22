@@ -204,3 +204,34 @@ describe('adaptateur de protocole', () => {
       .toEqual({ text: 'x', usage: { inputTokens: 1, outputTokens: 2 } })
   })
 })
+
+describe('parametres refuses par un modele', () => {
+  it('max_tokens puis temperature refuses : la demande est corrigee, et le reste pour ce modele', async () => {
+    const f = fakeFetch((_url, init) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      if ('max_tokens' in body) return json({ error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", param: 'max_tokens' } }, 400)
+      if ('temperature' in body) return json({ error: { message: "Unsupported value: 'temperature' does not support 0.2 with this model. Only the default (1) value is supported.", param: 'temperature' } }, 400)
+      return json({ choices: [{ message: { content: 'ok' } }] })
+    })
+    const ai = new AIService(memoryStore(), f.fn)
+    ai.saveConnection({ name: 'OpenAI', providerId: 'openai', baseUrl: 'https://api.example/v1', apiKey: 'k', model: 'gpt-5' })
+    const r = await ai.chat({ messages: [{ role: 'user', content: 'x' }], maxTokens: 700, temperature: 0.2 })
+    expect(r.text).toBe('ok')
+    expect(f.calls).toHaveLength(3)
+    const last = JSON.parse(String(f.calls[2].init.body))
+    expect(last.max_completion_tokens).toBe(700)
+    expect(last).not.toHaveProperty('max_tokens')
+    expect(last).not.toHaveProperty('temperature')
+    // Appel suivant : directement corrige.
+    await ai.chat({ messages: [{ role: 'user', content: 'y' }], maxTokens: 50, temperature: 0.2 })
+    expect(f.calls).toHaveLength(4)
+  })
+
+  it('une autre erreur 400 n est pas reessayee', async () => {
+    const f = fakeFetch(() => json({ error: { message: 'Bad messages' } }, 400))
+    const ai = new AIService(memoryStore(), f.fn)
+    ai.saveConnection({ name: 'OpenAI', providerId: 'openai', baseUrl: 'https://api.example/v1', apiKey: 'k', model: 'm' })
+    await expect(ai.chat({ messages: [{ role: 'user', content: 'x' }], maxTokens: 10 })).rejects.toBeInstanceOf(AIRequestError)
+    expect(f.calls).toHaveLength(1)
+  })
+})
