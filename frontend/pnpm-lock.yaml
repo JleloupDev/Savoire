@@ -221,9 +221,6 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
-      '@savoire/plugin-backlinks':
-        specifier: workspace:*
-        version: link:../../packages/plugins/plugin-backlinks
       '@savoire/plugin-base':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-base
@@ -673,22 +670,6 @@ importers:
         specifier: workspace:*
         version: link:../../plugin-api
     devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  ../packages/plugins/plugin-backlinks:
-    dependencies:
-      '@savoire/plugin-api':
-        specifier: workspace:*
-        version: link:../../plugin-api
-    devDependencies:
-      '@types/react':
-        specifier: ^18.2.0
-        version: 18.3.28
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

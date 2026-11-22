@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { describe, it, expect, beforeAll } from 'vitest'
 import { createWikilinksPlugin, linkPageOf, linkTargetOf } from '@savoire/plugin-wikilinks'
-const plugin = createWikilinksPlugin({ belowOf: 'plugin-inspector' })
+const plugin = createWikilinksPlugin()
 import type { PluginAPI } from '@savoire/plugin-api'
 
 // ── Stub API ──────────────────────────────────────────────────────────────────

@@ -63,13 +63,9 @@ export const STORE_CATALOG: StoreEntry[] = [
     }),
   },
   {
+    // Liens [[...]] et panneau des retroliens (ancien plugin-backlinks).
     id: 'plugin-wikilinks', preinstalled: true, core: true,
-    load: async () => (await import('@savoire/plugin-wikilinks')).createWikilinksPlugin(),
-  },
-  {
-    // Apres plugin-wikilinks : le panneau lit son index des liens.
-    id: 'plugin-backlinks', preinstalled: true, core: true,
-    load: async () => (await import('@savoire/plugin-backlinks')).createBacklinksPlugin({ groupId: 'notes-tools' }),
+    load: async () => (await import('@savoire/plugin-wikilinks')).createWikilinksPlugin({ backlinks: { groupId: 'notes-tools' } }),
   },
   {
     id: 'plugin-hashtags', preinstalled: true, core: true,

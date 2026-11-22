@@ -11,8 +11,7 @@ import type {
   IIndexerAPI, IndexState, ISearchEngine, SearchQuery, SearchResult, ViewContext,
 } from '@savoire/plugin-api'
 import { SearchWidget, describeSearchState } from '@savoire/plugin-search'
-import { WikilinkIndexContributor } from '@savoire/plugin-wikilinks'
-import { BacklinksWidget } from '@savoire/plugin-backlinks'
+import { BacklinksWidget, WikilinkIndexContributor } from '@savoire/plugin-wikilinks'
 import { GraphWidget, GraphIndexContributor } from '@savoire/plugin-graph'
 import { HashtagsWidget, HashtagIndexContributor } from '@savoire/plugin-hashtags'
 

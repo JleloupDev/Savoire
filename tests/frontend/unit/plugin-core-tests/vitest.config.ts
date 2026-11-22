@@ -30,7 +30,6 @@ export default defineConfig({
       '@savoire/plugin-agenda': src('plugin-agenda'),
       '@savoire/plugin-history': src('plugin-history'),
       '@savoire/plugin-chat': src('plugin-chat'),
-      '@savoire/plugin-backlinks': src('plugin-backlinks'),
       // Panneaux branches sur api.search et api.indexer (pair indexeur).
       '@savoire/plugin-search': src('plugin-search'),
       '@savoire/plugin-graph': src('plugin-graph'),

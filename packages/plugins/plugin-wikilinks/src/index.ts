@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
+//
+// Plugin core « Liens » : les liens [[...]] entre les notes (rendu,
+// autocompletion, index) et le panneau des retroliens, les notes qui pointent
+// vers la note ouverte. Le panneau ne vient qu'avec l'option backlinks :
+// les pages de partage n'en ont pas.
 import type { VaultPlugin, PluginAPI, NoteBlock, TriggerItem } from '@savoire/plugin-api'
 import { blockIdInsertion, linkTargetFor, noteName, PROSE_BLOCK_KINDS, resolveLinkPath, splitNoteBlocks } from '@savoire/plugin-api'
 import { WikilinkIndexContributor } from './WikilinkIndexContributor'
 import { HeadingIndexContributor } from './HeadingIndexContributor'
 import { allFilePaths } from './vaultFiles'
+import { BacklinksWidget } from './BacklinksWidget'
+import { BacklinksIndexContributor } from './BacklinksIndexContributor'
 
 // [[Page]], [[Page#Heading]], [[Page|Alias]], [[Page#Heading|Alias]]
 // Negative lookbehind for "!" so ![[...]] embeds are not touched.
@@ -158,20 +165,51 @@ export function withBlockId(text: string, hash: string, id: string): string {
   return text.slice(0, at) + insert + text.slice(at)
 }
 
-/** Les reglages du panneau des retroliens sont passes a plugin-backlinks : ignores ici. */
-export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: string; belowOf?: string; initialSize?: number } = {}): VaultPlugin {
+/** Ou placer le panneau des retroliens. */
+export interface BacklinksPanelOptions {
+  groupId?: string
+  tabOf?: string
+  belowOf?: string
+  initialSize?: number
+}
+
+export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptions } = {}): VaultPlugin {
   let removeListeners: (() => void) | null = null
   return {
     manifest: {
       id: 'plugin-wikilinks',
       scope: 'vault',
-      name: 'Wiki Links',
-      version: '0.0.1',
+      name: 'Liens',
+      version: '0.0.2',
+      description: 'Les liens [[...]] entre les notes, et le panneau des notes qui pointent vers la note ouverte',
       permissions: ['ui:editor', 'vault:read'],
       defaultActive: true,
     },
 
     async onload(api: PluginAPI) {
+      // ── Retroliens : index partage et panneau ────────────────────────────
+      // Le panneau lit l'index de tout le vault quand il existe (pair
+      // indexeur, index local du bureau), sinon cet index des notes deja vues.
+      const panel = options.backlinks
+      if (panel) {
+        const links = new BacklinksIndexContributor()
+        api.index?.registerFactory(() => links)
+        api.views.register({
+          id: 'backlinks',
+          title: 'Backlinks',
+          icon: 'link',
+          groupId: panel.groupId,
+          container: 'right',
+          tabOf: panel.tabOf,
+          belowOf: panel.belowOf,
+          initialSize: panel.initialSize ?? 280,
+          closable: true,
+          createView(ctx) {
+            return new BacklinksWidget(ctx, links, api.indexer)
+          },
+        })
+      }
+
       // ── Autocompletion des references [[...]] ────────────────────────────
       //
       // Le trigger etait declare sans handler : il reservait la sequence « [[ »
@@ -373,3 +411,7 @@ export function createWikilinksPlugin(_legacy: { groupId?: string; tabOf?: strin
 
 export { WikilinkIndexContributor } from './WikilinkIndexContributor'
 export { HeadingIndexContributor } from './HeadingIndexContributor'
+
+export { BacklinksIndexContributor } from './BacklinksIndexContributor'
+export { BacklinksWidget, type BacklinkSource } from './BacklinksWidget'
+export type { BacklinkEntry } from './BacklinksIndexContributor'

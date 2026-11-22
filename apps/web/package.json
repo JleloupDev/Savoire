@@ -25,7 +25,6 @@
     "@savoire/plugin-agent-proofreader": "workspace:*",
     "@savoire/plugin-ai-mistral": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
-    "@savoire/plugin-backlinks": "workspace:*",
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-bible": "workspace:*",
     "@savoire/plugin-board": "workspace:*",

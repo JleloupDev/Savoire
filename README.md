@@ -95,8 +95,7 @@ All major features are intentionally built as plugins. Some of these plugins cou
 | Plugin | What it does |
 |--------|-------------|
 | plugin-filetree | File browser panel |
-| plugin-wikilinks | `[[wikilink]]` navigation |
-| plugin-backlinks | Shows which notes link to the current one |
+| plugin-wikilinks | `[[wikilink]]` navigation, and the panel of notes that link to the current one |
 | plugin-graph | Visual graph of note connections |
 | plugin-callout | Callout blocks (`> [!NOTE]`) |
 | plugin-code-block | Syntax-highlighted code blocks |
