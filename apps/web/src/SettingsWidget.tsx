@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // SettingsWidget — écran de paramètres style Obsidian.
-// Tabs: Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
+// Tabs: Fonctionnalites (plugins core), Plugins, Raccourcis, Triggers, Thèmes, Vault (pair indexeur du vault ouvert).
 // Enregistré comme vue dans le workspace (panel bottom ou center).
 
 import { AISettings } from './AISettings'
@@ -55,7 +55,7 @@ export function initTheme(): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api' | 'account'
+type Tab = 'features' | 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'layout' | 'vault' | 'ai' | 'agents' | 'api' | 'account'
 
 export function SettingsPanel({
   loader,
@@ -96,7 +96,7 @@ export function SettingsPanel({
   /** Panneaux de l'espace de travail : onglet Disposition. */
   layout?: { panels: LayoutPanels; applyPanes(): void }
 }) {
-  const [tab, setTab] = useState<Tab>('plugins')
+  const [tab, setTab] = useState<Tab>(pluginSettings ? 'features' : 'plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
   const [triggerList, setTriggerList] = useState<InputTrigger[]>([])
   const [themeId, setThemeId] = useState<string>(loadSavedTheme)
@@ -131,7 +131,8 @@ export function SettingsPanel({
         <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>{t('app', 'settings.title')}</div>
         {/* Les onglets passent a la ligne : la fenetre est etroite (560 px). */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0 }}>
-          <button style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
+          {pluginSettings && <button data-testid="settings-tab-features" style={tabStyle(tab === 'features')} onClick={() => setTab('features')}>{t('app', 'settings.tab.features')}</button>}
+          <button data-testid="settings-tab-plugins" style={tabStyle(tab === 'plugins')}  onClick={() => setTab('plugins')}>{t('app', 'settings.tab.plugins')}</button>
           {store && <button data-testid="settings-tab-store" style={tabStyle(tab === 'store')} onClick={() => setTab('store')}>Store</button>}
           {hotkeys && commands && (
             <button data-testid="settings-tab-hotkeys" style={tabStyle(tab === 'hotkeys')} onClick={() => setTab('hotkeys')}>{t('app', 'settings.tab.hotkeys')}</button>
@@ -151,8 +152,9 @@ export function SettingsPanel({
 
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px' }}>
+        {tab === 'features' && pluginSettings && <PluginStore view="features" service={pluginSettings} capabilities={pluginCapabilities} />}
         {tab === 'plugins'  && (pluginSettings
-          ? <PluginStore service={pluginSettings} capabilities={pluginCapabilities} />
+          ? <PluginStore view="plugins" service={pluginSettings} capabilities={pluginCapabilities} onOpenStore={store ? () => setTab('store') : undefined} />
           : <PluginsTab plugins={plugins} />)}
         {tab === 'store' && store && <StoreSettings store={store} />}
         {tab === 'hotkeys' && hotkeys && commands && <HotkeysTab hotkeys={hotkeys} commands={commands} />}
@@ -202,8 +204,17 @@ function CapabilityChips({ report, declared }: { report: CapabilityReport[]; dec
   )
 }
 
-function PluginStore({ service, capabilities }: { service: PluginSettingsService; capabilities?: (id: string) => { report: CapabilityReport[]; declared?: string[] } | null }) {
+function PluginStore({ view, service, capabilities, onOpenStore }: {
+  /** features : les plugins core ; plugins : ceux de la communaute. */
+  view: 'features' | 'plugins'
+  service: PluginSettingsService
+  capabilities?: (id: string) => { report: CapabilityReport[]; declared?: string[] } | null
+  /** Ouvre l'onglet du Savoire Store en ligne. */
+  onOpenStore?: () => void
+}) {
   const [plugins, setPlugins] = useState<PluginInfo[]>(() => service.list())
+  // Les plugins disponibles ne s'affichent que si on va visiter le store.
+  const [browsing, setBrowsing] = useState(false)
   // Un paquet du store entre dans le catalogue, un plugin se charge : la liste suit.
   useEffect(() => {
     const onPlugins = () => setPlugins(service.list())
@@ -233,7 +244,8 @@ function PluginStore({ service, capabilities }: { service: PluginSettingsService
     run(action)
   }
 
-  // Comme Obsidian : les plugins core (livres avec Savoire), puis ceux de la communaute.
+  // Les plugins core (livres avec Savoire) vont dans Fonctionnalites ; l'onglet
+  // Plugins montre ceux de la communaute installes, le reste attend dans le store.
   const core = plugins.filter(p => p.core)
   const installed = plugins.filter(p => !p.core && p.installed)
   const available = plugins.filter(p => !p.core && !p.installed)
@@ -316,16 +328,31 @@ function PluginStore({ service, capabilities }: { service: PluginSettingsService
   const section: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-faint)', marginTop: 6 }
 
   return (
-    <div data-testid="plugin-store" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.intro')}</div>
+    <div data-testid={view === 'features' ? 'plugin-features' : 'plugin-store'} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', view === 'features' ? 'settings.features.intro' : 'settings.plugins.intro')}</div>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: '0.75rem' }}>{error}</div>}
-      {core.length > 0 && <div data-testid="plugin-section-core" style={section}>{t('app', 'settings.plugins.section.core')}</div>}
-      {core.map(p => <Row key={p.id} p={p} />)}
-      <div data-testid="plugin-section-community" style={section}>{t('app', 'settings.plugins.section.installed')}</div>
-      {installed.length === 0 && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.section.noCommunity')}</div>}
-      {installed.map(p => <Row key={p.id} p={p} />)}
-      {available.length > 0 && <div style={section}>{t('app', 'settings.plugins.section.available')}</div>}
-      {available.map(p => <Row key={p.id} p={p} />)}
+      {view === 'features' && core.length === 0 && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.features.empty')}</div>}
+      {view === 'features' && core.map(p => <Row key={p.id} p={p} />)}
+      {view === 'plugins' && <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div data-testid="plugin-section-community" style={{ ...section, flex: 1 }}>{t('app', 'settings.plugins.section.installed')}</div>
+          <button data-testid="plugin-browse-store" style={{ ...button(!browsing, true), marginTop: 6 }} onClick={() => setBrowsing(b => !b)}>
+            {t('app', browsing ? 'settings.plugins.hideStore' : 'settings.plugins.browseStore')}
+          </button>
+        </div>
+        {installed.length === 0 && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.section.noCommunity')}</div>}
+        {installed.map(p => <Row key={p.id} p={p} />)}
+        {browsing && <>
+          <div data-testid="plugin-section-available" style={section}>{t('app', 'settings.plugins.section.available')}</div>
+          {available.length === 0 && <div style={{ color: 'var(--text-faint)', fontSize: '0.75rem' }}>{t('app', 'settings.plugins.section.noAvailable')}</div>}
+          {available.map(p => <Row key={p.id} p={p} />)}
+          {onOpenStore && (
+            <button data-testid="plugin-open-online-store" style={{ ...button(false, true), alignSelf: 'flex-start' }} onClick={onOpenStore}>
+              {t('app', 'settings.plugins.openOnlineStore')}
+            </button>
+          )}
+        </>}
+      </>}
     </div>
   )
 }
