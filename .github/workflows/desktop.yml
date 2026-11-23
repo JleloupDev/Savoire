@@ -233,8 +233,11 @@ jobs:
           if-no-files-found: error
           path: apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
+  # Un systeme qui manque (runner macOS jamais attribue par GitHub, le
+  # 23/11 pour v0.3.0) ne prive pas les autres de leur mise a jour : la
+  # Release part avec les installeurs construits (release-assets.mjs).
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-24.04
     permissions:

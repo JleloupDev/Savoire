@@ -20,15 +20,15 @@ import { join, basename } from 'node:path'
 
 /** Fichier du build (fin du nom) -> nom fixe, et cibles de l'updater qu'il sert. */
 export const ASSETS = [
-  { suffix: '-setup.exe', name: 'Savoire-windows-x64-setup.exe', targets: ['windows-x86_64', 'windows-x86_64-nsis'] },
-  { suffix: '.msi', name: 'Savoire-windows-x64.msi', targets: ['windows-x86_64-msi'] },
-  { suffix: '.dmg', name: 'Savoire-macos-arm64.dmg', targets: [] },
-  { suffix: '.app.tar.gz', name: 'Savoire-macos-arm64.app.tar.gz', targets: ['darwin-aarch64', 'darwin-aarch64-app'] },
-  { suffix: '.AppImage', name: 'Savoire-linux-x86_64.AppImage', targets: ['linux-x86_64', 'linux-x86_64-appimage'] },
+  { system: 'Windows', suffix: '-setup.exe', name: 'Savoire-windows-x64-setup.exe', targets: ['windows-x86_64', 'windows-x86_64-nsis'] },
+  { system: 'Windows', suffix: '.msi', name: 'Savoire-windows-x64.msi', targets: ['windows-x86_64-msi'] },
+  { system: 'macOS', suffix: '.dmg', name: 'Savoire-macos-arm64.dmg', targets: [] },
+  { system: 'macOS', suffix: '.app.tar.gz', name: 'Savoire-macos-arm64.app.tar.gz', targets: ['darwin-aarch64', 'darwin-aarch64-app'] },
+  { system: 'Linux', suffix: '.AppImage', name: 'Savoire-linux-x86_64.AppImage', targets: ['linux-x86_64', 'linux-x86_64-appimage'] },
   // .deb et .rpm : mis a jour seulement si le build les a signes. Sinon, leur
   // updater ne trouve pas sa cible et l'appli reste a sa version (sans casse).
-  { suffix: '.deb', name: 'Savoire-linux-amd64.deb', targets: ['linux-x86_64-deb'], optionalSig: true },
-  { suffix: '.rpm', name: 'Savoire-linux-x86_64.rpm', targets: ['linux-x86_64-rpm'], optionalSig: true },
+  { system: 'Linux', suffix: '.deb', name: 'Savoire-linux-amd64.deb', targets: ['linux-x86_64-deb'], optionalSig: true },
+  { system: 'Linux', suffix: '.rpm', name: 'Savoire-linux-x86_64.rpm', targets: ['linux-x86_64-rpm'], optionalSig: true },
 ]
 
 function walk(dir) {
@@ -38,12 +38,23 @@ function walk(dir) {
   })
 }
 
+/**
+ * Un systeme dont le build manque tout entier (runner macOS jamais attribue
+ * par GitHub, par exemple) ne bloque pas les autres : la Release part sans
+ * lui, et il est nomme dans `missing`. Un systeme a moitie construit, lui,
+ * arrete tout.
+ */
 export function prepareRelease(inDir, outDir, tag, repo, notes = '') {
   const files = walk(inDir)
   const version = tag.replace(/^v/, '')
   const platforms = {}
+  const has = asset => files.some(f => basename(f).endsWith(asset.suffix))
+  const systems = [...new Set(ASSETS.map(a => a.system))]
+  const missing = systems.filter(sys => !ASSETS.some(a => a.system === sys && has(a)))
+  if (missing.length === systems.length) throw new Error('aucun installeur : rien a publier')
   mkdirSync(outDir, { recursive: true })
   for (const asset of ASSETS) {
+    if (missing.includes(asset.system)) continue
     const found = files.filter(f => basename(f).endsWith(asset.suffix))
     if (found.length !== 1) throw new Error(`${asset.name} : ${found.length} fichier(s) en *${asset.suffix} au lieu d'un (${found.map(f => basename(f)).join(', ')})`)
     copyFileSync(found[0], join(outDir, asset.name))
@@ -57,6 +68,7 @@ export function prepareRelease(inDir, outDir, tag, repo, notes = '') {
   }
   const manifest = { version, notes, pub_date: new Date().toISOString(), platforms }
   writeFileSync(join(outDir, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  Object.defineProperty(manifest, 'missing', { value: missing, enumerable: false })
   return manifest
 }
 
@@ -75,4 +87,5 @@ if (process.argv[1] && import.meta.url.endsWith(basename(process.argv[1]))) {
     process.exit(1)
   }
   console.log(`latest.json : ${manifest.version}, ${Object.keys(manifest.platforms).join(', ')}`)
+  for (const sys of manifest.missing) console.log(`::warning title=Release sans ${sys}::le build ${sys} manque (annule ou en echec) : la Release part sans lui`)
 }

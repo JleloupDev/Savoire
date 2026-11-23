@@ -119,6 +119,22 @@ describe('fichiers de la Release', () => {
     expect(existsSync(join(dir, 'out', 'Savoire-linux-amd64.deb'))).toBe(true)
   })
 
+  it('un systeme sans build (runner macOS jamais attribue) : la Release part sans lui', () => {
+    const dir = builds(true)
+    rmSync(join(dir, 'in', 'dmg'), { recursive: true })
+    rmSync(join(dir, 'in', 'macos'), { recursive: true })
+    const manifest = prepareRelease(join(dir, 'in'), join(dir, 'out'), 'v0.3.1', 'JleloupDev/Savoire')
+    expect(manifest.platforms['windows-x86_64']).toBeDefined()
+    expect(manifest.platforms['darwin-aarch64']).toBeUndefined()
+    expect((manifest as { missing?: string[] }).missing).toEqual(['macOS'])
+  })
+
+  it('un systeme a moitie construit arrete la Release', () => {
+    const dir = builds(true)
+    rmSync(join(dir, 'in', 'dmg'), { recursive: true })
+    expect(() => prepareRelease(join(dir, 'in'), join(dir, 'out'), 'v0.3.1', 'JleloupDev/Savoire')).toThrow(/macos-arm64\.dmg/)
+  })
+
   it('un installeur signe sans signature arrete la Release', () => {
     const dir = builds(true)
     rmSync(join(dir, 'in', 'nsis', 'Savoire_0.2.0_x64-setup.exe.sig'))
