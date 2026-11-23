@@ -8,13 +8,19 @@ import {
   applyAwarenessUpdate,
   removeAwarenessStates,
 } from 'y-protocols/awareness'
-import { yCollab } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import type { Extension } from '@codemirror/state'
 import type { ICRDT } from '@savoire/plugin-api'
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 import { YjsCollaborativeText } from './YjsCollaborativeText'
 import { YjsSharedText } from './YjsSharedText'
 import { YjsSharedTree } from './YjsSharedTree'
+
+
+// Les commandes d'annulation de y-codemirror (seul son clavier est exporte).
+type EditorView = Parameters<NonNullable<(typeof yUndoManagerKeymap)[number]['run']>>[0]
+const Y_UNDO = yUndoManagerKeymap.find(k => k.key === 'Mod-z')!.run!
+const Y_REDO = yUndoManagerKeymap.find(k => k.key === 'Mod-Shift-z')!.run!
 
 // TypeScript 5.9 + moduleResolution:bundler fails to follow Yjs's .js→.d.ts
 // re-export chain for advanced APIs. Cast once; runtime behaviour is validated
@@ -152,6 +158,15 @@ export class YjsCrdtAdapter implements ICRDT {
 
   getExtensions(): Extension[] {
     return [yCollab(this.ytext, this.awareness)]
+  }
+
+  /** Annule les modifications faites ici seulement (Y.UndoManager de yCollab). */
+  undo(view: EditorView): boolean {
+    return Y_UNDO(view)
+  }
+
+  redo(view: EditorView): boolean {
+    return Y_REDO(view)
   }
 
   dispose(): void {

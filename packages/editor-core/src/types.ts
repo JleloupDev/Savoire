@@ -98,6 +98,14 @@ import type { ICRDT, VaultAPI, NoteScope } from '@savoire/plugin-api'
 
 export interface ICodeMirrorCRDT extends ICRDT {
   getExtensions(): Extension[]
+  /**
+   * Annuler et retablir du CRDT : seulement les modifications faites ici.
+   * Fournis, ils remplacent l'historique de CodeMirror. Celui-ci annulerait
+   * aussi le texte recu des autres, et d'abord le chargement de la note :
+   * un Ctrl+Z de trop la videait, chez tout le monde.
+   */
+  undo?(view: import('@codemirror/view').EditorView): boolean
+  redo?(view: import('@codemirror/view').EditorView): boolean
   setLocalUser(cursorId: string): void
 }
 

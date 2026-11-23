@@ -6,7 +6,7 @@ import { agentPresenceExtension, applyAgentPresence, type AgentPresence } from '
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
 import { EditorView, keymap } from '@codemirror/view'
-import { EditorState, Prec, Transaction } from '@codemirror/state'
+import { EditorState, Facet, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { printNote } from './PdfExport'
@@ -75,6 +75,22 @@ const LINE_PREFIX_RE = /^(#{1,6} |[-*+] \[[ xX]\] |[-*+] |\d+[.)] |> )$/
 /** Retrait et marque deja presents en tete d'une ligne. */
 const EXISTING_PREFIX_RE = /^(\s*)(#{1,6}[ \t]+|[-*+] \[[ xX]\] |[-*+] |\d+[.)] |> )?/
 
+/** Annuler / retablir du CRDT de l'editeur (sinon, l'historique de CodeMirror). */
+interface UndoCommands { undo(view: EditorView): boolean; redo(view: EditorView): boolean }
+const crdtHistory = Facet.define<UndoCommands, UndoCommands | null>({ combine: v => v[0] ?? null })
+
+function undoIn(view: EditorView): void {
+  const h = view.state.facet(crdtHistory)
+  if (h) h.undo(view)
+  else undo(view)
+}
+
+function redoIn(view: EditorView): void {
+  const h = view.state.facet(crdtHistory)
+  if (h) h.redo(view)
+  else redo(view)
+}
+
 export function plumeCommands(): PluginCommand[] {
   const on = (act: (view: EditorView) => void) => (ctx: PluginCommandContext) => {
     const view = viewOf(ctx)
@@ -121,8 +137,8 @@ export function plumeCommands(): PluginCommand[] {
     { id: 'editor:duplicate-line',        label: 'Dupliquer la ligne',       hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'ArrowDown' }], run: on(v => { copyLineDown(v) }) },
     { id: 'editor:delete-line',           label: 'Supprimer la ligne',       hotkeys: mod('k', 'Shift'), run: on(v => { deleteLine(v) }) },
     { id: 'editor:select-line',           label: 'Sélectionner la ligne',    hotkeys: [{ modifiers: ['Alt'], key: 'l' }], run: on(v => { selectLine(v) }) },
-    { id: 'editor:undo',                  label: 'Annuler',                  hotkeys: mod('z'), run: on(v => { undo(v) }) },
-    { id: 'editor:redo',                  label: 'Rétablir',                 hotkeys: [...mod('y'), ...mod('z', 'Shift')], run: on(v => { redo(v) }) },
+    { id: 'editor:undo',                  label: 'Annuler',                  hotkeys: mod('z'), run: on(undoIn) },
+    { id: 'editor:redo',                  label: 'Rétablir',                 hotkeys: [...mod('y'), ...mod('z', 'Shift')], run: on(redoIn) },
     { id: 'editor:insert-wikilink',       label: 'Insérer un lien vers une note',                      run: on(v => wrapSelection(v, '[[', ']]')) },
     { id: 'editor:insert-embed',          label: 'Intégrer une note',                                  run: on(v => wrapSelection(v, '![[', ']]')) },
     { id: 'editor:insert-callout',        label: 'Insérer un callout',                                 run: on(v => insertCallout(v)) },
@@ -346,6 +362,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     }
 
     const crdtMode = options.crdt !== undefined
+    const crdtUndo: UndoCommands | null = options.crdt?.undo && options.crdt.redo
+      ? { undo: v => options.crdt!.undo!(v), redo: v => options.crdt!.redo!(v) }
+      : null
     const offlineDoc = crdtMode ? '' : (options.initialContent ?? '')
     const startState = EditorState.create({
       doc: offlineDoc,
@@ -354,7 +373,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         ...(options.readOnly
           ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
           : [
-              history(),
+              // Note partagee : l'annulation du CRDT, qui ne touche qu'aux
+              // modifications faites ici (pas au texte recu).
+              ...(crdtUndo ? [crdtHistory.of(crdtUndo)] : [history()]),
               // Moteur de raccourcis (commandes de l'application et des
               // plugins) : passe avant les touches de CodeMirror.
               Prec.highest(EditorView.domEventHandlers({
@@ -364,7 +385,13 @@ export class EditorCore implements EditorController, EditorPositionAPI {
                 { key: 'Tab', run: indentListLine },
                 { key: 'Shift-Tab', run: dedentListLine, preventDefault: true },
                 ...defaultKeymap,
-                ...historyKeymap,
+                ...(crdtUndo
+                  ? [
+                      { key: 'Mod-z', run: crdtUndo.undo, preventDefault: true },
+                      { key: 'Mod-y', mac: 'Mod-Shift-z', run: crdtUndo.redo, preventDefault: true },
+                      { key: 'Mod-Shift-z', run: crdtUndo.redo, preventDefault: true },
+                    ]
+                  : historyKeymap),
               ]),
             ]
         ),
