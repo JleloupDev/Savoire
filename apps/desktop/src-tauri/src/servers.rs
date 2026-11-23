@@ -101,7 +101,7 @@ fn read_json<T: for<'de> Deserialize<'de> + Default>(file: &Path) -> T {
 }
 
 /// Ecriture atomique (fichier temporaire puis renommage), droits 0600 si `private`.
-fn write_json<T: Serialize>(file: &Path, value: &T, private: bool) -> Result<(), String> {
+pub(crate) fn write_json<T: Serialize>(file: &Path, value: &T, private: bool) -> Result<(), String> {
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }

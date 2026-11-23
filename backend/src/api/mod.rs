@@ -10,6 +10,7 @@ pub mod admin;
 pub mod attachments;
 pub mod indexer;
 pub mod misc;
+pub mod notion;
 pub mod oauth;
 pub mod open;
 pub mod publications;

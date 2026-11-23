@@ -186,6 +186,11 @@ pub fn router(st: AppState) -> Router {
         .route("/api/v1/me/oauth-grants/{id}", delete(oauth::revoke_grant))
         // Divers
         .route("/api/v1/store/config", get(misc::store_config))
+        .route("/api/v1/notion/config", get(notion::config))
+        .route("/api/v1/notion/authorize", get(notion::authorize))
+        .route("/api/v1/notion/callback", get(notion::callback))
+        .route("/api/v1/notion/ticket", post(notion::ticket).layer(small(8)))
+        .route("/api/v1/notion/refresh", post(notion::refresh).layer(small(8)))
         .route("/api/v1/errors/config", get(misc::errors_config))
         .route("/api/v1/errors/envelope", post(misc::errors_envelope).layer(small(misc::MAX_ENVELOPE_BYTES / 1024)))
         .route("/p/{slug}", get(publications::page))

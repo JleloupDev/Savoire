@@ -35,6 +35,8 @@ pub struct Inner {
     pub agent_tickets: DashMap<String, crate::api::agents::AgentTicket>,
     /// Catalogue des outils du pair, et quand il a ete lu.
     pub agent_catalog: Mutex<Option<(Instant, Vec<serde_json::Value>)>>,
+    /// Jetons Notion en attente d'etre repris par l'application (ADR-035).
+    pub notion_tickets: DashMap<String, crate::api::notion::NotionTicket>,
 }
 
 impl std::ops::Deref for AppState {
@@ -62,6 +64,7 @@ impl AppState {
             realtime: Realtime::new(),
             agent_tickets: DashMap::new(),
             agent_catalog: Mutex::new(None),
+            notion_tickets: DashMap::new(),
         }))
     }
 

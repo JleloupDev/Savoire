@@ -22,6 +22,8 @@ pub mod mcp_local;
 #[cfg(desktop)]
 mod note_window;
 #[cfg(desktop)]
+mod notion;
+#[cfg(desktop)]
 mod oauth;
 #[cfg(desktop)]
 mod paths;
@@ -60,6 +62,8 @@ pub fn run() {
             app.manage(servers::ServerSettings::load(&app.path().app_config_dir()?));
             // Connexion a un serveur : retour du navigateur sur 127.0.0.1 (ADR-028).
             app.manage(oauth::OAuthLoopback::default());
+            // Import Notion (ADR-035) : le jeton, garde cote Rust (notion-connection.json).
+            app.manage(notion::NotionConnection::load(&app.path().app_config_dir()?));
             // MCP local (ADR-033) : demarre a la demande de la page (Parametres > Agents).
             app.manage(mcp_local::McpLocal::new(&app.path().app_config_dir()?));
             app.manage(updater::PendingUpdate::default());
@@ -96,6 +100,11 @@ pub fn run() {
             oauth::oauth_listen,
             oauth::oauth_wait,
             oauth::open_external,
+            notion::notion_status,
+            notion::notion_connect,
+            notion::notion_disconnect,
+            notion::notion_api,
+            notion::notion_download,
             note_window::note_window_open,
             note_window::note_window_pin,
             web_fetch::web_fetch_text,
