@@ -17,6 +17,7 @@ import { columnContent, columnsElement, type FragmentOptions } from './NoteFragm
 import {
   deleteTableColumn, deleteTableRow, insertTableColumn, insertTableRow, moveTableColumn, moveTableRow, newColumnDelimiter, tableCells, tableLine, tableSize,
 } from './TableRows'
+import { createSubEditor } from './SubEditor'
 import { applyTableWidths, tableResizers, tableWidthsIn, toPercents, withTableWidths, withoutTableWidths } from './TableWidths'
 
 export interface BlockRange { from: number; to: number }
@@ -212,8 +213,18 @@ export function editContext(
     replace: (next: string) => {
       const r = range()
       if (!r || view.state.readOnly) return
-      if (view.state.sliceDoc(r.from, r.to) === next) return
-      view.dispatch({ changes: { from: r.from, to: r.to, insert: next }, userEvent: 'input' })
+      const prev = view.state.sliceDoc(r.from, r.to)
+      if (prev === next) return
+      // Seul ce qui change part : un pair qui ecrit ailleurs dans le bloc
+      // garde son texte (CRDT), et l'annulation reste fine.
+      let start = 0
+      while (start < prev.length && start < next.length && prev[start] === next[start]) start++
+      // Pas au milieu d'un emoji (paire de substitution).
+      if (start > 0 && /[\uD800-\uDBFF]/.test(prev[start - 1])) start--
+      let end = 0
+      while (end < prev.length - start && end < next.length - start && prev[prev.length - 1 - end] === next[next.length - 1 - end]) end++
+      if (end > 0 && /[\uDC00-\uDFFF]/.test(prev[prev.length - end])) end--
+      view.dispatch({ changes: { from: r.from + start, to: r.to - end, insert: next.slice(start, next.length - end) }, userEvent: 'input' })
     },
     editSource: () => {
       const r = range()
@@ -372,7 +383,7 @@ export function tableCellItems(view: EditorView, ctx: BlockEditContext, row: num
   const apply = (next: (src: string) => string, focus?: { row: number; col: number }) => () => {
     // Une case ouverte s'enregistre d'abord, et le tableau pourra se redessiner.
     const open = document.activeElement as HTMLElement | null
-    if (open?.classList?.contains('plume-table-cell')) open.blur()
+    if (open?.closest?.('.plume-table-cell')) open.blur()
     clearTableSelection()
     const src = ctx.source()
     const out = next(src)
@@ -576,20 +587,10 @@ export function tableGrips(view: EditorView, box: HTMLElement, ctx: BlockEditCon
   }
 }
 
-function caretAt(cell: HTMLElement, edge: 'start' | 'end'): boolean {
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
-  const range = sel.getRangeAt(0)
-  const whole = document.createRange()
-  whole.selectNodeContents(cell)
-  if (edge === 'start') whole.setEnd(range.startContainer, range.startOffset)
-  else whole.setStart(range.endContainer, range.endOffset)
-  return whole.toString().length === 0
-}
-
 /**
  * Tableau rendu dont chaque case s'edite sur place, comme dans Obsidian :
- * un clic ouvre la case en texte, Tab passe a la suivante, Entree ajoute
+ * un clic ouvre la case dans un sous-editeur (SubEditor.ts : le moteur et
+ * les aides de la note), Tab passe a la suivante, Entree ajoute
  * une ligne dessous, Echap annule. Les fleches vont de case en case et sortent du tableau par
  * le haut ou le bas ; Alt + fleche deplace la ligne ou la colonne.
  */
@@ -621,45 +622,65 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     cells.find(c => Number(c.dataset.row) === row && Number(c.dataset.col) === col) ?? null
   const posOf = (): number | null => { try { return view.posAtDOM(div) } catch { return null } }
 
+  // La case ouverte : un sous-editeur, le meme moteur que la note (mise en
+  // forme, entourer la selection, collage, raccourcis...). Chaque frappe
+  // part dans la note, comme ailleurs.
+  const editors = new Map<HTMLElement, EditorView>()
+
   const start = (cell: HTMLElement, caret: 'start' | 'end' = 'end') => {
-    if (cell.isContentEditable) return
-    const raw = tableCellSource(ctx.source(), Number(cell.dataset.row), Number(cell.dataset.col))
+    if (editors.has(cell)) return
+    const row = Number(cell.dataset.row)
+    const col = Number(cell.dataset.col)
+    const raw = tableCellSource(ctx.source(), row, col)
     cell.dataset.raw = raw
-    cell.textContent = raw
-    try { cell.contentEditable = 'plaintext-only' } catch { cell.contentEditable = 'true' }
-    if (cell.contentEditable !== 'plaintext-only') cell.contentEditable = 'true'
-    cell.focus()
-    const sel = window.getSelection()
-    if (sel) {
-      const range = document.createRange()
-      range.selectNodeContents(cell)
-      range.collapse(caret === 'start')
-      sel.removeAllRanges()
-      sel.addRange(range)
+    cell.replaceChildren()
+    cell.classList.add('plume-table-cell-editing')
+    const ed = createSubEditor(view, cell, {
+      doc: raw,
+      singleLine: true,
+      caret,
+      className: 'plume-table-cell-editor',
+      keydown: (e, sub) => cellKey(cell, e, sub),
+      onChange: text => {
+        if (editors.get(cell)) ctx.replace(setTableCell(ctx.source(), row, col, text))
+      },
+    })
+    editors.set(cell, ed)
+    ed.focus()
+    // Le curseur de la note vient au tableau : en revenant a la note (un clic
+    // a cote), la page ne saute pas a l'endroit ou il etait reste.
+    const from = posOf()
+    if (from !== null) {
+      const to = from + ctx.source().length
+      const head = view.state.selection.main.head
+      if (head < from || head > to) view.dispatch({ selection: { anchor: to } })
     }
   }
 
   const finish = (cell: HTMLElement, commit: boolean, next: HTMLElement | null, caret: 'start' | 'end' = 'end') => {
-    if (!cell.isContentEditable) return
-    const value = (cell.textContent ?? '').trim()
-    cell.contentEditable = 'false'
-    cell.removeAttribute('contenteditable')
+    const ed = editors.get(cell)
+    if (!ed) return
+    editors.delete(cell)
     const raw = cell.dataset.raw ?? ''
     delete cell.dataset.raw
+    const value = commit ? ed.state.doc.toString().trim() : raw
+    // Echap : la case revient a ce qu'elle etait.
+    if (!commit) ctx.replace(setTableCell(ctx.source(), Number(cell.dataset.row), Number(cell.dataset.col), raw))
     // On reste dans le tableau : il garde son element pendant l'ecriture.
-    if (next && div.contains(next)) div.dataset.plumeEditing = '1'
-    cell.innerHTML = inlineHtml(commit ? value : raw, hooks) || '&nbsp;'
-    if (commit && value !== raw) {
-      ctx.replace(setTableCell(ctx.source(), Number(cell.dataset.row), Number(cell.dataset.col), value))
+    const stay = !!next && div.contains(next)
+    if (stay) {
+      div.dataset.plumeEditing = '1'
+      start(next!, caret)
     }
-    if (next && div.contains(next)) start(next, caret)
-    else endEditing(view, div)
+    ed.destroy()
+    cell.classList.remove('plume-table-cell-editing')
+    cell.innerHTML = inlineHtml(value, hooks) || '&nbsp;'
+    if (!stay) endEditing(view, div)
   }
 
   /** Ferme la case, puis change le tableau ; il se redessine, la case `focus` rouverte. */
   const restructure = (cell: HTMLElement, next: (src: string) => string, focus: { row: number; col: number } | null) => {
     finish(cell, true, null)
-    cell.blur()
     delete div.dataset.plumeEditing
     const src = ctx.source()
     const out = next(src)
@@ -673,6 +694,78 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
   const leave = (cell: HTMLElement, dir: 1 | -1) => {
     finish(cell, true, null)
     ctx.leave?.(dir)
+  }
+
+  /** Passer a une autre case du tableau. */
+  const goTo = (cell: HTMLElement, other: HTMLElement, caret: 'start' | 'end' = 'end') => {
+    div.dataset.plumeEditing = '1'
+    finish(cell, true, other, caret)
+  }
+
+  /** La fleche reste sur une autre rangee de la case (texte sur plusieurs rangees). */
+  const staysInCell = (sub: EditorView, down: boolean): boolean => {
+    const sel = sub.state.selection.main
+    const target = sub.moveVertically(sel, down)
+    if (target.head === sel.head) return false
+    const a = sub.coordsAtPos(sel.head)
+    const b = sub.coordsAtPos(target.head)
+    return !!a && !!b && Math.abs(a.top - b.top) > 2
+  }
+
+  /** Les touches du tableau, avant celles de la note. */
+  const cellKey = (cell: HTMLElement, e: KeyboardEvent, sub: EditorView): boolean => {
+    const row = Number(cell.dataset.row)
+    const col = Number(cell.dataset.col)
+    const sel = sub.state.selection.main
+    // Alt + fleche : la ligne ou la colonne change de place, la case la suit.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.startsWith('Arrow')) {
+      if (e.key === 'ArrowUp' && row > 1) restructure(cell, s => moveTableRow(s, row, -1), { row: row - 1, col })
+      else if (e.key === 'ArrowDown' && row >= 1) restructure(cell, s => moveTableRow(s, row, 1), { row: row + 1, col })
+      else if (e.key === 'ArrowLeft') restructure(cell, s => moveTableColumn(s, col, -1), { row, col: col - 1 })
+      else if (e.key === 'ArrowRight') restructure(cell, s => moveTableColumn(s, col, 1), { row, col: col + 1 })
+      return true
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return false
+    if (e.key === 'Tab') {
+      const i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1)
+      const next = cells[i] ?? null
+      // Tab apres la derniere case : une ligne de plus, comme un tableur.
+      if (!next && !e.shiftKey) restructure(cell, s => insertTableRow(s, row, true), { row: row + 1, col: 0 })
+      else if (next) goTo(cell, next)
+      return true
+    }
+    if (e.key === 'Escape') {
+      finish(cell, false, null)
+      ctx.leave?.(1)
+      return true
+    }
+    if (e.shiftKey) return false
+    if (e.key === 'Enter') {
+      // Entree : une nouvelle ligne sous celle-ci, on ecrit dans sa premiere case.
+      restructure(cell, src => insertTableRow(src, row, true), { row: row + 1, col: 0 })
+      return true
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const dir = e.key === 'ArrowDown' ? 1 : -1
+      if (staysInCell(sub, dir === 1)) return false
+      const other = cellAt(row + dir, col)
+      if (other) goTo(cell, other)
+      else leave(cell, dir)
+      return true
+    }
+    if (e.key === 'ArrowLeft' && sel.empty && sel.head === 0) {
+      const prev = cells[cells.indexOf(cell) - 1]
+      if (!prev) return false
+      goTo(cell, prev)
+      return true
+    }
+    if (e.key === 'ArrowRight' && sel.empty && sel.head === sub.state.doc.length) {
+      const next = cells[cells.indexOf(cell) + 1]
+      if (!next) return false
+      goTo(cell, next, 'start')
+      return true
+    }
+    return false
   }
 
   // Le curseur de la note arrive par une fleche : la case de sa colonne.
@@ -691,77 +784,25 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     if (e.button !== 0) return
     const cell = (e.target as Element).closest?.('.plume-table-cell') as HTMLElement | null
     if (!cell || (e.target as Element).closest('a, input, button')) return
-    if (cell.isContentEditable) return
+    const open = editors.get(cell)
+    if (open) {
+      // Dans la case, hors de son texte (sa marge) : le curseur y reste.
+      if (!open.dom.contains(e.target as Node)) { e.preventDefault(); open.focus() }
+      return
+    }
     e.preventDefault()
     start(cell)
   })
   div.addEventListener('focusout', e => {
-    const cell = e.target as HTMLElement
-    if (!cell.classList?.contains('plume-table-cell')) return
-    const next = e.relatedTarget as HTMLElement | null
-    finish(cell, true, next?.classList?.contains('plume-table-cell') ? next : null)
+    const cell = (e.target as Element).closest?.('.plume-table-cell') as HTMLElement | null
+    if (!cell || !editors.has(cell)) return
+    const next = (e.relatedTarget as Element | null)?.closest?.('.plume-table-cell') as HTMLElement | null
+    if (next === cell) return
+    finish(cell, true, next && div.contains(next) ? next : null)
   })
+  // Les touches d'une case ouverte restent dans la case.
   div.addEventListener('keydown', e => {
-    const cell = e.target as HTMLElement
-    if (!cell.classList?.contains('plume-table-cell') || !cell.isContentEditable) return
-    e.stopPropagation()
-    const row = Number(cell.dataset.row)
-    const col = Number(cell.dataset.col)
-    // Tout selectionner : la case seulement, pas la note.
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-      e.preventDefault()
-      const sel = window.getSelection()
-      const range = document.createRange()
-      range.selectNodeContents(cell)
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-      return
-    }
-    // Alt + fleche : la ligne ou la colonne change de place, la case la suit.
-    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.startsWith('Arrow')) {
-      e.preventDefault()
-      if (e.key === 'ArrowUp' && row > 1) restructure(cell, s => moveTableRow(s, row, -1), { row: row - 1, col })
-      else if (e.key === 'ArrowDown' && row >= 1) restructure(cell, s => moveTableRow(s, row, 1), { row: row + 1, col })
-      else if (e.key === 'ArrowLeft') restructure(cell, s => moveTableColumn(s, col, -1), { row, col: col - 1 })
-      else if (e.key === 'ArrowRight') restructure(cell, s => moveTableColumn(s, col, 1), { row, col: col + 1 })
-      return
-    }
-    if (e.ctrlKey || e.metaKey || e.altKey) return
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      const dir = e.key === 'ArrowDown' ? 1 : -1
-      const other = cellAt(row + dir, col)
-      if (other) { div.dataset.plumeEditing = '1'; finish(cell, true, other) }
-      else leave(cell, dir)
-    } else if (e.key === 'ArrowLeft' && caretAt(cell, 'start')) {
-      const prev = cells[cells.indexOf(cell) - 1]
-      if (!prev) return
-      e.preventDefault()
-      div.dataset.plumeEditing = '1'
-      finish(cell, true, prev)
-    } else if (e.key === 'ArrowRight' && caretAt(cell, 'end')) {
-      const next = cells[cells.indexOf(cell) + 1]
-      if (!next) return
-      e.preventDefault()
-      div.dataset.plumeEditing = '1'
-      finish(cell, true, next, 'start')
-    } else if (e.key === 'Tab') {
-      e.preventDefault()
-      const i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1)
-      const next = cells[i] ?? null
-      // Tab apres la derniere case : une ligne de plus, comme un tableur.
-      if (!next && !e.shiftKey) { restructure(cell, s => insertTableRow(s, row, true), { row: row + 1, col: 0 }); return }
-      div.dataset.plumeEditing = '1'
-      finish(cell, true, next)
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      // Entree : une nouvelle ligne sous celle-ci, on ecrit dans sa premiere case.
-      restructure(cell, src => insertTableRow(src, row, true), { row: row + 1, col: 0 })
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      finish(cell, false, null)
-      ctx.leave?.(1)
-    }
+    if ((e.target as Element).closest?.('.plume-table-cell-editing')) e.stopPropagation()
   })
 
   // Poignees de ligne et de colonne : selectionner, puis supprimer ou deplacer.

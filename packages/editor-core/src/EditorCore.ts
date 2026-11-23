@@ -32,6 +32,7 @@ import { brackets, highlightSelectionMatches, listHome, multipleCursors, multipl
 import { findReplace, openFind } from './FindReplace'
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
+import { focusedSubEditor, hostOf, subEditorExtensions } from './SubEditor'
 
 // Detects a list item line: optional leading whitespace + bullet or ordered marker
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
@@ -44,7 +45,8 @@ const mod = (key: string, ...more: Hotkey['modifiers']): Hotkey[] => [{ modifier
 function viewOf(ctx: unknown): EditorView | undefined {
   const c = ctx as { view?: unknown; editorView?: unknown } | null | undefined
   const v = c?.view ?? c?.editorView
-  return v instanceof EditorView ? v : undefined
+  // Une case de tableau ouverte : c'est elle qu'on met en forme.
+  return v instanceof EditorView ? (focusedSubEditor(v) ?? v) : undefined
 }
 
 function indentListLine(view: EditorView): boolean {
@@ -148,11 +150,11 @@ export function plumeCommands(): PluginCommand[] {
     { id: 'editor:insert-callout',        label: 'Insérer un callout',                                 run: on(v => insertCallout(v)) },
     { id: 'editor:insert-tag',            label: 'Insérer un tag',                                     run: on(v => wrapSelection(v, '#', '')) },
     // Panneau des proprietes (frontmatter).
-    { id: 'editor:add-property',          label: 'Ajouter une propriété',    hotkeys: mod(';'), run: on(addProperty) },
+    { id: 'editor:add-property',          label: 'Ajouter une propriété',    hotkeys: mod(';'), run: on(v => addProperty(hostOf(v))) },
     { id: 'editor:toggle-properties-source', label: 'Propriétés : basculer panneau / YAML source', run: on(toggleYamlSource) },
     // Rechercher et remplacer dans la note (FindReplace.ts).
-    { id: 'editor:find',                  label: 'Rechercher dans la note',  hotkeys: mod('f'), run: on(v => { openFind(v) }) },
-    { id: 'editor:replace',               label: 'Remplacer dans la note',   hotkeys: mod('h'), run: on(v => { openFind(v, true) }) },
+    { id: 'editor:find',                  label: 'Rechercher dans la note',  hotkeys: mod('f'), run: on(v => { openFind(hostOf(v)) }) },
+    { id: 'editor:replace',               label: 'Remplacer dans la note',   hotkeys: mod('h'), run: on(v => { openFind(hostOf(v), true) }) },
     // Plusieurs curseurs, si l'option est cochee (EditingAids.ts).
     { id: 'editor:select-next-occurrence', label: 'Ajouter l\'occurrence suivante à la sélection', hotkeys: mod('d'), isAvailable: () => multipleCursorsEnabled(), run: on(v => { selectNextOccurrence(v) }) },
     { id: 'editor:select-all-occurrences', label: 'Sélectionner toutes les occurrences', hotkeys: mod('l', 'Shift'), isAvailable: () => multipleCursorsEnabled(), run: on(v => { selectAllOccurrences(v) }) },
@@ -375,6 +377,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     const crdtUndo: UndoCommands | null = options.crdt?.undo && options.crdt.redo
       ? { undo: v => options.crdt!.undo!(v), redo: v => options.crdt!.redo!(v) }
       : null
+    const hotkeyEngine = Prec.highest(EditorView.domEventHandlers({
+      keydown: (event, view) => this.pluginAPI.hotkeys?.handleKeyEvent(event, { editorView: view }) ?? false,
+    }))
     const offlineDoc = crdtMode ? '' : (options.initialContent ?? '')
     const startState = EditorState.create({
       doc: offlineDoc,
@@ -388,9 +393,18 @@ export class EditorCore implements EditorController, EditorPositionAPI {
               ...(crdtUndo ? [crdtHistory.of(crdtUndo)] : [history()]),
               // Moteur de raccourcis (commandes de l'application et des
               // plugins) : passe avant les touches de CodeMirror.
-              Prec.highest(EditorView.domEventHandlers({
-                keydown: (event, view) => this.pluginAPI.hotkeys?.handleKeyEvent(event, { editorView: view }) ?? false,
-              })),
+              hotkeyEngine,
+              // Les sous-editeurs (case d'un tableau) : le meme moteur, les memes aides.
+              subEditorExtensions.of([
+                history(),
+                hotkeyEngine,
+                keymap.of([...defaultKeymap, ...historyKeymap]),
+                spellcheck,
+                highlightSelectionMatches,
+                brackets,
+                smartPaste,
+                EditorView.lineWrapping,
+              ]),
               keymap.of([
                 { key: 'Tab', run: indentListLine },
                 { key: 'Shift-Tab', run: dedentListLine, preventDefault: true },
@@ -725,13 +739,13 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     // Le bouton agit sur l'editeur d'ou vient le clic : la barre est
     // partagee par tous les editeurs ouverts.
     const F = (f: import('./types').MarkdownFormat) => (ctx: EditorCommandContext) =>
-      toggleMarkdownFormat(viewOf(ctx) ?? this.view, f)
+      toggleMarkdownFormat(viewOf(ctx) ?? this.targetView(), f)
     const highlightIn = (color?: (typeof PLUME_COLORS)[number]['color']) => (ctx: EditorCommandContext) =>
-      toggleHighlight(viewOf(ctx) ?? this.view, color)
+      toggleHighlight(viewOf(ctx) ?? this.targetView(), color)
     const colorIn = (color: (typeof PLUME_COLORS)[number]['color'] | null) => (ctx: EditorCommandContext) =>
-      setLineColor(viewOf(ctx) ?? this.view, color)
+      setLineColor(viewOf(ctx) ?? this.targetView(), color)
     // Etat sous le curseur : boutons allumes, style du paragraphe.
-    const stateOf = (ctx: EditorCommandContext) => formatStateAt((viewOf(ctx) ?? this.view).state)
+    const stateOf = (ctx: EditorCommandContext) => formatStateAt((viewOf(ctx) ?? this.targetView()).state)
     const isInline = (f: InlineStyle) => (ctx: EditorCommandContext) => stateOf(ctx).inline.has(f)
     const isBlock = (b: BlockStyle) => (ctx: EditorCommandContext) => stateOf(ctx).block === b
     const isList = (l: ListStyle) => (ctx: EditorCommandContext) => stateOf(ctx).list === l
@@ -796,7 +810,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       { id: 'tb-table',     label: 'Tableau',      icon: 'table',       menu: 'insert', commandId: 'editor:insert-table', run: F('table') },
       { id: 'tb-codeblock', label: 'Bloc de code', icon: 'square-code', menu: 'insert', commandId: 'editor:insert-codeblock', run: F('codeblock') },
       { id: 'tb-quote',     label: 'Citation',     icon: 'text-quote',  menu: 'insert', commandId: 'editor:toggle-blockquote', run: F('blockquote') },
-      { id: 'tb-callout',   label: 'Encadré',      icon: 'info',        menu: 'insert', run: ctx => insertCallout(viewOf(ctx) ?? this.view) },
+      { id: 'tb-callout',   label: 'Encadré',      icon: 'info',        menu: 'insert', run: ctx => insertCallout(hostOf(viewOf(ctx) ?? this.view)) },
       { id: 'tb-hr',        label: 'Séparateur',   icon: 'minus',       menu: 'insert', run: F('hr') },
     ]
     for (const cmd of toolbarCmds) toolbar.register(cmd)
@@ -848,7 +862,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
   toggleFormat(format: MarkdownFormat): void {
-    toggleMarkdownFormat(this.view, format)
+    toggleMarkdownFormat(this.targetView(), format)
+  }
+
+  /** L'editeur ou ecrire : la case de tableau ouverte, sinon la note. */
+  private targetView(): EditorView {
+    return focusedSubEditor(this.view) ?? this.view
   }
 
   getActiveFile(): string | null {

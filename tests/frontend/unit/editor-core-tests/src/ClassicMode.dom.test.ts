@@ -7,17 +7,19 @@
 // modifier sans passer par le texte brut.
 import { describe, it, expect } from 'vitest'
 import { EditorView } from '@codemirror/view'
-import { EditorState, EditorSelection } from '@codemirror/state'
+import { EditorState, EditorSelection, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { createLivePreviewExtension, type PreviewMode } from '../../../../../packages/editor-core/src/LivePreview'
 import { openSource } from '../../../../../packages/editor-core/src/ClassicMode'
+import { createSubEditor, subEditorExtensions } from '../../../../../packages/editor-core/src/SubEditor'
+import { brackets } from '../../../../../packages/editor-core/src/EditingAids'
 import type { BlockEditContext, BlockRegistry, BlockSpec } from '@savoire/plugin-api'
 
 const DOC = 'avant\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```demo\nx\n```\n\n::: colonnes\ngauche\n+++\ndroite\n:::\n\napres'
 
 let lastEdit: BlockEditContext | null = null
 
-function setup(mode: PreviewMode, doc = DOC) {
+function setup(mode: PreviewMode, doc = DOC, extra: Extension[] = []) {
   const spec: BlockSpec = {
     type: 'demo',
     detect: text => text.startsWith('```demo'),
@@ -43,10 +45,26 @@ function setup(mode: PreviewMode, doc = DOC) {
     state: EditorState.create({
       doc,
       selection: EditorSelection.cursor(0),
-      extensions: [markdown({ base: markdownLanguage }), ...createLivePreviewExtension(registry, undefined, { editorView: null }, false, undefined, mode)],
+      extensions: [markdown({ base: markdownLanguage }), ...createLivePreviewExtension(registry, undefined, { editorView: null }, false, undefined, mode), ...extra],
     }),
   })
   return view
+}
+
+/** Ce qu'on tape dans un editeur, comme le ferait le navigateur. */
+function type(view: EditorView, text: string) {
+  const { from, to } = view.state.selection.main
+  const done = view.state.facet(EditorView.inputHandler).some(h => h(view, from, to, text, () => view.state.update({ changes: { from, to, insert: text } })))
+  if (!done) view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, userEvent: 'input.type' })
+}
+
+/** La case ouverte : son sous-editeur. */
+const openCell = (view: EditorView, row: number, col: number): EditorView => {
+  const cell = view.dom.querySelector(`td[data-row="${row}"][data-col="${col}"], th[data-row="${row}"][data-col="${col}"]`) as HTMLElement
+  cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+  const sub = EditorView.findFromDOM(cell.querySelector('.cm-editor') as HTMLElement)
+  expect(sub).not.toBeNull()
+  return sub!
 }
 
 const tables = (view: EditorView) => view.dom.querySelectorAll('table').length
@@ -96,14 +114,50 @@ describe('Mode classique', () => {
     view.destroy()
   })
 
-  it('une case de tableau s\'edite sur place', () => {
+  it('une case de tableau s\'edite sur place, dans un sous-editeur', () => {
     const view = setup('classic')
-    const cell = view.dom.querySelector('td[data-row="1"][data-col="1"]') as HTMLElement
-    cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-    expect(cell.isContentEditable || cell.getAttribute('contenteditable') !== null).toBe(true)
-    cell.textContent = 'deux'
-    cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    const sub = openCell(view, 1, 1)
+    expect(sub.state.doc.toString()).toBe('2')
+    // Chaque frappe part dans la note.
+    sub.dispatch({ changes: { from: 0, to: 1, insert: 'deux' }, userEvent: 'input.type' })
     expect(view.state.doc.toString()).toContain('| 1 | deux |')
+    // Un retour a la ligne colle devient une espace : la case reste sur sa ligne.
+    sub.dispatch({ changes: { from: 4, insert: '\net trois' }, userEvent: 'input.paste' })
+    expect(view.state.doc.toString()).toContain('| 1 | deux et trois |')
+    sub.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(view.state.doc.toString()).toContain('| 1 | deux et trois |\n|  |  |')
+    view.destroy()
+  })
+
+  it('Echap rend a la case son texte d\'avant', () => {
+    const view = setup('classic')
+    const sub = openCell(view, 1, 0)
+    sub.dispatch({ changes: { from: 0, to: 1, insert: 'un' }, userEvent: 'input.type' })
+    expect(view.state.doc.toString()).toContain('| un | 2 |')
+    sub.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(view.state.doc.toString()).toContain('| 1 | 2 |')
+    view.destroy()
+  })
+
+  it('les aides de la note valent dans un sous-editeur : == entoure le texte selectionne', () => {
+    const host = setup('classic', DOC, [subEditorExtensions.of([brackets])])
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const sub = createSubEditor(host, parent, { doc: '2', singleLine: true })
+    sub.dispatch({ selection: { anchor: 0, head: 1 } })
+    type(sub, '=')
+    type(sub, '=')
+    expect(sub.state.doc.toString()).toBe('==2==')
+    sub.destroy()
+    host.destroy()
+  })
+
+  it('dans la case, les ** du gras se cachent hors du curseur, comme dans la note', () => {
+    const view = setup('classic', '| a |\n| --- |\n| **gras** fin |\n\napres')
+    const sub = openCell(view, 1, 0)
+    expect(sub.contentDOM.textContent).toBe('gras fin')
+    sub.dispatch({ selection: { anchor: 3 } })
+    expect(sub.contentDOM.textContent).toBe('**gras** fin')
     view.destroy()
   })
 

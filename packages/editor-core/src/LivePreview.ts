@@ -30,7 +30,7 @@ import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, 
 import { findColumnsBlocks } from './Columns'
 import {
   ObjectWidget, SourceDoneWidget, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
-  isClassicEffect, locateInColumns, tableCellItems, tableGrips, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
+  isClassicEffect, leaveObject, locateInColumns, tableCellItems, tableGrips, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
 } from './ClassicMode'
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
@@ -39,6 +39,7 @@ import { lineColorOf } from './FormattingService'
 import { newTableRowBelow, tableAt } from './TableRows'
 import { applyTableWidths, tableResizers, withTableWidths, withoutTableWidths } from './TableWidths'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
+import { subEditorExtensions } from './SubEditor'
 import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
 
 // Dispatching this effect after plugins load triggers a full decoration rebuild.
@@ -580,6 +581,23 @@ function hideInlineMarks(state: EditorState, fmEnd: number, out: Range<Decoratio
     line = state.doc.line(line.number + 1)
   }
 }
+
+/**
+ * Les marques d'un sous-editeur (une case de tableau) : surligne, couleur,
+ * gras sans ses ** hors du curseur. Comme une ligne brute de la note.
+ */
+function subEditorMarksOf(state: EditorState): DecorationSet {
+  const out: Range<Decoration>[] = []
+  rawLineMarks(state, 0, out)
+  hideInlineMarks(state, 0, out)
+  return Decoration.set(out, true)
+}
+
+const subEditorMarks = StateField.define<DecorationSet>({
+  create: subEditorMarksOf,
+  update: (marks, tr) => (tr.docChanged || tr.selection ? subEditorMarksOf(tr.state) : marks),
+  provide: f => EditorView.decorations.from(f),
+})
 
 /** Ce dont le calcul des decorations a besoin, hors de l'etat. */
 interface PreviewEnv {
@@ -1284,12 +1302,33 @@ function classicExtensions(
       e.preventDefault()
       openSource(view, hit.range)
     }
+    // Un clic dans la marge, a la hauteur d'un objet (a cote d'un tableau) :
+    // le curseur va sur la ligne juste dessous. Sans cela, la note
+    // reprenait le focus sans curseur pres de l'objet, et la page sautait
+    // la ou il etait reste.
+    const beside = (e: MouseEvent) => {
+      if (e.button !== 0 || e.shiftKey || view.state.readOnly) return
+      const t = e.target as Element | null
+      const margin = t === view.contentDOM || t === view.scrollDOM || t === view.dom
+        // Les numeros de ligne aussi, pas leurs boutons (replier, poignee).
+        || (!!t?.closest?.('.cm-gutters') && !t.closest('button, a, input, [draggable="true"], [role="button"], .plume-fold-toggle'))
+      if (!margin) return
+      const block = view.lineBlockAtHeight(e.clientY - view.documentTop)
+      const r = objectStartingAt(view.state, block.from)
+      if (!r || r.to !== block.to) return
+      e.preventDefault()
+      e.stopPropagation()
+      leaveObject(view, r, 1)
+      view.focus()
+    }
     view.dom.addEventListener('contextmenu', contextmenu)
     view.dom.addEventListener('dblclick', dblclick)
+    view.dom.addEventListener('mousedown', beside, true)
     return {
       destroy() {
         view.dom.removeEventListener('contextmenu', contextmenu)
         view.dom.removeEventListener('dblclick', dblclick)
+        view.dom.removeEventListener('mousedown', beside, true)
         closeBlockMenu()
       },
     }
@@ -1377,7 +1416,7 @@ function classicExtensions(
         color: 'inherit', font: 'inherit', padding: '1px 8px', cursor: 'pointer',
       },
       '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
-      '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
+      '.plume-table-cell-editing': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
       '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em', position: 'relative' },
       '.plume-column:hover': { background: 'var(--bg-hover, rgba(127,127,127,0.06))' },
       '.plume-column-resizer': {
@@ -1579,6 +1618,8 @@ export function createLivePreviewExtension(
     remoteCursorPositionsField,
     pointerHoldField,
     field,
+    // Les sous-editeurs (case d'un tableau) cachent les marques comme la note.
+    subEditorExtensions.of(subEditorMarks),
     ...(showLineNumbers ? [blockAwareLineNumbers] : []),
     ...foldingExtension(),
     blockquoteExitKeymap,

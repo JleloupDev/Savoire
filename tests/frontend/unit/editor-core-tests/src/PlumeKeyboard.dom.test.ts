@@ -154,7 +154,7 @@ describe('Les fleches entrent dans un callout (mode classique)', () => {
 
 describe('Les fleches entrent dans un tableau (mode classique)', () => {
   const DOC = 'avant\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\napres'
-  const cell = () => document.activeElement as HTMLElement
+  const cell = () => (document.activeElement as HTMLElement).closest('.plume-table-cell') as HTMLElement
 
   it('case par case, puis la ligne dessous ; Tab au bout ajoute une ligne', async () => {
     const view = setup(DOC, 0, 'classic')
@@ -192,7 +192,7 @@ describe('Les fleches entrent dans un tableau (mode classique)', () => {
 })
 
 describe('Entree dans un tableau : une nouvelle ligne', () => {
-  const cell = () => document.activeElement as HTMLElement
+  const cell = () => (document.activeElement as HTMLElement).closest('.plume-table-cell') as HTMLElement
 
   it('mode classique : Entree dans une case ajoute une ligne dessous, on ecrit dans sa premiere case', async () => {
     const doc = '| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\nfin'
