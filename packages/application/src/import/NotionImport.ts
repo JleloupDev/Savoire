@@ -259,7 +259,7 @@ function normalize(path: string): string {
 
 // ── Valeurs des bases ─────────────────────────────────────────────────────
 
-type YamlValue = string | number | boolean | string[]
+export type YamlValue = string | number | boolean | string[]
 type ColumnKind = 'text' | 'number' | 'checkbox' | 'date' | 'list'
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
@@ -309,7 +309,8 @@ function yamlKey(k: string): string {
   return /^[\p{L}\p{N}_][\p{L}\p{N}_ .()'/-]*$/u.test(k) ? k : JSON.stringify(k)
 }
 
-function frontmatter(values: readonly [string, YamlValue][]): string {
+/** Bloc YAML `---` d'une note, valeurs dans l'ordre donne ('' sans valeur). */
+export function frontmatter(values: readonly [string, YamlValue][]): string {
   if (values.length === 0) return ''
   const lines = values.map(([k, v]) => `${yamlKey(k)}: ${Array.isArray(v) ? `[${v.map(x => yamlScalar(x)).join(', ')}]` : yamlScalar(v)}`)
   return `---\n${lines.join('\n')}\n---\n`
