@@ -4,6 +4,7 @@ import { sanitizeHtml } from '@savoire/plugin-api'
 import type { VaultPlugin, PluginAPI, BlockLine, BlockLineMarker, BlockContext } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { taskAgentTools } from './agentTools'
+import { itemLineAt, moveListItem, type ListEditor } from './moveItem'
 
 export { taskAgentTools, parseTasks, addTask, setTaskDone } from './agentTools'
 
@@ -179,6 +180,20 @@ const plugin: VaultPlugin = {
   async onload(api: PluginAPI) {
     // Agents (ADR-033) : lister, ajouter, cocher des taches.
     for (const tool of taskAgentTools(api)) api.agents?.registerTool(tool)
+    // Alt+↑ / Alt+↓ : l'element de liste se deplace avec ses sous-elements.
+    // Hors d'une liste, la touche revient au deplacement de ligne de l'editeur.
+    const editorOf = (ctx: { editorView: unknown }) => ctx.editorView as ListEditor | null
+    for (const [id, label, key, dir] of [
+      ['list:move-item-up', 'Monter l\'élément de liste (avec ses sous-éléments)', 'ArrowUp', -1],
+      ['list:move-item-down', 'Descendre l\'élément de liste (avec ses sous-éléments)', 'ArrowDown', 1],
+    ] as const) {
+      api.commands.register({
+        id, label, editor: true,
+        hotkeys: [{ modifiers: ['Alt'], key }],
+        isAvailable: ctx => { const ed = editorOf(ctx); return !!ed && itemLineAt(ed) !== null },
+        run: ctx => { const ed = editorOf(ctx); if (ed) moveListItem(ed, dir) },
+      })
+    }
     api.blocks.register({
       type: 'task-list',
 

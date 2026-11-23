@@ -124,6 +124,21 @@ describe('HotkeyManager', () => {
     expect(e.prevented).toBe(false)
   })
 
+  it('meme touche : la commande qui dit ou elle s\'applique passe avant la commande generale', () => {
+    const { api, hotkeys } = setup()
+    const general = vi.fn()
+    const specific = vi.fn()
+    let here = true
+    api.commands.register({ id: 'line', hotkeys: [{ modifiers: ['Alt'], key: 'ArrowUp' }], run: general })
+    api.commands.register({ id: 'item', hotkeys: [{ modifiers: ['Alt'], key: 'ArrowUp' }], isAvailable: () => here, run: specific })
+    hotkeys.handleKeyEvent(key('ArrowUp', { altKey: true }), { editorView: null })
+    expect(specific).toHaveBeenCalledTimes(1)
+    expect(general).not.toHaveBeenCalled()
+    here = false
+    hotkeys.handleKeyEvent(key('ArrowUp', { altKey: true }), { editorView: null })
+    expect(general).toHaveBeenCalledTimes(1)
+  })
+
   it('formate selon la plateforme', () => {
     expect(formatHotkey({ modifiers: ['Mod', 'Shift'], key: 'h' }, 'other')).toBe('Ctrl+Maj+H')
     expect(formatHotkey({ modifiers: ['Mod', 'Shift'], key: 'h' }, 'mac')).toBe('⇧⌘H')

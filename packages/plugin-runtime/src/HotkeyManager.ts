@@ -200,7 +200,11 @@ export class HotkeyManager implements HotkeyHost {
     if (event.getModifierState?.('AltGraph')) return false
     // Une lettre seule (sans Ctrl, Alt ni Cmd) sert a ecrire : jamais prise.
     if (!isCommandKey(event)) return false
-    for (const cmd of this.commands.getAll()) {
+    // Une commande qui dit ou elle s'applique (isAvailable) passe avant une
+    // commande generale sur la meme touche : Alt+↑ deplace l'element de
+    // liste, et ailleurs la ligne.
+    const all = this.commands.getAll()
+    for (const cmd of [...all.filter(c => c.isAvailable), ...all.filter(c => !c.isAvailable)]) {
       if (!this.get(cmd.id).some(h => matches(h, event, this.platform))) continue
       if (cmd.editor && !context.editorView) continue
       if (cmd.isAvailable && !cmd.isAvailable(context)) continue
