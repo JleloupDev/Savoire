@@ -150,5 +150,5 @@ export function ViewGrantPage() {
     )
   }
 
-  return <div ref={containerRef} style={{ height: '100%' }} />
+  return <div ref={containerRef} style={{ height: '100%', overflow: 'auto' }} />
 }

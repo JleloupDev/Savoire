@@ -127,7 +127,8 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
   return (
     <div
       ref={containerRef}
-      style={{ height: '100%' }}
+      // Le conteneur defile, comme dans l'appli (sinon la note est coupee).
+      style={{ height: '100%', overflow: 'auto' }}
       data-testid={`editor-${handle.docId}`}
       data-doc-id={handle.docId}
       data-path={handle.path}
