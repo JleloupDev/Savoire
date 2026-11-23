@@ -63,8 +63,10 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
   {
     id: 'notion',
     name: 'Notion',
-    description: 'Une seule colonne de pages à gauche. La note prend la place. Commentaires et versions à la demande. Pages par défaut.',
-    config: { hidden: ['notes-tools', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null, defaultFileType: 'page' },
+    description: 'Une seule colonne de pages à gauche. La note prend la place. Pas de rétroliens. Commentaires et versions à la demande. Pages par défaut.',
+    // Les retroliens sont retires a part : remettre le groupe « Notes » ne
+    // les ramene pas.
+    config: { hidden: ['notes-tools', 'backlinks', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null, defaultFileType: 'page' },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
@@ -88,8 +90,10 @@ const KEY = 'savoire-layout'
 /**
  * Version des reglages gardes. 2 : les outils du developpeur sortent des
  * autres vues ; un reglage plus ancien les perd une fois (rajoutables).
+ * 3 : la vue Notion retire les retroliens ; un reglage Notion plus ancien
+ * les perd une fois (rajoutables).
  */
-const VERSION = 2
+const VERSION = 3
 const listeners = new Set<() => void>()
 
 export function presetById(id: string): LayoutPreset {
@@ -112,8 +116,12 @@ function read(): LayoutPreferences {
     const preset = presetById(typeof parsed.presetId === 'string' ? parsed.presetId : DEFAULT_PRESET_ID)
     const c: Partial<LayoutConfig> = parsed.config ?? {}
     let hidden = Array.isArray(c.hidden) ? c.hidden.filter((x): x is string => typeof x === 'string') : [...preset.config.hidden]
-    if ((parsed as { v?: number }).v !== VERSION && preset.id !== 'developer') {
+    const v = typeof (parsed as { v?: number }).v === 'number' ? (parsed as { v: number }).v : 1
+    if (v < 2 && preset.id !== 'developer') {
       hidden = [...new Set([...hidden, ...DEV_PANELS])]
+    }
+    if (v < 3 && preset.id === 'notion') {
+      hidden = [...new Set([...hidden, 'backlinks'])]
     }
     return {
       presetId: preset.id,

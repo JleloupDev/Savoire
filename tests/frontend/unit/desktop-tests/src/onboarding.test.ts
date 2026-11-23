@@ -28,6 +28,7 @@ describe('accueil et type de fichier par defaut', () => {
     expect(layout.layoutPreferences().presetId).toBe('notion')
     expect(layout.defaultFileType()).toBe('page')
     expect(layout.isLayoutModified()).toBe(false)
+    expect(layout.layoutPreferences().config.hidden).toContain('backlinks')
     expect(onboarding.needsOnboarding()).toBe(false)
     // Garde au rechargement.
     const again = await load()
@@ -64,5 +65,20 @@ describe('accueil et type de fichier par defaut', () => {
     expect(layout.isLayoutModified()).toBe(true)
     layout.selectLayoutPreset('savoire')
     expect(layout.defaultFileType()).toBe('md')
+  })
+
+  it('vue Notion d\'avant : les retroliens partent une fois, puis restent au choix', async () => {
+    localStorage.setItem('savoire-layout', JSON.stringify({ v: 2, presetId: 'notion', config: { hidden: ['notes-tools'], leftOpen: 'explorer', rightOpen: false, rightFocus: null } }))
+    const { layout } = await load()
+    expect(layout.layoutPreferences().config.hidden).toContain('backlinks')
+    layout.setPanelVisible('backlinks', true)
+    const again = await load()
+    expect(again.layout.layoutPreferences().config.hidden).not.toContain('backlinks')
+  })
+
+  it('les autres vues gardent leurs retroliens', async () => {
+    localStorage.setItem('savoire-layout', JSON.stringify({ v: 2, presetId: 'obsidian', config: { hidden: ['review'], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks' } }))
+    const { layout } = await load()
+    expect(layout.layoutPreferences().config.hidden).not.toContain('backlinks')
   })
 })
