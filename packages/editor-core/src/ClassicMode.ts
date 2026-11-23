@@ -373,6 +373,7 @@ export function tableCellItems(view: EditorView, ctx: BlockEditContext, row: num
     // Une case ouverte s'enregistre d'abord, et le tableau pourra se redessiner.
     const open = document.activeElement as HTMLElement | null
     if (open?.classList?.contains('plume-table-cell')) open.blur()
+    clearTableSelection()
     const src = ctx.source()
     const out = next(src)
     if (out === src) return
@@ -402,6 +403,137 @@ export function tableCellItems(view: EditorView, ctx: BlockEditContext, row: num
   return items
 }
 
+// ── Selection d'une ligne ou d'une colonne ──────────────────────────────────
+
+/** La selection en cours (une seule dans la page) : l'enlever. */
+let clearSelection: (() => void) | null = null
+export function clearTableSelection(): void {
+  clearSelection?.()
+}
+
+/**
+ * Poignees d'un tableau rendu, comme dans Notion : au survol, une poignee a
+ * gauche de la ligne et une au-dessus de la colonne. Un clic selectionne la
+ * ligne ou la colonne et ouvre son menu ; Suppr ou Retour arriere la
+ * supprime, Alt + fleche la deplace, Echap deselectionne. Le focus reste
+ * dans la note : les touches sont lues tant que la selection dure.
+ */
+export function tableGrips(view: EditorView, box: HTMLElement, ctx: BlockEditContext, posOf: () => number | null): void {
+  const table = box.querySelector('table')
+  if (!table || ctx.readOnly) return
+  const grip = (kind: 'row' | 'col') => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.tabIndex = -1
+    b.className = `plume-table-grip plume-table-grip-${kind}`
+    b.dataset.testid = `table-${kind}-grip`
+    b.title = kind === 'row' ? 'Sélectionner la ligne' : 'Sélectionner la colonne'
+    b.textContent = kind === 'row' ? '⋮' : '⋯'
+    b.hidden = true
+    box.appendChild(b)
+    return b
+  }
+  const rowGrip = grip('row')
+  const colGrip = grip('col')
+  let hoverRow = -1
+  let hoverCol = -1
+
+  const place = (cell: HTMLTableCellElement) => {
+    const origin = box.getBoundingClientRect()
+    const left0 = origin.left + box.clientLeft
+    const top0 = origin.top + box.clientTop
+    const t = table.getBoundingClientRect()
+    const r = (cell.parentElement as HTMLTableRowElement).getBoundingClientRect()
+    const c = cell.getBoundingClientRect()
+    hoverRow = (cell.parentElement as HTMLTableRowElement).rowIndex
+    hoverCol = cell.cellIndex
+    rowGrip.style.left = `${t.left - left0 - 8}px`
+    rowGrip.style.top = `${r.top - top0 + r.height / 2 - 9}px`
+    colGrip.style.left = `${c.left - left0 + c.width / 2 - 9}px`
+    colGrip.style.top = `${t.top - top0 - 8}px`
+    rowGrip.hidden = false
+    colGrip.hidden = false
+  }
+  box.addEventListener('mouseover', e => {
+    const cell = (e.target as Element).closest?.('td, th') as HTMLTableCellElement | null
+    if (cell && table.contains(cell)) place(cell)
+  })
+  box.addEventListener('mouseleave', () => {
+    if (box.classList.contains('plume-table-selecting')) return
+    rowGrip.hidden = true
+    colGrip.hidden = true
+  })
+
+  const cellsOf = (kind: 'row' | 'col', index: number): HTMLElement[] =>
+    kind === 'row'
+      ? Array.from(table.rows[index]?.cells ?? [])
+      : Array.from(table.rows).map(r => r.cells[index]).filter((c): c is HTMLTableCellElement => !!c)
+
+  const select = (kind: 'row' | 'col', index: number, at: HTMLElement) => {
+    clearTableSelection()
+    const cells = cellsOf(kind, index)
+    for (const c of cells) c.classList.add('plume-table-selected')
+    box.classList.add('plume-table-selecting')
+    const run = (next: (src: string) => string) => {
+      clear()
+      closeBlockMenu()
+      const src = ctx.source()
+      const out = next(src)
+      if (out !== src) ctx.replace(out)
+    }
+    const remove = () => run(src => (kind === 'row' ? deleteTableRow(src, index) : deleteTableColumn(src, index)))
+    const key = (e: KeyboardEvent) => {
+      let handled = true
+      if (e.key === 'Delete' || e.key === 'Backspace') remove()
+      else if (e.key === 'Escape') { clear(); closeBlockMenu() }
+      else if (e.altKey && kind === 'row' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) run(src => moveTableRow(src, index, e.key === 'ArrowUp' ? -1 : 1))
+      else if (e.altKey && kind === 'col' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) run(src => moveTableColumn(src, index, e.key === 'ArrowLeft' ? -1 : 1))
+      else handled = false
+      if (handled) { e.preventDefault(); e.stopPropagation() }
+      else if (!e.altKey && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) clear()
+    }
+    // Un clic ailleurs (pas dans le menu) deselectionne.
+    const away = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      if (t?.closest?.('.plume-block-menu') || t === rowGrip || t === colGrip) return
+      clear()
+    }
+    const clear = () => {
+      for (const c of cells) c.classList.remove('plume-table-selected')
+      box.classList.remove('plume-table-selecting')
+      window.removeEventListener('keydown', key, true)
+      window.removeEventListener('mousedown', away, true)
+      if (clearSelection === clear) clearSelection = null
+    }
+    clearSelection = clear
+    window.addEventListener('keydown', key, true)
+    window.addEventListener('mousedown', away, true)
+    // Le menu de la ligne ou de la colonne, sous la poignee.
+    const all = tableCellItems(view, ctx, kind === 'row' ? index : 1, kind === 'col' ? index : 0, posOf())
+    const mine: BlockMenuItem[] = all.filter(i => (kind === 'row' ? /^table-row/ : /^table-col|^table-widths/).test(i.id))
+      .map((i, n) => ({ ...i, separatorBefore: n > 0 && i.separatorBefore }))
+    if (kind === 'row' && index === 0) {
+      // L'en-tete : seulement une ligne dessous.
+      mine.splice(0, mine.length, ...all.filter(i => i.id === 'table-row-below'))
+    }
+    for (const item of mine) {
+      if (item.id === 'table-row-delete' || item.id === 'table-col-delete') item.label += ' (Suppr)'
+    }
+    const r = at.getBoundingClientRect()
+    if (mine.length) showBlockMenu(mine, r.left, r.bottom + 4)
+  }
+
+  for (const [b, kind] of [[rowGrip, 'row'], [colGrip, 'col']] as const) {
+    b.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.button !== 0) return
+      const index = kind === 'row' ? hoverRow : hoverCol
+      if (index >= 0) select(kind, index, b)
+    })
+  }
+}
+
 function caretAt(cell: HTMLElement, edge: 'start' | 'end'): boolean {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
@@ -415,8 +547,8 @@ function caretAt(cell: HTMLElement, edge: 'start' | 'end'): boolean {
 
 /**
  * Tableau rendu dont chaque case s'edite sur place, comme dans Obsidian :
- * un clic ouvre la case en texte, Tab passe a la suivante, Entree valide,
- * Echap annule. Les fleches vont de case en case et sortent du tableau par
+ * un clic ouvre la case en texte, Tab passe a la suivante, Entree ajoute
+ * une ligne dessous, Echap annule. Les fleches vont de case en case et sortent du tableau par
  * le haut ou le bas ; Alt + fleche deplace la ligne ou la colonne.
  */
 export function editableTable(view: EditorView, html: string, ctx: BlockEditContext, hooks?: HookRegistry, text = ''): HTMLElement {
@@ -581,10 +713,8 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
       finish(cell, true, next)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      // Entree : la case du dessous, comme un tableur.
-      const below = cellAt(row + 1, col)
-      if (below) div.dataset.plumeEditing = '1'
-      finish(cell, true, below)
+      // Entree : une nouvelle ligne sous celle-ci, on ecrit dans sa premiere case.
+      restructure(cell, src => insertTableRow(src, row, true), { row: row + 1, col: 0 })
     } else if (e.key === 'Escape') {
       e.preventDefault()
       finish(cell, false, null)
@@ -592,32 +722,8 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     }
   })
 
-  // « ⋯ » sur la case survolee : le menu de sa ligne et de sa colonne.
-  const more = document.createElement('button')
-  more.type = 'button'
-  more.className = 'plume-table-more'
-  more.dataset.testid = 'table-cell-menu'
-  more.title = 'Ligne et colonne'
-  more.textContent = '⋯'
-  more.hidden = true
-  let target: HTMLElement | null = null
-  div.addEventListener('mouseover', e => {
-    const cell = (e.target as Element).closest?.('.plume-table-cell') as HTMLElement | null
-    if (!cell || cell === target || !div.contains(cell)) return
-    target = cell
-    more.hidden = false
-    more.style.top = `${cell.offsetTop + 2}px`
-    more.style.left = `${cell.offsetLeft + cell.offsetWidth - 20}px`
-  })
-  div.addEventListener('mouseleave', () => { more.hidden = true; target = null })
-  more.addEventListener('mousedown', e => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!target) return
-    const r = more.getBoundingClientRect()
-    showBlockMenu(tableCellItems(view, ctx, Number(target.dataset.row), Number(target.dataset.col), posOf()), r.left, r.bottom + 2)
-  })
-  div.appendChild(more)
+  // Poignees de ligne et de colonne : selectionner, puis supprimer ou deplacer.
+  tableGrips(view, div, ctx, posOf)
 
   // Redessine apres un deplacement : la case deplacee se rouvre.
   requestAnimationFrame(() => {

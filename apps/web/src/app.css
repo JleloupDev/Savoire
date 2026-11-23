@@ -451,6 +451,9 @@ button:active { filter: brightness(0.84); }
   padding: 6px 10px;
   text-align: left;
 }
+/* Une case vide garde la hauteur d'une ligne de texte : une ligne neuve n'est pas plate. */
+.vault-rendered-block th:empty::before,
+.vault-rendered-block td:empty::before { content: '\00a0'; }
 .vault-rendered-block th {
   background: var(--bg-elevated);
   color: var(--text-muted);

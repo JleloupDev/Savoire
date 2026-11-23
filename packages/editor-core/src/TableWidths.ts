@@ -7,6 +7,7 @@
 // reste un tableau Markdown ordinaire. Des tirets tous egaux (`|---|---|`) :
 // pas de largeur imposee, le tableau se regle seul.
 
+import { BLOCK_DESTROY_EVENT } from '@savoire/plugin-api'
 import { tableCells, tableLine } from './TableRows'
 
 /** Nombre de tirets pour toute la largeur du tableau. */
@@ -101,14 +102,20 @@ export function tableResizers(box: HTMLElement, commit: (percents: number[] | nu
   if (!table || !head || head.cells.length < 2) return
   const bars: HTMLElement[] = []
   const layout = () => {
+    if (!box.isConnected) return
+    // Les barres se placent par rapport au bord interieur de la boite (sa bordure exclue).
     const origin = box.getBoundingClientRect()
+    const left0 = origin.left + box.clientLeft
+    const top0 = origin.top + box.clientTop
     const rect = table.getBoundingClientRect()
     const cells = Array.from(head.cells)
+    const headHeight = head.getBoundingClientRect().height
     bars.forEach((bar, i) => {
       const edge = cells[i].getBoundingClientRect().right
-      bar.style.left = `${edge - origin.left - 4}px`
-      bar.style.top = `${rect.top - origin.top}px`
+      bar.style.left = `${edge - left0 - 4}px`
+      bar.style.top = `${rect.top - top0}px`
       bar.style.height = `${rect.height}px`
+      bar.style.setProperty('--plume-head-height', `${headHeight}px`)
     })
   }
   for (let i = 0; i < head.cells.length - 1; i++) {
@@ -155,7 +162,22 @@ export function tableResizers(box: HTMLElement, commit: (percents: number[] | nu
     bars.push(bar)
     box.appendChild(bar)
   }
+  // Recalculees quand le tableau change de taille (polices chargees, panneau
+  // elargi...) et a l'arrivee de la souris : elles restent sur les bords.
+  box.addEventListener('pointerenter', layout)
   box.addEventListener('mouseenter', layout)
+  if (typeof ResizeObserver !== 'undefined') {
+    // Le tableau quitte la page (redessine) : on cesse de le suivre.
+    let seen = false
+    const watch = new ResizeObserver(() => {
+      if (box.isConnected) { seen = true; layout() } else if (seen) watch.disconnect()
+    })
+    // Les bords bougent aussi quand seules les colonnes changent (polices
+    // chargees) : chaque case de l'en-tete est suivie.
+    watch.observe(table)
+    for (const cell of Array.from(head.cells)) watch.observe(cell)
+    box.addEventListener(BLOCK_DESTROY_EVENT, () => watch.disconnect())
+  }
   requestAnimationFrame(layout)
 }
 

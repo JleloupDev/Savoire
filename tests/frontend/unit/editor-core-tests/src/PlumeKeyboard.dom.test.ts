@@ -190,3 +190,70 @@ describe('Les fleches entrent dans un tableau (mode classique)', () => {
     view.destroy()
   })
 })
+
+describe('Entree dans un tableau : une nouvelle ligne', () => {
+  const cell = () => document.activeElement as HTMLElement
+
+  it('mode classique : Entree dans une case ajoute une ligne dessous, on ecrit dans sa premiere case', async () => {
+    const doc = '| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\nfin'
+    const view = setup(doc, doc.length, 'classic')
+    noteKey(view, 'ArrowUp')
+    noteKey(view, 'ArrowUp')
+    fieldKey('ArrowUp') // ligne « 1 | 2 »
+    fieldKey('ArrowRight') // fin de case : la case suivante
+    fieldKey('Enter')
+    expect(view.state.doc.toString()).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |\n|  |  |\n| 3 | 4 |\n\nfin')
+    await new Promise(r => requestAnimationFrame(r))
+    expect([cell().dataset.row, cell().dataset.col]).toEqual(['2', '0'])
+    view.destroy()
+  })
+
+  it('texte brut : Entree sur une ligne du tableau en ajoute une (sous les tirets depuis l\'en-tete)', () => {
+    const doc = '| a | b |\n|---|---|\n| 1 | 2 |'
+    const view = setup(doc, doc.indexOf('1'), 'power')
+    noteKey(view, 'Enter')
+    expect(view.state.doc.toString()).toBe('| a | b |\n|---|---|\n| 1 | 2 |\n|   |   |')
+    expect(view.state.selection.main.head).toBe(view.state.doc.line(4).from + 2)
+    view.dispatch({ selection: { anchor: 3 } })
+    noteKey(view, 'Enter')
+    expect(view.state.doc.line(3).text).toBe('|   |   |')
+    view.destroy()
+  })
+})
+
+describe('Selectionner une ligne ou une colonne', () => {
+  const DOC = 'avant\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\nfin'
+  const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+
+  it.each(['power', 'classic'] as const)('mode %s : la poignee selectionne, Suppr supprime', mode => {
+    const view = setup(DOC, 0, mode)
+    const cellOf = (text: string) => Array.from(view.contentDOM.querySelectorAll('td, th')).find(c => c.textContent === text)!
+    // Survol de « 3 », puis la poignee de sa ligne.
+    cellOf('3').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    view.contentDOM.querySelector('[data-testid="table-row-grip"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(Array.from(view.contentDOM.querySelectorAll('.plume-table-selected')).map(c => c.textContent)).toEqual(['3', '4'])
+    expect(document.querySelector('[data-testid="block-menu-table-row-delete"]')?.textContent).toContain('Supprimer la ligne')
+    press('Delete')
+    expect(view.state.doc.toString()).toBe('avant\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nfin')
+    expect(document.querySelector('[data-testid="block-menu"]')).toBeNull()
+
+    // Une colonne, avec Retour arriere.
+    cellOf('b').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    view.contentDOM.querySelector('[data-testid="table-col-grip"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(Array.from(view.contentDOM.querySelectorAll('.plume-table-selected')).map(c => c.textContent)).toEqual(['b', '2'])
+    press('Backspace')
+    expect(view.state.doc.toString()).toBe('avant\n\n| a |\n| --- |\n| 1 |\n\nfin')
+    view.destroy()
+  })
+
+  it('Echap deselectionne, rien n\'est supprime', () => {
+    const view = setup(DOC, 0, 'classic')
+    view.contentDOM.querySelector('td')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    view.contentDOM.querySelector('[data-testid="table-row-grip"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    press('Escape')
+    press('Delete')
+    expect(view.contentDOM.querySelectorAll('.plume-table-selected')).toHaveLength(0)
+    expect(view.state.doc.toString()).toBe(DOC)
+    view.destroy()
+  })
+})

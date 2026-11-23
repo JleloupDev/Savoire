@@ -161,3 +161,27 @@ export function moveTableColumn(source: string, col: number, dir: 1 | -1): strin
   for (const r of [g.header, g.align, ...g.body]) [r[col], r[to]] = [r[to], r[col]]
   return textOf(g)
 }
+
+/**
+ * Entree sur une ligne d'un tableau en texte brut : une ligne vide dessous
+ * (sous les tirets si l'on est sur l'en-tete), le curseur dans sa premiere
+ * case. Null hors d'un tableau.
+ */
+export function newTableRowBelow(state: EditorState, pos: number): TransactionSpec | null {
+  const table = tableAt(state, pos)
+  if (!table) return null
+  const doc = state.doc
+  let line = doc.lineAt(pos)
+  const first = doc.lineAt(table.from)
+  const last = doc.lineAt(table.to)
+  if (line.number < first.number || line.number > last.number) return null
+  // L'en-tete ou les tirets : la nouvelle ligne va sous les tirets.
+  if (line.number <= first.number + 1 && first.number + 1 <= last.number) line = doc.line(first.number + 1)
+  const row = '|' + '   |'.repeat(tableColumnCount(first.text))
+  return {
+    changes: { from: line.to, insert: `\n${row}` },
+    selection: { anchor: line.to + 3 },
+    scrollIntoView: true,
+    userEvent: 'input',
+  }
+}

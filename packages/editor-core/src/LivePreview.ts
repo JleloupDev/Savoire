@@ -30,13 +30,13 @@ import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, 
 import { findColumnsBlocks } from './Columns'
 import {
   ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
-  isClassicEffect, locateInColumns, tableCellItems, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
+  isClassicEffect, locateInColumns, tableCellItems, tableGrips, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
 } from './ClassicMode'
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
-import { appendTableRow, tableAt, tableColumnCount } from './TableRows'
+import { appendTableRow, newTableRowBelow, tableAt, tableColumnCount } from './TableRows'
 import { applyTableWidths, tableResizers, withTableWidths, withoutTableWidths } from './TableWidths'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
 import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
@@ -300,6 +300,12 @@ class TableWidget extends MarkdownWidget {
       const next = percents ? withTableWidths(src, percents) : withoutTableWidths(src)
       if (next !== src) view.dispatch({ changes: { from: t.from, to: t.to, insert: next }, userEvent: 'input' })
     })
+    // Poignees de ligne et de colonne, sur le tableau tel qu'il est dans la note.
+    const posOf = (): number | null => { try { return view.posAtDOM(div) } catch { return null } }
+    tableGrips(view, div, editContext(view, { editorView: view }, () => {
+      const pos = posOf()
+      return pos === null ? null : tableAt(view.state, pos)
+    }), () => null)
     const bar = document.createElement('div')
     bar.className = 'plume-table-actions'
     const button = (label: string, testid: string, run: (pos: number) => void) => {
@@ -986,6 +992,18 @@ const typingAfterBlock = EditorView.inputHandler.of((view, from, to, text) => {
 const blockquoteExitKeymap = Prec.highest(
   keymap.of([
     {
+      // Entree sur une ligne de tableau en texte brut : une nouvelle ligne du tableau.
+      key: 'Enter',
+      run(view) {
+        const sel = view.state.selection.main
+        if (!sel.empty || view.state.readOnly) return false
+        const tr = newTableRowBelow(view.state, sel.head)
+        if (!tr) return false
+        view.dispatch(tr)
+        return true
+      },
+    },
+    {
       key: 'Enter',
       run(view) {
         const { from, to } = view.state.selection.main
@@ -1252,12 +1270,6 @@ function classicExtensions(
       },
       '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
       '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
-      '.plume-table-more': {
-        position: 'absolute', width: '18px', height: '18px', padding: '0', lineHeight: '16px', zIndex: '2',
-        border: '1px solid var(--border, #3d3d5c)', borderRadius: '4px', cursor: 'pointer',
-        background: 'var(--bg-elevated, #252535)', color: 'var(--text-muted, #9ca3af)', fontSize: '12px',
-      },
-      '.plume-table-more:hover': { color: 'var(--text, #cdd6f4)' },
       '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em', position: 'relative' },
       '.plume-column:hover': { background: 'var(--bg-hover, rgba(127,127,127,0.06))' },
       '.plume-column-resizer': {
@@ -1486,10 +1498,29 @@ export function createLivePreviewExtension(
       },
       '.plume-table-actions': { display: 'flex', gap: '6px' },
       '.plume-table-object, .plume-table-box': { position: 'relative' },
+      '.plume-table-grip': {
+        position: 'absolute', zIndex: '3', padding: '0', lineHeight: '1', fontSize: '12px', cursor: 'pointer',
+        border: '1px solid var(--border, #3d3d5c)', borderRadius: '4px',
+        background: 'var(--bg-elevated, #252535)', color: 'var(--text-muted, #9ca3af)',
+      },
+      '.plume-table-grip-row': { width: '16px', height: '18px' },
+      '.plume-table-grip-col': { width: '18px', height: '16px' },
+      '.plume-table-grip:hover': { color: 'var(--text, #cdd6f4)', borderColor: 'var(--accent, #7c3aed)' },
+      '.plume-table-selected': {
+        background: 'color-mix(in srgb, var(--accent, #7c3aed) 14%, transparent) !important',
+        boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--accent, #7c3aed) 55%, transparent)',
+      },
       '.plume-table-resizer': {
         position: 'absolute', width: '8px', cursor: 'col-resize', zIndex: '2', borderRadius: '4px', touchAction: 'none',
       },
       '.plume-table-resizer:hover, .plume-table-resizing .plume-table-resizer:active': { background: 'var(--accent, #7c3aed)', opacity: '0.35' },
+      // Au survol du tableau, un trait sur chaque bord de l'en-tete montre ou tirer.
+      '.plume-table-resizer::after': {
+        content: '""', position: 'absolute', left: '3px', top: '4px', width: '2px',
+        height: 'calc(var(--plume-head-height, 1.6em) - 8px)', borderRadius: '1px',
+        background: 'var(--accent, #7c3aed)', opacity: '0', transition: 'opacity .12s',
+      },
+      '.plume-table-box:hover .plume-table-resizer::after, .plume-table-object:hover .plume-table-resizer::after': { opacity: '0.5' },
       '.plume-table-resizing': { cursor: 'col-resize', userSelect: 'none' },
       '.cm-lineNumbers .cm-gutterElement.plume-gutter-heading': {
         display: 'flex',
