@@ -435,6 +435,27 @@ export function tableGrips(view: EditorView, box: HTMLElement, ctx: BlockEditCon
   }
   const rowGrip = grip('row')
   const colGrip = grip('col')
+  // « + » sur le bord gauche, entre deux lignes : une ligne dessous. Sur le
+  // bord du haut, entre deux colonnes : une colonne a droite. Au survol du
+  // « + », un trait montre ou elle arrivera.
+  const plus = (kind: 'row' | 'col') => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.tabIndex = -1
+    b.className = `plume-table-plus plume-table-plus-${kind}`
+    b.dataset.testid = `table-${kind}-plus`
+    b.title = kind === 'row' ? 'Ajouter une ligne ici' : 'Ajouter une colonne ici'
+    b.textContent = '+'
+    b.hidden = true
+    box.appendChild(b)
+    return b
+  }
+  const rowPlus = plus('row')
+  const colPlus = plus('col')
+  const line = document.createElement('div')
+  line.className = 'plume-table-insert-line'
+  line.hidden = true
+  box.appendChild(line)
   let hoverRow = -1
   let hoverCol = -1
 
@@ -451,8 +472,30 @@ export function tableGrips(view: EditorView, box: HTMLElement, ctx: BlockEditCon
     rowGrip.style.top = `${r.top - top0 + r.height / 2 - 9}px`
     colGrip.style.left = `${c.left - left0 + c.width / 2 - 9}px`
     colGrip.style.top = `${t.top - top0 - 8}px`
-    rowGrip.hidden = false
-    colGrip.hidden = false
+    rowPlus.style.left = `${t.left - left0 - 8}px`
+    rowPlus.style.top = `${r.bottom - top0 - 8}px`
+    colPlus.style.left = `${c.right - left0 - 8}px`
+    colPlus.style.top = `${t.top - top0 - 8}px`
+    // Le trait d'insertion, prepare pour le survol du « + ».
+    rowPlus.dataset.line = `${t.left - left0}|${r.bottom - top0 - 1}|${t.width}|2`
+    colPlus.dataset.line = `${c.right - left0 - 1}|${t.top - top0}|2|${t.height}`
+    for (const b of [rowGrip, colGrip, rowPlus, colPlus]) b.hidden = false
+  }
+  for (const b of [rowPlus, colPlus]) {
+    b.addEventListener('mouseenter', () => {
+      const [left, top, width, height] = (b.dataset.line ?? '').split('|')
+      Object.assign(line.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` })
+      line.hidden = false
+    })
+    b.addEventListener('mouseleave', () => { line.hidden = true })
+    b.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.button !== 0 || hoverRow < 0 || hoverCol < 0) return
+      line.hidden = true
+      const id = b === rowPlus ? 'table-row-below' : 'table-col-right'
+      tableCellItems(view, ctx, hoverRow, hoverCol, posOf()).find(i => i.id === id)?.run()
+    })
   }
   box.addEventListener('mouseover', e => {
     const cell = (e.target as Element).closest?.('td, th') as HTMLTableCellElement | null
@@ -460,8 +503,7 @@ export function tableGrips(view: EditorView, box: HTMLElement, ctx: BlockEditCon
   })
   box.addEventListener('mouseleave', () => {
     if (box.classList.contains('plume-table-selecting')) return
-    rowGrip.hidden = true
-    colGrip.hidden = true
+    for (const b of [rowGrip, colGrip, rowPlus, colPlus, line]) b.hidden = true
   })
 
   const cellsOf = (kind: 'row' | 'col', index: number): HTMLElement[] =>

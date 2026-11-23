@@ -29,14 +29,14 @@ import type { BlockRegistry, BlockContext, BlockEditContext, BlockEnterDetail, B
 import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, type FragmentOptions } from './NoteFragment'
 import { findColumnsBlocks } from './Columns'
 import {
-  ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
+  ObjectWidget, SourceDoneWidget, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
   isClassicEffect, locateInColumns, tableCellItems, tableGrips, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
 } from './ClassicMode'
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
-import { appendTableRow, newTableRowBelow, tableAt, tableColumnCount } from './TableRows'
+import { newTableRowBelow, tableAt } from './TableRows'
 import { applyTableWidths, tableResizers, withTableWidths, withoutTableWidths } from './TableWidths'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
 import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
@@ -306,33 +306,6 @@ class TableWidget extends MarkdownWidget {
       const pos = posOf()
       return pos === null ? null : tableAt(view.state, pos)
     }), () => null)
-    const bar = document.createElement('div')
-    bar.className = 'plume-table-actions'
-    const button = (label: string, testid: string, run: (pos: number) => void) => {
-      const b = document.createElement('button')
-      b.type = 'button'
-      b.className = 'vault-table-add'
-      b.dataset.testid = testid
-      b.textContent = label
-      b.addEventListener('mousedown', e => {
-        e.preventDefault()
-        e.stopPropagation()
-        let pos: number
-        try { pos = view.posAtDOM(div) } catch { return }
-        run(pos)
-      })
-      bar.appendChild(b)
-    }
-    button('+ Nouvelle ligne', 'table-add-row', pos => {
-      const tr = appendTableRow(view.state, pos)
-      if (tr) { view.dispatch(tr); view.focus() }
-    })
-    button('+ Colonne', 'table-add-column', pos => {
-      const t = tableAt(view.state, pos)
-      if (!t) return
-      view.dispatch({ changes: { from: t.from, to: t.to, insert: appendTableColumnText(view.state.sliceDoc(t.from, t.to)) }, userEvent: 'input' })
-    })
-    div.appendChild(bar)
     return div
   }
 }
@@ -989,26 +962,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   function tableObject(from: number, to: number, text: string): void {
     pushObject(from, to, `table|${text}`, (view, edit) => {
       const html = marked.parse(hooks ? hooks.runBeforeParseSync(text) : text, { breaks: true }) as string
-      const el = editableTable(view, html, edit, hooks, text)
-      if (edit.readOnly) return el
-      const bar = document.createElement('div')
-      bar.className = 'plume-table-actions'
-      const button = (label: string, testid: string, run: () => void) => {
-        const b = document.createElement('button')
-        b.type = 'button'
-        b.className = 'vault-table-add'
-        b.dataset.testid = testid
-        b.textContent = label
-        b.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); run() })
-        bar.appendChild(b)
-      }
-      button('+ Nouvelle ligne', 'table-add-row', () => {
-        const src = edit.source()
-        edit.replace(`${src}\n|${'   |'.repeat(tableColumnCount(src.split('\n')[0] ?? ''))}`)
-      })
-      button('+ Colonne', 'table-add-column', () => edit.replace(appendTableColumnText(edit.source())))
-      el.appendChild(bar)
-      return el
+      return editableTable(view, html, edit, hooks, text)
     }, () => markdownElement(text, hooks))
   }
 
@@ -1638,7 +1592,6 @@ export function createLivePreviewExtension(
         background: 'var(--bg-code, rgba(127,127,127,0.12))', borderRadius: '3px', padding: '0 2px',
       },
       '.plume-md-link': { color: 'var(--accent, #7c3aed)', textDecoration: 'underline', textUnderlineOffset: '2px' },
-      '.plume-table-actions': { display: 'flex', gap: '6px' },
       '.plume-table-object, .plume-table-box': { position: 'relative' },
       '.plume-table-grip': {
         position: 'absolute', zIndex: '3', padding: '0', lineHeight: '1', fontSize: '12px', cursor: 'pointer',
@@ -1648,6 +1601,15 @@ export function createLivePreviewExtension(
       '.plume-table-grip-row': { width: '16px', height: '18px' },
       '.plume-table-grip-col': { width: '18px', height: '16px' },
       '.plume-table-grip:hover': { color: 'var(--text, #cdd6f4)', borderColor: 'var(--accent, #7c3aed)' },
+      '.plume-table-plus': {
+        position: 'absolute', zIndex: '4', width: '16px', height: '16px', padding: '0', lineHeight: '14px', fontSize: '13px',
+        cursor: 'pointer', borderRadius: '50%', border: '1px solid var(--border, #3d3d5c)',
+        background: 'var(--bg-elevated, #252535)', color: 'var(--text-muted, #9ca3af)',
+      },
+      '.plume-table-plus:hover': { background: 'var(--accent, #7c3aed)', borderColor: 'var(--accent, #7c3aed)', color: '#fff' },
+      '.plume-table-insert-line': {
+        position: 'absolute', zIndex: '3', pointerEvents: 'none', borderRadius: '1px', background: 'var(--accent, #7c3aed)',
+      },
       '.plume-table-selected': {
         background: 'color-mix(in srgb, var(--accent, #7c3aed) 14%, transparent) !important',
         boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--accent, #7c3aed) 55%, transparent)',

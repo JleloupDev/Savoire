@@ -257,3 +257,23 @@ describe('Selectionner une ligne ou une colonne', () => {
     view.destroy()
   })
 })
+
+describe('Le « + » d\'un tableau', () => {
+  const TABLE = 'avant\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nfin'
+  const plus = (view: EditorView, kind: 'row' | 'col', cellText: string) => {
+    const cell = Array.from(view.contentDOM.querySelectorAll('td, th')).find(c => c.textContent === cellText)!
+    cell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    const b = view.contentDOM.querySelector(`[data-testid="table-${kind}-plus"]`) as HTMLElement
+    expect(b.hidden).toBe(false)
+    b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+  }
+
+  it.each(['power', 'classic'] as const)('mode %s : une ligne sous celle survolee, une colonne a droite', mode => {
+    const view = setup(TABLE, 0, mode)
+    plus(view, 'row', 'a')
+    expect(view.state.doc.toString()).toBe('avant\n\n| a | b |\n| --- | --- |\n|  |  |\n| 1 | 2 |\n\nfin')
+    plus(view, 'col', 'a')
+    expect(view.state.doc.toString().split('\n')[2]).toMatch(/^\| a \|\s+\| b \|$/)
+    view.destroy()
+  })
+})
