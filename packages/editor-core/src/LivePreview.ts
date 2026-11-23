@@ -851,6 +851,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
       }
       const build = (): HTMLElement => {
         const el = render()
+        el.classList.add('plume-line-wrap')
         if (isFolded) el.classList.add('plume-folded', 'vault-line-block')
         return el
       }
@@ -981,7 +982,11 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(
           Decoration.replace({
-            widget: node.type.name === 'Table' ? new TableWidget(html, text) : new MarkdownWidget(html, folded(node.from) ? 'plume-folded' : ''),
+            widget: node.type.name === 'Table' ? new TableWidget(html, text) : new MarkdownWidget(html, [
+              // Une ligne (paragraphe, titre) coupe comme sa ligne brute.
+              isSingleLine && (node.type.name === 'Paragraph' || HEADING_LINE_CLASSES[node.type.name]) ? 'plume-block-wrap' : '',
+              folded(node.from) ? 'plume-folded' : '',
+            ].filter(Boolean).join(' ')),
             block: true,
           }).range(node.from, node.to),
         )
@@ -1645,9 +1650,12 @@ export function createLivePreviewExtension(
         marginTop: '0 !important',
         marginBottom: '0 !important',
       },
-      '.plume-md-code': {
-        fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: '0.9em',
-        background: 'var(--bg-code, rgba(127,127,127,0.12))', borderRadius: '3px', padding: '0 2px',
+      // Le code d'une ligne brute a la meme boite que le code rendu
+      // (.vault-rendered-block code) : la ligne coupe au meme endroit.
+      '.plume-md-code, .vault-rendered-block :not(pre) > code': {
+        fontFamily: 'var(--font-code, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: '0.875em',
+        background: 'var(--bg-elevated, rgba(127,127,127,0.12))', borderRadius: '3px', padding: '1px 5px',
+        color: 'var(--color-code, inherit)',
       },
       '.plume-md-link': { color: 'var(--accent, #7c3aed)', textDecoration: 'underline', textUnderlineOffset: '2px' },
       '.plume-table-object, .plume-table-box': { position: 'relative' },
@@ -1756,6 +1764,15 @@ export function createLivePreviewExtension(
         margin: '0',
       },
       ...plumeColorTheme(),
+      // Une ligne rendue passe a la ligne au meme mot que la ligne brute
+      // (CodeMirror : break-spaces) : l'espace apres le dernier mot compte.
+      // Sinon, entrer dans la ligne deplacait parfois un mot sur la rangee
+      // suivante, et tout ce qui suivait.
+      '.plume-line-wrap, .vault-paragraph-line > p, .plume-block-wrap > *': {
+        whiteSpace: 'break-spaces',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+      },
       // Lignes de liste et de citation rendues une a une.
       '.vault-line-block': {
         padding: '0 2px 0 6px',

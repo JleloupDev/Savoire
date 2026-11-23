@@ -27,7 +27,8 @@ const ITEM_RE = /^(\s*)([-*+]|\d+[.)])(\s+)(?:\[([ xX])\]\s+)?(.*)$/
 function renderListLine(line: BlockLine, ctx: BlockContext, inline: (md: string) => string): HTMLElement {
   const div = document.createElement('div')
   div.className = 'vault-rendered-block'
-  div.style.cssText = 'position:relative;margin:0;padding:0.075em 4px;line-height:1.5'
+  // A droite, la marge d'une ligne brute (2px) : la ligne coupe au meme endroit en edition.
+  div.style.cssText = 'position:relative;margin:0;padding:0.075em 2px 0.075em 4px;line-height:1.5'
   const m = ITEM_RE.exec(line.text)
   // Memes retraits que le bloc entier : liste a 2em par niveau, texte a
   // 1.4em de la puce. Une suite d'element s'aligne sur le texte.
