@@ -68,6 +68,16 @@ export function tableLine(cells: readonly string[]): string {
   return `| ${cells.join(' | ')} |`
 }
 
+/**
+ * Les tirets d'une nouvelle colonne : la largeur moyenne si le tableau a des
+ * largeurs (tirets inegaux, voir TableWidths), sinon `---`.
+ */
+export function newColumnDelimiter(delimiters: readonly string[]): string {
+  const counts = delimiters.map(d => (d.match(/-/g) ?? []).length)
+  if (counts.length === 0 || counts.every(c => c === counts[0])) return '---'
+  return '-'.repeat(Math.max(3, Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)))
+}
+
 interface Grid { header: string[]; align: string[]; body: string[][] }
 
 function gridOf(source: string): Grid | null {
@@ -130,7 +140,7 @@ export function insertTableColumn(source: string, col: number, right: boolean): 
   if (!g) return source
   const at = Math.max(0, Math.min(g.header.length, right ? col + 1 : col))
   g.header.splice(at, 0, '')
-  g.align.splice(at, 0, '---')
+  g.align.splice(at, 0, newColumnDelimiter(g.align))
   for (const r of g.body) r.splice(at, 0, '')
   return textOf(g)
 }

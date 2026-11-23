@@ -37,6 +37,7 @@ import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdo
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
 import { appendTableRow, tableAt, tableColumnCount } from './TableRows'
+import { applyTableWidths, tableResizers, withTableWidths, withoutTableWidths } from './TableWidths'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
 import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
 
@@ -276,13 +277,29 @@ class MarkdownWidget extends WidgetType {
  * clic : le widget n'a pas a connaitre ses bornes.
  */
 class TableWidget extends MarkdownWidget {
+  constructor(html: string, private readonly text: string) {
+    super(html)
+  }
+
   eq(other: MarkdownWidget): boolean {
-    return other instanceof TableWidget && super.eq(other)
+    // La largeur des colonnes ne change pas le HTML : le texte compte.
+    return other instanceof TableWidget && other.text === this.text && super.eq(other)
   }
 
   toDOM(view?: EditorView): HTMLElement {
     const div = super.toDOM()
+    applyTableWidths(div, this.text)
     if (!view || view.state.readOnly) return div
+    div.classList.add('plume-table-box')
+    tableResizers(div, percents => {
+      let pos: number
+      try { pos = view.posAtDOM(div) } catch { return }
+      const t = tableAt(view.state, pos)
+      if (!t) return
+      const src = view.state.sliceDoc(t.from, t.to)
+      const next = percents ? withTableWidths(src, percents) : withoutTableWidths(src)
+      if (next !== src) view.dispatch({ changes: { from: t.from, to: t.to, insert: next }, userEvent: 'input' })
+    })
     const bar = document.createElement('div')
     bar.className = 'plume-table-actions'
     const button = (label: string, testid: string, run: (pos: number) => void) => {
@@ -814,7 +831,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         const html = marked.parse(preprocessed, { breaks: true }) as string
         decorations.push(
           Decoration.replace({
-            widget: node.type.name === 'Table' ? new TableWidget(html) : new MarkdownWidget(html, folded(node.from) ? 'plume-folded' : ''),
+            widget: node.type.name === 'Table' ? new TableWidget(html, text) : new MarkdownWidget(html, folded(node.from) ? 'plume-folded' : ''),
             block: true,
           }).range(node.from, node.to),
         )
@@ -830,7 +847,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   function tableObject(from: number, to: number, text: string): void {
     pushObject(from, to, `table|${text}`, (view, edit) => {
       const html = marked.parse(hooks ? hooks.runBeforeParseSync(text) : text, { breaks: true }) as string
-      const el = editableTable(view, html, edit, hooks)
+      const el = editableTable(view, html, edit, hooks, text)
       if (edit.readOnly) return el
       const bar = document.createElement('div')
       bar.className = 'plume-table-actions'
@@ -1235,7 +1252,6 @@ function classicExtensions(
       },
       '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
       '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
-      '.plume-table-object': { position: 'relative' },
       '.plume-table-more': {
         position: 'absolute', width: '18px', height: '18px', padding: '0', lineHeight: '16px', zIndex: '2',
         border: '1px solid var(--border, #3d3d5c)', borderRadius: '4px', cursor: 'pointer',
@@ -1469,6 +1485,12 @@ export function createLivePreviewExtension(
         marginBottom: '0 !important',
       },
       '.plume-table-actions': { display: 'flex', gap: '6px' },
+      '.plume-table-object, .plume-table-box': { position: 'relative' },
+      '.plume-table-resizer': {
+        position: 'absolute', width: '8px', cursor: 'col-resize', zIndex: '2', borderRadius: '4px', touchAction: 'none',
+      },
+      '.plume-table-resizer:hover, .plume-table-resizing .plume-table-resizer:active': { background: 'var(--accent, #7c3aed)', opacity: '0.35' },
+      '.plume-table-resizing': { cursor: 'col-resize', userSelect: 'none' },
       '.cm-lineNumbers .cm-gutterElement.plume-gutter-heading': {
         display: 'flex',
         alignItems: 'center',

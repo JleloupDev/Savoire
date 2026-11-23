@@ -15,8 +15,9 @@ import type { BlockContext, BlockEditContext, BlockEnterDetail, BlockMenuItem, H
 import { findColumnsBlocks, linesOf, markdownUnits, modelOf, serializeModel, setColumnText, type ColumnsBlock } from './Columns'
 import { columnContent, columnsElement, type FragmentOptions } from './NoteFragment'
 import {
-  deleteTableColumn, deleteTableRow, insertTableColumn, insertTableRow, moveTableColumn, moveTableRow, tableCells, tableLine, tableSize,
+  deleteTableColumn, deleteTableRow, insertTableColumn, insertTableRow, moveTableColumn, moveTableRow, newColumnDelimiter, tableCells, tableLine, tableSize,
 } from './TableRows'
+import { applyTableWidths, tableResizers, tableWidthsIn, toPercents, withTableWidths, withoutTableWidths } from './TableWidths'
 
 export interface BlockRange { from: number; to: number }
 
@@ -338,10 +339,12 @@ export function setTableCell(source: string, row: number, col: number, value: st
 
 /** Le tableau avec une colonne vide de plus, a droite. */
 export function appendTableColumnText(source: string): string {
-  return source.split('\n').map((line, i) => {
+  const lines = source.split('\n')
+  const dashes = newColumnDelimiter(tableCells(lines[1] ?? ''))
+  return lines.map((line, i) => {
     if (!line.trim()) return line
     const cells = tableCells(line)
-    cells.push(i === 1 ? '---' : '')
+    cells.push(i === 1 ? dashes : '')
     return tableLine(cells)
   }).join('\n')
 }
@@ -391,6 +394,9 @@ export function tableCellItems(view: EditorView, ctx: BlockEditContext, row: num
     if (col > 0) items.push({ id: 'table-col-move-left', label: 'Déplacer la colonne à gauche (Alt+←)', separatorBefore: first, run: apply(s => moveTableColumn(s, col, -1)) })
     if (col < cols - 1) items.push({ id: 'table-col-move-right', label: 'Déplacer la colonne à droite (Alt+→)', separatorBefore: first && col === 0, run: apply(s => moveTableColumn(s, col, 1)) })
   }
+  if (tableWidthsIn(ctx.source())[0]) {
+    items.push({ id: 'table-widths-auto', label: 'Largeurs automatiques', separatorBefore: true, run: apply(s => withoutTableWidths(s)) })
+  }
   if (row >= 1) items.push({ id: 'table-row-delete', label: 'Supprimer la ligne', separatorBefore: true, run: apply(s => deleteTableRow(s, row)) })
   if (cols > 1) items.push({ id: 'table-col-delete', label: 'Supprimer la colonne', separatorBefore: row < 1, run: apply(s => deleteTableColumn(s, col)) })
   return items
@@ -413,12 +419,18 @@ function caretAt(cell: HTMLElement, edge: 'start' | 'end'): boolean {
  * Echap annule. Les fleches vont de case en case et sortent du tableau par
  * le haut ou le bas ; Alt + fleche deplace la ligne ou la colonne.
  */
-export function editableTable(view: EditorView, html: string, ctx: BlockEditContext, hooks?: HookRegistry): HTMLElement {
+export function editableTable(view: EditorView, html: string, ctx: BlockEditContext, hooks?: HookRegistry, text = ''): HTMLElement {
   const div = document.createElement('div')
   div.className = 'vault-rendered-block plume-table-object'
   div.innerHTML = sanitizeHtml(html)
+  applyTableWidths(div, text)
   const table = div.querySelector('table')
   if (!table || ctx.readOnly) return div
+  // Les bords des colonnes se tirent ; la largeur s'ecrit dans les tirets.
+  tableResizers(div, percents => {
+    const src = ctx.source()
+    ctx.replace(percents ? withTableWidths(src, percents) : withoutTableWidths(src))
+  })
   const rows = Array.from(table.querySelectorAll('tr'))
   const cells: HTMLElement[] = []
   rows.forEach((tr, r) => {
@@ -743,17 +755,7 @@ export function locateInColumns(view: EditorView, el: HTMLElement): { from: numb
 
 // ── Largeur des colonnes ────────────────────────────────────────────────────
 
-/** Des largeurs relatives en pourcentages entiers, qui font 100. */
-export function toPercents(widths: readonly number[]): number[] {
-  const total = widths.reduce((a, b) => a + b, 0) || 1
-  const raw = widths.map(w => (w / total) * 100)
-  const out = raw.map(Math.floor)
-  // Le reste va aux colonnes les plus proches de l'entier superieur.
-  let rest = 100 - out.reduce((a, b) => a + b, 0)
-  const order = raw.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac)
-  for (const { i } of order) { if (rest <= 0) break; out[i]++; rest-- }
-  return out
-}
+export { toPercents }
 
 /** Le bloc avec de nouvelles largeurs (en %), colonnes vides comprises. */
 export function withColumnWidths(source: string, percents: readonly number[]): string {

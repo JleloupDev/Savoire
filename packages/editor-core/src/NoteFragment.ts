@@ -9,6 +9,7 @@ import { markdownLanguage } from '@codemirror/lang-markdown'
 import { marked } from 'marked'
 import { sanitizeHtml } from '@savoire/plugin-api'
 import type { BlockContext, BlockRegistry, HookRegistry } from '@savoire/plugin-api'
+import { applyTableWidths } from './TableWidths'
 import { columnWidths, findColumnsBlocks, linesOf, markdownUnits, type ColumnsBlock } from './Columns'
 
 export const BLOCK_NODES = new Set([
@@ -39,6 +40,8 @@ export function markdownBlock(text: string, hooks?: HookRegistry | null): HTMLEl
   div.className = 'vault-rendered-block'
   const pre = hooks ? hooks.runBeforeParseSync(text) : text
   div.innerHTML = sanitizeHtml(String(marked.parse(pre, { breaks: true })))
+  // La largeur des colonnes d'un tableau, ecrite dans ses tirets.
+  applyTableWidths(div, text)
   return div
 }
 
