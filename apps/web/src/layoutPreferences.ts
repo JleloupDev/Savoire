@@ -63,10 +63,11 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
   {
     id: 'notion',
     name: 'Notion',
-    description: 'Une seule colonne de pages à gauche. La note prend la place. Pas de rétroliens. Commentaires et versions à la demande. Pages par défaut.',
+    description: 'Une seule colonne de pages à gauche. La note prend la place. Pas de rétroliens. Révision et historique par leurs boutons, en haut. Pages par défaut.',
     // Les retroliens sont retires a part : remettre le groupe « Notes » ne
-    // les ramene pas.
-    config: { hidden: ['notes-tools', 'backlinks', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null, defaultFileType: 'page' },
+    // les ramene pas. Revision et versions : retirees, ouvertes a la demande
+    // par les boutons de la barre du haut.
+    config: { hidden: ['notes-tools', 'backlinks', 'review', 'history', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null, defaultFileType: 'page' },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
@@ -92,8 +93,10 @@ const KEY = 'savoire-layout'
  * autres vues ; un reglage plus ancien les perd une fois (rajoutables).
  * 3 : la vue Notion retire les retroliens ; un reglage Notion plus ancien
  * les perd une fois (rajoutables).
+ * 4 : la vue Notion retire aussi la revision et les versions (boutons de la
+ * barre du haut) ; meme chose.
  */
-const VERSION = 3
+const VERSION = 4
 const listeners = new Set<() => void>()
 
 export function presetById(id: string): LayoutPreset {
@@ -122,6 +125,9 @@ function read(): LayoutPreferences {
     }
     if (v < 3 && preset.id === 'notion') {
       hidden = [...new Set([...hidden, 'backlinks'])]
+    }
+    if (v < 4 && preset.id === 'notion') {
+      hidden = [...new Set([...hidden, 'review', 'history'])]
     }
     return {
       presetId: preset.id,

@@ -89,6 +89,12 @@ interface DesktopAccountMenu {
   onDisconnect: () => void
 }
 
+/** Panneaux ouverts a la demande depuis la barre du haut (voir togglePanelButton). */
+const TOPBAR_PANELS: { id: string; label: string; icon: string }[] = [
+  { id: 'review', label: 'Révision', icon: 'message-square' },
+  { id: 'history', label: 'Historique', icon: 'history' },
+]
+
 const TOPBAR_BUTTON: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }
 const menuBtn: React.CSSProperties = { textAlign: 'left', padding: '5px 10px', border: 'none', borderRadius: 4, fontSize: '0.78rem', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }
 const menuHead: React.CSSProperties = { padding: '4px 10px 0', fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }
@@ -402,6 +408,14 @@ export function AppShell() {
   const [serverListError, setServerListError] = useState<string | null>(null)
 
   const [ribbonItems, setRibbonItems] = useState<RibbonItem[]>([])
+  // Panneaux retires par la disposition mais ouverts a la demande par un
+  // bouton de la barre du haut (Revision, Versions), comme dans Word. Ils
+  // ne rejoignent pas la barre d'icones ; le bouton les referme.
+  const revealedRef = useRef<Set<string>>(new Set())
+  const [revealed, setRevealed] = useState<string[]>([])
+  const applyHiddenPanels = (m: WorkspaceManagerImpl) =>
+    m.views.setHiddenIds(layoutPreferences().config.hidden.filter(id => !revealedRef.current.has(id)))
+  const ribbonOf = (m: WorkspaceManagerImpl) => m.getRibbonItems().filter(i => !revealedRef.current.has(i.id))
   const [activeViewId, setActiveViewId] = useState<string | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -647,7 +661,7 @@ export function AppShell() {
     const m = managerRef.current
     if (m) {
       m.syncPanels()
-      setRibbonItems(m.getRibbonItems())
+      setRibbonItems(ribbonOf(m))
       m.notifyVaultChange()
     }
     window.dispatchEvent(new Event('savoire-plugins-changed'))
@@ -658,16 +672,46 @@ export function AppShell() {
   // Les panneaux retires sont filtres avant la pose des panneaux, puis a
   // chaque changement dans les options.
   const onBeforeReadyWithLayout = useCallback(async (m: WorkspaceManagerImpl) => {
-    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    applyHiddenPanels(m)
     await onBeforeReady(m)
   }, [onBeforeReady])
   useEffect(() => subscribeLayoutPreferences(() => {
     const m = managerRef.current
     if (!m) return
-    m.views.setHiddenIds(layoutPreferences().config.hidden)
+    applyHiddenPanels(m)
     m.syncPanels()
-    setRibbonItems(m.getRibbonItems())
+    setRibbonItems(ribbonOf(m))
   }), [])
+
+  /** Panneaux de la barre du haut (Revision, Versions) : presents dans un plugin actif ? */
+  const panelExists = (id: string) => !!managerRef.current?.views.listPanels().views.some(v => v.id === id)
+
+  /**
+   * Bouton de la barre du haut. Un panneau present dans la disposition
+   * s'ouvre ou se replie comme depuis la barre d'icones. Un panneau retire
+   * par la disposition est ouvert a la demande, puis retire au clic suivant.
+   */
+  const togglePanelButton = (id: string) => {
+    const m = managerRef.current
+    if (!m) return
+    if (!layoutPreferences().config.hidden.includes(id)) { m.toggleView(id); return }
+    const set = revealedRef.current
+    if (set.has(id)) {
+      set.delete(id)
+      applyHiddenPanels(m)
+      m.syncPanels()
+      // Plus rien d'ouvert a la demande : le volet droit revient a la disposition.
+      if (set.size === 0 && !layoutPreferences().config.rightOpen) m.collapsePane('right')
+    } else {
+      set.add(id)
+      applyHiddenPanels(m)
+      m.syncPanels()
+      m.expandPane('right')
+      m.focusPanel(id)
+    }
+    setRevealed([...set])
+    setRibbonItems(ribbonOf(m))
+  }
   /** Volets du demarrage : maintenant (vue choisie dans les options) ou a l'ouverture. */
   const applyLayoutPanes = useCallback((m: WorkspaceManagerImpl, startup: boolean) => {
     const { config } = layoutPreferences()
@@ -1604,7 +1648,7 @@ export function AppShell() {
     managerRef.current = m
     setWorkspaceReady(true)
     m.notifyVaultChange()
-    setRibbonItems(m.getRibbonItems())
+    setRibbonItems(ribbonOf(m))
     m.subscribeActiveView(setActiveViewId)
     // Fenetre d'une note : rien que l'editeur.
     if (noteWindow) { m.collapsePane('left'); m.collapsePane('right') }
@@ -1720,6 +1764,18 @@ export function AppShell() {
               </svg>
             </button>
           )}
+
+          {/* Revision et historique : ouvrent leur panneau, comme dans Word. */}
+          {selectedVault && activeDoc && !noteWindow && TOPBAR_PANELS.filter(p => panelExists(p.id)).map(p => {
+            const open = revealed.includes(p.id) || (activeViewId === p.id && !layoutPreferences().config.hidden.includes(p.id))
+            return (
+              <button key={p.id} data-testid={`topbar-${p.id}`} data-open={open ? 'true' : 'false'} onClick={() => togglePanelButton(p.id)} title={p.label}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`, background: 'transparent', fontSize: 12, color: open ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+                <Icon name={p.icon} size={13} />
+                <span>{p.label}</span>
+              </button>
+            )
+          })}
 
           {/* Share : capacite du profil, absente sans arbitre (voir IVaultSyncSession.sharing) */}
           {selectedVault && vaultSharing && (

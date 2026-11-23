@@ -28,7 +28,7 @@ describe('accueil et type de fichier par defaut', () => {
     expect(layout.layoutPreferences().presetId).toBe('notion')
     expect(layout.defaultFileType()).toBe('page')
     expect(layout.isLayoutModified()).toBe(false)
-    expect(layout.layoutPreferences().config.hidden).toContain('backlinks')
+    expect(layout.layoutPreferences().config.hidden).toEqual(expect.arrayContaining(['backlinks', 'review', 'history']))
     expect(onboarding.needsOnboarding()).toBe(false)
     // Garde au rechargement.
     const again = await load()
@@ -70,7 +70,7 @@ describe('accueil et type de fichier par defaut', () => {
   it('vue Notion d\'avant : les retroliens partent une fois, puis restent au choix', async () => {
     localStorage.setItem('savoire-layout', JSON.stringify({ v: 2, presetId: 'notion', config: { hidden: ['notes-tools'], leftOpen: 'explorer', rightOpen: false, rightFocus: null } }))
     const { layout } = await load()
-    expect(layout.layoutPreferences().config.hidden).toContain('backlinks')
+    expect(layout.layoutPreferences().config.hidden).toEqual(expect.arrayContaining(['backlinks', 'review', 'history']))
     layout.setPanelVisible('backlinks', true)
     const again = await load()
     expect(again.layout.layoutPreferences().config.hidden).not.toContain('backlinks')
@@ -80,5 +80,13 @@ describe('accueil et type de fichier par defaut', () => {
     localStorage.setItem('savoire-layout', JSON.stringify({ v: 2, presetId: 'obsidian', config: { hidden: ['review'], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks' } }))
     const { layout } = await load()
     expect(layout.layoutPreferences().config.hidden).not.toContain('backlinks')
+  })
+
+  it('vue Notion en version 3 : revision et versions partent une fois', async () => {
+    localStorage.setItem('savoire-layout', JSON.stringify({ v: 3, presetId: 'notion', config: { hidden: ['notes-tools'], leftOpen: 'explorer', rightOpen: false, rightFocus: null } }))
+    const { layout } = await load()
+    const hidden = layout.layoutPreferences().config.hidden
+    expect(hidden).toEqual(expect.arrayContaining(['review', 'history']))
+    expect(hidden).not.toContain('backlinks')
   })
 })
