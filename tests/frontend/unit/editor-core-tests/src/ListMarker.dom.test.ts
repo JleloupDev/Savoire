@@ -32,7 +32,9 @@ describe('Marqueur de la ligne de liste en edition', () => {
     const view = setup(DOC.indexOf('beta'), mode)
     const line = liveLine(view)
     expect(line.textContent).toBe('◦beta')
-    expect(line.style.paddingLeft).toBe('1.5em')
+    // Retrait suspendu : la suite d'une ligne trop longue passe sous le texte.
+    expect(line.getAttribute('style')).toContain('padding-left: calc(1.5em + 1.5em)')
+    expect(line.getAttribute('style')).toContain('text-indent: calc(-1 * 1.5em)')
     view.destroy()
   })
 
