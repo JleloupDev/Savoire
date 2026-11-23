@@ -499,6 +499,100 @@ function rawLineMarks(state: EditorState, fromPos: number, out: Range<Decoration
   }
 }
 
+// ── Marques du gras, de l'italique... sur les lignes en texte brut ──────────
+//
+// Sur la ligne du curseur, les ** d'un mot en gras ne se montrent que si le
+// curseur est dans ce mot (ou la selection le touche). Ailleurs sur la
+// ligne, le gras est rendu sans ses marques. Idem pour l'italique, le barre,
+// le code, le surligne et les liens.
+
+/** Une portion mise en forme et ses marques, a cacher si le curseur n'y est pas. */
+interface InlineSpan { from: number; to: number; marks: { from: number; to: number }[]; text?: { from: number; to: number; cls: string } }
+
+const MARKED_NODES: Record<string, string> = {
+  Emphasis: 'EmphasisMark', StrongEmphasis: 'EmphasisMark', Strikethrough: 'StrikethroughMark', InlineCode: 'CodeMark',
+}
+
+function inlineSpans(state: EditorState, from: number, to: number): InlineSpan[] {
+  const spans: InlineSpan[] = []
+  syntaxTree(state).iterate({
+    from, to,
+    enter(node) {
+      const name = node.type.name
+      if (CODE_NODES.has(name) && name !== 'InlineCode') return false
+      if (name === 'Image' || name === 'HTMLBlock') return false
+      const markName = MARKED_NODES[name]
+      if (markName) {
+        const marks: { from: number; to: number }[] = []
+        for (let c = node.node.firstChild; c; c = c.nextSibling) if (c.name === markName) marks.push({ from: c.from, to: c.to })
+        if (marks.length < 2) return name !== 'InlineCode'
+        // Le code garde son allure de code sans ses `.
+        const text = name === 'InlineCode' ? { from: marks[0].to, to: marks[marks.length - 1].from, cls: 'plume-md-code' } : undefined
+        spans.push({ from: node.from, to: node.to, marks, text })
+        return name !== 'InlineCode'
+      }
+      if (name === 'Link') {
+        const kids: { name: string; from: number; to: number }[] = []
+        for (let c = node.node.firstChild; c; c = c.nextSibling) kids.push({ name: c.name, from: c.from, to: c.to })
+        const marks = kids.filter(k => k.name === 'LinkMark')
+        // [texte](adresse) : tout sauf le texte se cache. Pas [texte] seul (reference).
+        if (marks.length < 4 || state.sliceDoc(marks[1].from, marks[2].to) !== '](') return undefined
+        spans.push({
+          from: node.from, to: node.to,
+          marks: [{ from: marks[0].from, to: marks[0].to }, { from: marks[1].from, to: node.to }],
+          text: { from: marks[0].to, to: marks[1].from, cls: 'plume-md-link' },
+        })
+      }
+      return undefined
+    },
+  })
+  return spans
+}
+
+function hideInlineMarks(state: EditorState, fmEnd: number, out: Range<Decoration>[]): void {
+  // Les lignes deja rendues (remplacees par un bloc) n'ont rien a cacher.
+  const covered = out
+    .filter(d => d.from < d.to && (d.value.spec as { block?: boolean }).block)
+    .map(d => ({ from: d.from, to: d.to }))
+    .sort((a, b) => a.from - b.from)
+  const isCovered = (pos: number): boolean => {
+    let lo = 0, hi = covered.length - 1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      const c = covered[mid]
+      if (pos < c.from) hi = mid - 1
+      else if (pos > c.to) lo = mid + 1
+      else return true
+    }
+    return false
+  }
+  const ranges = state.selection.ranges
+  const touched = (from: number, to: number): boolean => ranges.some(r => r.from <= to && r.to >= from)
+  const start = Math.min(fmEnd, state.doc.length)
+  let line = state.doc.lineAt(start)
+  for (;;) {
+    if (line.length > 0 && !isCovered(line.from)) {
+      const spans = inlineSpans(state, Math.max(line.from, start), line.to)
+      // Le surligne ==...== (avec sa couleur) n'est pas dans l'arbre Markdown.
+      if (line.text.includes('==')) {
+        for (const m of line.text.matchAll(HIGHLIGHT_SPAN_RE)) {
+          const from = line.from + (m.index ?? 0)
+          if (inCode(state, from)) continue
+          const open = 2 + (m[1]?.length ?? 0)
+          spans.push({ from, to: from + m[0].length, marks: [{ from, to: from + open }, { from: from + m[0].length - 2, to: from + m[0].length }] })
+        }
+      }
+      for (const span of spans) {
+        if (span.to > line.to || touched(span.from, span.to)) continue
+        for (const mark of span.marks) if (mark.to > mark.from) out.push(Decoration.replace({}).range(mark.from, mark.to))
+        if (span.text && span.text.to > span.text.from) out.push(Decoration.mark({ class: span.text.cls }).range(span.text.from, span.text.to))
+      }
+    }
+    if (line.number >= state.doc.lines) break
+    line = state.doc.line(line.number + 1)
+  }
+}
+
 /** Ce dont le calcul des decorations a besoin, hors de l'etat. */
 interface PreviewEnv {
   registry?: BlockRegistry
@@ -877,6 +971,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   }
 
   rawLineMarks(state, fmEnd, decorations)
+  hideInlineMarks(state, fmEnd, decorations)
 
   if (fmDeco) decorations.unshift(fmDeco)
   if (panelDecos) decorations.unshift(...panelDecos)
@@ -1496,6 +1591,11 @@ export function createLivePreviewExtension(
         marginTop: '0 !important',
         marginBottom: '0 !important',
       },
+      '.plume-md-code': {
+        fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: '0.9em',
+        background: 'var(--bg-code, rgba(127,127,127,0.12))', borderRadius: '3px', padding: '0 2px',
+      },
+      '.plume-md-link': { color: 'var(--accent, #7c3aed)', textDecoration: 'underline', textUnderlineOffset: '2px' },
       '.plume-table-actions': { display: 'flex', gap: '6px' },
       '.plume-table-object, .plume-table-box': { position: 'relative' },
       '.plume-table-grip': {
