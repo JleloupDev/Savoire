@@ -176,6 +176,21 @@ publications.
 - Sa base, `savoire_store`, est dans le même PostgreSQL : elle est sauvegardée
   avec les autres.
 
+## Import Notion (facultatif)
+
+La version bureau peut se connecter à Notion pour importer des pages
+(ADR-035). Le serveur garde le secret de l'intégration et fait l'échange du
+code ; il ne garde aucun jeton.
+
+1. Sur https://www.notion.so/profile/integrations, créez une intégration
+   **publique**. Capacités : lecture du contenu seulement.
+2. Adresse de retour : `https://SAVOIRE_DOMAIN/api/v1/notion/callback`.
+3. Dans le `.env` : `NOTION_CLIENT_ID` et `NOTION_CLIENT_SECRET`
+   (`NOTION_REDIRECT_URI` si l'adresse de retour est une autre).
+
+Sans ces valeurs, la connexion à Notion n'est pas proposée ; l'import d'un
+export `.zip` reste possible.
+
 ## Prérequis
 
 - Une machine Linux avec Docker et le plugin Compose, 2 Go de RAM au moins

@@ -227,6 +227,10 @@ services:
       Jwt__Audience: savoire-client
       Indexer__Instances__0__Name: idx-a
       Indexer__Instances__0__Url: http://indexer:7070
+      # Import Notion par la connexion (ADR-035) : vide, la connexion n'est pas proposee.
+      Notion__ClientId: ${NOTION_CLIENT_ID:-}
+      Notion__ClientSecret: ${NOTION_CLIENT_SECRET:-}
+      Notion__RedirectUri: ${NOTION_REDIRECT_URI:-}
     volumes:
       - savoire-data:/data
       - savoire-config:/run/savoire:ro

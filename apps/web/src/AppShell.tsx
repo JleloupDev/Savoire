@@ -41,6 +41,9 @@ import { resolveLinkPath } from '@savoire/plugin-api'
 import { setShowEditorToolbar, showEditorToolbar, useNoteEditorMode, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
 import { defaultFileType, layoutPreferences, subscribeLayoutPreferences } from './layoutPreferences'
 import { Onboarding } from './Onboarding'
+import { NotionImportDialog } from './NotionImportDialog'
+import { NotionImportService } from './notionImport'
+import { desktopNotion } from './notionConnection'
 import { needsOnboarding } from './onboardingPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
@@ -422,6 +425,8 @@ export function AppShell() {
   // Accueil de la premiere visite (pas dans la fenetre d'une note), montre
   // une fois l'espace de travail pret : ses reponses reglent les volets.
   const [onboardingOpen, setOnboardingOpen] = useState(() => !noteWindow && needsOnboarding())
+  // Import Notion par la connexion (ADR-035) : version bureau seulement.
+  const [notionDialogOpen, setNotionDialogOpen] = useState(false)
   const [workspaceReady, setWorkspaceReady] = useState(false)
   useMobileBack(() => setSettingsOpen(false), settingsOpen)
   const [sharingOpen, setSharingOpen] = useState(false)
@@ -572,13 +577,14 @@ export function AppShell() {
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
   // comme celles des plugins. Le ref garde les gestionnaires a jour.
   // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
-  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {}, bubble: () => {} })
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {}, bubble: () => {}, notionImport: () => {} })
   const appCommands = useMemo<PluginCommand[]>(() => [
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
     { id: 'app:bubble-active', label: 'Mettre le document actif en bulle', run: () => appActionsRef.current.bubble() },
     { id: 'app:command-palette', label: 'Palette de commandes', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'p' }], run: () => appActionsRef.current.palette() },
     { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
+    { id: 'app:notion-import', label: 'Importer depuis Notion…', run: () => appActionsRef.current.notionImport() },
     { id: 'app:toggle-editor-toolbar', label: 'Afficher ou masquer la barre d\'édition', run: () => setShowEditorToolbar(!showEditorToolbar()) },
   ], [])
 
@@ -606,6 +612,13 @@ export function AppShell() {
     editorAreaRefsHolder,
     appCommands,
   })
+
+  // Import Notion : suit le vault ouvert (pause en le quittant, reprise en y revenant).
+  const notionImportRef = useRef<NotionImportService | null | undefined>(undefined)
+  if (notionImportRef.current === undefined) {
+    const bridge = noteWindow ? null : desktopNotion()
+    notionImportRef.current = bridge ? new NotionImportService(bridge, () => pluginAPIRef.current ?? undefined) : null
+  }
 
   // ── Plugins : catalogue, installation, activation ──────────────────────────
   // Catalogue = plugins preinstalles (charges au demarrage) + store officiel
@@ -909,6 +922,7 @@ export function AppShell() {
         const others = (sharing?.permissions ?? []).map(p => ({ id: p.subjectId, name: p.subjectDisplayName || p.subjectId }))
         return [...own, ...others.filter(o => !own.some(x => x.id === o.id))]
       }, vault.id)
+      notionImportRef.current?.attachVault(vault.id)
 
       // Les snapshots d'index viennent d'etre restaures (switchVault ci-dessus),
       // mais les panneaux qui les affichent ont deja construit leur vue : sans
@@ -1003,6 +1017,7 @@ export function AppShell() {
       pluginSettingsRef.current?.attachVault(undefined)
       attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
+      notionImportRef.current?.attachVault(null)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
     }
@@ -1040,6 +1055,7 @@ export function AppShell() {
       pluginSettingsRef.current?.attachVault(undefined)
       attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
+      notionImportRef.current?.attachVault(null)
       selectedVaultRef.current = null // lu par la zone d'edition a la notification : ses onglets se ferment
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
@@ -1439,6 +1455,7 @@ export function AppShell() {
       pluginSettingsRef.current?.attachVault(undefined)
       attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
+      notionImportRef.current?.attachVault(null)
       setSelectedVault(null); setDocuments([]); setActiveDoc(null)
       managerRef.current?.notifyVaultChange()
     }
@@ -1546,6 +1563,7 @@ export function AppShell() {
     openSettings: () => setSettingsOpen(true),
     palette: () => setPaletteVisible(true),
     bubble: () => { if (activeDoc) bubbles.add(activeDoc.id, activeDoc.path, true) },
+    notionImport: () => setNotionDialogOpen(true),
   }
 
   // Raccourcis personnalises de la personne connectee : charges a la
@@ -1576,6 +1594,7 @@ export function AppShell() {
       pluginSettingsRef.current?.attachVault(undefined)
       attachSuggestionMode(undefined, undefined)
       attachVaultServices(undefined)
+      notionImportRef.current?.attachVault(null)
       setSelectedVault(null); setVaults([]); setDocuments([]); setActiveDoc(null)
       vaultsRef.current = []
       managerRef.current?.notifyVaultChange()
@@ -1874,10 +1893,16 @@ export function AppShell() {
 
       {/* ── Accueil de la premiere visite ── */}
       {onboardingOpen && workspaceReady && (
-        <Onboarding onDone={applied => {
+        <Onboarding canConnectNotion={!!notionImportRef.current} onDone={(applied, next) => {
           setOnboardingOpen(false)
           if (applied && managerRef.current && !mobile) applyLayoutPanes(managerRef.current, false)
+          if (next === 'notion-import') setNotionDialogOpen(true)
         }} />
+      )}
+
+      {/* ── Import Notion par la connexion ── */}
+      {notionDialogOpen && (
+        <NotionImportDialog service={notionImportRef.current ?? null} vaultOpen={!!selectedVault} onClose={() => setNotionDialogOpen(false)} />
       )}
 
       {/* ── Settings modal ── */}

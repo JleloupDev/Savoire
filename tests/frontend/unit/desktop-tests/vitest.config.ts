@@ -26,6 +26,10 @@ export default defineConfig({
       '@savoire/notifications': pkg('notifications'),
       '@savoire/i18n': pkg('i18n'),
       '@savoire/plugin-api': pkg('plugin-api'),
+      // Import Notion (apps/web/src/notionImport.ts) : pages et bases.
+      '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
+      '@savoire/plugin-page': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/index.ts'),
+      '@savoire/plugin-base': path.resolve(__dirname, '../../../../packages/plugins/plugin-base/src/index.ts'),
       // Le profil web importe le connecteur serveur : jamais de vraie connexion ici.
       '@savoire/realtime-client': path.resolve(__dirname, '../infrastructure-sync-tests/src/__mocks__/signalr.ts'),
     },

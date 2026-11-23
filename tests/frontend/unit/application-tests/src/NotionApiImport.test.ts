@@ -256,7 +256,11 @@ function memoryTarget() {
     },
     async writeNote(id, text) { byId(id).text = text },
     async writeBase(id, manifest, folder) { byId(id).base = { manifest, folder } },
-    async writeAttachment(p, bytes) { files.set(p, bytes); return p },
+    async writeAttachment(notePath, name, bytes) {
+      const p = `${notePath.replace(/\.[a-z]+$/, '')}/${name}`
+      files.set(p, bytes)
+      return p
+    },
     declareProperties(defs) { props.push(...defs) },
     pageToMarkdown: doc => (doc.content ?? []).map(n => (n.content ?? []).map(t => t.text ?? '').join('')).join('\n\n') + '\n',
   }

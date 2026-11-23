@@ -3,7 +3,8 @@
 //
 // Fenetre d'accueil de la premiere visite. Deux questions : d'ou vient la
 // personne (Obsidian, Notion), puis la confirmation du type de fichier par
-// defaut (Markdown ou pages). Voir onboardingPreferences.ts.
+// defaut (Markdown ou pages). Voir onboardingPreferences.ts. Venue de Notion,
+// sur le bureau : une troisieme etape propose d'importer ses pages (ADR-035).
 import { useState } from 'react'
 import { applyOnboarding, markOnboardingDone, SUGGESTED_FILE_TYPE, type OnboardingOrigin } from './onboardingPreferences'
 
@@ -48,15 +49,19 @@ const link: React.CSSProperties = {
 }
 
 /**
- * `onDone(applied)` : les reponses sont posees (applied), ou l'accueil a ete
- * passe (les reglages de depart restent).
+ * `onDone(applied, next)` : les reponses sont posees (applied), ou l'accueil
+ * a ete passe (les reglages de depart restent). `next` : 'notion-import' si la
+ * personne veut importer ses pages Notion. `canConnectNotion` : la connexion a
+ * Notion est possible ici (version bureau).
  */
-export function Onboarding({ onDone }: { onDone(applied: boolean): void }) {
+export function Onboarding({ onDone, canConnectNotion = false }: { onDone(applied: boolean, next?: 'notion-import'): void; canConnectNotion?: boolean }) {
   const [origin, setOrigin] = useState<OnboardingOrigin | null>(null)
+  const [askImport, setAskImport] = useState(false)
 
   function finish(fileType: string) {
     if (!origin) return
     applyOnboarding(origin, fileType)
+    if (origin === 'notion' && canConnectNotion) { setAskImport(true); return }
     onDone(true)
   }
 
@@ -72,7 +77,20 @@ export function Onboarding({ onDone }: { onDone(applied: boolean): void }) {
   return (
     <div data-testid="onboarding" className="sv-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div role="dialog" aria-modal="true" aria-labelledby="onboarding-title" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 560, maxWidth: '92vw', padding: '28px 30px 22px', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}>
-        {!origin || !text ? (
+        {askImport ? (
+          <div data-testid="onboarding-notion">
+            <div id="onboarding-title" style={{ fontSize: '1.05rem', fontWeight: 700, lineHeight: 1.4 }}>Importer vos pages Notion ?</div>
+            <div style={{ ...small, marginTop: 8 }}>
+              Connectez-vous à Notion et choisissez les pages à reprendre. Elles arrivent en pages Savoire, avec leurs
+              sous-pages, leurs images et leurs bases. Savoire ne modifie jamais votre Notion.
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 22, flexWrap: 'wrap' }}>
+              <button type="button" data-testid="onboarding-notion-import" onClick={() => onDone(true, 'notion-import')} style={button(true)}>Se connecter à Notion</button>
+              <button type="button" data-testid="onboarding-notion-later" onClick={() => onDone(true)} style={button(false)}>Plus tard</button>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 18 }}>Plus tard : palette de commandes › « Importer depuis Notion… ».</div>
+          </div>
+        ) : !origin || !text ? (
           <div data-testid="onboarding-origin">
             <div id="onboarding-title" style={{ fontSize: '1.2rem', fontWeight: 700 }}>Bienvenue dans Savoire</div>
             <div style={{ ...small, marginTop: 6 }}>Deux questions, et l’application se règle pour vous.</div>

@@ -45,8 +45,11 @@ export interface NotionImportTarget {
   writeNote(docId: string, text: string): Promise<void>
   /** Manifeste d'une base ; `folder` : dossier de ses lignes. */
   writeBase(docId: string, manifest: ImportedBaseManifest, folder: string): Promise<void>
-  /** Enregistre un fichier a ce chemin (libre) ; rend le chemin ecrit. */
-  writeAttachment(path: string, bytes: Uint8Array): Promise<string>
+  /**
+   * Enregistre un fichier d'un document, dans son dossier (« Dossier/Page/ »),
+   * sous ce nom ou un nom libre proche. Rend le chemin ecrit.
+   */
+  writeAttachment(notePath: string, name: string, bytes: Uint8Array): Promise<string>
   /** Declare les types des proprietes d'une base pour tout le vault. */
   declareProperties(defs: PropertyDef[]): void
   /** Markdown d'un document de page (corps d'une ligne de base). */
@@ -392,16 +395,10 @@ export class NotionImportJob {
   /** Telecharge les fichiers des blocs, dans le dossier de la page. */
   private async downloadFiles(state: NotionImportState, item: NotionImportItem, blocks: NotionBlock[]): Promise<Map<string, string>> {
     const out = new Map<string, string>()
-    const folder = stem(item.path)
-    const taken = new Set<string>()
     for (const f of blocksWithFiles(blocks)) {
       try {
         const bytes = await this.files.download(f.url)
-        let name = f.name
-        const dot = name.lastIndexOf('.')
-        for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${f.name.slice(0, dot)} ${n}${f.name.slice(dot)}`
-        taken.add(name.toLowerCase())
-        out.set(f.block.id, await this.target.writeAttachment(`${folder}/${name}`, bytes))
+        out.set(f.block.id, await this.target.writeAttachment(item.path, f.name, bytes))
         state.files++
       } catch (err) {
         state.warnings.push(`« ${item.title} » : fichier ${f.name} non téléchargé (${errorText(err)}).`)
