@@ -28,7 +28,8 @@ function renderListLine(line: BlockLine, ctx: BlockContext, inline: (md: string)
   const div = document.createElement('div')
   div.className = 'vault-rendered-block'
   // A droite, la marge d'une ligne brute (2px) : la ligne coupe au meme endroit en edition.
-  div.style.cssText = 'position:relative;margin:0;padding:0.075em 2px 0.075em 4px;line-height:1.5'
+  // L'interligne est celui du theme (--vault-line-height), comme la ligne brute.
+  div.style.cssText = 'position:relative;margin:0;padding:0 2px 0 4px;line-height:var(--vault-line-height, 1.65)'
   const m = ITEM_RE.exec(line.text)
   // Memes retraits que le bloc entier : liste a 2em par niveau, texte a
   // 1.4em de la puce. Une suite d'element s'aligne sur le texte.
@@ -119,7 +120,7 @@ function enhanceList(ul: HTMLElement, depth: number): void {
   for (const child of Array.from(ul.children)) {
     if (child.tagName !== 'LI') continue
     const li = child as HTMLElement
-    li.style.cssText = 'position:relative;padding-left:1.4em;padding-top:0.075em;padding-bottom:0.075em;margin:0;line-height:1.5'
+    li.style.cssText = 'position:relative;padding-left:1.4em;margin:0;line-height:var(--vault-line-height, 1.65)'
     // marked wraps loose-list items in <p> — strip browser default margins.
     for (const child of Array.from(li.children)) {
       if (child.tagName === 'P') (child as HTMLElement).style.margin = '0'

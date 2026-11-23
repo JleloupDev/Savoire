@@ -623,6 +623,48 @@ const HEADING_LABELS: Record<string, string> = {
   ATXHeading4: 'Titre 4', ATXHeading5: 'Titre 5', ATXHeading6: 'Titre 6',
 }
 
+// ── Espace avant les titres ─────────────────────────────────────────────────
+//
+// Comme l'« espacement avant » d'un style de Word : le theme le donne
+// (--plume-h1-before... --plume-h6-before), les preferences peuvent le
+// changer. C'est un bloc a part, juste avant la ligne du titre : la ligne
+// elle-meme ne change pas (curseur, numero de ligne, poignee), et l'espace
+// est le meme que le titre soit rendu ou en edition. Pas d'espace avant le
+// premier bloc de la note.
+
+const HEADING_LEVELS: Record<string, number> = {
+  ATXHeading1: 1, ATXHeading2: 2, ATXHeading3: 3, ATXHeading4: 4, ATXHeading5: 5, ATXHeading6: 6,
+  SetextHeading1: 1, SetextHeading2: 2,
+}
+
+/** Valeurs par defaut, quand l'hote ne donne pas les variables du theme. */
+export const HEADING_SPACE_DEFAULTS = ['12pt', '10pt', '8pt', '6pt', '6pt', '6pt'] as const
+
+export class HeadingSpace extends WidgetType {
+  constructor(readonly level: number) { super() }
+  eq(other: HeadingSpace): boolean { return other.level === this.level }
+  toDOM(): HTMLElement {
+    const el = document.createElement('div')
+    el.className = `plume-heading-space plume-heading-space-h${this.level}`
+    el.setAttribute('aria-hidden', 'true')
+    return el
+  }
+  ignoreEvent(): boolean { return false }
+}
+
+function headingSpaces(state: EditorState, fmEnd: number, skip: (from: number, to: number) => boolean, out: Range<Decoration>[]): void {
+  let first = true
+  for (let n = syntaxTree(state).topNode.firstChild; n; n = n.nextSibling) {
+    // L'en-tete YAML (---) se lit comme un titre souligne : il ne compte pas.
+    if (n.from < fmEnd) continue
+    const level = HEADING_LEVELS[n.name]
+    if (level && !first && !skip(n.from, n.to)) {
+      out.push(Decoration.widget({ widget: new HeadingSpace(level), block: true, side: -1 }).range(state.doc.lineAt(n.from).from))
+    }
+    first = false
+  }
+}
+
 /** Titre vide en mode classique : son nom en filigrane. */
 class HeadingPlaceholder extends WidgetType {
   constructor(private readonly label: string) { super() }
@@ -1006,6 +1048,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
     }, () => markdownElement(text, hooks))
   }
 
+  headingSpaces(state, fmEnd, inColumns, decorations)
   rawLineMarks(state, fmEnd, decorations)
   hideInlineMarks(state, fmEnd, decorations)
 
@@ -1082,7 +1125,7 @@ const blockAwareLineNumbers = gutter({
   },
   // Called for each replaced block widget (Decoration.replace({ block: true })).
   widgetMarker(view, widget, block) {
-    if (widget instanceof SourceDoneWidget || widget instanceof FoldedGap) return null
+    if (widget instanceof SourceDoneWidget || widget instanceof FoldedGap || widget instanceof HeadingSpace) return null
     const { state } = view
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number
@@ -1712,6 +1755,7 @@ export function createLivePreviewExtension(
       // Live heading styles — font-size + line-height only on the cm-line wrapper.
       // Color and weight are applied via Decoration.mark inline styles (highest CSS specificity)
       // so they override syntax-highlighting token classes without needing !important.
+      ...Object.fromEntries(HEADING_SPACE_DEFAULTS.map((d, i) => [`.plume-heading-space-h${i + 1}`, { height: `var(--plume-h${i + 1}-before, ${d})` }])),
       '.vault-h1-live': { lineHeight: '1.5' },
       '.vault-h2-live': { lineHeight: '1.5' },
       '.vault-h3-live': { lineHeight: '1.4' },

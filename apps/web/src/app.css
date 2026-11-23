@@ -18,6 +18,9 @@
   --accent-dim:  rgba(13, 148, 136, 0.10);
   --accent-text: #ffffff;
   --heading-color: #0d9488;
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  --plume-line-height: 1.65;
+  --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
   --color-success: #16a34a;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
@@ -90,6 +93,9 @@
   --accent-dim:  rgba(45, 212, 191, 0.12);
   --accent-text: #0f172a;
   --heading-color: #2dd4bf;
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  --plume-line-height: 1.65;
+  --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
   --color-success: #a6e3a1;
   --color-info:    #89b4fa;
   --color-danger:  #f38ba8;
@@ -147,6 +153,9 @@
   --accent-dim:  rgba(15, 118, 110, 0.10);
   --accent-text: #ffffff;
   --heading-color: #0f766e;
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  --plume-line-height: 1.75;
+  --plume-h1-before: 16pt; --plume-h2-before: 12pt; --plume-h3-before: 10pt; --plume-h4-before: 8pt; --plume-h5-before: 8pt; --plume-h6-before: 8pt;
   --color-success: #15803d;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
@@ -204,6 +213,9 @@
   --accent-dim:  rgba(42, 161, 152, 0.12);
   --accent-text: #fdf6e3;
   --heading-color: #cb4b16;
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  --plume-line-height: 1.65;
+  --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
   --color-success: #859900;
   --color-info:    #268bd2;
   --color-danger:  #dc322f;
@@ -306,7 +318,7 @@ button:active { filter: brightness(0.84); }
   line-height: 1.8;
 }
 
-.cm-editor { --vault-line-height: 1.65; }
+.cm-editor { --vault-line-height: var(--plume-line-height, 1.65); }
 .cm-line {
   padding: 0;
   color: var(--text);
@@ -324,6 +336,9 @@ button:active { filter: brightness(0.84); }
   padding: 0 12px 0 8px;
   font-size: 12px;
   font-family: var(--font-code);
+  /* La hauteur d'une ligne du texte (15,5px x interligne) : le numero reste
+     en face de la premiere rangee, quel que soit l'interligne choisi. */
+  line-height: calc(var(--vault-line-height, 1.65) * 15.5px);
 }
 .cm-activeLineGutter {
   background: var(--bg-elevated) !important;

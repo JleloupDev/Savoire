@@ -54,6 +54,7 @@ import { SharingPanel } from './SharingPanel'
 import { IndexStatusIndicator } from './IndexStatusIndicator'
 import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
 import { SettingsPanel, initTheme } from './SettingsWidget'
+import { applyTypography } from './typography'
 import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
 import { CommandPaletteModal } from './CommandPaletteModal'
@@ -79,6 +80,7 @@ import { BuildInfo } from './BuildInfo'
 import { UpdateBanner } from './UpdateBanner'
 
 initTheme()
+applyTypography()
 
 // ── Icon rail ─────────────────────────────────────────────────────────────────
 

@@ -377,7 +377,8 @@ function markerAt(view: EditorView, from: number, to: number): FoldMarker | null
 const foldGutter = gutter({
   class: 'plume-fold-gutter',
   lineMarker: (view, line) => markerAt(view, line.from, line.to),
-  widgetMarker: (view, widget, block) => (widget instanceof FoldedGap ? null : markerAt(view, block.from, block.to)),
+  // Un widget pose entre deux lignes (espace avant un titre) n'a pas de chevron : sa ligne l'a.
+  widgetMarker: (view, widget, block) => (widget instanceof FoldedGap || block.from === block.to ? null : markerAt(view, block.from, block.to)),
   lineMarkerChange: (u: ViewUpdate) =>
     u.startState.field(foldedField, false) !== u.state.field(foldedField, false)
     || u.startState.field(foldablesField, false) !== u.state.field(foldablesField, false),

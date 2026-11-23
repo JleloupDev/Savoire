@@ -146,7 +146,8 @@ function markerFor(view: EditorView, from: number, to: number): MarksMarker | nu
 const marksGutter = gutter({
   class: 'cm-block-marks',
   lineMarker: (view, line) => markerFor(view, line.from, line.to),
-  widgetMarker: (view, _widget, block) => markerFor(view, block.from, block.to),
+  // Un widget pose entre deux lignes (espace avant un titre) : la marque est sur la ligne.
+  widgetMarker: (view, _widget, block) => (block.from === block.to ? null : markerFor(view, block.from, block.to)),
   lineMarkerChange: update => update.docChanged || update.transactions.some(tr => tr.effects.some(e => e.is(setMarks))),
 })
 

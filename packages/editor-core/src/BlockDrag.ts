@@ -11,7 +11,7 @@
 // Le calcul du deplacement (planDrop) ne connait que le texte : il est teste
 // a part. Le reste suit la souris.
 
-import { EditorView, ViewPlugin, type DecorationSet } from '@codemirror/view'
+import { BlockType, EditorView, ViewPlugin, type DecorationSet } from '@codemirror/view'
 import type { EditorState } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import {
@@ -310,7 +310,7 @@ class DragController {
     const block = view.lineBlockAtHeight(y - view.documentTop)
     const unit = unitAt(view.state, block.from, this.host)
     if (!unit) return null
-    const top = view.documentTop + view.lineBlockAt(unit.from).top
+    const top = view.documentTop + textTop(view, unit.from)
     const text = view.state.sliceDoc(unit.from, unit.to)
     return {
       hover: {
@@ -512,4 +512,11 @@ class DragController {
 /** Poignees de glisser-deposer (mode classique). */
 export function blockDragExtension(host: DragHost) {
   return ViewPlugin.define(view => new DragController(view, host))
+}
+
+/** Le haut du texte d'une ligne, sans l'espace pose avant elle (espace avant un titre). */
+function textTop(view: EditorView, pos: number): number {
+  const block = view.lineBlockAt(pos)
+  if (!Array.isArray(block.type)) return block.top
+  return (block.type.find(b => b.type !== BlockType.WidgetBefore) ?? block).top
 }

@@ -12,13 +12,14 @@ import { StoreSettings } from './StoreSettings'
 import type { SavoireStoreService } from './savoireStore'
 import type { AIService } from '@savoire/application'
 import { Icon } from '@savoire/ui-components'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { Widget } from '@savoire/plugin-api'
 import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } from '@savoire/plugin-api'
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { capabilityInfo, overclaimedCapabilities, type CapabilityReport } from '@savoire/plugin-api'
-import { t, type TranslationKey } from '@savoire/i18n'
+import { t, ti, type TranslationKey } from '@savoire/i18n'
+import { HEADING_STEPS, setTypography, themeTypography, useTypography, type HeadingStep } from './typography'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
 import { LayoutSettings, type CreatableFileType, type LayoutPanels } from './LayoutSettings'
@@ -630,12 +631,72 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
           )
         })}
       </div>
+      <TypographyOptions themeId={themeId} />
       <ShowExtensionsOption />
       <EditorModeOption />
       <ShowToolbarOption />
       <CheckOption testid="settings-show-status-bar" label="settings.editor.showStatusBar" value={useShowStatusBar()} onChange={setShowStatusBar} />
       <CheckOption testid="settings-multiple-cursors" label="settings.editor.multipleCursors" value={useMultipleCursors()} onChange={setMultipleCursorsPreference} />
       <LinkPreviewOption />
+    </div>
+  )
+}
+
+// ── Texte : interligne, espace avant les titres (comme Word) ──────────────────
+
+const LINE_HEIGHTS = [1.3, 1.5, 1.65, 1.8, 2]
+const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',')
+
+function TypographyOptions({ themeId }: { themeId: string }) {
+  const typo = useTypography()
+  // Les valeurs du theme en cours, relues quand il change.
+  const theme = useMemo(() => themeTypography(), [themeId])
+  const label: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem' }
+  const input: React.CSSProperties = { width: 64, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-surface)', color: 'var(--text)' }
+  const setBefore = (step: HeadingStep, raw: string) => {
+    const before = { ...typo.before }
+    const n = parseFloat(raw.replace(',', '.'))
+    if (raw.trim() === '' || !Number.isFinite(n)) delete before[step]
+    else before[step] = n
+    setTypography({ ...typo, before })
+  }
+  return (
+    <div data-testid="settings-typography" style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div style={appearanceHeading}>{t('app', 'settings.text.title')}</div>
+      <p style={{ color: 'var(--text-faint)', marginTop: 0, marginBottom: 12, fontSize: '0.78rem' }}>{t('app', 'settings.text.description')}</p>
+      <label style={label}>
+        {t('app', 'settings.text.lineHeight')}
+        <select
+          data-testid="settings-line-height"
+          value={typo.lineHeight === undefined ? '' : String(typo.lineHeight)}
+          onChange={e => setTypography({ ...typo, lineHeight: e.target.value === '' ? undefined : Number(e.target.value) })}
+          style={{ ...input, width: 'auto' }}
+        >
+          <option value="">{ti('app', 'settings.text.themeValue', { value: fmt(theme.lineHeight) })}</option>
+          {LINE_HEIGHTS.map(v => <option key={v} value={String(v)}>{fmt(v)}</option>)}
+        </select>
+      </label>
+      <div style={{ fontSize: '0.82rem', marginTop: 12, marginBottom: 6 }}>{t('app', 'settings.text.before')}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+        {HEADING_STEPS.map(step => (
+          <label key={step} style={label}>
+            {t('app', `settings.text.heading${step}`)}
+            <input
+              type="number" min={0} max={72} step={1}
+              data-testid={`settings-before-h${step}`}
+              placeholder={fmt(theme.before[step])}
+              value={typo.before?.[step] ?? ''}
+              onChange={e => setBefore(step, e.target.value)}
+              style={input}
+            />
+          </label>
+        ))}
+      </div>
+      {(typo.lineHeight !== undefined || typo.before) && (
+        <button data-testid="settings-typography-reset" onClick={() => setTypography({})} style={{ marginTop: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.78rem' }}>
+          {t('app', 'settings.text.reset')}
+        </button>
+      )}
     </div>
   )
 }
