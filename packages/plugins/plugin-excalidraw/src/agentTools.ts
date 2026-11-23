@@ -470,7 +470,7 @@ export function excalidrawAgentTools(api: PluginAPI): PluginTool[] {
     {
       spec: {
         name: 'drawing_create', title: 'Créer un dessin', action: 'create', runtimes: [...RUNTIMES],
-        description: 'Crée un dessin Excalidraw (chemin .excalidraw), vide ou avec des formes (mêmes champs que drawing_add). Pour y poser un schéma ensuite : drawing_diagram.',
+        description: 'Crée un dessin Excalidraw (chemin .excalidraw), vide ou avec des formes (mêmes champs que drawing_add). Pour y poser un schéma ensuite : drawing_diagram. Un dessin se crée toujours ainsi, jamais par une note qui contiendrait son JSON.',
         inputSchema: {
           type: 'object',
           properties: { path: PATH, shapes: { type: 'array', description: 'Formes de départ (facultatif).', items: SHAPE_ITEM } },

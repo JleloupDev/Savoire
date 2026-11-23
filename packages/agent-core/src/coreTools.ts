@@ -397,17 +397,31 @@ const setProperty: CoreTool = {
 
 // ── Creer, ranger, supprimer ───────────────────────────────────────────────
 
+/**
+ * Un dessin Excalidraw ecrit comme une note : un chemin .excalidraw, ou le
+ * JSON d'une scene, ou le format .excalidraw.md d'Obsidian. Une IA qui ne
+ * connait pas les outils des dessins le tente ; la note serait illisible.
+ */
+export function excalidrawInNote(path: string, content: string): boolean {
+  if (/\.excalidraw(\.md)?$/i.test(path)) return true
+  return /"type"\s*:\s*"excalidraw"/.test(content) || /^excalidraw-plugin\s*:/m.test(content)
+}
+
 const createNote: CoreTool = {
   spec: {
     name: 'create_note', title: 'Créer une note', action: 'create', runtimes: [...RUNTIMES],
-    description: 'Crée une note (Markdown) à ce chemin, avec ce contenu. Les dossiers manquants sont créés.',
+    description: 'Crée une note (Markdown) à ce chemin, avec ce contenu. Les dossiers manquants sont créés. Pas pour un dessin Excalidraw : il a ses outils (drawing_create).',
     inputSchema: schema({ path: str('Chemin de la nouvelle note (ex. Réunions/2026-11-18.md).'), content: str('Contenu Markdown.') }, ['path']),
   },
   async run(args, ctx) {
     const path = notePath(reqString(args, 'path', 1024))
+    const content = rawString(args, 'content', 200_000, false)
+    if (excalidrawInNote(path, content)) {
+      throw new HostError('Un dessin Excalidraw n’est pas une note : créez-le avec drawing_create, puis drawing_add ou drawing_diagram. Si ces outils manquent, le plugin Excalidraw n’est pas actif dans ce vault.', 'invalid')
+    }
     guard(ctx, path)
     if (await ctx.host.readNote({ path })) throw new HostError(`Une note existe déjà : ${path}.`, 'conflict')
-    const created = await ctx.host.createNote(path, rawString(args, 'content', 200_000, false), ctx.actor)
+    const created = await ctx.host.createNote(path, content, ctx.actor)
     return ok(`Note créée : ${created.path} (id : ${created.id}).`, { data: created, sources: [source(created)] })
   },
 }

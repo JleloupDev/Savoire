@@ -178,6 +178,8 @@ const PROTOCOLS: [&str; 3] = [LATEST_PROTOCOL, "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS: &str = "Savoire : les notes Markdown de la personne, rangees dans des vaults. \
 Commencez par list_vaults, puis search pour trouver des notes et read_note pour les lire. \
 Un vault se designe par son id ou par son nom (parametre vault de chaque outil). \
+Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
+(drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
 Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas.";
 pub const MAX_MCP_BYTES: usize = 256 * 1024;
 

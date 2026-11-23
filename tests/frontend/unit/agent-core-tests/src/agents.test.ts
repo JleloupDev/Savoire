@@ -175,6 +175,23 @@ describe('outils du socle', () => {
     expect((await tb.call('create_note', { path: 'Réunions/b', content: 'y' })).result.text).toContain('Réunions/b.md')
   })
 
+  it('creer une note : refuse un dessin Excalidraw et renvoie vers drawing_create', async () => {
+    const host = new MemoryHost({})
+    const tb = box(host, agent({ permissions: { read: 'direct', create: 'direct' } }))
+    const tries = [
+      { path: 'Plan.excalidraw', content: '' },
+      { path: 'Plan.excalidraw.md', content: 'x' },
+      { path: 'Plan', content: '# Plan\n```json\n{ "type": "excalidraw", "version": 2, "elements": [] }\n```' },
+      { path: 'Plan', content: '---\nexcalidraw-plugin: parsed\n---\n# Drawing' },
+    ]
+    for (const args of tries) {
+      const r = (await tb.call('create_note', args)).result
+      expect(r.isError).toBe(true)
+      expect(r.text).toContain('drawing_create')
+    }
+    expect((await tb.call('create_note', { path: 'Notes', content: 'J’aime Excalidraw.' })).result.text).toContain('Note créée')
+  })
+
   it('poser une propriete dans le frontmatter', () => {
     expect(setPropertyChange('Texte', 'statut', 'fait')).toEqual({ from: 0, to: 0, text: '---\nstatut: fait\n---\n' })
     const c = setPropertyChange('---\nstatut: en cours\nauteur: Jean\n---\nTexte', 'statut', 'fait')!
