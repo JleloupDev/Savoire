@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { EditorView, runScopeHandlers } from '@codemirror/view'
 import { EditorState, EditorSelection, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { brackets, highlightSelectionMatches, listHome, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
+import { brackets, highlightSelectionMatches, lineTextStart, listHome, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
 import { findMatches, findNext, findReplace, openFind, replaceAll } from '../../../../../packages/editor-core/src/FindReplace'
 import { htmlToMarkdown, smartPaste } from '../../../../../packages/editor-core/src/SmartPaste'
 import { countWords, textStats } from '../../../../../packages/editor-core/src/TextStats'
@@ -272,5 +272,18 @@ describe('Touche Debut', () => {
     const view = setup('texte simple', 5, [listHome])
     expect(home(view)).toBe(false)
     view.destroy()
+  })
+})
+
+describe('Triple clic : la ligne, son texte seulement', () => {
+  it('sans la puce, la case, le numero, le > ni les # du titre', () => {
+    const at = (t: string) => t.slice(lineTextStart(t))
+    expect(at('- [ ] une tache')).toBe('une tache')
+    expect(at('  1. un numero')).toBe('un numero')
+    expect(at('> > une citation')).toBe('une citation')
+    expect(at('## Un titre')).toBe('Un titre')
+    expect(at('du texte')).toBe('du texte')
+    // Une marque seule : toute la ligne.
+    expect(at('- ')).toBe('- ')
   })
 })

@@ -391,3 +391,34 @@ export const listHome: Extension = Prec.high(keymap.of([{
   run: view => smartHome(view, false),
   shift: view => smartHome(view, true),
 }]))
+
+// ── Triple clic : la ligne ───────────────────────────────────────────────────
+//
+// Un triple clic selectionne la ligne (celle qui porte un numero), son texte
+// seulement : sans la puce, le numero, la case, le `>` ni les # d'un titre,
+// et sans le retour a la ligne. Sur une ligne rendue, le navigateur
+// selectionnait sinon tout le bloc affiche, et la note rien du tout.
+
+const HEADING_MARK_RE = /^\s*#{1,6}[ \t]+/
+
+/** Ou commence le texte d'une ligne (apres sa marque de titre, de liste ou de citation). */
+export function lineTextStart(text: string): number {
+  const mark = (HEADING_MARK_RE.exec(text) ?? LINE_MARK_RE.exec(text))?.[0] ?? ''
+  return mark.length < text.length ? mark.length : 0
+}
+
+export const tripleClickLine: Extension = Prec.highest(EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.detail !== 3 || event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return false
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+    if (pos === null) return false
+    const line = view.state.doc.lineAt(pos)
+    event.preventDefault()
+    view.dispatch({
+      selection: EditorSelection.range(line.from + lineTextStart(line.text), line.to),
+      userEvent: 'select.pointer',
+    })
+    view.focus()
+    return true
+  },
+}))
