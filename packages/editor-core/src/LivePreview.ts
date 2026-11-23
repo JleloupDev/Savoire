@@ -25,7 +25,7 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 
 import { marked } from 'marked'
 import { BLOCK_DESTROY_EVENT, BLOCK_ENTER_EVENT, sanitizeHtml } from '@savoire/plugin-api'
-import type { BlockRegistry, BlockContext, BlockEditContext, BlockEnterDetail, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
+import type { BlockRegistry, BlockContext, BlockEditContext, BlockEnterDetail, BlockLine, BlockLineMarker, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
 import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, type FragmentOptions } from './NoteFragment'
 import { findColumnsBlocks } from './Columns'
 import {
@@ -442,7 +442,18 @@ function renderCoreLine(text: string, depth: number, from: number, hooks?: HookR
     return div
   }
   div.style.paddingLeft = `${depth * 1.5}em`
-  const [, indent, marker, space, task, body] = item
+  const task = item[4]
+  if (task !== undefined && task !== ' ') div.classList.add('vault-task-done')
+  const content = document.createElement('span')
+  content.className = 'vault-list-content'
+  content.innerHTML = inlineHtml(item[5], hooks)
+  div.append(coreListMarker(item, depth, from, ctx), content)
+  return div
+}
+
+/** La puce, le numero ou la case a cocher d'une ligne de liste. */
+function coreListMarker(item: RegExpExecArray, depth: number, from: number, ctx?: BlockContext): HTMLElement {
+  const [, indent, marker, space, task] = item
   const mark = document.createElement('span')
   mark.className = 'vault-list-marker'
   if (task !== undefined) {
@@ -457,15 +468,19 @@ function renderCoreLine(text: string, depth: number, from: number, hooks?: HookR
       ctx?.edit?.(at, at + 1, box.checked ? ' ' : 'x')
     })
     mark.appendChild(box)
-    if (box.checked) div.classList.add('vault-task-done')
   } else {
     mark.textContent = /\d/.test(marker) ? marker : BULLETS[depth % BULLETS.length]
   }
-  const content = document.createElement('span')
-  content.className = 'vault-list-content'
-  content.innerHTML = inlineHtml(body, hooks)
-  div.append(mark, content)
-  return div
+  return mark
+}
+
+/** Le marqueur de la ligne en edition, pour le rendu par defaut. */
+function coreLineMarker(line: BlockLine, ctx?: BlockContext): BlockLineMarker | null {
+  const item = LIST_ITEM_LINE_RE.exec(line.text)
+  if (!item) return null
+  const el = coreListMarker(item, line.depth, line.from, ctx)
+  el.classList.add('vault-list-marker-live')
+  return { indent: `${line.depth * 1.5}em`, el }
 }
 
 // ── Surlignage et couleur sur les lignes en edition ─────────────────────────
@@ -778,11 +793,34 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         ? Math.max(0, (/^\s*((?:>\s?)+)/.exec(text)![1].match(/>/g) ?? []).length - 1)
         : listDepth(state, line.from + indent)
       if (liveLines.has(n)) {
-        // La ligne en edition garde le retrait des lignes rendues : le
-        // tiret tombe a la place de la puce.
         if (!isQuote) {
-          const pad = spec?.renderLine ? 2 * depth + 2 : depth * 1.5
-          decorations.push(Decoration.line({ class: folded(line.from) ? 'plume-folded' : undefined, attributes: { style: `padding-left: calc(${pad}em + 4px)` } }).range(line.from))
+          const cls = folded(line.from) ? 'plume-folded' : undefined
+          // La puce reste une puce, a sa place : le texte ne bouge pas quand
+          // la ligne passe en edition. Le `- ` brut revient si le curseur
+          // entre dans le marqueur.
+          const item = LIST_ITEM_LINE_RE.exec(text)
+          const bodyAt = item ? line.from + text.length - item[5].length : -1
+          const inMarker = state.selection.ranges.some(r => [r.anchor, r.head].some(p => p > line.from && p < bodyAt))
+          const lineInfo: BlockLine = { text, depth, from: line.from }
+          const makeMarker = (): BlockLineMarker | null => {
+            try {
+              return spec?.renderLine ? spec.renderLineMarker?.(lineInfo, ctx!) ?? null : coreLineMarker(lineInfo, ctx)
+            } catch (err) {
+              console.debug(`[LivePreview] plugin line marker error (${spec?.type}):`, err)
+              return null
+            }
+          }
+          const marker = item && !inMarker && bodyAt > line.from ? makeMarker() : null
+          if (marker) {
+            decorations.push(Decoration.line({ class: cls, attributes: { style: `padding-left: ${marker.indent}` } }).range(line.from))
+            decorations.push(Decoration.replace({
+              widget: new LineWidget(`marker|${spec?.type ?? ''}|${depth}|${line.from}|${text.slice(0, bodyAt - line.from)}`, () => makeMarker()?.el ?? document.createElement('span')),
+            }).range(line.from, bodyAt))
+          } else {
+            // Le tiret brut tombe a la place de la puce.
+            const pad = spec?.renderLine ? 2 * depth + 2 : depth * 1.5
+            decorations.push(Decoration.line({ class: cls, attributes: { style: `padding-left: calc(${pad}em + 4px)` } }).range(line.from))
+          }
         }
         continue
       }
@@ -1708,6 +1746,9 @@ export function createLivePreviewExtension(
         minWidth: '1.5em',
         color: 'var(--accent, #7c3aed)',
         userSelect: 'none',
+      },
+      '.vault-list-marker-live': {
+        display: 'inline-block',
       },
       '.vault-task-checkbox': {
         margin: '0 4px 0 0',

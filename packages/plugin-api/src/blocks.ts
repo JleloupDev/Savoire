@@ -69,6 +69,17 @@ export interface BlockLine {
 }
 
 /**
+ * Le marqueur (puce, numero, case a cocher) de la ligne en edition. Il prend
+ * la place du `- ` brut : le texte reste ou il etait dans le rendu.
+ */
+export interface BlockLineMarker {
+  /** Retrait de la ligne avant le marqueur (longueur CSS). */
+  indent: string
+  /** Le marqueur, en ligne ; sa largeur amene le texte a sa place. */
+  el: HTMLElement
+}
+
+/**
  * Les trois facons d'editer une note Markdown.
  * - 'source' : le Markdown brut, sans aucun rendu.
  * - 'power' : le rendu en direct ; un bloc repasse en texte brut des que le
@@ -125,6 +136,11 @@ export interface BlockSpec {
    * telle quelle.
    */
   renderLine?(line: BlockLine, ctx: BlockContext): HTMLElement | null
+  /**
+   * Avec renderLine : le marqueur de la ligne en edition, aligne sur le
+   * rendu. Sans lui, la ligne en edition montre son `- ` brut.
+   */
+  renderLineMarker?(line: BlockLine, ctx: BlockContext): BlockLineMarker | null
   /**
    * Rendu modifiable, pour le mode classique : on edite le bloc sans voir sa
    * syntaxe (changer le type d'un callout, ecrire dans son corps). Le rendu

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { sanitizeHtml } from '@savoire/plugin-api'
-import type { VaultPlugin, PluginAPI, BlockLine, BlockContext } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, BlockLine, BlockLineMarker, BlockContext } from '@savoire/plugin-api'
 import { marked } from 'marked'
 import { taskAgentTools } from './agentTools'
 
@@ -35,45 +35,72 @@ function renderListLine(line: BlockLine, ctx: BlockContext, inline: (md: string)
     div.innerHTML = sanitizeHtml(inline(line.text.trim()))
     return div
   }
-  const [, indent, marker, space, task, body] = m
+  const [, , marker, , task, body] = m
   const content = document.createElement('span')
   content.innerHTML = sanitizeHtml(inline(body))
 
   if (task !== undefined) {
-    const checked = task !== ' '
-    const cb = document.createElement('input')
-    cb.type = 'checkbox'
-    cb.checked = checked
-    cb.disabled = !ctx.edit
-    cb.style.cssText = 'margin-right:5px;vertical-align:middle;accent-color:#7c3aed;cursor:pointer'
-    const at = line.from + indent.length + marker.length + space.length + 1
-    // mousedown arrete : le clic coche sans faire passer la ligne en edition.
-    cb.addEventListener('mousedown', e => {
-      e.preventDefault()
-      e.stopPropagation()
-      ctx.edit?.(at, at + 1, checked ? ' ' : 'x')
-    })
-    if (checked) content.style.opacity = '0.6'
-    div.append(cb, content)
+    if (task !== ' ') content.style.opacity = '0.6'
+    div.append(taskBox(m, line, ctx), content)
     return div
   }
 
   // Le retrait est porte par un conteneur a la taille du texte : un « em »
   // mesure dans la puce, plus petite, ne tomberait pas au meme endroit.
   const bullet = document.createElement('span')
-  bullet.style.cssText = `position:absolute;left:${2 * line.depth + 2}em;user-select:none`
+  bullet.style.cssText = `position:absolute;left:${bulletLeft(marker, line.depth)}em;user-select:none`
+  bullet.appendChild(bulletGlyph(marker, line.depth))
+  div.append(bullet, content)
+  return div
+}
+
+/** La puce part de la, le texte de 2 * profondeur + 3.4 em. */
+const bulletLeft = (marker: string, depth: number): number => 2 * depth + (/\d/.test(marker) ? 1.6 : 2)
+
+function bulletGlyph(marker: string, depth: number): HTMLElement {
   const glyph = document.createElement('span')
-  glyph.style.cssText = `color:${BULLET_COLOR};font-size:${line.depth === 0 ? '14px' : '11px'}`
-  glyph.textContent = BULLETS[line.depth % BULLETS.length]
+  glyph.style.cssText = `color:${BULLET_COLOR};font-size:${depth === 0 ? '14px' : '11px'}`
+  glyph.textContent = BULLETS[depth % BULLETS.length]
   if (/\d/.test(marker)) {
     // Liste numerotee : le numero ecrit, pas une puce.
     glyph.textContent = marker
     glyph.style.fontSize = 'inherit'
-    bullet.style.left = `${2 * line.depth + 1.6}em`
   }
-  bullet.appendChild(glyph)
-  div.append(bullet, content)
-  return div
+  return glyph
+}
+
+function taskBox(m: RegExpExecArray, line: BlockLine, ctx: BlockContext): HTMLInputElement {
+  const [, indent, marker, space, task] = m
+  const checked = task !== ' '
+  const cb = document.createElement('input')
+  cb.type = 'checkbox'
+  cb.checked = checked
+  cb.disabled = !ctx.edit
+  cb.style.cssText = 'margin-right:5px;vertical-align:middle;accent-color:#7c3aed;cursor:pointer'
+  const at = line.from + indent.length + marker.length + space.length + 1
+  // mousedown arrete : le clic coche sans faire passer la ligne en edition.
+  cb.addEventListener('mousedown', e => {
+    e.preventDefault()
+    e.stopPropagation()
+    ctx.edit?.(at, at + 1, checked ? ' ' : 'x')
+  })
+  return cb
+}
+
+/**
+ * Le marqueur de la ligne en edition : la puce (ou la case) a la place du
+ * `- ` brut, la ou le rendu la met. Le texte ne bouge pas.
+ */
+function listLineMarker(line: BlockLine, ctx: BlockContext): BlockLineMarker | null {
+  const m = ITEM_RE.exec(line.text)
+  if (!m) return null
+  const [, , marker, , task] = m
+  if (task !== undefined) return { indent: `${2 * line.depth + 3.4}em`, el: taskBox(m, line, ctx) }
+  const left = bulletLeft(marker, line.depth)
+  const box = document.createElement('span')
+  box.style.cssText = `display:inline-block;width:${2 * line.depth + 3.4 - left}em;user-select:none`
+  box.appendChild(bulletGlyph(marker, line.depth))
+  return { indent: `${left}em`, el: box }
 }
 
 function enhanceList(ul: HTMLElement, depth: number): void {
@@ -158,6 +185,8 @@ const plugin: VaultPlugin = {
       // Les hooks (liens [[...]]) passent avant le rendu, comme pour le texte.
       renderLine: (line, ctx) =>
         renderListLine(line, ctx, md => String(marked.parseInline(api.hooks.runBeforeParseSync(md)))),
+
+      renderLineMarker: listLineMarker,
 
       renderClient: (data, _ctx) => {
         const { markdown } = data as ListData

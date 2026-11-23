@@ -36,6 +36,7 @@ export type {
   EditorMode,
   BlockSpec,
   BlockLine,
+  BlockLineMarker,
   BlockRegistry,
   FileContext,
   FileView,
