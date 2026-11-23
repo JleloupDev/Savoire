@@ -33,6 +33,7 @@
     "@savoire/plugin-code-block": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",
     "@savoire/plugin-excalidraw": "workspace:*",
+    "@savoire/plugin-footnotes": "workspace:*",
     "@savoire/plugin-excel": "workspace:*",
     "@savoire/plugin-filetree": "workspace:*",
     "@savoire/plugin-graph": "workspace:*",

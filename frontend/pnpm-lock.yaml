@@ -257,6 +257,9 @@ importers:
       '@savoire/plugin-filetree':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-filetree
+      '@savoire/plugin-footnotes':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-footnotes
       '@savoire/plugin-graph':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-graph
@@ -836,6 +839,16 @@ importers:
       vitest:
         specifier: ^1.4.0
         version: 1.6.1(@types/node@22.20.1)(happy-dom@20.8.3)
+
+  ../packages/plugins/plugin-footnotes:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
 
   ../packages/plugins/plugin-graph:
     dependencies:
