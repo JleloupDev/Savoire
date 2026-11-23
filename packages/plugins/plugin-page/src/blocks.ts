@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-// Les blocs qu'on insere avec le menu « / ».
+// Les blocs qu'on insere avec le menu « / ». Aussi : un document de chaque
+// type creable (dessin, note Markdown, base...), range sous la page comme
+// une sous-page.
 import type { Editor } from '@tiptap/core'
+import type { FileTypeSpec } from '@savoire/plugin-api'
 
 export interface BlockItem {
   id: string
@@ -14,6 +17,8 @@ export interface BlockItem {
   keywords: string[]
   /** Absent pour la sous-page : la vue demande d'abord son nom. */
   apply?: (editor: Editor) => void
+  /** Sous-document d'un autre type : son extension (absent : une page). */
+  fileType?: string
 }
 
 export const BLOCK_ITEMS: BlockItem[] = [
@@ -29,6 +34,23 @@ export const BLOCK_ITEMS: BlockItem[] = [
   { id: 'divider', label: 'Séparateur', icon: '—', lucide: 'minus', keywords: ['separateur', 'ligne', 'hr', 'divider'], apply: e => { e.chain().focus().setHorizontalRule().run() } },
   { id: 'subpage', label: 'Sous-page', icon: '📄', lucide: 'file-plus', keywords: ['page', 'sous-page', 'lien'] },
 ]
+
+/**
+ * Un item par type de document creable, hors pages (deja la : « Sous-page »).
+ * Le choisir demande un nom, cree le document sous la page et y pose un lien.
+ */
+export function fileTypeItems(specs: readonly Pick<FileTypeSpec, 'extension' | 'label' | 'icon' | 'creatable'>[]): BlockItem[] {
+  return specs
+    .filter(s => s.creatable !== false && s.extension !== 'page')
+    .map(s => ({
+      id: `new-${s.extension}`,
+      label: s.label,
+      icon: '📄',
+      lucide: s.icon,
+      keywords: ['nouveau', 'fichier', 'document', 'sous-document', s.extension],
+      fileType: s.extension,
+    }))
+}
 
 /** Sans accents ni casse, pour le filtre. */
 function fold(s: string): string {

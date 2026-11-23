@@ -35,7 +35,12 @@ export interface WorkspaceAPI {
   showFileExtensions?(): boolean
   /** Delai avant l'apercu d'un lien survole, en ms (preference de la personne). 0 : pas d'apercu. Absent : 800. */
   linkPreviewDelay?(): number
-  /** Une preference d'affichage a change (extension des fichiers...). */
+  /**
+   * Extension du type de fichier cree par defaut (preference de la personne,
+   * donnee par la disposition) : « md » (note Markdown) ou « page »... Absent : « md ».
+   */
+  defaultFileType?(): string
+  /** Une preference d'affichage a change (extension des fichiers, type par defaut...). */
   subscribeDisplayPreferences?(cb: () => void): () => void
   /** Affiche une notification breve (« 3 versets ajoutes »). Absent : rien ne s'affiche. */
   notify?(type: NotificationType, title: string, message?: string): void

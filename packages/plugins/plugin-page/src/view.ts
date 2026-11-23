@@ -14,15 +14,15 @@ import { Editor, Extension } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import * as Y from 'yjs'
 import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror'
-import type { FileContext, FileView, HotkeyAPI, IconAPI, ReviewAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
+import type { FileContext, FileTypeSpec, FileView, HotkeyAPI, IconAPI, ReviewAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
 import { PAGE_EDITOR_OPTIONS, pageExtensions, PageLink, pageLinkLabel } from './schema'
-import { filterBlocks, matchSlash, type BlockItem } from './blocks'
+import { BLOCK_ITEMS, fileTypeItems, filterBlocks, matchSlash, type BlockItem } from './blocks'
 import { trackPageEditor, type PageController } from './commands'
 import { PAGE_FRAGMENT } from './adapter/convert'
 import { TreeMirror } from './adapter/TreeMirror'
 import { VaultMirror } from './adapter/VaultMirror'
 import { PageFileError } from './adapter/pageFile'
-import { linkTargetOf, resolveLinkTarget, subPageFolder, subPagePath } from './subpage'
+import { PAGE_EXTENSION, linkTargetOf, resolveLinkTarget, subPageFolder, subPagePath } from './subpage'
 import { PAGE_CSS } from './style'
 import { createSelectionToolbar, type SelectionToolbar, type ToolbarAction } from './toolbar'
 import { PAGE_TEXT_PROPOSAL, pageReviewExtension, setPageAnnotations, trackReviewEditor, type PageTextProposal } from './review'
@@ -40,6 +40,11 @@ export interface PageViewDeps {
   icons?: IconAPI
   /** Revision : commentaires et suggestions dans la page. Sans elle, rien. */
   review?: ReviewAPI
+  /**
+   * Types de fichiers de l'application : le menu « / » propose d'en creer
+   * un de chaque sous la page. Sans eux, la sous-page seule.
+   */
+  fileTypes?: () => readonly FileTypeSpec[]
 }
 
 /** Editeur d'une vue montee, par conteneur (tests, outils). */
@@ -112,6 +117,16 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     void deps.workspace?.openFile(file)
   }
 
+  function fileTypes(): readonly FileTypeSpec[] {
+    try { return deps.fileTypes?.() ?? [] } catch { return [] }
+  }
+
+  /** Type d'un document vise (une cible avec extension), sinon rien : une page. */
+  function specOfTarget(target: string): FileTypeSpec | undefined {
+    const ext = /\.([a-z0-9]+)$/i.exec(target.split('/').at(-1) ?? '')?.[1]?.toLowerCase()
+    return ext ? fileTypes().find(s => s.extension === ext) : undefined
+  }
+
   // ── Bloc sous-page : une carte cliquable ─────────────────────────────
 
   const PageLinkCard = PageLink.extend({
@@ -121,9 +136,13 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
         dom.dataset.testid = 'page-link-card'
         dom.dataset.target = String(node.attrs.target)
         dom.contentEditable = 'false'
+        const target = String(node.attrs.target)
+        // Un document d'un autre type : son icone, son nom sans l'extension.
+        const spec = specOfTarget(target)
+        const label = spec ? pageLinkLabel(target).slice(0, -(spec.extension.length + 1)) : pageLinkLabel(target)
         const icon = el('span', 'page-link-icon')
-        icon.append(deps.icons ? deps.icons.create('file-text', { size: 16 }) : document.createTextNode('📄'))
-        dom.append(icon, el('span', 'page-link-label', pageLinkLabel(String(node.attrs.target))))
+        icon.append(deps.icons ? deps.icons.create(spec?.icon ?? 'file-text', { size: 16 }) : document.createTextNode('📄'))
+        dom.append(icon, el('span', 'page-link-label', label))
         dom.addEventListener('click', (e) => {
           e.preventDefault()
           openTarget(String(node.attrs.target))
@@ -133,15 +152,28 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     },
   })
 
-  async function createSubPage(name: string): Promise<string | null> {
+  /**
+   * Cree un document sous la page : une sous-page, ou un autre type
+   * (`extension`). Rend la cible du lien a poser.
+   */
+  async function createSubPage(name: string, extension = PAGE_EXTENSION): Promise<string | null> {
     if (!vault?.createFile) {
       setStatus('Impossible de créer une sous-page ici.', 'error')
       return null
     }
     const folder = subPageFolder(path)
     const existing = new Set(await vault.list(folder).catch(() => [] as string[]))
-    const subPath = subPagePath(path, name, existing)
+    const subPath = subPagePath(path, name, existing, extension)
     await vault.createFile(subPath)
+    if (extension === PAGE_EXTENSION) return linkTargetOf(subPath)
+    // Un type 'crdt' commence vide (sa vue pose la structure) ; les autres
+    // recoivent leur contenu de depart, comme depuis l'explorateur.
+    const spec = fileTypes().find(s => s.extension === extension)
+    if (spec && spec.collaborationMode !== 'crdt') {
+      const initial = await spec.create()
+      const id = vault.resolveDocumentId(subPath)
+      if (initial && id) await vault.write(id, initial)
+    }
     return linkTargetOf(subPath)
   }
 
@@ -206,7 +238,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     if (!m) { closeMenu(); menu.dismissedAt = -1; return }
     const from = $from.start() + m.offset
     if (from === menu.dismissedAt) { closeMenu(); return }
-    const items = filterBlocks(m.query)
+    const items = filterBlocks(m.query, [...BLOCK_ITEMS, ...fileTypeItems(fileTypes())])
     if (!menu.open || from !== menu.from) menu.index = 0
     menu.open = true
     menu.from = from
@@ -224,7 +256,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       item.apply(editor)
       return
     }
-    askSubPageName()
+    askSubPageName(item.fileType, item.label)
   }
 
   /**
@@ -260,13 +292,14 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
     input.focus()
   }
 
-  function askSubPageName(): void {
+  function askSubPageName(extension?: string, label?: string): void {
     if (!editor) return
     const insertAt = editor.state.selection.from
-    askInput('Nom de la sous-page', 'page-subpage-name', '', insertAt, (name) => {
+    const placeholder = extension ? `Nom du document (${label ?? extension})` : 'Nom de la sous-page'
+    askInput(placeholder, 'page-subpage-name', '', insertAt, (name) => {
       if (!editor) return
       if (!name?.trim()) { editor.commands.focus(); return }
-      void createSubPage(name).then((target) => {
+      void createSubPage(name, extension).then((target) => {
         if (!target || !editor || editor.isDestroyed) return
         editor.chain().focus(insertAt).insertContent({ type: 'pageLink', attrs: { target } }).run()
       }).catch((err) => {

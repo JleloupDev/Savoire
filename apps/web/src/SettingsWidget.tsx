@@ -21,7 +21,7 @@ import { capabilityInfo, overclaimedCapabilities, type CapabilityReport } from '
 import { t } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
-import { LayoutSettings, type LayoutPanels } from './LayoutSettings'
+import { LayoutSettings, type CreatableFileType, type LayoutPanels } from './LayoutSettings'
 import { setLinkPreviewDelay, setNoteEditorMode, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useNoteEditorMode, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ export function SettingsPanel({
   /** Le Savoire Store : onglet Store. */
   store?: SavoireStoreService
   /** Panneaux de l'espace de travail : partie Disposition de l'onglet Apparence. */
-  layout?: { panels: LayoutPanels; applyPanes(): void }
+  layout?: { panels: LayoutPanels; applyPanes(): void; fileTypes?: CreatableFileType[] }
 }) {
   const [tab, setTab] = useState<Tab>(pluginSettings ? 'features' : 'plugins')
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
@@ -165,7 +165,7 @@ export function SettingsPanel({
             {layout && (
               <>
                 <div style={{ ...appearanceHeading, marginTop: 28, paddingTop: 16, borderTop: '1px solid var(--border)' }}>{t('app', 'settings.tab.layout')}</div>
-                <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} />
+                <LayoutSettings panels={layout.panels} applyPanes={layout.applyPanes} fileTypes={layout.fileTypes} />
               </>
             )}
           </>

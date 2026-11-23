@@ -15,6 +15,15 @@ export interface RibbonItem {
   mobile?: MobilePlacement
 }
 
+/** Preferences d'affichage de la personne, posees par l'application. */
+export interface DisplayPreferences {
+  showFileExtensions(): boolean
+  linkPreviewDelay?(): number
+  /** Extension du type de fichier cree par defaut (« md », « page »...). */
+  defaultFileType?(): string
+  subscribe(cb: () => void): () => void
+}
+
 export interface ActiveEditorInfo {
   filePath: string | null
   /** 'workspace' = always-on workspace plugin (views/filetree/file-type handlers).
@@ -82,10 +91,10 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
   }
 
   // ── Preferences d'affichage, posees par l'application ─────────────────────
-  private displayPreferences?: { showFileExtensions(): boolean; linkPreviewDelay?(): number; subscribe(cb: () => void): () => void }
+  private displayPreferences?: DisplayPreferences
 
   /** L'application branche ici ses preferences d'affichage (extension des fichiers...). */
-  setDisplayPreferences(prefs: { showFileExtensions(): boolean; linkPreviewDelay?(): number; subscribe(cb: () => void): () => void }): void {
+  setDisplayPreferences(prefs: DisplayPreferences): void {
     this.displayPreferences = prefs
   }
 
@@ -95,6 +104,10 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
 
   linkPreviewDelay(): number {
     return this.displayPreferences?.linkPreviewDelay?.() ?? 800
+  }
+
+  defaultFileType(): string {
+    return this.displayPreferences?.defaultFileType?.() ?? 'md'
   }
 
   subscribeDisplayPreferences(cb: () => void): () => void {

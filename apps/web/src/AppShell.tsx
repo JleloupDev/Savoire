@@ -39,7 +39,9 @@ import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { VaultAPI, ISeedExportingIdentityProvider, IIdentityProvider } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
 import { setShowEditorToolbar, showEditorToolbar, useNoteEditorMode, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
-import { layoutPreferences, subscribeLayoutPreferences } from './layoutPreferences'
+import { defaultFileType, layoutPreferences, subscribeLayoutPreferences } from './layoutPreferences'
+import { Onboarding } from './Onboarding'
+import { needsOnboarding } from './onboardingPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
 import { PluginLoader } from '@savoire/plugin-runtime'
@@ -403,6 +405,10 @@ export function AppShell() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Accueil de la premiere visite (pas dans la fenetre d'une note), montre
+  // une fois l'espace de travail pret : ses reponses reglent les volets.
+  const [onboardingOpen, setOnboardingOpen] = useState(() => !noteWindow && needsOnboarding())
+  const [workspaceReady, setWorkspaceReady] = useState(false)
   useMobileBack(() => setSettingsOpen(false), settingsOpen)
   const [sharingOpen, setSharingOpen] = useState(false)
   const [keyDebugOpen, setKeyDebugOpen] = useState(false)
@@ -1396,16 +1402,31 @@ export function AppShell() {
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
+  /** Types de fichiers qu'on peut creer, pour le choix du type par defaut. */
+  const creatableFileTypes = () => (fileTypeRegistryRef.current?.getAll() ?? [])
+    .filter(spec => spec.creatable !== false)
+    .map(spec => ({ extension: spec.extension, label: spec.label }))
+
   // handleNewNote only uses stable refs (vaultAPIRef, managerRef) — no reactive deps needed.
+  // Le type cree est celui de la disposition (note Markdown, page...).
   const handleNewNote = useCallback(async () => {
     const vaultApi = vaultAPIRef.current
     if (!vaultApi) return
-    let name = 'Untitled.md'
+    const spec = fileTypeRegistryRef.current?.resolve(defaultFileType())
+    const ext = spec && spec.creatable !== false ? spec.extension : 'md'
+    let name = `Untitled.${ext}`
     let i = 1
     const existing = vaultApi.documents.map(d => d.path)
-    while (existing.includes(name)) { name = `Untitled-${i++}.md` }
+    while (existing.includes(name)) { name = `Untitled-${i++}.${ext}` }
     try {
       await vaultApi.createFile(name)
+      // Un type 'crdt' commence vide (sa vue pose la structure) ; les autres
+      // recoivent leur contenu de depart, comme depuis l'explorateur.
+      if (spec && spec.collaborationMode !== 'crdt') {
+        const initial = await spec.create()
+        const docId = vaultApi.resolveDocumentId(name)
+        if (initial && docId) await vaultApi.write(docId, initial)
+      }
       void managerRef.current?.openFile(name)
     } catch (err) {
       console.error('[Ctrl+N]', err)
@@ -1581,6 +1602,7 @@ export function AppShell() {
   /** L'espace de travail est pret (bureau ou mobile). */
   const handleWorkspaceReady = (m: WorkspaceManagerImpl) => {
     managerRef.current = m
+    setWorkspaceReady(true)
     m.notifyVaultChange()
     setRibbonItems(m.getRibbonItems())
     m.subscribeActiveView(setActiveViewId)
@@ -1794,12 +1816,20 @@ export function AppShell() {
         />
       )}
 
+      {/* ── Accueil de la premiere visite ── */}
+      {onboardingOpen && workspaceReady && (
+        <Onboarding onDone={applied => {
+          setOnboardingOpen(false)
+          if (applied && managerRef.current && !mobile) applyLayoutPanes(managerRef.current, false)
+        }} />
+      )}
+
       {/* ── Settings modal ── */}
       {settingsOpen && (
         <div className="sv-overlay" onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.24)', width: 760, maxWidth: '92vw', height: 'min(680px, 86vh)', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
             <SettingsPanel loader={pluginLoaderRef.current}
-              layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) } } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} pluginCapabilities={id => {
+              layout={managerRef.current ? { panels: managerRef.current.views.listPanels(), applyPanes: () => { if (managerRef.current) applyLayoutPanes(managerRef.current, false) }, fileTypes: creatableFileTypes() } : undefined} pluginSettings={pluginSettingsRef.current ?? undefined} pluginCapabilities={id => {
                 const report = pluginLoaderRef.current.capabilitiesOf(id)
                 if (!report) return null
                 const manifest = pluginLoaderRef.current.getAll().find(e => e.id === id)?.plugin?.manifest

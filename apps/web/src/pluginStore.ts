@@ -409,7 +409,9 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-outline')).default,
   },
   {
-    id: 'plugin-page', preinstalled: false,
+    // Installe par defaut : les pages sont le type par defaut de la vue
+    // Notion (accueil, disposition). Il se desinstalle comme les autres.
+    id: 'plugin-page', preinstalled: true,
     manifest: {
       id: 'plugin-page',
       trust: 'verified',

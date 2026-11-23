@@ -8,6 +8,9 @@
 // groupe (« explorer », « notes-tools », « review »...). Un id inconnu (plugin
 // absent) ne gene pas : il est ignore.
 //
+// La vue donne aussi le type de fichier cree par defaut : la note Markdown
+// (Obsidian), la page (Notion).
+//
 // Les outils du developpeur (plugins actifs, metadonnees) ne sont presents que
 // dans la vue Developpeur ; ailleurs on peut les rajouter a la main.
 
@@ -22,6 +25,12 @@ export interface LayoutConfig {
   rightOpen: boolean
   /** Panneau du volet droit mis en avant au demarrage, null = le premier. */
   rightFocus: string | null
+  /**
+   * Type de fichier cree par defaut (son extension) : « md » (note
+   * Markdown, comme Obsidian) ou « page » (page facon Notion). Les autres
+   * types restent a portee (« Autres types de fichiers », menu « / »).
+   */
+  defaultFileType: string
 }
 
 export interface LayoutPreset {
@@ -41,28 +50,28 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
     id: 'savoire',
     name: 'Savoire',
     description: 'L\'explorateur à gauche, les outils de la note à droite.',
-    config: { hidden: [...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: null },
+    config: { hidden: [...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: null, defaultFileType: 'md' },
     display: { editorToolbar: true, showFileExtensions: false },
   },
   {
     id: 'obsidian',
     name: 'Obsidian',
-    description: 'Fichiers, recherche et tags à gauche. Liens entrants à droite. Pas de barre d\'édition.',
-    config: { hidden: ['review', 'history', 'agenda', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks' },
+    description: 'Fichiers, recherche et tags à gauche. Liens entrants à droite. Pas de barre d\'édition. Notes Markdown par défaut.',
+    config: { hidden: ['review', 'history', 'agenda', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: true, rightFocus: 'backlinks', defaultFileType: 'md' },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
     id: 'notion',
     name: 'Notion',
-    description: 'Une seule colonne de pages à gauche. La note prend la place. Commentaires et versions à la demande.',
-    config: { hidden: ['notes-tools', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null },
+    description: 'Une seule colonne de pages à gauche. La note prend la place. Commentaires et versions à la demande. Pages par défaut.',
+    config: { hidden: ['notes-tools', 'hashtags', 'graph', ...DEV_PANELS], leftOpen: 'explorer', rightOpen: false, rightFocus: null, defaultFileType: 'page' },
     display: { editorToolbar: false, showFileExtensions: false },
   },
   {
     id: 'developer',
     name: 'Développeur',
     description: 'Tous les panneaux, dont les plugins actifs et les métadonnées. Plugins actifs ouverts à droite. Extensions des fichiers visibles.',
-    config: { hidden: [], leftOpen: 'explorer', rightOpen: true, rightFocus: 'plugin-inspector' },
+    config: { hidden: [], leftOpen: 'explorer', rightOpen: true, rightFocus: 'plugin-inspector', defaultFileType: 'md' },
     display: { editorToolbar: false, showFileExtensions: true },
   },
 ]
@@ -113,6 +122,8 @@ function read(): LayoutPreferences {
         leftOpen: typeof c.leftOpen === 'string' || c.leftOpen === null ? c.leftOpen : preset.config.leftOpen,
         rightOpen: typeof c.rightOpen === 'boolean' ? c.rightOpen : preset.config.rightOpen,
         rightFocus: typeof c.rightFocus === 'string' || c.rightFocus === null ? c.rightFocus : preset.config.rightFocus,
+        // Reglage d'avant le type par defaut : celui de la vue choisie.
+        defaultFileType: typeof c.defaultFileType === 'string' && c.defaultFileType ? c.defaultFileType : preset.config.defaultFileType,
       },
     }
   } catch { return defaults() }
@@ -156,6 +167,17 @@ export function isLayoutModified(prefs: LayoutPreferences = current): boolean {
   const a = [...base.hidden].sort().join('\n')
   const b = [...prefs.config.hidden].sort().join('\n')
   return a !== b || base.leftOpen !== prefs.config.leftOpen || base.rightOpen !== prefs.config.rightOpen || base.rightFocus !== prefs.config.rightFocus
+    || base.defaultFileType !== prefs.config.defaultFileType
+}
+
+/** Extension du type de fichier cree par defaut (« md », « page »...). */
+export function defaultFileType(): string {
+  return current.config.defaultFileType
+}
+
+/** Le reglage a-t-il deja ete pose sur ce poste (vue choisie, panneau change...) ? */
+export function hasLayoutPreferences(): boolean {
+  try { return localStorage.getItem(KEY) !== null } catch { return false }
 }
 
 export function subscribeLayoutPreferences(cb: () => void): () => void {

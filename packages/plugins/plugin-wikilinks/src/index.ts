@@ -32,16 +32,17 @@ function toMarkdownLink(page: string, heading: string | undefined, alias: string
 /**
  * Chemin libre d'une sous-page de `notePath` : `A/Note.md` ->
  * `A/Note/Nouvelle page.md`, puis `Nouvelle page 2.md`... null sans extension.
+ * `extension` : un autre type de document range sous la note (« excalidraw »...).
  */
-export function newPagePath(notePath: string, existing: readonly string[], title = 'Nouvelle page'): string | null {
+export function newPagePath(notePath: string, existing: readonly string[], title = 'Nouvelle page', extension = 'md'): string | null {
   const slash = notePath.lastIndexOf('/')
   const name = notePath.slice(slash + 1)
   const dot = name.lastIndexOf('.')
   if (dot <= 0) return null
   const folder = `${notePath.slice(0, slash + 1)}${name.slice(0, dot)}/`
   const taken = new Set(existing.map(p => p.toLowerCase()))
-  let candidate = `${folder}${title}.md`
-  for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = `${folder}${title} ${n}.md`
+  let candidate = `${folder}${title}.${extension}`
+  for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = `${folder}${title} ${n}.${extension}`
   return candidate
 }
 
@@ -386,6 +387,47 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
         insert: '[[]]',
         cursor: 2,
         keepOpen: true,
+      })
+
+      // Les autres types de documents (dessin, page, base...) : « /dessin »
+      // en cree un sous la note courante et y pose un lien. Lus a chaque
+      // ouverture du menu : un plugin active ou coupe suit.
+      const createSubDocument = async (path: string, extension: string): Promise<void> => {
+        await api.vault.createFile!(path)
+        // Un type 'crdt' commence vide (sa vue pose la structure) ; les
+        // autres recoivent leur contenu de depart, comme depuis l'explorateur.
+        const spec = api.files?.resolve?.(extension)
+        if (spec && spec.collaborationMode !== 'crdt') {
+          const initial = await spec.create()
+          const docId = api.vault.resolveDocumentId(path)
+          if (initial && docId) await api.vault.write(docId, initial)
+        }
+        api.workspace?.notifyVaultChange?.()
+      }
+      api.slash?.register({
+        id: 'wikilinks:new-document',
+        label: 'Nouveau document',
+        category: 'Nouveau document',
+        insert: '',
+        expand: () => {
+          if (typeof api.vault?.createFile !== 'function') return []
+          const specs = api.files?.getAll?.() ?? []
+          return specs.filter(s => s.creatable !== false && s.extension !== 'md').map(spec => ({
+            id: `wikilinks:new-document:${spec.extension}`,
+            label: spec.label,
+            description: `Nouveau document « ${spec.label} » sous cette note, avec un lien`,
+            icon: spec.icon,
+            category: 'Nouveau document',
+            insert: () => {
+              const note = api.workspace?.getActiveDocument?.()?.path ?? null
+              const path = note ? newPagePath(note, notePaths, 'Sans titre', spec.extension) : null
+              if (!path) return ''
+              notePaths = [...notePaths, path]
+              void createSubDocument(path, spec.extension).catch(err => console.warn('[wikilinks] document non cree', err))
+              return `[[${path}]]`
+            },
+          }))
+        },
       })
 
       api.hooks.beforeParse((source) => {

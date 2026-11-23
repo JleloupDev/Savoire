@@ -22,7 +22,7 @@ export { createPageView, pageEditorOf } from './view'
 export { pageCommands, focusedPageEditor, runPageCommand } from './commands'
 export { Highlight, PAGE_COLORS } from './highlight'
 export { pageExtensions, PageLink } from './schema'
-export { filterBlocks, matchSlash, BLOCK_ITEMS } from './blocks'
+export { filterBlocks, fileTypeItems, matchSlash, BLOCK_ITEMS } from './blocks'
 export { pageToMarkdown, pageFileToMarkdown } from './markdown'
 export { PAGE_TEXT_PROPOSAL, flatten, locateInDoc, pageProposalType, type PageTextProposal } from './review'
 export { subPagePath, subPageFolder, linkTargetOf, resolveLinkTarget, cleanPageName } from './subpage'
@@ -54,7 +54,11 @@ const plugin: VaultPlugin = {
       creatable: true,
       // Page vide : pas de titre dans le contenu, c'est le nom du fichier.
       create: async () => '',
-      open: (path: string, ctx: FileContext) => createPageView(path, ctx, { workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys, icons: api.icons, review: api.review }),
+      open: (path: string, ctx: FileContext) => createPageView(path, ctx, {
+        workspace: api.workspace, vault: api.vault, hotkeys: api.hotkeys, icons: api.icons, review: api.review,
+        // Le menu « / » propose tous les types de documents, pas seulement les pages.
+        fileTypes: () => api.files.getAll?.() ?? [],
+      }),
       contentExtractor: { toShadowDocument: pageFileToMarkdown },
     })
     const commands = pageCommands()

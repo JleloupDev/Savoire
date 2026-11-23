@@ -396,7 +396,9 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
   // ── Create form state ────────────────────────────────────────────────────
   const [creating, setCreating] = useState<'file' | 'folder' | null>(null)
   const [newPath, setNewPath] = useState('')
-  const [selectedExtension, setSelectedExtension] = useState<string>('md')
+  const [selectedExtension, setSelectedExtension] = useState<string>(() => workspace.defaultFileType?.() ?? 'md')
+  /** Les types autres que celui par defaut, montres a la demande. */
+  const [showOtherTypes, setShowOtherTypes] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // ── Drag state (shared across all rows) ─────────────────────────────────
@@ -412,12 +414,22 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
   }, [])
 
   const [showExt, setShowExt] = useState(() => workspace.showFileExtensions?.() ?? false)
+  // Type cree par defaut (disposition de la personne) ; a defaut d'un type
+  // creable de ce nom (plugin absent), la note Markdown.
+  const [preferredExt, setPreferredExt] = useState(() => workspace.defaultFileType?.() ?? 'md')
+  const creatableTypes = fileTypes.filter(s => s.creatable !== false)
+  const defaultSpec = creatableTypes.find(s => s.extension === preferredExt) ?? creatableTypes.find(s => s.extension === 'md')
+  const defaultExt = defaultSpec?.extension ?? 'md'
+  const otherTypes = creatableTypes.filter(s => s.extension !== defaultExt)
   const relink = useCallback((moves: Move[]) => {
     relinkAfterMoves(vault, moves, indexer)
       .then(n => { if (n) workspace.notify?.('success', 'Liens mis à jour', `${n} note${n > 1 ? 's' : ''} modifiée${n > 1 ? 's' : ''}`) })
       .catch(err => console.warn('[filetree] liens non mis a jour', err))
   }, [vault, workspace, indexer])
-  useEffect(() => workspace.subscribeDisplayPreferences?.(() => setShowExt(workspace.showFileExtensions?.() ?? false)), [workspace])
+  useEffect(() => workspace.subscribeDisplayPreferences?.(() => {
+    setShowExt(workspace.showFileExtensions?.() ?? false)
+    setPreferredExt(workspace.defaultFileType?.() ?? 'md')
+  }), [workspace])
 
   useEffect(() => {
     const manager = workspace as unknown as { subscribeVaultChange?: (cb: () => void) => () => void }
@@ -456,6 +468,14 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
   }
 
   function cancelCreate() { setCreating(null); setNewPath(''); setError('') }
+
+  /** Ouvre la saisie : un document du type par defaut, ou un dossier. */
+  function startCreate(type: 'file' | 'folder', folderPath = '') {
+    setCreating(type)
+    setNewPath(folderPath)
+    setSelectedExtension(defaultExt)
+    setShowOtherTypes(false)
+  }
 
   async function handleOsFileDrop(e: React.DragEvent) {
     e.preventDefault()
@@ -508,8 +528,7 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
             fileTypes={fileTypes}
             ask={ask}
             onCreateInside={(type, folderPath) => {
-              setCreating(type)
-              setNewPath(folderPath)
+              startCreate(type, folderPath)
               setTimeout(() => inputRef.current?.focus(), 50)
             }}
           />
@@ -543,11 +562,14 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
                   boxSizing: 'border-box',
                 }}
               />
-              {creating === 'file' && fileTypes.some(s => s.creatable !== false) && (
+              {creating === 'file' && defaultSpec && (
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {fileTypes.filter(s => s.creatable !== false).map(spec => (
+                  {/* Le type par defaut d'abord ; les autres a la demande. */}
+                  {[defaultSpec, ...(showOtherTypes ? otherTypes : [])].map(spec => (
                     <button
                       key={spec.extension}
+                      data-testid="tree-create-type"
+                      data-extension={spec.extension}
                       onClick={() => setSelectedExtension(spec.extension)}
                       title={spec.label}
                       style={{
@@ -561,6 +583,19 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
                       <Icon name={spec.icon} size={13} /> {spec.label}
                     </button>
                   ))}
+                  {otherTypes.length > 0 && !showOtherTypes && (
+                    <button
+                      data-testid="tree-create-other-types"
+                      onClick={() => setShowOtherTypes(true)}
+                      style={{
+                        padding: '2px 6px', fontSize: 11, cursor: 'pointer', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        border: '1px dashed rgba(255,255,255,0.2)', background: 'transparent', color: 'var(--text-muted, #64748b)',
+                      }}
+                    >
+                      <Icon name="plus" size={13} /> Autres types de fichiers
+                    </button>
+                  )}
                 </div>
               )}
               {error && (
@@ -575,8 +610,8 @@ export function FileTree({ vault, onOpenFile, workspace, indexer, fileTypes: ini
             </>
           ) : (
             <div style={{ display: 'flex', gap: 4 }}>
-              {canCreateFile && <button data-testid="tree-new-file" onClick={() => { setCreating('file'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="file-plus" size={14} />Note</button>}
-              {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => { setCreating('folder'); setNewPath('') }} style={btnStyle('var(--text, #0f172a)')}><Icon name="folder-plus" size={14} />Dossier</button>}
+              {canCreateFile && <button data-testid="tree-new-file" data-extension={defaultExt} onClick={() => startCreate('file')} style={btnStyle('var(--text, #0f172a)')}><Icon name="file-plus" size={14} />{defaultExt === 'md' || !defaultSpec ? 'Note' : defaultSpec.label}</button>}
+              {canCreateFolder && <button data-testid="tree-new-folder" onClick={() => startCreate('folder')} style={btnStyle('var(--text, #0f172a)')}><Icon name="folder-plus" size={14} />Dossier</button>}
               {vault.uploadFile && (
                 <button data-testid="tree-import-files" title="Ajouter des fichiers (PDF, Word, images...) tels quels" onClick={() => pickFiles(files => void importFiles(files))} style={{ ...btnStyle('var(--text, #0f172a)'), flex: 'none', padding: '3px 8px' }}>
                   <Icon name="upload" size={14} />

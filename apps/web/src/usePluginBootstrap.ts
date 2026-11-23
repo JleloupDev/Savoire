@@ -56,6 +56,7 @@ import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
 import { linkPreviewDelay, setNoteEditorMode, showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
+import { defaultFileType, subscribeLayoutPreferences } from './layoutPreferences'
 import { notify } from '@savoire/notifications'
 import { takeRemoteEditors } from '@savoire/infrastructure-sync'
 interface PluginBootstrapOptions {
@@ -289,7 +290,15 @@ export function usePluginBootstrap({
 
   const onBeforeReady = useCallback(async (manager: WorkspaceManagerImpl) => {
     reviewManagerRef.current = manager
-    manager.setDisplayPreferences({ showFileExtensions, linkPreviewDelay, subscribe: subscribeDisplayPreferences })
+    manager.setDisplayPreferences({
+      showFileExtensions, linkPreviewDelay, defaultFileType,
+      // Le type par defaut vient de la disposition : les deux sources previennent.
+      subscribe: cb => {
+        const offDisplay = subscribeDisplayPreferences(cb)
+        const offLayout = subscribeLayoutPreferences(cb)
+        return () => { offDisplay(); offLayout() }
+      },
+    })
     // Partager un module : la fenetre de partage de l'application.
     ;(manager as { shareModule?: (path: string) => void }).shareModule = requestModuleShare
     manager.setNotifier(notify)

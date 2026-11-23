@@ -24,17 +24,21 @@ export function cleanPageName(name: string): string {
 
 /**
  * Chemin d'une nouvelle sous-page, sans collision avec `existing`
- * (chemins complets) : `Nom`, puis `Nom 2`, `Nom 3`...
+ * (chemins complets) : `Nom`, puis `Nom 2`, `Nom 3`... `extension` : un
+ * autre type de document range sous la page (dessin, note Markdown...).
  */
-export function subPagePath(pagePath: string, name: string, existing: ReadonlySet<string>): string {
+export function subPagePath(pagePath: string, name: string, existing: ReadonlySet<string>, extension = PAGE_EXTENSION): string {
   const folder = subPageFolder(pagePath)
   const base = cleanPageName(name) || 'Sans titre'
-  let candidate = `${folder}${base}.${PAGE_EXTENSION}`
-  for (let n = 2; existing.has(candidate); n++) candidate = `${folder}${base} ${n}.${PAGE_EXTENSION}`
+  let candidate = `${folder}${base}.${extension}`
+  for (let n = 2; existing.has(candidate); n++) candidate = `${folder}${base} ${n}.${extension}`
   return candidate
 }
 
-/** Cible d'un lien vers une page : son chemin sans extension. */
+/**
+ * Cible d'un lien vers un document : son chemin, sans extension pour une
+ * page (`Projet/Nom`), avec pour les autres types (`Projet/Plan.excalidraw`).
+ */
 export function linkTargetOf(path: string): string {
   return pageStem(path)
 }

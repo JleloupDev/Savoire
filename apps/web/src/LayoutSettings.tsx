@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
 // Onglet « Disposition » des parametres : la vue par defaut (Savoire,
-// Obsidian, Notion, Developpeur), les panneaux presents et les volets ouverts
-// au demarrage. Tout s'applique tout de suite et reste sur ce poste.
+// Obsidian, Notion, Developpeur), le type de fichier cree par defaut, les
+// panneaux presents et les volets ouverts au demarrage. Tout s'applique tout de suite et reste sur ce poste.
 import type { ViewGroup, ViewSpec } from '@savoire/plugin-api'
 import { setShowEditorToolbar, setShowFileExtensions } from './displayPreferences'
 import {
@@ -11,6 +11,15 @@ import {
 } from './layoutPreferences'
 
 export interface LayoutPanels { groups: ViewGroup[]; views: ViewSpec[] }
+
+/** Un type de fichier qu'on peut creer : son extension et son nom. */
+export interface CreatableFileType { extension: string; label: string }
+
+/** Sans plugins charges (ou sans les pages) : les deux types de depart. */
+const BASE_FILE_TYPES: CreatableFileType[] = [
+  { extension: 'md', label: 'Note Markdown' },
+  { extension: 'page', label: 'Page' },
+]
 
 type Side = 'left' | 'center' | 'right'
 
@@ -40,7 +49,7 @@ function panelRows({ groups, views }: LayoutPanels): PanelRow[] {
   return rows
 }
 
-export function LayoutSettings({ panels, applyPanes }: { panels: LayoutPanels; applyPanes(): void }) {
+export function LayoutSettings({ panels, applyPanes, fileTypes = [] }: { panels: LayoutPanels; applyPanes(): void; fileTypes?: CreatableFileType[] }) {
   const prefs = useLayoutPreferences()
   const { config } = prefs
   const modified = isLayoutModified(prefs)
@@ -59,6 +68,12 @@ export function LayoutSettings({ panels, applyPanes }: { panels: LayoutPanels; a
   const leftChoices = rows.filter(r => r.side === 'left' && shown(r.id))
   const rightChoices = rows.filter(r => r.side === 'right' && shown(r.id))
     .flatMap(r => r.children.length > 0 ? r.children.filter(c => shown(c.id)) : [{ id: r.id, title: r.title }])
+
+  // Types proposes : ceux des plugins, et toujours le type choisi (plugin absent).
+  const typeChoices = [...fileTypes]
+  for (const t of [...BASE_FILE_TYPES, { extension: config.defaultFileType, label: `.${config.defaultFileType}` }]) {
+    if (!typeChoices.some(c => c.extension === t.extension)) typeChoices.push(t)
+  }
 
   return (
     <div data-testid="layout-settings">
@@ -101,6 +116,18 @@ export function LayoutSettings({ panels, applyPanes }: { panels: LayoutPanels; a
           Revenir aux réglages de la vue
         </button>
       )}
+
+      <div style={section}>Type de fichier par défaut</div>
+      <div style={{ ...small, marginBottom: 8 }}>
+        Ce que créent « Nouvelle note » et le bouton de l’explorateur. Les autres types restent dans « Autres types de fichiers » et dans le menu « / ».
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        Créer par défaut :
+        <select data-testid="layout-default-file-type" style={select} value={config.defaultFileType}
+          onChange={e => updateLayoutConfig({ defaultFileType: e.target.value })}>
+          {typeChoices.map(t => <option key={t.extension} value={t.extension}>{t.label}</option>)}
+        </select>
+      </label>
 
       <div style={section}>Au démarrage</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
