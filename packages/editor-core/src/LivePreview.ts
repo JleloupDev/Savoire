@@ -480,7 +480,7 @@ function coreLineMarker(line: BlockLine, ctx?: BlockContext): BlockLineMarker | 
   if (!item) return null
   const el = coreListMarker(item, line.depth, line.from, ctx)
   el.classList.add('vault-list-marker-live')
-  return { indent: `${line.depth * 1.5}em`, el }
+  return { indent: `${line.depth * 1.5}em`, el, width: '1.5em' }
 }
 
 // ── Surlignage et couleur sur les lignes en edition ─────────────────────────
@@ -812,7 +812,11 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
           }
           const marker = item && !inMarker && bodyAt > line.from ? makeMarker() : null
           if (marker) {
-            decorations.push(Decoration.line({ class: cls, attributes: { style: `padding-left: ${marker.indent}` } }).range(line.from))
+            // Retrait suspendu : la suite d'une ligne trop longue passe sous le texte.
+            const style = marker.width
+              ? `padding-left: calc(${marker.indent} + ${marker.width}); text-indent: calc(-1 * ${marker.width})`
+              : `padding-left: ${marker.indent}`
+            decorations.push(Decoration.line({ class: cls, attributes: { style } }).range(line.from))
             decorations.push(Decoration.replace({
               widget: new LineWidget(`marker|${spec?.type ?? ''}|${depth}|${line.from}|${text.slice(0, bodyAt - line.from)}`, () => makeMarker()?.el ?? document.createElement('span')),
             }).range(line.from, bodyAt))
@@ -1749,6 +1753,8 @@ export function createLivePreviewExtension(
       },
       '.vault-list-marker-live': {
         display: 'inline-block',
+        width: '1.5em',
+        textIndent: '0',
       },
       '.vault-task-checkbox': {
         margin: '0 4px 0 0',

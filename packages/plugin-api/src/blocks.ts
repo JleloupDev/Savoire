@@ -77,6 +77,11 @@ export interface BlockLineMarker {
   indent: string
   /** Le marqueur, en ligne ; sa largeur amene le texte a sa place. */
   el: HTMLElement
+  /**
+   * Largeur du marqueur (longueur CSS). Donnee, la suite d'une ligne trop
+   * longue s'aligne sous le texte, pas sous la puce.
+   */
+  width?: string
 }
 
 /**
