@@ -17,6 +17,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Placeholder } from '@tiptap/extensions'
 import { Highlight } from './highlight'
+import { richBlockExtensions } from './richBlocks'
 
 /** Une touche avec modificateur (Maj comprise) : c'est une action. */
 const MODIFIED_KEY = /(^|-)(Mod|Ctrl|Alt|Meta|Cmd|Shift)-/
@@ -85,6 +86,8 @@ export interface PageExtensionOptions {
   pageLink?: AnyExtension
   /** Extensions en plus (synchronisation, vues de noeuds...). */
   extra?: AnyExtension[]
+  /** Versions a utiliser de blocs du schema (avec leur vue), par nom : toggle, image... */
+  overrides?: AnyExtension[]
 }
 
 /** Toutes les extensions d'une page. */
@@ -113,6 +116,8 @@ export function pageExtensions(options: PageExtensionOptions = {}): AnyExtension
     // Surlignage, avec l'une des six couleurs d'Obsidian (highlight.ts).
     Highlight,
     options.pageLink ?? PageLink,
+    // Encadre, bloc repliable, image, tableau (richBlocks.ts).
+    ...richBlockExtensions().map(ext => options.overrides?.find(o => o.name === ext.name) ?? ext),
     Placeholder.configure({
       placeholder: options.placeholder ?? 'Tapez / pour les commandes',
       showOnlyCurrent: true,

@@ -5,6 +5,7 @@
 // une sous-page.
 import type { Editor } from '@tiptap/core'
 import type { FileTypeSpec } from '@savoire/plugin-api'
+import { calloutContent, tableContent, toggleContent } from './richBlocks'
 
 export interface BlockItem {
   id: string
@@ -31,6 +32,9 @@ export const BLOCK_ITEMS: BlockItem[] = [
   { id: 'task', label: 'Liste de tâches', icon: '☐', lucide: 'list-checks', keywords: ['tache', 'todo', 'case', 'checkbox'], apply: e => { e.chain().focus().toggleTaskList().run() } },
   { id: 'quote', label: 'Citation', icon: '❝', lucide: 'text-quote', keywords: ['quote', 'citation'], apply: e => { e.chain().focus().toggleBlockquote().run() } },
   { id: 'code', label: 'Code', icon: '</>', lucide: 'square-code', keywords: ['code', 'bloc'], apply: e => { e.chain().focus().toggleCodeBlock().run() } },
+  { id: 'callout', label: 'Encadré', icon: '💡', lucide: 'lightbulb', keywords: ['callout', 'encadre', 'note', 'info'], apply: e => { e.chain().focus().insertContent(calloutContent()).run() } },
+  { id: 'toggle', label: 'Bloc repliable', icon: '▸', lucide: 'chevron-right', keywords: ['toggle', 'repliable', 'deplier', 'details'], apply: e => { e.chain().focus().insertContent(toggleContent()).run() } },
+  { id: 'table', label: 'Tableau', icon: '▦', lucide: 'table', keywords: ['table', 'tableau', 'grille'], apply: e => { e.chain().focus().insertContent(tableContent()).run() } },
   { id: 'divider', label: 'Séparateur', icon: '—', lucide: 'minus', keywords: ['separateur', 'ligne', 'hr', 'divider'], apply: e => { e.chain().focus().setHorizontalRule().run() } },
   { id: 'subpage', label: 'Sous-page', icon: '📄', lucide: 'file-plus', keywords: ['page', 'sous-page', 'lien'] },
 ]

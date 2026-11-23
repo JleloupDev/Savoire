@@ -2,7 +2,13 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 // Styles de la vue, limites a .savoire-page. Couleurs : les variables du
 // theme de l'application, avec une valeur de repli.
-import { PAGE_COLORS, PAGE_HIGHLIGHT_VALUES } from './highlight'
+import { PAGE_COLORS, PAGE_HIGHLIGHT_VALUES, type PageColor } from './highlight'
+
+/** Fond d'un encadre de couleur : celui du surlignage, plus leger. */
+const CALLOUT_CSS = PAGE_COLORS
+  .map(({ color }) => `.savoire-page .page-callout[data-color="${color}"] { background: ${PAGE_HIGHLIGHT_VALUES[color as PageColor].replace(/0\.\d+\)$/, '0.14)')}; border-color: transparent; }`)
+  .concat('.savoire-page .page-callout[data-color="gray"] { background: rgba(127, 127, 127, 0.14); border-color: transparent; }')
+  .join('\n')
 
 /** Surlignage : couleur du theme, ou l'une des six couleurs (fond translucide). */
 const HIGHLIGHT_CSS = PAGE_COLORS
@@ -99,6 +105,40 @@ export const PAGE_CSS = `
   background: var(--text-highlight-bg, rgba(255, 208, 0, 0.4)); color: inherit; border-radius: 2px; padding: 0 1px;
 }
 ${HIGHLIGHT_CSS}
+.savoire-page .page-callout {
+  display: flex; gap: 10px; margin: 6px 0; padding: 12px 14px; border-radius: var(--radius-md, 6px);
+  background: var(--bg-surface, #181825); border: 1px solid var(--border, #313244);
+}
+${CALLOUT_CSS}
+.savoire-page .page-callout-icon { flex: none; font-size: 1.15em; line-height: 1.4; user-select: none; }
+.savoire-page .page-callout-body { flex: 1; min-width: 0; }
+.savoire-page .page-callout-body > :first-child { margin-top: 0; }
+.savoire-page .page-callout-body > :last-child { margin-bottom: 0; }
+.savoire-page .page-toggle { position: relative; padding-left: 24px; margin: 2px 0; }
+.savoire-page .page-toggle-arrow {
+  position: absolute; left: 0; top: 0.2em; width: 20px; height: 20px; padding: 0; border: none; border-radius: 4px;
+  background: none; color: var(--text-muted, #a6adc8); cursor: pointer; font-size: 10px; line-height: 20px;
+  transition: transform .12s ease;
+}
+.savoire-page .page-toggle-arrow::before { content: '▶'; }
+.savoire-page .page-toggle-arrow:hover { background: var(--bg-hover, #45475a); }
+.savoire-page .page-toggle:not(.is-closed) > .page-toggle-arrow { transform: rotate(90deg); }
+.savoire-page .page-toggle.is-closed > .page-toggle-content > :not(.page-toggle-title) { display: none; }
+.savoire-page .page-toggle-title { margin: 4px 0; min-height: 1.6em; }
+.savoire-page .page-toggle[data-heading="1"] > .page-toggle-content > .page-toggle-title { font-size: 1.75em; font-weight: 700; line-height: 1.3; }
+.savoire-page .page-toggle[data-heading="2"] > .page-toggle-content > .page-toggle-title { font-size: 1.4em; font-weight: 700; line-height: 1.3; }
+.savoire-page .page-toggle[data-heading="3"] > .page-toggle-content > .page-toggle-title { font-size: 1.2em; font-weight: 700; line-height: 1.3; }
+.savoire-page .page-toggle[data-heading] > .page-toggle-arrow { top: 0.55em; }
+.savoire-page .page-image { margin: 8px 0; text-align: center; }
+.savoire-page .page-image img { max-width: 100%; border-radius: var(--radius-md, 6px); }
+.savoire-page .page-image figcaption { font-size: var(--font-size-sm, 13px); color: var(--text-muted, #a6adc8); margin-top: 4px; }
+.savoire-page .page-table-wrap { overflow-x: auto; margin: 8px 0; }
+.savoire-page .page-table { border-collapse: collapse; min-width: 50%; }
+.savoire-page .page-table td, .savoire-page .page-table th {
+  border: 1px solid var(--border, #313244); padding: 4px 8px; vertical-align: top; min-width: 60px; text-align: left;
+}
+.savoire-page .page-table th { background: var(--bg-surface, #181825); font-weight: 600; }
+.savoire-page .page-table td > p, .savoire-page .page-table th > p { margin: 0; }
 /* Carte de revision posee sur la page (style commun : .annotation-card de l'application). */
 .savoire-page .page-annotation { position: absolute; z-index: 30; }
 .savoire-page .page-annotation[hidden] { display: none; }

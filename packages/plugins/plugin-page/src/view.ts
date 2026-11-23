@@ -16,6 +16,7 @@ import * as Y from 'yjs'
 import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror'
 import type { FileContext, FileTypeSpec, FileView, HotkeyAPI, IconAPI, ReviewAPI, VaultAPI, WorkspaceAPI } from '@savoire/plugin-api'
 import { PAGE_EDITOR_OPTIONS, pageExtensions, PageLink, pageLinkLabel } from './schema'
+import { PageImage, Toggle } from './richBlocks'
 import { BLOCK_ITEMS, fileTypeItems, filterBlocks, matchSlash, type BlockItem } from './blocks'
 import { trackPageEditor, type PageController } from './commands'
 import { PAGE_FRAGMENT } from './adapter/convert'
@@ -73,6 +74,11 @@ function privateYSync(fragment: Y.XmlFragment): Extension {
       return [ySyncPlugin(fragment), yUndoPlugin()]
     },
   })
+}
+
+/** Lien vers un document du vault : ni schema (https:, mailto:), ni ancre. */
+export function isVaultTarget(href: string): boolean {
+  return !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#') && !href.startsWith('//')
 }
 
 export function createPageView(path: string, ctx: FileContext, deps: PageViewDeps = {}): FileView {
@@ -148,6 +154,80 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
           openTarget(String(node.attrs.target))
         })
         return { dom }
+      }
+    },
+  })
+
+  // ── Bloc repliable et image ──────────────────────────────────────────
+
+  /** Replie ou ouvert pour cette vue seulement : rien n'est ecrit dans la page. */
+  const ToggleView = Toggle.extend({
+    addNodeView() {
+      return ({ node }) => {
+        const dom = el('div', 'page-toggle is-closed')
+        dom.dataset.testid = 'page-toggle'
+        if (Number(node.attrs.heading)) dom.dataset.heading = String(node.attrs.heading)
+        const arrow = el('button', 'page-toggle-arrow')
+        arrow.type = 'button'
+        arrow.contentEditable = 'false'
+        arrow.setAttribute('aria-label', 'Déplier')
+        arrow.dataset.testid = 'page-toggle-arrow'
+        arrow.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          const closed = dom.classList.toggle('is-closed')
+          arrow.setAttribute('aria-label', closed ? 'Déplier' : 'Replier')
+        })
+        const content = el('div', 'page-toggle-content')
+        dom.append(arrow, content)
+        return {
+          dom,
+          contentDOM: content,
+          update: (next) => {
+            if (next.type.name !== 'toggle') return false
+            if (Number(next.attrs.heading)) dom.dataset.heading = String(next.attrs.heading)
+            else delete dom.dataset.heading
+            return true
+          },
+          ignoreMutation: (m) => m.type !== 'selection' && !content.contains(m.target as globalThis.Node),
+        }
+      }
+    },
+  })
+
+  /** Image : une piece jointe du vault (chemin) ou une adresse https. */
+  const ImageView = PageImage.extend({
+    addNodeView() {
+      return ({ node }) => {
+        const dom = el('figure', 'page-image')
+        dom.dataset.testid = 'page-image'
+        const img = el('img')
+        const caption = el('figcaption')
+        dom.append(img)
+        let shown = ''
+        const show = (src: string, alt: string) => {
+          img.alt = alt
+          caption.textContent = alt
+          if (alt) dom.append(caption)
+          else caption.remove()
+          if (src === shown) return
+          shown = src
+          dom.dataset.src = src
+          if (/^https:\/\//i.test(src)) { img.src = src; return }
+          img.removeAttribute('src')
+          if (!src || !vault?.resolveAttachmentUrl) return
+          vault.resolveAttachmentUrl(src).then(url => { if (shown === src) img.src = url }, () => {
+            if (shown === src) img.alt = `Image introuvable : ${src}`
+          })
+        }
+        show(String(node.attrs.src ?? ''), String(node.attrs.alt ?? ''))
+        return {
+          dom,
+          update: (next) => {
+            if (next.type.name !== 'image') return false
+            show(String(next.attrs.src ?? ''), String(next.attrs.alt ?? ''))
+            return true
+          },
+        }
       }
     },
   })
@@ -533,6 +613,7 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
         editable: !readOnly,
         extensions: pageExtensions({
           pageLink: PageLinkCard,
+          overrides: [ToggleView, ImageView],
           extra: [
             privateYSync(fragment),
             ...(review && docId ? [pageReviewExtension((ids, pos) => openThreads(ids, pos))] : []),
@@ -561,6 +642,16 @@ export function createPageView(path: string, ctx: FileContext, deps: PageViewDep
       editor.on('transaction', () => updateMenu())
       editor.on('blur', () => { if (!menu.naming) closeMenu() })
 
+      // Un lien vers un document du vault (cible sans schema, « Projet/Nom ») l'ouvre.
+      editorEl.addEventListener('click', (e) => {
+        const a = (e.target as HTMLElement | null)?.closest?.('a')
+        const href = a?.getAttribute('href') ?? ''
+        if (!href || !isVaultTarget(href)) return
+        e.preventDefault()
+        let target = href
+        try { target = decodeURI(href) } catch { /* adresse deja lisible */ }
+        openTarget(target)
+      })
       editorEl.addEventListener('mousemove', (e) => {
         const block = topLevelBlockAt(e.target)
         if (block) placeHandle(block)

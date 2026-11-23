@@ -33,7 +33,9 @@ function inline(nodes: PmJson[] | undefined): string {
       }
       if (m.type === 'link' && typeof m.attrs?.href === 'string') link = m.attrs.href
     }
-    out += link ? `[${text}](${link})` : text
+    // Lien vers un document du vault (cible sans schema) : un [[lien]], que l'index suit.
+    if (link && !/^[a-z][a-z0-9+.-]*:/i.test(link) && !link.startsWith('#')) out += `[[${link}|${text.replace(/[|\]]/g, ' ')}]]`
+    else out += link ? `[${text}](${link})` : text
   }
   return out
 }
@@ -52,6 +54,16 @@ function list(node: PmJson, ordered: boolean): string {
   }).join('\n')
 }
 
+/** Tableau GFM : une case = ses paragraphes sur une ligne. */
+function table(node: PmJson): string {
+  const rows = (node.content ?? []).map(row => (row.content ?? []).map(cell =>
+    (cell.content ?? []).map(block).join(' ').replace(/\|/g, '\\|').replace(/\n+/g, ' ')))
+  if (!rows.length) return ''
+  const width = Math.max(...rows.map(r => r.length))
+  const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? '').join(' | ')} |`
+  return [line(rows[0]), line(Array.from({ length: width }, () => '---')), ...rows.slice(1).map(line)].join('\n')
+}
+
 function block(node: PmJson): string {
   switch (node.type) {
     case 'paragraph': return inline(node.content)
@@ -67,6 +79,24 @@ function block(node: PmJson): string {
     case 'taskList': return list(node, false)
     case 'orderedList': return list(node, true)
     case 'pageLink': return `[[${String(node.attrs?.target ?? '')}]]`
+    case 'callout': {
+      const body = (node.content ?? []).map(block).join('\n\n')
+      const icon = String(node.attrs?.icon ?? '')
+      return indent(`[!NOTE]${icon ? ` ${icon}` : ''}\n${body}`, '> ')
+    }
+    case 'toggle': {
+      const [title, ...rest] = node.content ?? []
+      const level = Number(node.attrs?.heading ?? 0)
+      const head = (level ? '#'.repeat(level) + ' ' : '') + inline(title?.content)
+      return [head, ...rest.map(block)].filter(b => b.trim() !== '').join('\n\n')
+    }
+    case 'image': {
+      const src = String(node.attrs?.src ?? '')
+      const alt = String(node.attrs?.alt ?? '')
+      if (!src) return ''
+      return /^https?:/i.test(src) ? `![${alt}](${src})` : `![[${src}${alt ? `|${alt.replace(/[|\]]/g, ' ')}` : ''}]]`
+    }
+    case 'table': return table(node)
     default: return (node.content ?? []).map(block).join('\n\n')
   }
 }
