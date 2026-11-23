@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { EditorView, runScopeHandlers } from '@codemirror/view'
 import { EditorState, EditorSelection, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { brackets, highlightSelectionMatches, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
+import { brackets, highlightSelectionMatches, listHome, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
 import { findMatches, findNext, findReplace, openFind, replaceAll } from '../../../../../packages/editor-core/src/FindReplace'
 import { htmlToMarkdown, smartPaste } from '../../../../../packages/editor-core/src/SmartPaste'
 import { countWords, textStats } from '../../../../../packages/editor-core/src/TextStats'
@@ -239,6 +239,38 @@ describe('Citation en edition', () => {
     // Le curseur dans les > : ils reviennent.
     view.dispatch({ selection: { anchor: doc.indexOf('> >') + 1 } })
     expect(view.contentDOM.querySelector('.plume-quote-live')).toBeNull()
+    view.destroy()
+  })
+})
+
+describe('Touche Debut', () => {
+  const home = (view: EditorView, shiftKey = false) =>
+    runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'Home', shiftKey, bubbles: true, cancelable: true }), 'editor')
+
+  it('sur une liste : le debut du texte, puis le debut de la ligne, puis le texte', () => {
+    const doc = 'avant\n  - [ ] une tache'
+    const view = setup(doc, doc.length, [listHome])
+    const text = doc.indexOf('une')
+    expect(home(view)).toBe(true)
+    expect(view.state.selection.main.head).toBe(text)
+    home(view)
+    expect(view.state.selection.main.head).toBe(doc.indexOf('  - '))
+    home(view)
+    expect(view.state.selection.main.head).toBe(text)
+    view.destroy()
+  })
+
+  it('Maj+Debut selectionne jusqu\'au debut du texte ; une citation aussi', () => {
+    const doc = '> > cite ici'
+    const view = setup(doc, doc.length, [listHome])
+    home(view, true)
+    expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe('cite ici')
+    view.destroy()
+  })
+
+  it('une ligne ordinaire garde le Debut habituel', () => {
+    const view = setup('texte simple', 5, [listHome])
+    expect(home(view)).toBe(false)
     view.destroy()
   })
 })

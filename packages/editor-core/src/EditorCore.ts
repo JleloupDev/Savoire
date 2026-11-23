@@ -28,7 +28,7 @@ import { foldAllHeadings, foldStorage, toggleFoldAtCursor, unfoldAll } from './F
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
 import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
 import type { PropertiesHost } from './PropertiesPanel'
-import { brackets, highlightSelectionMatches, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
+import { brackets, highlightSelectionMatches, listHome, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
 import { findReplace, openFind } from './FindReplace'
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
@@ -409,6 +409,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         // Aides d'ecriture (EditingAids.ts), rechercher (FindReplace.ts),
         // coller (SmartPaste.ts), position retenue (NotePosition.ts).
         spellcheck,
+        listHome,
         highlightSelectionMatches,
         multipleCursors,
         findReplace,

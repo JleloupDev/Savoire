@@ -353,3 +353,41 @@ export const renumberOrderedLists: Extension = EditorState.transactionFilter.of(
   return [tr, { changes, sequential: true } as TransactionSpec]
 })
 
+
+// ── Touche Debut sur une liste ou une citation ──────────────────────────────
+
+/** Marque de debut de ligne : retrait, `>`, puce ou numero, case a cocher. */
+const LINE_MARK_RE = /^\s*(?:>\s?)*\s*(?:(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?/
+
+/**
+ * Debut, comme dans Obsidian : sur une ligne de liste ou de citation, un
+ * premier appui va au debut du texte (apres la puce), le suivant au vrai
+ * debut de la ligne. Dans une longue ligne repliee a l'ecran, on va d'abord
+ * au debut de la rangee. Ailleurs : le Debut habituel.
+ */
+function smartHome(view: EditorView, extend: boolean): boolean {
+  const { state } = view
+  let handled = false
+  const ranges = state.selection.ranges.map(r => {
+    const line = state.doc.lineAt(r.head)
+    const mark = LINE_MARK_RE.exec(line.text)![0]
+    // Rien qu'un retrait (ou rien) : le Debut habituel s'en charge.
+    if (!mark.trim()) return r
+    handled = true
+    const textStart = line.from + mark.length
+    // Une rangee plus bas dans une ligne repliee : d'abord son debut.
+    const row = view.moveToLineBoundary(EditorSelection.cursor(r.head), false, true).head
+    const target = row > textStart && row !== r.head ? row : r.head === textStart ? line.from : textStart
+    return extend ? EditorSelection.range(r.anchor, target) : EditorSelection.cursor(target)
+  })
+  if (!handled) return false
+  view.dispatch({ selection: EditorSelection.create(ranges, state.selection.mainIndex), scrollIntoView: true, userEvent: 'select' })
+  return true
+}
+
+export const listHome: Extension = Prec.high(keymap.of([{
+  key: 'Home',
+  mac: 'Cmd-ArrowLeft',
+  run: view => smartHome(view, false),
+  shift: view => smartHome(view, true),
+}]))
