@@ -14,6 +14,22 @@ export interface BlockWidget {
  */
 export const BLOCK_DESTROY_EVENT = 'savoire:block-destroy'
 
+/**
+ * Mode classique : le curseur arrive sur un bloc par les fleches. L'editeur
+ * envoie cet evenement (annulable) a l'element du bloc. Le bloc qui prend la
+ * main (il met le focus dans son titre, sa premiere case...) appelle
+ * preventDefault() ; sinon le curseur passe le bloc. Il la rend par
+ * BlockEditContext.leave.
+ */
+export const BLOCK_ENTER_EVENT = 'savoire:block-enter'
+
+export interface BlockEnterDetail {
+  /** 1 : on arrive par le haut (fleche bas) ; -1 : par le bas. */
+  dir: 1 | -1
+  /** Abscisse du curseur dans la page, pour viser la bonne colonne. */
+  x: number | null
+}
+
 export interface BlockContext {
   editorView: unknown
   /** Remplace un passage du document (cocher une case, par exemple), sans
@@ -75,6 +91,11 @@ export interface BlockEditContext extends BlockContext {
   editSource(): void
   /** Vrai en lecture seule : le rendu ne doit rien proposer de modifier. */
   readonly readOnly: boolean
+  /**
+   * Rend le curseur a la note : la ligne sous le bloc (1) ou au-dessus (-1),
+   * creee s'il n'y en a pas.
+   */
+  leave?(dir: 1 | -1): void
 }
 
 /** Une entree du menu d'un bloc (clic droit, poignee). */

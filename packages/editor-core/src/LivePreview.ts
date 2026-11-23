@@ -4,7 +4,7 @@
 // see ADR-005
 
 import { EditorView, Decoration, DecorationSet, WidgetType, ViewPlugin, keymap, gutter, GutterMarker } from '@codemirror/view'
-import { StateField, StateEffect, EditorState, Range, Prec, type Transaction } from '@codemirror/state'
+import { StateField, StateEffect, EditorState, EditorSelection, Range, Prec, type Transaction } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 // Type des noeuds de l'arbre syntaxique (@lezer/common n'est pas une
 // dependance directe).
@@ -24,19 +24,19 @@ const remoteCursorPositionsField = StateField.define<number[]>({
 })
 
 import { marked } from 'marked'
-import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
-import type { BlockRegistry, BlockContext, BlockEditContext, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
+import { BLOCK_DESTROY_EVENT, BLOCK_ENTER_EVENT, sanitizeHtml } from '@savoire/plugin-api'
+import type { BlockRegistry, BlockContext, BlockEditContext, BlockEnterDetail, BlockMenuItem, BlockSpec, HookRegistry } from '@savoire/plugin-api'
 import { BLOCK_NODES, COLUMNS_CSS, columnContent, columnsElement, withMarkdown, type FragmentOptions } from './NoteFragment'
 import { findColumnsBlocks } from './Columns'
 import {
   ObjectWidget, SourceDoneWidget, appendTableColumnText, closeBlockMenu, closeSource, editContext, editableColumns, editableTable,
-  isClassicEffect, locateInColumns, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
+  isClassicEffect, locateInColumns, tableCellItems, objectEpochField, openSource, showBlockMenu, sourceDecorations, sourceOpenField, type BlockRange,
 } from './ClassicMode'
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
 import { lineColorOf } from './FormattingService'
-import { appendTableRow, tableColumnCount } from './TableRows'
+import { appendTableRow, tableAt, tableColumnCount } from './TableRows'
 import { highlightedRanges, isHighlightsEffect } from './Highlights'
 import { FoldedGap, foldablesField, foldedField, foldingExtension, hiddenAt, hiddenRanges, skipFold } from './Folding'
 
@@ -283,20 +283,33 @@ class TableWidget extends MarkdownWidget {
   toDOM(view?: EditorView): HTMLElement {
     const div = super.toDOM()
     if (!view || view.state.readOnly) return div
-    const add = document.createElement('button')
-    add.type = 'button'
-    add.className = 'vault-table-add'
-    add.dataset.testid = 'table-add-row'
-    add.textContent = '+ Nouvelle ligne'
-    add.addEventListener('mousedown', e => {
-      e.preventDefault()
-      e.stopPropagation()
-      let pos: number
-      try { pos = view.posAtDOM(div) } catch { return }
+    const bar = document.createElement('div')
+    bar.className = 'plume-table-actions'
+    const button = (label: string, testid: string, run: (pos: number) => void) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'vault-table-add'
+      b.dataset.testid = testid
+      b.textContent = label
+      b.addEventListener('mousedown', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        let pos: number
+        try { pos = view.posAtDOM(div) } catch { return }
+        run(pos)
+      })
+      bar.appendChild(b)
+    }
+    button('+ Nouvelle ligne', 'table-add-row', pos => {
       const tr = appendTableRow(view.state, pos)
       if (tr) { view.dispatch(tr); view.focus() }
     })
-    div.appendChild(add)
+    button('+ Colonne', 'table-add-column', pos => {
+      const t = tableAt(view.state, pos)
+      if (!t) return
+      view.dispatch({ changes: { from: t.from, to: t.to, insert: appendTableColumnText(view.state.sliceDoc(t.from, t.to)) }, userEvent: 'input' })
+    })
+    div.appendChild(bar)
     return div
   }
 }
@@ -927,6 +940,32 @@ const blockAwareLineNumbers = gutter({
   },
 })
 
+/** La ligne `prev` est dans une citation (callout compris) ou un tableau. */
+function inLazyBlock(state: EditorState, prev: { to: number }): boolean {
+  for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(prev.to, -1); n; n = n.parent) {
+    if (n.name === 'FencedCode' || n.name === 'CodeBlock') return false
+    if (n.name === 'Blockquote' || n.name === 'Table') return true
+  }
+  return false
+}
+
+/**
+ * Ecrire sur la ligne vide juste sous un callout, une citation ou un
+ * tableau : en Markdown, ce texte s'y ajouterait (ils continuent sur la
+ * ligne suivante). Une ligne vide les separe d'abord. `>` et `|` gardent,
+ * eux, la suite du bloc.
+ */
+const typingAfterBlock = EditorView.inputHandler.of((view, from, to, text) => {
+  if (view.composing || from !== to || !text || text.includes('\n') || /^[>|]/.test(text)) return false
+  const { state } = view
+  const line = state.doc.lineAt(from)
+  if (line.length > 0 || line.number === 1) return false
+  const prev = state.doc.line(line.number - 1)
+  if (!prev.text.trim() || !inLazyBlock(state, prev)) return false
+  view.dispatch({ changes: { from, insert: `\n${text}` }, selection: { anchor: from + 1 + text.length }, userEvent: 'input.type' })
+  return true
+})
+
 const blockquoteExitKeymap = Prec.highest(
   keymap.of([
     {
@@ -1062,9 +1101,11 @@ function classicExtensions(
     return items
   }
 
-  const menu = (view: EditorView, r: BlockRange, isObject: boolean, x: number, y: number) => {
+  const menu = (view: EditorView, r: BlockRange, isObject: boolean, x: number, y: number, first: BlockMenuItem[] = []) => {
     if (view.state.readOnly) return
-    showBlockMenu(blockMenu(view, r, isObject), x, y)
+    const rest = blockMenu(view, r, isObject)
+    if (first.length && rest.length) rest[0] = { ...rest[0], separatorBefore: true }
+    showBlockMenu([...first, ...rest], x, y)
   }
 
   const objectOf = (view: EditorView, target: EventTarget | null): { dom: HTMLElement; range: BlockRange } | null => {
@@ -1082,7 +1123,12 @@ function classicExtensions(
       // Le menu du navigateur reste dans une zone de texte (correcteur).
       if (insideObject(e.target, hit.dom, 'textarea, input, [contenteditable="true"], [contenteditable="plaintext-only"]')) return
       e.preventDefault()
-      menu(view, hit.range, true, e.clientX, e.clientY)
+      // Dans une case d'un tableau : d'abord sa ligne et sa colonne.
+      const cell = (e.target as Element | null)?.closest?.('.plume-table-cell') as HTMLElement | null
+      const first = cell && hit.dom.classList.contains('plume-table-object') && hit.dom.contains(cell)
+        ? tableCellItems(view, editContext(view, env.ctx ?? { editorView: view }, () => hit.range), Number(cell.dataset.row), Number(cell.dataset.col), hit.range.from)
+        : []
+      menu(view, hit.range, true, e.clientX, e.clientY, first)
     }
     const dblclick = (e: MouseEvent) => {
       if (view.state.readOnly) return
@@ -1189,7 +1235,13 @@ function classicExtensions(
       },
       '.plume-table-cell': { cursor: 'text', minWidth: '3em' },
       '.plume-table-cell[contenteditable]': { outline: '2px solid var(--accent, #7c3aed)', outlineOffset: '-2px' },
-      '.plume-table-actions': { display: 'flex', gap: '6px' },
+      '.plume-table-object': { position: 'relative' },
+      '.plume-table-more': {
+        position: 'absolute', width: '18px', height: '18px', padding: '0', lineHeight: '16px', zIndex: '2',
+        border: '1px solid var(--border, #3d3d5c)', borderRadius: '4px', cursor: 'pointer',
+        background: 'var(--bg-elevated, #252535)', color: 'var(--text-muted, #9ca3af)', fontSize: '12px',
+      },
+      '.plume-table-more:hover': { color: 'var(--text, #cdd6f4)' },
       '.plume-column': { cursor: 'text', borderRadius: '4px', minHeight: '1.6em', position: 'relative' },
       '.plume-column:hover': { background: 'var(--bg-hover, rgba(127,127,127,0.06))' },
       '.plume-column-resizer': {
@@ -1293,11 +1345,49 @@ export function createLivePreviewExtension(
     }
   })
 
-  // see ADR-005 — en mode classique, une fleche ne s'arrete pas dans un objet.
+  /** L'element d'un objet du mode classique, par sa position. */
+  const objectDom = (view: EditorView, from: number): HTMLElement | null => {
+    for (const el of Array.from(view.contentDOM.querySelectorAll<HTMLElement>('.plume-object'))) {
+      try { if (view.posAtDOM(el) === from) return el } catch { /* hors de la vue */ }
+    }
+    return null
+  }
+  /** Le curseur arrive sur un objet : il le prend s'il sait se laisser parcourir (callout, tableau). */
+  const enterObject = (view: EditorView, obj: BlockRange, dir: 1 | -1, x: number | null): boolean => {
+    const dom = objectDom(view, obj.from)
+    if (!dom) return false
+    const ev = new CustomEvent<BlockEnterDetail>(BLOCK_ENTER_EVENT, { cancelable: true, detail: { dir, x } })
+    dom.dispatchEvent(ev)
+    return ev.defaultPrevented
+  }
+
+  /** Une ligne qui s'affiche sur plusieurs rangees (texte long qui passe a la ligne). */
+  const wraps = (view: EditorView, from: number, to: number): boolean => {
+    if (from === to) return false
+    const a = view.coordsAtPos(from, 1)
+    const b = view.coordsAtPos(to, -1)
+    return !!a && !!b && b.top - a.top > 2 && b.top > a.bottom - 2
+  }
+
+  // see ADR-005 — une fleche va a la rangee du dessus ou du dessous : dans
+  // une longue ligne, d'abord ses rangees. En mode classique, elle entre dans
+  // un objet qui sait se laisser parcourir, sinon elle le saute.
   const moveOneLine = (view: EditorView, dir: 1 | -1): boolean => {
     const { state } = view
-    const pos = state.selection.main.head
+    const range = state.selection.main
+    const pos = range.head
     const line = state.doc.lineAt(pos)
+    // L'abscisse visee, gardee d'une fleche a l'autre.
+    const coords = view.coordsAtPos(pos, range.assoc || 1)
+    const box = view.contentDOM.getBoundingClientRect()
+    const goal = range.goalColumn ?? (coords ? coords.left - box.left : undefined)
+    if (wraps(view, line.from, line.to)) {
+      const moved = view.moveVertically(range, dir === 1)
+      if (moved.head !== pos && state.doc.lineAt(moved.head).number === line.number) {
+        view.dispatch({ selection: EditorSelection.create([moved]), scrollIntoView: true })
+        return true
+      }
+    }
     const targetLineNum = line.number + dir
     if (targetLineNum < 1 || targetLineNum > state.doc.lines) return false
     let targetLine = state.doc.line(targetLineNum)
@@ -1315,6 +1405,7 @@ export function createLivePreviewExtension(
     if (classic) {
       const obj = objectAround(state, targetLine.from)
       if (obj && !(dir === -1 && pos === obj.to)) {
+        if (enterObject(view, obj, dir, coords ? coords.left : null)) return true
         const beyond = dir === 1 ? state.doc.lineAt(obj.to).number + 1 : state.doc.lineAt(obj.from).number - 1
         if (beyond < 1 || beyond > state.doc.lines) {
           view.dispatch({ selection: { anchor: dir === 1 ? obj.to : obj.from }, scrollIntoView: true })
@@ -1326,7 +1417,17 @@ export function createLivePreviewExtension(
     }
     // Preserve horizontal column within the target line.
     const anchor = Math.min(targetLine.from + col, targetLine.to)
-    view.dispatch({ selection: { anchor }, scrollIntoView: true })
+    view.dispatch({ selection: EditorSelection.cursor(anchor, 0, undefined, goal), scrollIntoView: true })
+    // La ligne d'arrivee passe a la ligne : la rangee la plus proche (la
+    // premiere en descendant, la derniere en montant), a la meme abscisse.
+    const target = view.state.doc.lineAt(Math.min(anchor, view.state.doc.length))
+    if (goal !== undefined && wraps(view, target.from, target.to)) {
+      const edge = view.coordsAtPos(dir === 1 ? target.from : target.to, dir === 1 ? 1 : -1)
+      const at = edge ? view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + goal, y: (edge.top + edge.bottom) / 2 }, false) : null
+      if (at !== null && at >= target.from && at <= target.to && at !== view.state.selection.main.head) {
+        view.dispatch({ selection: EditorSelection.cursor(at, 0, undefined, goal), scrollIntoView: true })
+      }
+    }
     return true
   }
 
@@ -1345,6 +1446,7 @@ export function createLivePreviewExtension(
     ...(showLineNumbers ? [blockAwareLineNumbers] : []),
     ...foldingExtension(),
     blockquoteExitKeymap,
+    typingAfterBlock,
     blockNavigationKeymap,
     headingCursorFix,
     pointerHold,
@@ -1366,6 +1468,7 @@ export function createLivePreviewExtension(
         marginTop: '0 !important',
         marginBottom: '0 !important',
       },
+      '.plume-table-actions': { display: 'flex', gap: '6px' },
       '.cm-lineNumbers .cm-gutterElement.plume-gutter-heading': {
         display: 'flex',
         alignItems: 'center',

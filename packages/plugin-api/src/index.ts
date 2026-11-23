@@ -31,6 +31,7 @@ export type {
   BlockWidget,
   BlockContext,
   BlockEditContext,
+  BlockEnterDetail,
   BlockMenuItem,
   EditorMode,
   BlockSpec,
@@ -123,7 +124,7 @@ export type { CompiledFormula, FormulaResult, FormulaRow, FormulaAggregateCall }
 export {
   compileFormula, tryCompileFormula, FormulaError, FORMULA_FUNCTIONS, FORMULA_MAX_LENGTH, aggregateKey,
 } from './formula'
-export { BLOCK_DESTROY_EVENT } from './blocks'
+export { BLOCK_DESTROY_EVENT, BLOCK_ENTER_EVENT } from './blocks'
 export type { LinkResolver } from './links'
 export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName, rewriteMovedLinks } from './links'
 export type { LinkMoveContext } from './links'

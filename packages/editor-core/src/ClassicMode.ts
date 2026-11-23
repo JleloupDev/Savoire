@@ -10,10 +10,13 @@
 import { EditorView, WidgetType, Decoration } from '@codemirror/view'
 import { StateEffect, StateField, type EditorState, type Range } from '@codemirror/state'
 import { marked } from 'marked'
-import { BLOCK_DESTROY_EVENT, sanitizeHtml } from '@savoire/plugin-api'
-import type { BlockContext, BlockEditContext, BlockMenuItem, HookRegistry } from '@savoire/plugin-api'
+import { BLOCK_DESTROY_EVENT, BLOCK_ENTER_EVENT, sanitizeHtml } from '@savoire/plugin-api'
+import type { BlockContext, BlockEditContext, BlockEnterDetail, BlockMenuItem, HookRegistry } from '@savoire/plugin-api'
 import { findColumnsBlocks, linesOf, markdownUnits, modelOf, serializeModel, setColumnText, type ColumnsBlock } from './Columns'
 import { columnContent, columnsElement, type FragmentOptions } from './NoteFragment'
+import {
+  deleteTableColumn, deleteTableRow, insertTableColumn, insertTableRow, moveTableColumn, moveTableRow, tableCells, tableLine, tableSize,
+} from './TableRows'
 
 export interface BlockRange { from: number; to: number }
 
@@ -215,7 +218,29 @@ export function editContext(
       const r = range()
       if (r) openSource(view, r)
     },
+    leave: (dir: 1 | -1) => {
+      const r = range()
+      if (r) leaveObject(view, r, dir)
+    },
   }
+}
+
+/**
+ * Le curseur quitte un objet par les fleches : la ligne du dessous (1) ou
+ * du dessus (-1), creee au bord de la note.
+ */
+export function leaveObject(view: EditorView, r: BlockRange, dir: 1 | -1): void {
+  const doc = view.state.doc
+  if (dir === 1) {
+    const end = doc.lineAt(Math.min(r.to, doc.length))
+    if (end.number < doc.lines) view.dispatch({ selection: { anchor: doc.line(end.number + 1).from }, scrollIntoView: true })
+    else view.dispatch({ changes: { from: doc.length, insert: '\n' }, selection: { anchor: doc.length + 1 }, scrollIntoView: true, userEvent: 'input' })
+  } else {
+    const start = doc.lineAt(r.from)
+    if (start.number > 1) view.dispatch({ selection: { anchor: doc.line(start.number - 1).to }, scrollIntoView: true })
+    else view.dispatch({ changes: { from: 0, insert: '\n' }, selection: { anchor: 0 }, scrollIntoView: true, userEvent: 'input' })
+  }
+  view.focus()
 }
 
 // ── Menu d'un bloc ──────────────────────────────────────────────────────────
@@ -291,17 +316,7 @@ export function showBlockMenu(items: readonly BlockMenuItem[], x: number, y: num
 
 // ── Tableau modifiable ──────────────────────────────────────────────────────
 
-/** Les cases d'une ligne de tableau, barres echappees comprises. */
-export function tableCells(line: string): string[] {
-  let text = line.trim()
-  if (text.startsWith('|')) text = text.slice(1)
-  if (text.endsWith('|') && !text.endsWith('\\|')) text = text.slice(0, -1)
-  return text.split(/(?<!\\)\|/).map(c => c.trim())
-}
-
-function tableLine(cells: readonly string[]): string {
-  return `| ${cells.join(' | ')} |`
-}
+export { tableCells, tableLine }
 
 /**
  * Le tableau apres la modification d'une case. `row` compte les lignes
@@ -342,10 +357,61 @@ function inlineHtml(text: string, hooks?: HookRegistry): string {
   return sanitizeHtml(marked.parseInline(hooks ? hooks.runBeforeParseSync(text) : text) as string)
 }
 
+/** Case a rouvrir dans le tableau redessine (apres un deplacement de ligne). */
+const pendingCell = new WeakMap<EditorView, { pos: number; row: number; col: number }>()
+
+/**
+ * Les actions sur la ligne et la colonne d'une case : inserer, deplacer,
+ * supprimer. `focus` rouvre la case qui suit l'operation.
+ */
+export function tableCellItems(view: EditorView, ctx: BlockEditContext, row: number, col: number, pos: number | null): BlockMenuItem[] {
+  const { rows, cols } = tableSize(ctx.source())
+  const apply = (next: (src: string) => string, focus?: { row: number; col: number }) => () => {
+    // Une case ouverte s'enregistre d'abord, et le tableau pourra se redessiner.
+    const open = document.activeElement as HTMLElement | null
+    if (open?.classList?.contains('plume-table-cell')) open.blur()
+    const src = ctx.source()
+    const out = next(src)
+    if (out === src) return
+    if (focus && pos !== null) pendingCell.set(view, { pos, ...focus })
+    ctx.replace(out)
+  }
+  const items: BlockMenuItem[] = [
+    { id: 'table-row-above', label: 'Insérer une ligne au-dessus', run: apply(s => insertTableRow(s, row, false), { row, col }) },
+    { id: 'table-row-below', label: 'Insérer une ligne au-dessous', run: apply(s => insertTableRow(s, row, true), { row: row + 1, col }) },
+    { id: 'table-col-left', label: 'Insérer une colonne à gauche', separatorBefore: true, run: apply(s => insertTableColumn(s, col, false), { row, col }) },
+    { id: 'table-col-right', label: 'Insérer une colonne à droite', run: apply(s => insertTableColumn(s, col, true), { row, col: col + 1 }) },
+  ]
+  if (row >= 1 && rows > 1) {
+    if (row > 1) items.push({ id: 'table-row-up', label: 'Monter la ligne (Alt+↑)', separatorBefore: true, run: apply(s => moveTableRow(s, row, -1)) })
+    if (row < rows) items.push({ id: 'table-row-down', label: 'Descendre la ligne (Alt+↓)', separatorBefore: row === 1, run: apply(s => moveTableRow(s, row, 1)) })
+  }
+  if (cols > 1) {
+    const first = !items.some(i => i.id === 'table-row-up' || i.id === 'table-row-down')
+    if (col > 0) items.push({ id: 'table-col-move-left', label: 'Déplacer la colonne à gauche (Alt+←)', separatorBefore: first, run: apply(s => moveTableColumn(s, col, -1)) })
+    if (col < cols - 1) items.push({ id: 'table-col-move-right', label: 'Déplacer la colonne à droite (Alt+→)', separatorBefore: first && col === 0, run: apply(s => moveTableColumn(s, col, 1)) })
+  }
+  if (row >= 1) items.push({ id: 'table-row-delete', label: 'Supprimer la ligne', separatorBefore: true, run: apply(s => deleteTableRow(s, row)) })
+  if (cols > 1) items.push({ id: 'table-col-delete', label: 'Supprimer la colonne', separatorBefore: row < 1, run: apply(s => deleteTableColumn(s, col)) })
+  return items
+}
+
+function caretAt(cell: HTMLElement, edge: 'start' | 'end'): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
+  const range = sel.getRangeAt(0)
+  const whole = document.createRange()
+  whole.selectNodeContents(cell)
+  if (edge === 'start') whole.setEnd(range.startContainer, range.startOffset)
+  else whole.setStart(range.endContainer, range.endOffset)
+  return whole.toString().length === 0
+}
+
 /**
  * Tableau rendu dont chaque case s'edite sur place, comme dans Obsidian :
  * un clic ouvre la case en texte, Tab passe a la suivante, Entree valide,
- * Echap annule.
+ * Echap annule. Les fleches vont de case en case et sortent du tableau par
+ * le haut ou le bas ; Alt + fleche deplace la ligne ou la colonne.
  */
 export function editableTable(view: EditorView, html: string, ctx: BlockEditContext, hooks?: HookRegistry): HTMLElement {
   const div = document.createElement('div')
@@ -364,8 +430,12 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
       cells.push(el)
     })
   })
+  const lastRow = rows.length - 1
+  const cellAt = (row: number, col: number): HTMLElement | null =>
+    cells.find(c => Number(c.dataset.row) === row && Number(c.dataset.col) === col) ?? null
+  const posOf = (): number | null => { try { return view.posAtDOM(div) } catch { return null } }
 
-  const start = (cell: HTMLElement) => {
+  const start = (cell: HTMLElement, caret: 'start' | 'end' = 'end') => {
     if (cell.isContentEditable) return
     const raw = tableCellSource(ctx.source(), Number(cell.dataset.row), Number(cell.dataset.col))
     cell.dataset.raw = raw
@@ -377,13 +447,13 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     if (sel) {
       const range = document.createRange()
       range.selectNodeContents(cell)
-      range.collapse(false)
+      range.collapse(caret === 'start')
       sel.removeAllRanges()
       sel.addRange(range)
     }
   }
 
-  const finish = (cell: HTMLElement, commit: boolean, next: HTMLElement | null) => {
+  const finish = (cell: HTMLElement, commit: boolean, next: HTMLElement | null, caret: 'start' | 'end' = 'end') => {
     if (!cell.isContentEditable) return
     const value = (cell.textContent ?? '').trim()
     cell.contentEditable = 'false'
@@ -396,9 +466,40 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     if (commit && value !== raw) {
       ctx.replace(setTableCell(ctx.source(), Number(cell.dataset.row), Number(cell.dataset.col), value))
     }
-    if (next && div.contains(next)) start(next)
+    if (next && div.contains(next)) start(next, caret)
     else endEditing(view, div)
   }
+
+  /** Ferme la case, puis change le tableau ; il se redessine, la case `focus` rouverte. */
+  const restructure = (cell: HTMLElement, next: (src: string) => string, focus: { row: number; col: number } | null) => {
+    finish(cell, true, null)
+    cell.blur()
+    delete div.dataset.plumeEditing
+    const src = ctx.source()
+    const out = next(src)
+    const pos = posOf()
+    if (out === src) { start(cell); return }
+    if (focus && pos !== null) pendingCell.set(view, { pos, ...focus })
+    ctx.replace(out)
+  }
+
+  /** Quitter le tableau par une fleche : la note reprend le curseur. */
+  const leave = (cell: HTMLElement, dir: 1 | -1) => {
+    finish(cell, true, null)
+    ctx.leave?.(dir)
+  }
+
+  // Le curseur de la note arrive par une fleche : la case de sa colonne.
+  div.addEventListener(BLOCK_ENTER_EVENT, e => {
+    const { dir, x } = (e as CustomEvent<BlockEnterDetail>).detail
+    const row = dir === 1 ? 0 : lastRow
+    const line = cells.filter(c => Number(c.dataset.row) === row)
+    const hit = x === null ? null : line.find(c => { const r = c.getBoundingClientRect(); return r.width > 0 && x >= r.left && x < r.right })
+    const target = hit ?? line[0]
+    if (!target) return
+    e.preventDefault()
+    start(target, 'start')
+  })
 
   div.addEventListener('mousedown', e => {
     if (e.button !== 0) return
@@ -418,6 +519,8 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
     const cell = e.target as HTMLElement
     if (!cell.classList?.contains('plume-table-cell') || !cell.isContentEditable) return
     e.stopPropagation()
+    const row = Number(cell.dataset.row)
+    const col = Number(cell.dataset.col)
     // Tout selectionner : la case seulement, pas la note.
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       e.preventDefault()
@@ -428,22 +531,89 @@ export function editableTable(view: EditorView, html: string, ctx: BlockEditCont
       sel?.addRange(range)
       return
     }
-    if (e.key === 'Tab') {
+    // Alt + fleche : la ligne ou la colonne change de place, la case la suit.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.startsWith('Arrow')) {
+      e.preventDefault()
+      if (e.key === 'ArrowUp' && row > 1) restructure(cell, s => moveTableRow(s, row, -1), { row: row - 1, col })
+      else if (e.key === 'ArrowDown' && row >= 1) restructure(cell, s => moveTableRow(s, row, 1), { row: row + 1, col })
+      else if (e.key === 'ArrowLeft') restructure(cell, s => moveTableColumn(s, col, -1), { row, col: col - 1 })
+      else if (e.key === 'ArrowRight') restructure(cell, s => moveTableColumn(s, col, 1), { row, col: col + 1 })
+      return
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const dir = e.key === 'ArrowDown' ? 1 : -1
+      const other = cellAt(row + dir, col)
+      if (other) { div.dataset.plumeEditing = '1'; finish(cell, true, other) }
+      else leave(cell, dir)
+    } else if (e.key === 'ArrowLeft' && caretAt(cell, 'start')) {
+      const prev = cells[cells.indexOf(cell) - 1]
+      if (!prev) return
+      e.preventDefault()
+      div.dataset.plumeEditing = '1'
+      finish(cell, true, prev)
+    } else if (e.key === 'ArrowRight' && caretAt(cell, 'end')) {
+      const next = cells[cells.indexOf(cell) + 1]
+      if (!next) return
+      e.preventDefault()
+      div.dataset.plumeEditing = '1'
+      finish(cell, true, next, 'start')
+    } else if (e.key === 'Tab') {
       e.preventDefault()
       const i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1)
       const next = cells[i] ?? null
+      // Tab apres la derniere case : une ligne de plus, comme un tableur.
+      if (!next && !e.shiftKey) { restructure(cell, s => insertTableRow(s, row, true), { row: row + 1, col: 0 }); return }
       div.dataset.plumeEditing = '1'
       finish(cell, true, next)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       // Entree : la case du dessous, comme un tableur.
-      const below = cells.find(c => c.dataset.col === cell.dataset.col && Number(c.dataset.row) === Number(cell.dataset.row) + 1) ?? null
+      const below = cellAt(row + 1, col)
       if (below) div.dataset.plumeEditing = '1'
       finish(cell, true, below)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       finish(cell, false, null)
+      ctx.leave?.(1)
     }
+  })
+
+  // « ⋯ » sur la case survolee : le menu de sa ligne et de sa colonne.
+  const more = document.createElement('button')
+  more.type = 'button'
+  more.className = 'plume-table-more'
+  more.dataset.testid = 'table-cell-menu'
+  more.title = 'Ligne et colonne'
+  more.textContent = '⋯'
+  more.hidden = true
+  let target: HTMLElement | null = null
+  div.addEventListener('mouseover', e => {
+    const cell = (e.target as Element).closest?.('.plume-table-cell') as HTMLElement | null
+    if (!cell || cell === target || !div.contains(cell)) return
+    target = cell
+    more.hidden = false
+    more.style.top = `${cell.offsetTop + 2}px`
+    more.style.left = `${cell.offsetLeft + cell.offsetWidth - 20}px`
+  })
+  div.addEventListener('mouseleave', () => { more.hidden = true; target = null })
+  more.addEventListener('mousedown', e => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!target) return
+    const r = more.getBoundingClientRect()
+    showBlockMenu(tableCellItems(view, ctx, Number(target.dataset.row), Number(target.dataset.col), posOf()), r.left, r.bottom + 2)
+  })
+  div.appendChild(more)
+
+  // Redessine apres un deplacement : la case deplacee se rouvre.
+  requestAnimationFrame(() => {
+    const want = pendingCell.get(view)
+    if (!want || !div.isConnected || posOf() !== want.pos) return
+    pendingCell.delete(view)
+    const cell = cellAt(want.row, want.col)
+    if (cell) start(cell)
   })
   return div
 }

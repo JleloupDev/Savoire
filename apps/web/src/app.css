@@ -464,7 +464,10 @@ button:active { filter: brightness(0.84); }
   text-align: left; cursor: pointer; opacity: 0; transition: opacity .12s;
 }
 .vault-rendered-block:hover > .vault-table-add,
+.vault-rendered-block:hover > .plume-table-actions > .vault-table-add,
 .vault-table-add:focus-visible { opacity: 1; }
+.plume-table-actions > .vault-table-add { flex: 1 1 0; }
+.plume-table-actions > .vault-table-add + .vault-table-add { flex: 0 0 auto; width: auto; }
 .vault-table-add:hover { background: var(--bg-hover); color: var(--text-muted); }
 
 /* ─── Callout blocks ────────────────────────────────────────────────────────── */

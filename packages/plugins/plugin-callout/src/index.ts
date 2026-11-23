@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { VaultPlugin, PluginAPI, BlockContext, BlockEditContext } from '@savoire/plugin-api'
-import { createIcon } from '@savoire/plugin-api'
+import type { VaultPlugin, PluginAPI, BlockContext, BlockEditContext, BlockEnterDetail } from '@savoire/plugin-api'
+import { BLOCK_ENTER_EVENT, createIcon } from '@savoire/plugin-api'
 
 interface CalloutData { type: string; content: string; title?: string }
 
@@ -52,6 +52,12 @@ function withType(raw: string, type: string): string {
   return raw.replace(/^(>\s*\[!)\w+(\])/, `$1${type}$2`)
 }
 
+/** Change le titre, en gardant le type et le corps. */
+function withTitle(raw: string, title: string): string {
+  const clean = title.replace(/\s+/g, ' ').trim()
+  return raw.replace(/^(>\s*\[!\w+\][+-]?)[^\n]*/, (_m, head: string) => (clean ? `${head} ${clean}` : head))
+}
+
 /** Change le corps, en gardant la ligne de titre. */
 function withContent(raw: string, content: string): string {
   const first = raw.split('\n')[0]
@@ -87,7 +93,7 @@ function renderCallout(d: CalloutData, ctx?: BlockContext): HTMLElement {
   const title = document.createElement('div')
   title.className = 'callout-title'
   title.style.cssText = `font-weight:600;color:${style.border};margin-bottom:4px;display:flex;align-items:center;gap:6px`
-  title.append(createIcon(iconApi, style.icon, { size: 16 }), d.type.charAt(0) + d.type.slice(1).toLowerCase())
+  title.append(createIcon(iconApi, style.icon, { size: 16 }), d.title || d.type.charAt(0) + d.type.slice(1).toLowerCase())
 
   const body = document.createElement('div')
   body.className = 'callout-body'
@@ -99,8 +105,12 @@ function renderCallout(d: CalloutData, ctx?: BlockContext): HTMLElement {
   return el
 }
 
-/** Le corps du callout en zone de texte, le temps de l'ecrire. */
-function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext): void {
+/**
+ * Le corps du callout en zone de texte, le temps de l'ecrire. Les fleches en
+ * sortent par le haut (vers le titre) et par le bas (vers la note).
+ */
+function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext, caret: 'start' | 'end' = 'end', toTitle?: () => void): void {
+  if (body.querySelector('textarea')) return
   const area = document.createElement('textarea')
   area.className = 'callout-editor'
   area.dataset.testid = 'callout-editor'
@@ -113,7 +123,8 @@ function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext): vo
   // Garde l'element pendant l'ecriture (voir BlockEditContext).
   el.dataset.plumeEditing = '1'
   area.focus()
-  area.setSelectionRange(area.value.length, area.value.length)
+  const at = caret === 'start' ? 0 : area.value.length
+  area.setSelectionRange(at, at)
   requestAnimationFrame(fit)
   let timer: ReturnType<typeof setTimeout> | null = null
   const commit = () => {
@@ -127,7 +138,23 @@ function editBody(el: HTMLElement, body: HTMLElement, ctx: BlockEditContext): vo
   })
   area.addEventListener('keydown', e => {
     e.stopPropagation()
-    if (e.key === 'Escape') { e.preventDefault(); area.blur() }
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+    const collapsed = area.selectionStart === area.selectionEnd
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      commit()
+      if (ctx.leave) ctx.leave(1)
+      else area.blur()
+    } else if (e.key === 'ArrowDown' && collapsed && area.selectionEnd === area.value.length && ctx.leave) {
+      // Au bout du texte : la ligne sous le callout.
+      e.preventDefault()
+      commit()
+      ctx.leave(1)
+    } else if (e.key === 'ArrowUp' && collapsed && area.selectionStart === 0 && toTitle) {
+      e.preventDefault()
+      commit()
+      toTitle()
+    }
   })
   area.addEventListener('blur', () => {
     commit()
@@ -190,7 +217,7 @@ const plugin: VaultPlugin = {
         select.className = 'callout-type'
         select.dataset.testid = 'callout-type'
         select.title = 'Type du callout'
-        select.style.cssText = `font:inherit;font-weight:600;color:inherit;background:transparent;border:0;padding:0;cursor:pointer;appearance:auto`
+        select.style.cssText = `font:inherit;font-weight:600;color:inherit;background:transparent;border:0;padding:0;cursor:pointer;appearance:auto;field-sizing:content`
         for (const type of Object.keys(COLORS)) {
           const o = document.createElement('option')
           o.value = type
@@ -211,6 +238,46 @@ const plugin: VaultPlugin = {
         title.lastChild?.remove()
         title.appendChild(select)
 
+        // Le titre s'ecrit sur place ; le curseur y arrive par le haut.
+        const name = document.createElement('input')
+        name.className = 'callout-title-input'
+        name.dataset.testid = 'callout-title'
+        name.placeholder = 'Titre'
+        name.value = d.title ?? ''
+        name.style.cssText = 'flex:1;min-width:4em;font:inherit;font-weight:600;color:inherit;background:transparent;border:0;outline:none;padding:0'
+        let titleTimer: ReturnType<typeof setTimeout> | null = null
+        const commitTitle = () => {
+          if (titleTimer) { clearTimeout(titleTimer); titleTimer = null }
+          ctx.replace(withTitle(ctx.source(), name.value))
+        }
+        const toTitle = () => {
+          name.focus()
+          name.setSelectionRange(name.value.length, name.value.length)
+        }
+        const toBody = () => { commitTitle(); editBody(el, body, ctx, 'start', toTitle) }
+        name.addEventListener('input', () => {
+          if (titleTimer) clearTimeout(titleTimer)
+          titleTimer = setTimeout(commitTitle, 500)
+        })
+        name.addEventListener('blur', commitTitle)
+        name.addEventListener('mousedown', e => e.stopPropagation())
+        name.addEventListener('keydown', e => {
+          e.stopPropagation()
+          if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+          if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); toBody() }
+          else if (e.key === 'ArrowUp' && ctx.leave) { e.preventDefault(); commitTitle(); ctx.leave(-1) }
+          else if (e.key === 'Escape' && ctx.leave) { e.preventDefault(); commitTitle(); ctx.leave(1) }
+        })
+        if (!ctx.readOnly) title.appendChild(name)
+
+        // Les fleches de la note : par le haut, le titre ; par le bas, la fin du corps.
+        el.addEventListener(BLOCK_ENTER_EVENT, e => {
+          if (ctx.readOnly) return
+          e.preventDefault()
+          if ((e as CustomEvent<BlockEnterDetail>).detail.dir === 1) toTitle()
+          else editBody(el, body, ctx, 'end', toTitle)
+        })
+
         body.style.cursor = 'text'
         if (!d.content) {
           body.textContent = 'Écrire…'
@@ -222,7 +289,7 @@ const plugin: VaultPlugin = {
           // Un lien ou une case du rendu garde son clic.
           if ((e.target as Element | null)?.closest?.('a, input, button')) return
           e.preventDefault()
-          editBody(el, body, ctx)
+          editBody(el, body, ctx, 'end', toTitle)
         })
         return el
       },
