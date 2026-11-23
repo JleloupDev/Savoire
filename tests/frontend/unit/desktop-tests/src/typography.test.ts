@@ -16,7 +16,9 @@ describe('Mise en page du texte', () => {
   })
 
   it('les titres 4 a 6 vont ensemble, en points', () => {
-    const vars = typographyVariables({ lineHeight: 2, before: { 2: 30, 4: 3 } })
+    const vars = typographyVariables({ lineHeight: 2, before: { 2: 30, 4: 3 }, after: { 1: 5 } })
+    expect(vars['--plume-h1-after']).toBe('5pt')
+    expect(vars['--plume-h2-after']).toBeNull()
     expect(vars['--plume-line-height']).toBe('2')
     expect(vars['--plume-h2-before']).toBe('30pt')
     expect(vars['--plume-h1-before']).toBeNull()
@@ -30,6 +32,15 @@ describe('Mise en page du texte', () => {
     setTypography({})
     expect(document.body.style.getPropertyValue('--plume-h1-before')).toBe('')
     expect(localStorage.getItem('savoire-typography')).toBeNull()
+  })
+
+  it('un changement previent les editeurs (ils remesurent leurs lignes)', () => {
+    let seen = 0
+    const on = () => { seen++ }
+    window.addEventListener('plume:layout-change', on)
+    setTypography({ after: { 1: 8 } })
+    window.removeEventListener('plume:layout-change', on)
+    expect(seen).toBe(1)
   })
 
   it('des valeurs insensees sont bornees ou ignorees', () => {

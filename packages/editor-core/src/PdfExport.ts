@@ -65,13 +65,13 @@ const PRINT_CSS = `
   }
   html, body { background: #fff !important; color: var(--text); margin: 0; }
   body { font: 11pt/var(--plume-line-height, 1.6) Georgia, 'Times New Roman', serif; }
-  /* Espace avant les titres : celui du theme ou des preferences (Apparence > Texte). */
-  .savoire-print h1 { margin: var(--plume-h1-before, 12pt) 0 4pt; }
-  .savoire-print h2 { margin: var(--plume-h2-before, 10pt) 0 4pt; }
-  .savoire-print h3 { margin: var(--plume-h3-before, 8pt) 0 4pt; }
-  .savoire-print h4 { margin: var(--plume-h4-before, 6pt) 0 4pt; }
-  .savoire-print h5 { margin: var(--plume-h5-before, 6pt) 0 4pt; }
-  .savoire-print h6 { margin: var(--plume-h6-before, 6pt) 0 4pt; }
+  /* Espace avant et apres les titres : celui du theme ou des preferences (Apparence > Texte). */
+  .savoire-print h1 { margin: var(--plume-h1-before, 12pt) 0 var(--plume-h1-after, 4pt); }
+  .savoire-print h2 { margin: var(--plume-h2-before, 10pt) 0 var(--plume-h2-after, 3pt); }
+  .savoire-print h3 { margin: var(--plume-h3-before, 8pt) 0 var(--plume-h3-after, 2pt); }
+  .savoire-print h4 { margin: var(--plume-h4-before, 6pt) 0 var(--plume-h4-after, 0pt); }
+  .savoire-print h5 { margin: var(--plume-h5-before, 6pt) 0 var(--plume-h5-after, 0pt); }
+  .savoire-print h6 { margin: var(--plume-h6-before, 6pt) 0 var(--plume-h6-after, 0pt); }
   .savoire-print > :first-child h1, .savoire-print > :first-child h2, .savoire-print > :first-child h3 { margin-top: 0; }
   .savoire-print { max-width: 100%; }
   .savoire-print-title { font-size: 22pt; margin: 0 0 14pt; font-weight: 700; }
@@ -135,7 +135,7 @@ export async function printNote(text: string, opts: NoteRenderOptions = {}): Pro
     const style = doc.createElement('style')
     // L'interligne et l'espace avant les titres choisis dans l'appli.
     const page = getComputedStyle(document.body)
-    const typo = ['--plume-line-height', ...[1, 2, 3, 4, 5, 6].map(n => `--plume-h${n}-before`)]
+    const typo = ['--plume-line-height', ...[1, 2, 3, 4, 5, 6].flatMap(n => [`--plume-h${n}-before`, `--plume-h${n}-after`])]
       .map(name => [name, page.getPropertyValue(name).trim()] as const)
       .filter(([, v]) => /^[\d.]+(pt|px|em)?$/.test(v))
       .map(([name, v]) => `${name}: ${v};`).join(' ')

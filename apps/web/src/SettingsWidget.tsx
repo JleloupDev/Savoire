@@ -19,7 +19,7 @@ import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { capabilityInfo, overclaimedCapabilities, type CapabilityReport } from '@savoire/plugin-api'
 import { t, ti, type TranslationKey } from '@savoire/i18n'
-import { HEADING_STEPS, setTypography, themeTypography, useTypography, type HeadingStep } from './typography'
+import { HEADING_STEPS, SPACE_SIDES, layoutChanged, setTypography, themeTypography, useTypography, type HeadingStep, type SpaceSide } from './typography'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
 import { LayoutSettings, type CreatableFileType, type LayoutPanels } from './LayoutSettings'
@@ -44,6 +44,8 @@ const THEME_KEY = 'savoire-theme-v2'
 
 function applyTheme(id: string): void {
   document.documentElement.setAttribute('data-theme', id)
+  // Le theme donne aussi l'interligne et l'espace avant les titres.
+  layoutChanged()
 }
 
 function loadSavedTheme(): string {
@@ -653,12 +655,12 @@ function TypographyOptions({ themeId }: { themeId: string }) {
   const theme = useMemo(() => themeTypography(), [themeId])
   const label: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem' }
   const input: React.CSSProperties = { width: 64, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-surface)', color: 'var(--text)' }
-  const setBefore = (step: HeadingStep, raw: string) => {
-    const before = { ...typo.before }
+  const setSpace = (side: SpaceSide, step: HeadingStep, raw: string) => {
+    const space = { ...typo[side] }
     const n = parseFloat(raw.replace(',', '.'))
-    if (raw.trim() === '' || !Number.isFinite(n)) delete before[step]
-    else before[step] = n
-    setTypography({ ...typo, before })
+    if (raw.trim() === '' || !Number.isFinite(n)) delete space[step]
+    else space[step] = n
+    setTypography({ ...typo, [side]: space })
   }
   return (
     <div data-testid="settings-typography" style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
@@ -676,23 +678,35 @@ function TypographyOptions({ themeId }: { themeId: string }) {
           {LINE_HEIGHTS.map(v => <option key={v} value={String(v)}>{fmt(v)}</option>)}
         </select>
       </label>
-      <div style={{ fontSize: '0.82rem', marginTop: 12, marginBottom: 6 }}>{t('app', 'settings.text.before')}</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-        {HEADING_STEPS.map(step => (
-          <label key={step} style={label}>
-            {t('app', `settings.text.heading${step}`)}
-            <input
-              type="number" min={0} max={72} step={1}
-              data-testid={`settings-before-h${step}`}
-              placeholder={fmt(theme.before[step])}
-              value={typo.before?.[step] ?? ''}
-              onChange={e => setBefore(step, e.target.value)}
-              style={input}
-            />
-          </label>
-        ))}
-      </div>
-      {(typo.lineHeight !== undefined || typo.before) && (
+      {/* Comme le tableau « Espacement » de Word : avant et apres, par niveau de titre. */}
+      <table style={{ marginTop: 12, borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+        <thead>
+          <tr>
+            <th />
+            {HEADING_STEPS.map(step => <th key={step} style={{ fontWeight: 500, textAlign: 'left', padding: '0 12px 4px 0' }}>{t('app', `settings.text.heading${step}`)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {SPACE_SIDES.map(side => (
+            <tr key={side}>
+              <td style={{ padding: '3px 12px 3px 0', whiteSpace: 'nowrap' }}>{t('app', side === 'before' ? 'settings.text.before' : 'settings.text.after')}</td>
+              {HEADING_STEPS.map(step => (
+                <td key={step} style={{ padding: '3px 12px 3px 0' }}>
+                  <input
+                    type="number" min={0} max={72} step={1}
+                    data-testid={`settings-${side}-h${step}`}
+                    placeholder={fmt(theme[side][step])}
+                    value={typo[side]?.[step] ?? ''}
+                    onChange={e => setSpace(side, step, e.target.value)}
+                    style={input}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(typo.lineHeight !== undefined || typo.before || typo.after) && (
         <button data-testid="settings-typography-reset" onClick={() => setTypography({})} style={{ marginTop: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.78rem' }}>
           {t('app', 'settings.text.reset')}
         </button>

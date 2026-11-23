@@ -4,7 +4,7 @@
 // see ADR-005
 
 import { EditorView, Decoration, DecorationSet, WidgetType, ViewPlugin, keymap, gutter, GutterMarker } from '@codemirror/view'
-import { StateField, StateEffect, EditorState, EditorSelection, Range, Prec, type Transaction } from '@codemirror/state'
+import { Compartment, StateField, StateEffect, EditorState, EditorSelection, Range, Prec, type Transaction } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 // Type des noeuds de l'arbre syntaxique (@lezer/common n'est pas une
 // dependance directe).
@@ -134,6 +134,33 @@ function blockToReveal(view: EditorView, target: EventTarget | null): number | n
   if (block.querySelector('table, pre, iframe, img, .note-embed, .base-q, .board-embed')) return null
   try { return view.posAtDOM(block) } catch { return null }
 }
+
+/**
+ * La mise en page a change sans que l'editeur le voie (theme, interligne,
+ * espace avant un titre : des variables CSS). L'hote envoie cet evenement
+ * sur window ; chaque editeur remesure ses lignes. Sans cela, CodeMirror
+ * gardait les anciennes hauteurs : numeros de ligne et clics decales.
+ */
+export const LAYOUT_CHANGE_EVENT = 'plume:layout-change'
+
+// CodeMirror ne relit les hauteurs que si son theme change : deux themes
+// vides, pris tour a tour, le lui font croire.
+const layoutCompartment = new Compartment()
+const layoutTicks = [EditorView.theme({}), EditorView.theme({})]
+
+const remeasureOnLayoutChange = ViewPlugin.fromClass(class {
+  private tick = 0
+  private readonly listener = () => {
+    this.tick = 1 - this.tick
+    try { this.view.dispatch({ effects: layoutCompartment.reconfigure(layoutTicks[this.tick]) }) } catch { /* vue fermee */ }
+  }
+  constructor(private readonly view: EditorView) {
+    if (typeof window !== 'undefined') window.addEventListener(LAYOUT_CHANGE_EVENT, this.listener)
+  }
+  destroy(): void {
+    if (typeof window !== 'undefined') window.removeEventListener(LAYOUT_CHANGE_EVENT, this.listener)
+  }
+})
 
 const pointerHold = ViewPlugin.fromClass(class {
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -623,14 +650,14 @@ const HEADING_LABELS: Record<string, string> = {
   ATXHeading4: 'Titre 4', ATXHeading5: 'Titre 5', ATXHeading6: 'Titre 6',
 }
 
-// ── Espace avant les titres ─────────────────────────────────────────────────
+// ── Espace avant et apres les titres ────────────────────────────────────────
 //
-// Comme l'« espacement avant » d'un style de Word : le theme le donne
-// (--plume-h1-before... --plume-h6-before), les preferences peuvent le
-// changer. C'est un bloc a part, juste avant la ligne du titre : la ligne
-// elle-meme ne change pas (curseur, numero de ligne, poignee), et l'espace
-// est le meme que le titre soit rendu ou en edition. Pas d'espace avant le
-// premier bloc de la note.
+// Comme l'« espacement avant / apres » d'un style de Word : le theme le
+// donne (--plume-h1-before, --plume-h1-after... jusqu'a h6), les
+// preferences peuvent le changer. Ce sont des blocs a part, juste avant et
+// juste apres la ligne du titre : la ligne elle-meme ne change pas
+// (curseur, numero de ligne, poignee), et l'espace est le meme que le titre
+// soit rendu ou en edition. Pas d'espace avant le premier bloc de la note.
 
 const HEADING_LEVELS: Record<string, number> = {
   ATXHeading1: 1, ATXHeading2: 2, ATXHeading3: 3, ATXHeading4: 4, ATXHeading5: 5, ATXHeading6: 6,
@@ -639,13 +666,14 @@ const HEADING_LEVELS: Record<string, number> = {
 
 /** Valeurs par defaut, quand l'hote ne donne pas les variables du theme. */
 export const HEADING_SPACE_DEFAULTS = ['12pt', '10pt', '8pt', '6pt', '6pt', '6pt'] as const
+export const HEADING_SPACE_AFTER_DEFAULTS = ['4pt', '3pt', '2pt', '0pt', '0pt', '0pt'] as const
 
 export class HeadingSpace extends WidgetType {
-  constructor(readonly level: number) { super() }
-  eq(other: HeadingSpace): boolean { return other.level === this.level }
+  constructor(readonly level: number, readonly where: 'before' | 'after' = 'before') { super() }
+  eq(other: HeadingSpace): boolean { return other.level === this.level && other.where === this.where }
   toDOM(): HTMLElement {
     const el = document.createElement('div')
-    el.className = `plume-heading-space plume-heading-space-h${this.level}`
+    el.className = `plume-heading-space plume-heading-${this.where}-h${this.level}`
     el.setAttribute('aria-hidden', 'true')
     return el
   }
@@ -658,8 +686,9 @@ function headingSpaces(state: EditorState, fmEnd: number, skip: (from: number, t
     // L'en-tete YAML (---) se lit comme un titre souligne : il ne compte pas.
     if (n.from < fmEnd) continue
     const level = HEADING_LEVELS[n.name]
-    if (level && !first && !skip(n.from, n.to)) {
-      out.push(Decoration.widget({ widget: new HeadingSpace(level), block: true, side: -1 }).range(state.doc.lineAt(n.from).from))
+    if (level && !skip(n.from, n.to)) {
+      if (!first) out.push(Decoration.widget({ widget: new HeadingSpace(level), block: true, side: -1 }).range(state.doc.lineAt(n.from).from))
+      out.push(Decoration.widget({ widget: new HeadingSpace(level, 'after'), block: true, side: 1 }).range(state.doc.lineAt(n.to).to))
     }
     first = false
   }
@@ -1668,6 +1697,8 @@ export function createLivePreviewExtension(
     field,
     // Les sous-editeurs (case d'un tableau) cachent les marques comme la note.
     subEditorExtensions.of(subEditorMarks),
+    layoutCompartment.of(layoutTicks[0]),
+    remeasureOnLayoutChange,
     ...(showLineNumbers ? [blockAwareLineNumbers] : []),
     ...foldingExtension(),
     blockquoteExitKeymap,
@@ -1755,7 +1786,8 @@ export function createLivePreviewExtension(
       // Live heading styles — font-size + line-height only on the cm-line wrapper.
       // Color and weight are applied via Decoration.mark inline styles (highest CSS specificity)
       // so they override syntax-highlighting token classes without needing !important.
-      ...Object.fromEntries(HEADING_SPACE_DEFAULTS.map((d, i) => [`.plume-heading-space-h${i + 1}`, { height: `var(--plume-h${i + 1}-before, ${d})` }])),
+      ...Object.fromEntries(HEADING_SPACE_DEFAULTS.map((d, i) => [`.plume-heading-before-h${i + 1}`, { height: `var(--plume-h${i + 1}-before, ${d})` }])),
+      ...Object.fromEntries(HEADING_SPACE_AFTER_DEFAULTS.map((d, i) => [`.plume-heading-after-h${i + 1}`, { height: `var(--plume-h${i + 1}-after, ${d})` }])),
       '.vault-h1-live': { lineHeight: '1.5' },
       '.vault-h2-live': { lineHeight: '1.5' },
       '.vault-h3-live': { lineHeight: '1.4' },

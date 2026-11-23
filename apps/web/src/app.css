@@ -18,9 +18,10 @@
   --accent-dim:  rgba(13, 148, 136, 0.10);
   --accent-text: #ffffff;
   --heading-color: #0d9488;
-  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant et apres les titres. */
   --plume-line-height: 1.65;
   --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
+  --plume-h1-after: 4pt; --plume-h2-after: 3pt; --plume-h3-after: 2pt; --plume-h4-after: 0pt; --plume-h5-after: 0pt; --plume-h6-after: 0pt;
   --color-success: #16a34a;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
@@ -93,9 +94,10 @@
   --accent-dim:  rgba(45, 212, 191, 0.12);
   --accent-text: #0f172a;
   --heading-color: #2dd4bf;
-  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant et apres les titres. */
   --plume-line-height: 1.65;
   --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
+  --plume-h1-after: 4pt; --plume-h2-after: 3pt; --plume-h3-after: 2pt; --plume-h4-after: 0pt; --plume-h5-after: 0pt; --plume-h6-after: 0pt;
   --color-success: #a6e3a1;
   --color-info:    #89b4fa;
   --color-danger:  #f38ba8;
@@ -153,9 +155,10 @@
   --accent-dim:  rgba(15, 118, 110, 0.10);
   --accent-text: #ffffff;
   --heading-color: #0f766e;
-  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant et apres les titres. */
   --plume-line-height: 1.75;
   --plume-h1-before: 16pt; --plume-h2-before: 12pt; --plume-h3-before: 10pt; --plume-h4-before: 8pt; --plume-h5-before: 8pt; --plume-h6-before: 8pt;
+  --plume-h1-after: 6pt; --plume-h2-after: 4pt; --plume-h3-after: 3pt; --plume-h4-after: 2pt; --plume-h5-after: 2pt; --plume-h6-after: 2pt;
   --color-success: #15803d;
   --color-info:    #2563eb;
   --color-danger:  #dc2626;
@@ -213,9 +216,10 @@
   --accent-dim:  rgba(42, 161, 152, 0.12);
   --accent-text: #fdf6e3;
   --heading-color: #cb4b16;
-  /* Mise en page du texte, comme les styles de Word : interligne, espace avant les titres. */
+  /* Mise en page du texte, comme les styles de Word : interligne, espace avant et apres les titres. */
   --plume-line-height: 1.65;
   --plume-h1-before: 12pt; --plume-h2-before: 10pt; --plume-h3-before: 8pt; --plume-h4-before: 6pt; --plume-h5-before: 6pt; --plume-h6-before: 6pt;
+  --plume-h1-after: 4pt; --plume-h2-after: 3pt; --plume-h3-after: 2pt; --plume-h4-after: 0pt; --plume-h5-after: 0pt; --plume-h6-after: 0pt;
   --color-success: #859900;
   --color-info:    #268bd2;
   --color-danger:  #dc322f;
