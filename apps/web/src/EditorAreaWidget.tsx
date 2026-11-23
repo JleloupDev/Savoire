@@ -8,11 +8,11 @@ import { DocumentView, isOpenableWithoutPlugin } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
 import { sessionTrees } from '@savoire/application'
 import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
-import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/editor-react'
+import { EditorContext, Toolbar, BubbleToolbar, StatusBar, TriggerOverlay } from '@savoire/editor-react'
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
+import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions, useShowStatusBar, type NoteEditorMode } from './displayPreferences'
 import { EditorModeSwitch } from './EditorModeSwitch'
 import { layoutMode } from './layoutMode'
 import type { ICollaborativeText } from '@savoire/domain-index'
@@ -321,6 +321,7 @@ export function DocumentPanelHost({
   // volontairement nu — du texte, rien autour.
   const showRichChrome = isMarkdown && refs.markdownEditorMode.current !== 'source' && !!controller
   const showToolbar = useShowEditorToolbar()
+  const statusBar = useShowStatusBar()
   const mobile = layoutMode() === 'mobile'
 
   // Le menu de triggers (« / », « [[ ») reste dans LES DEUX modes : c'est de
@@ -423,6 +424,7 @@ export function DocumentPanelHost({
           ref={containerRef}
           style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
         />
+        {isMarkdown && !!controller && statusBar && !mobile && <StatusBar />}
         {/* Mobile : la barre sous le texte, juste au-dessus du clavier (cachee sans lui). */}
         {showRichChrome && !lockedByOther && mobile && <Toolbar placement="bottom" />}
       </div>

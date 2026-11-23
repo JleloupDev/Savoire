@@ -126,6 +126,8 @@ export const appEn = {
   'settings.editor.mode.source': 'Source',
   'settings.editor.mode.sourceHint': 'raw Markdown, no rendering',
   'settings.editor.showToolbar': 'Show the formatting toolbar above notes (the selection bubble stays)',
+  'settings.editor.showStatusBar': 'Show the status bar below notes (words, characters, reading time)',
+  'settings.editor.multipleCursors': 'Multiple cursors: Alt+click adds a cursor, Ctrl+D the next occurrence, Alt+Shift+drag a column',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.sepia': 'Sepia',

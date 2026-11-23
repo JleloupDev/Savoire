@@ -8,6 +8,7 @@
 // avant l'apercu d'un lien survole (api.workspace.linkPreviewDelay).
 
 import { useSyncExternalStore } from 'react'
+import { setMultipleCursors } from '@savoire/editor-core'
 
 const KEY = 'savoire-show-file-extensions'
 const listeners = new Set<() => void>()
@@ -149,3 +150,37 @@ export function useNoteEditorMode(): NoteEditorMode {
 export function useNoteEditorModeOr(fallback: NoteEditorMode): NoteEditorMode {
   return useSyncExternalStore(subscribeDisplayPreferences, () => modeChoice ?? fallback)
 }
+
+// ── Options de l'editeur ─────────────────────────────────────────────────────
+
+/** Une option oui/non retenue sur ce poste. */
+function booleanPreference(key: string, fallback: boolean, onChange?: (value: boolean) => void) {
+  let value = fallback
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === '1' || raw === '0') value = raw === '1'
+  } catch { /* navigation privee */ }
+  onChange?.(value)
+  const get = () => value
+  const set = (next: boolean) => {
+    if (next === value) return
+    value = next
+    try { localStorage.setItem(key, next ? '1' : '0') } catch { /* navigation privee */ }
+    onChange?.(next)
+    for (const cb of [...listeners]) cb()
+  }
+  const use = () => useSyncExternalStore(subscribeDisplayPreferences, get)
+  return { get, set, use }
+}
+
+/** Plusieurs curseurs (Alt+clic, Ctrl+D) : non par defaut. */
+const multiCursor = booleanPreference('savoire-multiple-cursors', false, setMultipleCursors)
+export const multipleCursors = multiCursor.get
+export const setMultipleCursorsPreference = multiCursor.set
+export const useMultipleCursors = multiCursor.use
+
+/** Barre d'etat sous les notes (mots, caracteres) : oui par defaut. */
+const statusBar = booleanPreference('savoire-show-status-bar', true)
+export const showStatusBar = statusBar.get
+export const setShowStatusBar = statusBar.set
+export const useShowStatusBar = statusBar.use

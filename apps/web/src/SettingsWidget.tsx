@@ -18,11 +18,11 @@ import type { InputTrigger, TriggerRegistry, Hotkey, HotkeyAPI, PluginCommand } 
 import type { PluginEntry, PluginLoader } from '@savoire/plugin-runtime'
 import type { PluginInfo, PluginSettingsService } from '@savoire/application'
 import { capabilityInfo, overclaimedCapabilities, type CapabilityReport } from '@savoire/plugin-api'
-import { t } from '@savoire/i18n'
+import { t, type TranslationKey } from '@savoire/i18n'
 import type { IVaultIndexer } from '@savoire/application'
 import { VaultIndexerSettings } from './VaultIndexerSettings'
 import { LayoutSettings, type CreatableFileType, type LayoutPanels } from './LayoutSettings'
-import { setLinkPreviewDelay, setNoteEditorMode, setShowEditorToolbar, setShowFileExtensions, useLinkPreviewDelay, useNoteEditorMode, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
+import { setLinkPreviewDelay, setMultipleCursorsPreference, setNoteEditorMode, setShowEditorToolbar, setShowFileExtensions, setShowStatusBar, useLinkPreviewDelay, useMultipleCursors, useNoteEditorMode, useShowEditorToolbar, useShowFileExtensions, useShowStatusBar, type NoteEditorMode } from './displayPreferences'
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -633,6 +633,8 @@ function ThemesTab({ themeId, onSelect }: { themeId: string; onSelect: (id: stri
       <ShowExtensionsOption />
       <EditorModeOption />
       <ShowToolbarOption />
+      <CheckOption testid="settings-show-status-bar" label="settings.editor.showStatusBar" value={useShowStatusBar()} onChange={setShowStatusBar} />
+      <CheckOption testid="settings-multiple-cursors" label="settings.editor.multipleCursors" value={useMultipleCursors()} onChange={setMultipleCursorsPreference} />
       <LinkPreviewOption />
     </div>
   )
@@ -693,6 +695,15 @@ function ShowToolbarOption() {
         onChange={e => setShowEditorToolbar(e.target.checked)}
       />
       {t('app', 'settings.editor.showToolbar')}
+    </label>
+  )
+}
+
+function CheckOption({ testid, label, value, onChange }: { testid: string; label: TranslationKey<'app'>; value: boolean; onChange(v: boolean): void }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
+      <input type="checkbox" data-testid={testid} checked={value} onChange={e => onChange(e.target.checked)} />
+      {t('app', label)}
     </label>
   )
 }

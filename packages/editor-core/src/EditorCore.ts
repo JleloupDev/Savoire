@@ -28,6 +28,10 @@ import { foldAllHeadings, foldStorage, toggleFoldAtCursor, unfoldAll } from './F
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
 import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
 import type { PropertiesHost } from './PropertiesPanel'
+import { brackets, highlightSelectionMatches, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
+import { findReplace, openFind } from './FindReplace'
+import { smartPaste } from './SmartPaste'
+import { notePosition } from './NotePosition'
 
 // Detects a list item line: optional leading whitespace + bullet or ordered marker
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
@@ -146,6 +150,12 @@ export function plumeCommands(): PluginCommand[] {
     // Panneau des proprietes (frontmatter).
     { id: 'editor:add-property',          label: 'Ajouter une propriété',    hotkeys: mod(';'), run: on(addProperty) },
     { id: 'editor:toggle-properties-source', label: 'Propriétés : basculer panneau / YAML source', run: on(toggleYamlSource) },
+    // Rechercher et remplacer dans la note (FindReplace.ts).
+    { id: 'editor:find',                  label: 'Rechercher dans la note',  hotkeys: mod('f'), run: on(v => { openFind(v) }) },
+    { id: 'editor:replace',               label: 'Remplacer dans la note',   hotkeys: mod('h'), run: on(v => { openFind(v, true) }) },
+    // Plusieurs curseurs, si l'option est cochee (EditingAids.ts).
+    { id: 'editor:select-next-occurrence', label: 'Ajouter l\'occurrence suivante à la sélection', hotkeys: mod('d'), isAvailable: () => multipleCursorsEnabled(), run: on(v => { selectNextOccurrence(v) }) },
+    { id: 'editor:select-all-occurrences', label: 'Sélectionner toutes les occurrences', hotkeys: mod('l', 'Shift'), isAvailable: () => multipleCursorsEnabled(), run: on(v => { selectAllOccurrences(v) }) },
     // Repli des titres et des listes (Folding.ts).
     { id: 'editor:toggle-fold',           label: 'Replier / déplier le bloc',                          run: on(v => { toggleFoldAtCursor(v) }) },
     { id: 'editor:fold-all',              label: 'Replier tous les titres',                            run: on(v => { foldAllHeadings(v) }) },
@@ -396,6 +406,14 @@ export class EditorCore implements EditorController, EditorPositionAPI {
             ]
         ),
         ...(uploadImage ? [imageInsertExtension(uploadImage)] : []),
+        // Aides d'ecriture (EditingAids.ts), rechercher (FindReplace.ts),
+        // coller (SmartPaste.ts), position retenue (NotePosition.ts).
+        spellcheck,
+        highlightSelectionMatches,
+        multipleCursors,
+        findReplace,
+        ...(options.readOnly ? [] : [brackets, smartPaste, renumberOrderedLists]),
+        ...(options.docId ? [notePosition(options.docId)] : []),
         // Une longue ligne passe a la ligne, en edition comme une fois rendue.
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).

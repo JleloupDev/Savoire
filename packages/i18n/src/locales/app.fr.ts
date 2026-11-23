@@ -126,6 +126,8 @@ export const appFr = {
   'settings.editor.mode.source': 'Source',
   'settings.editor.mode.sourceHint': 'le Markdown brut, sans rendu',
   'settings.editor.showToolbar': 'Afficher la barre d\'édition au-dessus des notes (la bulle de sélection reste)',
+  'settings.editor.showStatusBar': "Afficher la barre d'état sous les notes (mots, caractères, temps de lecture)",
+  'settings.editor.multipleCursors': "Plusieurs curseurs : Alt+clic ajoute un curseur, Ctrl+D l'occurrence suivante, Alt+Maj+glisser une colonne",
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.sepia': 'Sépia',

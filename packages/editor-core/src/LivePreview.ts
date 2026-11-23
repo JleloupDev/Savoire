@@ -628,7 +628,7 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   const objects: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
   // Endroits en texte brut : le curseur, et pendant un clic ce qui est tenu.
-  const live = [state.selection.main.from, ...(state.field(pointerHoldField, false) ?? [])]
+  const live = [...state.selection.ranges.map(r => r.from), ...(state.field(pointerHoldField, false) ?? [])]
     .map(p => Math.min(p, state.doc.length))
   const liveLines = new Set(live.map(p => state.doc.lineAt(p).number))
   const liveIn = (from: number, to: number): boolean => live.some(p => p >= from && p <= to)
@@ -766,7 +766,24 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
         ? Math.max(0, (/^\s*((?:>\s?)+)/.exec(text)![1].match(/>/g) ?? []).length - 1)
         : listDepth(state, line.from + indent)
       if (liveLines.has(n)) {
-        if (!isQuote) {
+        if (isQuote) {
+          // Citation en edition : les barres a la place des `>`, au meme
+          // retrait que le rendu. Les `>` reviennent si le curseur y entre.
+          const m = QUOTE_LINE_RE.exec(text)!
+          const levels = (m[1].match(/>/g) ?? []).length
+          const bodyAt = line.from + text.length - m[2].length
+          const inMarker = state.selection.ranges.some(r => [r.anchor, r.head].some(p => p > line.from && p < bodyAt))
+          if (!inMarker && bodyAt > line.from) {
+            const bars = Array.from({ length: levels }, (_, k) => `linear-gradient(var(--plume-quote-bar), var(--plume-quote-bar)) calc(6px + ${k} * (3px + 1em)) 0 / 3px 100% no-repeat`)
+            decorations.push(Decoration.line({
+              class: `plume-quote-live${folded(line.from) ? ' plume-folded' : ''}`,
+              attributes: { style: `padding-left: calc(6px + ${levels} * (3px + 1em)); background: ${bars.join(', ')}` },
+            }).range(line.from))
+            decorations.push(Decoration.replace({}).range(line.from, bodyAt))
+          }
+          continue
+        }
+        {
           const cls = folded(line.from) ? 'plume-folded' : undefined
           // La puce reste une puce, a sa place : le texte ne bouge pas quand
           // la ligne passe en edition. Le `- ` brut revient si le curseur
@@ -1727,6 +1744,10 @@ export function createLivePreviewExtension(
       '.vault-task-done .vault-list-content': {
         opacity: '0.6',
         textDecoration: 'line-through',
+      },
+      '.plume-quote-live': {
+        '--plume-quote-bar': '#7c3aed',
+        color: '#9ca3af',
       },
       '.vault-quote-line': {
         borderLeft: '3px solid #7c3aed',
