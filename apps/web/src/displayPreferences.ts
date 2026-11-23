@@ -115,26 +115,37 @@ export type NoteEditorMode = 'source' | 'power' | 'classic'
 const MODE_KEY = 'savoire-editor-mode'
 const MODES: readonly NoteEditorMode[] = ['source', 'power', 'classic']
 
-function readMode(): NoteEditorMode {
+/** Le mode choisi par la personne, ou null si elle n'en a jamais choisi. */
+function readMode(): NoteEditorMode | null {
   try {
     const raw = localStorage.getItem(MODE_KEY)
-    return MODES.includes(raw as NoteEditorMode) ? (raw as NoteEditorMode) : 'power'
-  } catch { return 'power' }
+    return MODES.includes(raw as NoteEditorMode) ? (raw as NoteEditorMode) : null
+  } catch { return null }
 }
 
-let editorModeValue = readMode()
+let modeChoice = readMode()
+let editorModeValue: NoteEditorMode = modeChoice ?? 'power'
 
 export function noteEditorMode(): NoteEditorMode {
   return editorModeValue
 }
 
 export function setNoteEditorMode(mode: NoteEditorMode): void {
-  if (mode === editorModeValue || !MODES.includes(mode)) return
+  if (mode === modeChoice || !MODES.includes(mode)) return
   editorModeValue = mode
+  modeChoice = mode
   try { localStorage.setItem(MODE_KEY, mode) } catch { /* navigation privee */ }
   for (const cb of [...listeners]) cb()
 }
 
 export function useNoteEditorMode(): NoteEditorMode {
   return useSyncExternalStore(subscribeDisplayPreferences, noteEditorMode)
+}
+
+/**
+ * Le mode choisi par la personne, sinon `fallback`. Une page de partage
+ * ouvre ainsi un invite en mode classique, tant qu'il n'a rien choisi.
+ */
+export function useNoteEditorModeOr(fallback: NoteEditorMode): NoteEditorMode {
+  return useSyncExternalStore(subscribeDisplayPreferences, () => modeChoice ?? fallback)
 }

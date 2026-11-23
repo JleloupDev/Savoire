@@ -15,6 +15,8 @@ export default defineConfig({
       '@savoire/application':        path.resolve(__dirname, '../../../../packages/application/src/index.ts'),
       '@savoire/platform':           path.resolve(__dirname, '../../../../packages/platform/src/index.ts'),
       '@savoire/plugin-api':         path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
+      '@savoire/ui-components':      path.resolve(__dirname, '../../../../packages/ui-components/src/index.ts'),
+      '@savoire/i18n':               path.resolve(__dirname, '../../../../packages/i18n/src/index.ts'),
       '@savoire/editor-core':        mock('editor-core.ts'),
       '@savoire/infrastructure-sync': mock('infrastructure-sync.ts'),
       '@savoire/plugin-runtime':     mock('plugin-runtime.ts'),

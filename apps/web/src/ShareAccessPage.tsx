@@ -13,6 +13,8 @@ import { createIconElement } from '@savoire/ui-components'
 import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
+import { useNoteEditorModeOr, type NoteEditorMode } from './displayPreferences'
+import { EditorModeSwitch } from './EditorModeSwitch'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import excalidrawPlugin from '@savoire/plugin-excalidraw'
 import mindmapPlugin from '@savoire/plugin-mindmap'
@@ -72,7 +74,7 @@ function createShareVault(handle: SharedDocumentHandle): VaultAPI {
 
 // ── ShareDocumentEditor ───────────────────────────────────────────────────────
 
-function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader }) {
+function ShareDocumentEditor({ handle, loadPlugins, mode }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader; mode: NoteEditorMode }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ro = handle.permission === 'read'
 
@@ -105,6 +107,7 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
         userId: guestId(handle),
         userName: GUEST_NAME,
         readOnly: ro,
+        editorMode: mode,
         crdt: handle.crdt,
         ...crdtViewsOf(handle.crdt),
         getTransportState: () => handle.transport.getState(),
@@ -122,6 +125,9 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
       view?.destroy()
       if (loader) void loader.unloadAll()
     }
+    // Pas de `mode` ici : un changement de mode rouvre le lien, donc un
+    // nouveau `handle` (l'editeur detruit son document en partant).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handle, ro, loadPlugins])
 
   return (
@@ -144,14 +150,21 @@ function ShareDocumentEditor({ handle, loadPlugins }: { handle: SharedDocumentHa
 export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sharingApi: ISharingAPI; loadPlugins?: SharePluginLoader }) {
   const { token } = useParams<{ token: string }>()
   const [handle, setHandle] = useState<SharedDocumentHandle | null>(null)
+  const [info, setInfo] = useState<{ filename: string; path: string; permission: SharedDocumentHandle['permission'] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  // Un invite n'a souvent rien choisi : mode classique (tableaux, callouts
+  // modifiables tels quels), sinon le mode qu'il a choisi.
+  const mode = useNoteEditorModeOr('classic')
 
   useEffect(() => {
     if (!token) return
     let disposed = false
     let activeHandle: SharedDocumentHandle | null = null
 
+    // Changer de mode remonte l'editeur, qui detruit le document en partant :
+    // on rouvre alors le lien (document neuf). L'en-tete reste affiche.
+    setHandle(null)
     const keyProvider = new LocalKeyProvider()
     keyProvider.init()
       .then(() => sharingApi.openSharedDocument(token, keyProvider))
@@ -159,25 +172,26 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sha
         if (disposed) { h.dispose(); return }
         activeHandle = h
         setHandle(h)
+        setInfo({ filename: h.filename, path: h.path, permission: h.permission })
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
 
     return () => { disposed = true; activeHandle?.dispose() }
-  }, [token, sharingApi])
+  }, [token, sharingApi, mode])
 
   if (loading) return <FullPage><Status>Vérification du lien…</Status></FullPage>
   if (error)   return <FullPage><Status error>Lien invalide ou expiré. ({error})</Status></FullPage>
-  if (!handle) return null
+  if (!info) return null
 
-  const ro = handle.permission === 'read'
+  const ro = info.permission === 'read'
   // Integre dans un autre site (module) : le document seul, sans en-tete.
   const embedded = new URLSearchParams(window.location.search).get('embed') === '1'
   if (embedded) {
     return (
       <FullPage>
         <div data-testid="share-embed" style={{ flex: 1, overflow: 'hidden' }}>
-          <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} />
+          {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} />}
         </div>
       </FullPage>
     )
@@ -188,15 +202,16 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sha
       <div style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)' }}>
-            {handle.filename}
+            {info.filename}
           </span>
-          {handle.permission && (
+          {info.permission && (
             <PermBadge readOnly={ro} />
           )}
         </div>
+        {/\.md$/i.test(info.path) && <EditorModeSwitch value={mode} />}
       </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} />
+        {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} />}
       </div>
     </FullPage>
   )

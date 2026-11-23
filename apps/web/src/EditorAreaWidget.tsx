@@ -12,9 +12,9 @@ import { EditorContext, Toolbar, BubbleToolbar, TriggerOverlay } from '@savoire/
 import { pluginRegistry } from './pluginRegistry'
 import type { Widget, FileTypeRegistry, IPluginLoader, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
-import { displayFileName, setNoteEditorMode, setShowEditorToolbar, useNoteEditorMode, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
+import { displayFileName, setShowEditorToolbar, useShowEditorToolbar, useShowFileExtensions, type NoteEditorMode } from './displayPreferences'
+import { EditorModeSwitch } from './EditorModeSwitch'
 import { layoutMode } from './layoutMode'
-import { t } from '@savoire/i18n'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
@@ -649,35 +649,4 @@ export class EditorAreaWidget implements Widget {
   }
 
   dispose() {}
-}
-
-/**
- * Mode d'edition des notes (ADR-030), au-dessus de l'editeur. Le changer
- * remonte les notes ouvertes dans le nouveau mode ; il reste le meme
- * reglage que dans les parametres.
- */
-function EditorModeSwitch() {
-  const mode = useNoteEditorMode()
-  const modes: { id: NoteEditorMode; label: 'settings.editor.mode.classic' | 'settings.editor.mode.power' | 'settings.editor.mode.source'; hint: 'settings.editor.mode.classicHint' | 'settings.editor.mode.powerHint' | 'settings.editor.mode.sourceHint' }[] = [
-    { id: 'classic', label: 'settings.editor.mode.classic', hint: 'settings.editor.mode.classicHint' },
-    { id: 'power', label: 'settings.editor.mode.power', hint: 'settings.editor.mode.powerHint' },
-    { id: 'source', label: 'settings.editor.mode.source', hint: 'settings.editor.mode.sourceHint' },
-  ]
-  const current = modes.find(m => m.id === mode) ?? modes[1]
-  return (
-    <select
-      data-testid="editor-mode-select"
-      aria-label={t('app', 'settings.editor.mode')}
-      title={`${t('app', 'settings.editor.mode')} : ${t('app', current.hint)}`}
-      value={mode}
-      onChange={e => setNoteEditorMode(e.target.value as NoteEditorMode)}
-      style={{
-        flex: 'none', height: 26, padding: '0 6px', borderRadius: 6,
-        border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)',
-        font: '500 12px var(--font-ui, Inter, system-ui, sans-serif)', cursor: 'pointer',
-      }}
-    >
-      {modes.map(m => <option key={m.id} value={m.id} title={t('app', m.hint)}>{t('app', m.label)}</option>)}
-    </select>
-  )
 }
