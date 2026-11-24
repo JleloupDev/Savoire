@@ -11,14 +11,16 @@ import {
 } from '@savoire/plugin-api'
 import type {
   CompiledFormula,
-  FileContext, FileView, FilterOp, IndexState, PluginAPI, PropertyMember, PropertyType, PropertyValue,
+  FileContext, FileView, IndexState, PluginAPI, PropertyMember, PropertyType, PropertyValue,
   Query, QueryFilter, QueryResult, QueryRow, QuerySort, QuerySource,
 } from '@savoire/plugin-api'
 import { h, valueText, type CellContext } from './cells'
 import {
   DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, defaultView, isFormulaKey, readManifest,
-  type BaseFilter, type BaseManifest, type BaseSort, type BaseViewDef,
+  type BaseManifest, type BaseSort, type BaseViewDef,
 } from './manifest'
+import { countFilters, isoDay, toWhere, type FilterContext } from './filters'
+import { renderFilterEditor, type FilterEditorHost } from './filterEditor'
 import { LightRows } from './rows'
 import { createPageRow, folderOfBase, renamePageRow, writeNoteProperty, type NotesVault } from './notes'
 import { BaseTable, type TableColumn } from './table'
@@ -30,19 +32,6 @@ import { ensureStyle } from './style'
 import { CELL_PROPOSAL, type CellProposal } from './proposals'
 import { CellAnnotations, type CellCommentTarget } from './annotations'
 
-const OPS: { op: FilterOp; label: string; needsValue: boolean }[] = [
-  { op: 'eq', label: 'est', needsValue: true },
-  { op: 'neq', label: "n'est pas", needsValue: true },
-  { op: 'contains', label: 'contient', needsValue: true },
-  { op: 'startsWith', label: 'commence par', needsValue: true },
-  { op: 'lt', label: '<', needsValue: true },
-  { op: 'lte', label: '≤', needsValue: true },
-  { op: 'gt', label: '>', needsValue: true },
-  { op: 'gte', label: '≥', needsValue: true },
-  { op: 'empty', label: 'est vide', needsValue: false },
-  { op: 'notEmpty', label: "n'est pas vide", needsValue: false },
-]
-
 /** Vue active d'une base, pour les commandes (la derniere qui a eu le focus). */
 export let activeBaseView: BaseViewHandle | null = null
 
@@ -53,12 +42,6 @@ export interface BaseViewHandle {
 
 function fieldOf(key: string): { prop: string } | { doc: 'title' } {
   return key === TITLE_COLUMN ? { doc: 'title' } : { prop: key }
-}
-
-export function toWhere(filters: BaseFilter[]): QueryFilter | undefined {
-  const parts: QueryFilter[] = filters.filter(f => f.key).map(f => ({ field: fieldOf(f.key), op: f.op, value: f.value ?? undefined }))
-  if (parts.length === 0) return undefined
-  return parts.length === 1 ? parts[0] : { and: parts }
 }
 
 export function toSort(sorts: BaseSort[]): QuerySort[] {
@@ -142,20 +125,27 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
   const visibleColumns = (): TableColumn[] => allColumns().filter(c => c.key === TITLE_COLUMN || !view().hidden.includes(c.key))
 
+  /** Dates relatives et « moi », resolues a chaque requete. */
+  const filterCtx = (): FilterContext => ({ now: new Date(), me: api?.vault?.getCurrentUser?.()?.id, typeOf })
+  /** Recherche rapide (barre de la vue) : pas enregistree, propre a cette personne. */
+  let search = ''
   const source = (): QuerySource => {
-    const where = toWhere(manifest.source.filters)
+    const where = toWhere(manifest.source.filters, manifest.source.filterMode, filterCtx())
     const folder = manifest.source.folder.replace(/\/+$/, '') || undefined
     if (baseId) return { base: baseId, pages: { folder, ext: ['md'], where } }
     return { notes: true, folder, ext: ['md'] }
   }
   const query = (): Query => {
     const v = view()
-    const where = toWhere(v.filters)
+    const where = toWhere(v.filters, v.filterMode, filterCtx())
     const from = source()
     // Sans id de base, le filtre de source rejoint celui de la vue.
-    const sourceWhere = 'notes' in from ? toWhere(manifest.source.filters) : undefined
+    const sourceWhere = 'notes' in from ? toWhere(manifest.source.filters, manifest.source.filterMode, filterCtx()) : undefined
     const all = [sourceWhere, where].filter((x): x is QueryFilter => !!x)
-    return { from, where: all.length === 0 ? undefined : all.length === 1 ? all[0] : { and: all }, sort: toSort(v.sorts) }
+    return {
+      from, where: all.length === 0 ? undefined : all.length === 1 ? all[0] : { and: all }, sort: toSort(v.sorts),
+      ...(search.trim() ? { text: search.trim() } : {}),
+    }
   }
 
   const knownValues = async (key: string): Promise<string[]> => {
@@ -430,6 +420,33 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   let popover: HTMLElement
   let stateEl: HTMLElement
 
+  // Recherche rapide : le texte part au moteur (plein texte), sans toucher au manifeste.
+  let searchInput: HTMLInputElement | null = null
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  const searchBox = () => {
+    if (!searchInput) {
+      searchInput = h('input', { class: 'base-input base-search', type: 'search', placeholder: 'Rechercher…', 'data-testid': 'base-search' })
+      searchInput.addEventListener('input', () => {
+        if (searchTimer) clearTimeout(searchTimer)
+        searchTimer = setTimeout(() => { searchTimer = null; search = searchInput!.value; update() }, 200)
+      })
+      searchInput.addEventListener('keydown', e => {
+        e.stopPropagation()
+        if (e.key === 'Escape') { searchInput!.value = ''; search = ''; update() }
+      })
+    }
+    return searchInput
+  }
+
+  const filterHost = (): FilterEditorHost => ({
+    editable: !readOnly && store.writable,
+    keys: () => propertyChoices(true),
+    label,
+    typeOf: key => key === TITLE_COLUMN ? 'text' : isFormulaKey(key) ? 'text' : typeOf(key),
+    members: () => members,
+    knownValues,
+  })
+
   const renderToolbar = () => {
     const tabs = h('div', { class: 'base-tabs' }, ...manifest.views.map(v => {
       const tab = h('button', { class: v.id === activeId ? 'base-tab base-tab-active' : 'base-tab', type: 'button', 'data-testid': 'base-tab', 'data-id': v.id },
@@ -473,12 +490,13 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         const group = v.groupBy || cols.find(c => c.type === 'select')?.key || cols.find(c => c.type === 'text')?.key || ''
         store.setView(v.id, { type: 'kanban', groupBy: group })
       }, v.type === 'kanban') : null,
-      btn(`Filtrer${v.filters.length ? ` (${v.filters.length})` : ''}`, 'base-filter', b => togglePopover('filters', b), v.filters.length > 0),
+      btn(`Filtrer${countFilters(v.filters) ? ` (${countFilters(v.filters)})` : ''}`, 'base-filter', b => togglePopover('filters', b), countFilters(v.filters) > 0),
       btn(`Trier${v.sorts.length ? ` (${v.sorts.length})` : ''}`, 'base-sort', b => togglePopover('sorts', b), v.sorts.length > 0),
       v.type === 'kanban' ? btn(`Grouper : ${v.groupBy ? label(v.groupBy) : '—'}`, 'base-group', b => togglePopover('group', b)) : null,
       btn('Colonnes', 'base-columns', b => togglePopover('columns', b)),
       btn('Source', 'base-source', b => togglePopover('source', b)),
       h('span', { class: 'base-spacer' }),
+      searchBox(),
       stateEl = h('span', { class: 'base-state', 'data-testid': 'base-index-state' }),
       btn('+ Page', 'base-new-page', () => void addPage()),
       lightRows.available ? btn('+ Ligne', 'base-new-row', () => void addLightRow()) : null,
@@ -516,41 +534,13 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return select
   }
 
-  const filterEditor = (filters: BaseFilter[], save: (f: BaseFilter[]) => void, testid: string) => {
-    const box = h('div', { class: 'base-pop-list', 'data-testid': testid })
-    filters.forEach((f, i) => {
-      const set = (patch: Partial<BaseFilter>) => save(filters.map((x, j) => j === i ? { ...x, ...patch } : x))
-      const op = h('select', { class: 'base-input' }, ...OPS.map(o => h('option', { value: o.op }, o.label)))
-      op.value = f.op
-      op.addEventListener('change', () => set({ op: op.value as FilterOp }))
-      const needs = OPS.find(o => o.op === f.op)?.needsValue ?? true
-      const value = h('input', { class: 'base-input', placeholder: 'valeur', 'data-testid': 'base-filter-value' })
-      value.value = valueText(f.value)
-      value.hidden = !needs
-      value.addEventListener('change', () => {
-        const t = typeOf(f.key)
-        const raw = value.value
-        const v: PropertyValue = t === 'number' && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw)
-          : t === 'checkbox' ? /^(oui|true|1|x)$/i.test(raw.trim()) : raw
-        set({ value: v })
-      })
-      const remove = h('button', { class: 'base-btn', type: 'button', title: 'Retirer' }, '×')
-      remove.addEventListener('click', () => save(filters.filter((_, j) => j !== i)))
-      box.append(h('div', { class: 'base-pop-row' }, propertySelect(f.key, true, key => set({ key })), op, value, remove))
-    })
-    const add = h('button', { class: 'base-btn', type: 'button', 'data-testid': `${testid}-add` }, '+ Ajouter un filtre')
-    add.addEventListener('click', () => save([...filters, { key: TITLE_COLUMN, op: 'contains', value: '' }]))
-    box.append(add)
-    return box
-  }
-
   const renderPopover = () => {
     const v = view()
     const editable = !readOnly && store.writable
     let content: HTMLElement
     switch (popoverKind) {
       case 'filters':
-        content = filterEditor(v.filters, filters => store.setView(v.id, { filters }), 'base-filters')
+        content = renderFilterEditor(filterHost(), v.filterMode, v.filters, (filterMode, filters) => store.setView(v.id, { filters, filterMode }), 'base-filters')
         break
       case 'sorts': {
         content = h('div', { class: 'base-pop-list', 'data-testid': 'base-sorts' })
@@ -607,7 +597,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         content = h('div', { class: 'base-pop-list' },
           h('div', { class: 'base-pop-row' }, 'Dossier des pages', folder),
           h('div', { class: 'base-pop-sub' }, 'Filtre de la source'),
-          filterEditor(manifest.source.filters, filters => store.setSource({ filters }), 'base-source-filters'))
+          renderFilterEditor(filterHost(), manifest.source.filterMode, manifest.source.filters, (filterMode, filters) => store.setSource({ filters, filterMode }), 'base-source-filters'))
         break
       }
       default:
@@ -856,6 +846,10 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       }
       if (engine) unsubs.push(engine.onStateChange(s => { if (stateEl) stateEl.textContent = stateText(s) }))
       void types?.members?.().then(m => { members = m; table?.refresh(); kanban?.refresh() }).catch(() => {})
+      // Dates relatives (« aujourd'hui ») : la requete change avec le jour.
+      let day = isoDay(new Date())
+      const dayTimer = setInterval(() => { const d = isoDay(new Date()); if (d !== day) { day = d; update() } }, 60_000)
+      unsubs.push(() => clearInterval(dayTimer))
       update()
     },
     setReadOnly(ro: boolean) {
@@ -864,6 +858,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       table?.refresh()
     },
     destroy() {
+      if (searchTimer) clearTimeout(searchTimer)
       closeCard()
       for (const u of unsubs) u()
       unsubs.length = 0

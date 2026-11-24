@@ -24,6 +24,12 @@ const CSS = `
 .base-pop-label { flex:1; }
 .base-pop-sub { font-size:11px; color:var(--text-faint,#6c7086); text-transform:uppercase; letter-spacing:0.04em; margin-top:4px; }
 .base-input { background:var(--bg-base,#1e1e2e); color:var(--text,#cdd6f4); border:1px solid var(--border,#313244); border-radius:4px; padding:2px 6px; font:inherit; font-size:12px; }
+.base-search { width:150px; }
+.base-filter-row { align-items:flex-start; flex-wrap:wrap; }
+.base-filter-join { min-width:34px; color:var(--text-muted,#a6adc8); font-size:12px; padding-top:3px; }
+select.base-filter-join { padding-top:2px; }
+.base-filter-group { border:1px solid var(--border,#313244); border-radius:6px; padding:6px; flex:1; background:color-mix(in srgb, var(--bg-base,#1e1e2e) 60%, transparent); }
+.base-filter-date { display:inline-flex; gap:4px; }
 .base-menu { display:flex; flex-direction:column; min-width:200px; }
 .base-menu-item { text-align:left; border:none; background:transparent; color:var(--text,#cdd6f4); padding:4px 8px; border-radius:4px; cursor:pointer; font:inherit; }
 .base-menu-item:hover:not(:disabled) { background:var(--bg-hover,rgba(255,255,255,0.08)); }

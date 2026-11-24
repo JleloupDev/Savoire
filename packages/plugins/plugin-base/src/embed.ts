@@ -15,7 +15,8 @@ import { h, renderValue, valueText, type CellContext } from './cells'
 import { TITLE_COLUMN, isFormulaKey, FORMULA_PREFIX, readManifest, type BaseManifest, type BaseViewDef } from './manifest'
 import { folderOfBase } from './notes'
 import { resolveBase } from './queryBlock'
-import { toSort, toWhere } from './view'
+import { toSort } from './view'
+import { toWhere, type FilterContext } from './filters'
 import { needsFormulas, withFormulas } from './formulaEngine'
 
 export const BASE_EMBED_RE = /^\s*!\[\[([^\]|#]+\.base)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]\s*$/i
@@ -33,11 +34,11 @@ export function parseBaseEmbed(text: string): BaseEmbedTarget | null {
 }
 
 /** La requete d'une vue, comme dans la base elle-meme. */
-export function embedQuery(baseId: string, manifest: BaseManifest, view: BaseViewDef): Query {
+export function embedQuery(baseId: string, manifest: BaseManifest, view: BaseViewDef, ctx: FilterContext = {}): Query {
   const folder = manifest.source.folder.replace(/\/+$/, '') || undefined
   return {
-    from: { base: baseId, pages: { folder, ext: ['md'], where: toWhere(manifest.source.filters) } },
-    where: toWhere(view.filters),
+    from: { base: baseId, pages: { folder, ext: ['md'], where: toWhere(manifest.source.filters, manifest.source.filterMode, ctx) } },
+    where: toWhere(view.filters, view.filterMode, ctx),
     sort: toSort(view.sorts),
   }
 }
@@ -94,7 +95,7 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
         return
       }
       current = { manifest, view }
-      const query = embedQuery(base.id, manifest, view)
+      const query = embedQuery(base.id, manifest, view, { me: api.vault.getCurrentUser?.()?.id, typeOf: k => api.properties?.get(k)?.type ?? guessPropertyType(null) })
       const formulas = needsFormulas(query) ? JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => c.formula)) : ''
       const key = JSON.stringify(query) + formulas + shown
       if (key !== lastQuery) {

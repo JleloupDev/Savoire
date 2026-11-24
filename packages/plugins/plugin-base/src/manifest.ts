@@ -7,10 +7,10 @@
 //
 //   base: {
 //     version: 1,
-//     source:  { folder, filters }            dossier des lignes-pages, filtre
+//     source:  { folder, filters, filterMode } dossier des lignes-pages, filtre
 //     columns: { <cle>: { width, order, formula? } }  proprietes affichees ;
 //                                             une cle '=Nom' : colonne formule
-//     views:   { <id>: { name, type, order, filters, sorts, groupBy, hidden, totals } }
+//     views:   { <id>: { name, type, order, filters, filterMode, sorts, groupBy, hidden, totals } }
 //     lotCount, lots: { <n>: true }           lots de lignes legeres (query.ts)
 //   }
 //
@@ -22,8 +22,9 @@
 // Regle des documents CRDT neufs : un .base neuf est vide. La vue montre un
 // manifeste par defaut, et ne l'ecrit qu'a la premiere modification.
 import { isTotalKind, type TotalKind } from './totals'
+import { readFilters, type BaseFilterItem, type FilterMode } from './filters'
 import { BASE_LOT_COUNT } from '@savoire/plugin-api'
-import type { FilterOp, ISharedTree, ITreeMap, PropertyValue, TreeValue } from '@savoire/plugin-api'
+import type { ISharedTree, ITreeMap, TreeValue } from '@savoire/plugin-api'
 
 /** Colonne du titre : toujours la premiere, jamais retiree. */
 export const TITLE_COLUMN = '@title'
@@ -35,12 +36,7 @@ export function isFormulaKey(key: string): boolean {
   return key.startsWith(FORMULA_PREFIX)
 }
 
-export interface BaseFilter {
-  /** Propriete, ou TITLE_COLUMN pour le nom de la ligne. */
-  key: string
-  op: FilterOp
-  value?: PropertyValue
-}
+export type { BaseFilter, BaseFilterGroup, BaseFilterItem, FilterMode } from './filters'
 
 export interface BaseSort {
   key: string
@@ -62,7 +58,9 @@ export interface BaseViewDef {
   name: string
   type: BaseViewType
   order: number
-  filters: BaseFilter[]
+  /** Filtres (groupes compris), reunis par filterMode. */
+  filters: BaseFilterItem[]
+  filterMode: FilterMode
   sorts: BaseSort[]
   /** Propriete de regroupement (kanban). '' : aucune. */
   groupBy: string
@@ -75,7 +73,7 @@ export interface BaseViewDef {
 export interface BaseManifest {
   /** true une fois ecrit dans le document. */
   stored: boolean
-  source: { folder: string; filters: BaseFilter[] }
+  source: { folder: string; filters: BaseFilterItem[]; filterMode: FilterMode }
   columns: BaseColumn[]
   views: BaseViewDef[]
   lotCount: number
@@ -103,14 +101,14 @@ function str(v: TreeValue | undefined, fallback: string): string {
 }
 
 export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 'table', order = 0): BaseViewDef {
-  return { id, name, type, order, filters: [], sorts: [], groupBy: '', hidden: [], totals: {} }
+  return { id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', hidden: [], totals: {} }
 }
 
 /** Manifeste par defaut d'une base neuve : le dossier qui porte son nom. */
 export function defaultManifest(folder: string): BaseManifest {
   return {
     stored: false,
-    source: { folder, filters: [] },
+    source: { folder, filters: [], filterMode: 'and' },
     columns: [],
     views: [defaultView()],
     lotCount: BASE_LOT_COUNT,
@@ -151,7 +149,8 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         name: str(v.get('name'), 'Vue'),
         type,
         order: num(v.get('order'), 0),
-        filters: json(v.get('filters'), []),
+        filters: readFilters(json(v.get('filters'), [])),
+        filterMode: v.get('filterMode') === 'or' ? 'or' : 'and',
         sorts: json(v.get('sorts'), []),
         groupBy: str(v.get('groupBy'), ''),
         hidden: json(v.get('hidden'), []),
@@ -163,7 +162,11 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
   return {
     stored: true,
     source: isMap(source)
-      ? { folder: str(source.get('folder'), folder), filters: json(source.get('filters'), []) }
+      ? {
+          folder: str(source.get('folder'), folder),
+          filters: readFilters(json(source.get('filters'), [])),
+          filterMode: source.get('filterMode') === 'or' ? 'or' : 'and',
+        }
       : fallback.source,
     columns,
     views: views.length ? views : fallback.views,
@@ -208,7 +211,7 @@ export class ManifestStore {
       kind: 'map',
       entries: {
         version: 1,
-        source: { kind: 'map', entries: { folder: d.source.folder, filters: JSON.stringify(d.source.filters) } },
+        source: { kind: 'map', entries: { folder: d.source.folder, filters: JSON.stringify(d.source.filters), filterMode: d.source.filterMode } },
         columns: {
           kind: 'map',
           entries: Object.fromEntries(d.columns.map(c => [c.key, {
@@ -235,6 +238,7 @@ export class ManifestStore {
       const s = this.child(base, 'source')
       if (patch.folder !== undefined) s.set('folder', patch.folder)
       if (patch.filters !== undefined) s.set('filters', JSON.stringify(patch.filters))
+      if (patch.filterMode !== undefined) s.set('filterMode', patch.filterMode)
     })
   }
 
@@ -290,6 +294,7 @@ function viewEntries(v: BaseViewDef): Record<string, string | number> {
     type: v.type,
     order: v.order,
     filters: JSON.stringify(v.filters),
+    filterMode: v.filterMode,
     sorts: JSON.stringify(v.sorts),
     groupBy: v.groupBy,
     hidden: JSON.stringify(v.hidden),

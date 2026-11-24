@@ -241,7 +241,7 @@ export class BoardHost {
     if (tree) {
       const manifest = readManifest(tree, folder)
       folder = manifest.source.folder
-      where = toWhere(manifest.source.filters)
+      where = toWhere(manifest.source.filters, manifest.source.filterMode, { me: api.vault.getCurrentUser?.()?.id, typeOf: k => api.properties?.get(k)?.type ?? 'text' })
       api.vault.closeTree?.(base.id)
     }
     return { base: base.id, pages: { folder: folder.replace(/\/+$/, '') || undefined, ext: ['md'], ...(where ? { where } : {}) } }
