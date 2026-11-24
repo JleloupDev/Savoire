@@ -112,6 +112,8 @@ export class HubConnection {
   private stopRequested = false
   private keepAlive: ReturnType<typeof setInterval> | null = null
   private lastMessageAt = 0
+  /** Heure du premier ping reste sans reponse (0 : le serveur a repondu). */
+  private unansweredPingAt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private stopPromise: Promise<void> | null = null
 
@@ -295,12 +297,21 @@ export class HubConnection {
   private startKeepAlive(): void {
     this.stopKeepAlive()
     this.lastMessageAt = Date.now()
+    this.unansweredPingAt = 0
     this.keepAlive = setInterval(() => {
       if (!this.socket) return
-      if (Date.now() - this.lastMessageAt > SERVER_TIMEOUT_MS) {
+      const now = Date.now()
+      // Le serveur est muet s'il n'a rien dit depuis un ping parti il y a
+      // longtemps. Compter depuis son dernier message tromperait : un onglet
+      // en arriere-plan (minuteries ralenties a une par minute) ou un
+      // portable qui sort de veille fermerait une connexion saine, puis se
+      // reconnecterait, a chaque fois.
+      if (this.unansweredPingAt && this.lastMessageAt >= this.unansweredPingAt) this.unansweredPingAt = 0
+      if (this.unansweredPingAt && now - this.unansweredPingAt > SERVER_TIMEOUT_MS) {
         try { this.socket.close(4000, 'Server timeout elapsed without receiving a message from the server.') } catch { /* deja ferme */ }
         return
       }
+      if (!this.unansweredPingAt) this.unansweredPingAt = now
       try { this.socket.send(JSON.stringify({ t: 'ping' })) } catch { /* ferme entre-temps */ }
     }, KEEP_ALIVE_MS)
   }

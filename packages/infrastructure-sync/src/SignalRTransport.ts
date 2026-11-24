@@ -20,6 +20,9 @@ export interface SignalRTransportOptions {
   gone?: VaultGoneSignal
 }
 
+/** Serveur injoignable : nouveaux essais, de plus en plus espaces. */
+const RETRY_DELAYS_MS = [2000, 5000, 15_000, 30_000]
+
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
   const chunk = 8192
@@ -40,6 +43,10 @@ export class SignalRTransport implements ITransport {
   private docId = ''
   private readonly gone: VaultGoneSignal | undefined
   private readonly unsubGone: () => void
+  /** Document quitte (disconnect) : plus d'entree, plus de nouvel essai. */
+  private left = false
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retries = 0
 
   constructor(options: SignalRTransportOptions) {
     const { serverUrl, userId = 'anon', clientId = 'anon', getToken, gone } = options
@@ -53,8 +60,16 @@ export class SignalRTransport implements ITransport {
       .configureLogging(LogLevel.None)
       .withAutomaticReconnect()
       .build()
+    // Apres une reconnexion, la connexion est neuve pour le serveur : elle
+    // n'est plus dans le groupe du document. Sans y rentrer, plus rien
+    // n'arrive en direct (ecriture d'un autre, d'une IA), alors que les
+    // envois passent encore. On rentre : le serveur renvoie l'etat du document.
+    this.connection.onreconnected(() => { void this.enter() })
+    // Reconnexion abandonnee (serveur absent trop longtemps) : reessayer tant
+    // que le document est ouvert.
+    this.connection.onclose(() => { this.retryLater() })
     // Vault perdu : plus de reconnexion, plus d'envoi.
-    this.unsubGone = gone?.onGone(() => { void this.connection.stop().catch(() => {}) }) ?? (() => {})
+    this.unsubGone = gone?.onGone(() => { this.cancelRetry(); void this.connection.stop().catch(() => {}) }) ?? (() => {})
   }
 
   /** Rapporte l'erreur au signal du vault ; rend true si le vault est perdu. */
@@ -69,14 +84,50 @@ export class SignalRTransport implements ITransport {
   async join(vaultId: string, docId: string): Promise<void> {
     this.vaultId = vaultId
     this.docId = docId
-    if (this.gone?.gone) return
+    this.left = false
+    await this.enter()
+  }
+
+  /**
+   * Ouvre la connexion s'il le faut, puis entre dans le document : le serveur
+   * repond par InitDocument (tout le journal). Appele a l'ouverture, apres
+   * chaque reconnexion, et par les nouveaux essais.
+   */
+  private async enter(): Promise<void> {
+    if (this.left || this.gone?.gone || !this.docId) return
     try {
-      await this.connection.start()
-      await this.connection.invoke('JoinDocument', vaultId, docId)
+      if (this.connection.state === HubConnectionState.Disconnected) await this.connection.start()
     } catch (err) {
       if (this.isGone(err)) return
       console.debug('[SignalRTransport] unavailable — offline mode')
+      this.retryLater()
+      return
     }
+    // En cours de reconnexion : onreconnected rappellera.
+    if (this.connection.state !== HubConnectionState.Connected) return
+    try {
+      await this.connection.invoke('JoinDocument', this.vaultId, this.docId)
+      this.retries = 0
+    } catch (err) {
+      // Refus du serveur (acces retire, document absent) : pas de nouvel essai.
+      if (this.isGone(err)) return
+      console.debug('[SignalRTransport] unavailable — offline mode')
+    }
+  }
+
+  private retryLater(): void {
+    if (this.left || this.gone?.gone || this.retryTimer) return
+    const delay = RETRY_DELAYS_MS[Math.min(this.retries, RETRY_DELAYS_MS.length - 1)]!
+    this.retries++
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      void this.enter()
+    }, delay)
+  }
+
+  private cancelRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
   }
 
   async push(op: Uint8Array): Promise<void> {
@@ -134,6 +185,8 @@ export class SignalRTransport implements ITransport {
   }
 
   async disconnect(): Promise<void> {
+    this.left = true
+    this.cancelRetry()
     this.unsubGone()
     await this.connection.stop()
   }

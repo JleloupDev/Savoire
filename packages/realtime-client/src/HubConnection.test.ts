@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HubConnectionBuilder, HubConnectionState, socketUrl } from './HubConnection'
 
 /** Fausse WebSocket : le test joue le serveur. */
@@ -14,8 +14,15 @@ class FakeSocket {
     FakeSocket.last = this
     queueMicrotask(() => this.serverSend({ t: 'hello', connectionId: 'c1' }))
   }
-  send(text: string) { this.sent.push(JSON.parse(text)) }
-  close(code = 1000) { queueMicrotask(() => this.onclose?.({ code, reason: '' })) }
+  /** Le serveur repond aux pings (false : il est muet). */
+  static answersPings = true
+  closedWith: number | null = null
+  send(text: string) {
+    const frame = JSON.parse(text)
+    this.sent.push(frame)
+    if (frame.t === 'ping' && FakeSocket.answersPings) this.serverSend({ t: 'pong' })
+  }
+  close(code = 1000) { this.closedWith = code; queueMicrotask(() => this.onclose?.({ code, reason: '' })) }
   serverSend(frame: unknown) { this.onmessage?.({ data: JSON.stringify(frame) }) }
 }
 
@@ -92,5 +99,44 @@ describe('HubConnection', () => {
     await conn.stop()
     expect(conn.state).toBe(HubConnectionState.Disconnected)
     expect(seen.at(-1)).toBe('closed')
+  })
+
+  describe('surveillance du serveur', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+      FakeSocket.answersPings = true
+    })
+
+    it('garde la connexion quand les minuteries ont pris du retard (onglet en arriere-plan, sortie de veille)', async () => {
+      vi.useFakeTimers()
+      const conn = build(okFetch, true)
+      await conn.start()
+      const socket = FakeSocket.last!
+      // Une minute passe sans qu'aucune minuterie ne tourne, puis elles reprennent.
+      for (let i = 0; i < 5; i++) {
+        vi.setSystemTime(Date.now() + 60_000)
+        await vi.advanceTimersByTimeAsync(15_000)
+      }
+      expect(socket.closedWith).toBeNull()
+      expect(FakeSocket.last).toBe(socket)
+      expect(conn.state).toBe(HubConnectionState.Connected)
+      expect(socket.sent.filter(f => f.t === 'ping').length).toBeGreaterThanOrEqual(5)
+      await conn.stop()
+    })
+
+    it('ferme et se reconnecte quand le serveur ne repond plus aux pings', async () => {
+      vi.useFakeTimers()
+      const conn = build(okFetch, true)
+      await conn.start()
+      const socket = FakeSocket.last!
+      FakeSocket.answersPings = false
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(socket.closedWith).toBe(4000)
+      FakeSocket.answersPings = true
+      await vi.advanceTimersByTimeAsync(100)
+      expect(FakeSocket.last).not.toBe(socket)
+      expect(conn.state).toBe(HubConnectionState.Connected)
+      await conn.stop()
+    })
   })
 })
