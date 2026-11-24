@@ -38,6 +38,7 @@ export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere 
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
 export { orderGroups, groupLabel, groupField, DATE_GROUPINGS } from './groups'
 export { shiftDate, monthGrid } from './views/calendar'
+export { parseCsv, toCsv, parseCellText } from './csv'
 export type { DateGrouping } from './groups'
 export type { TotalKind } from './totals'
 

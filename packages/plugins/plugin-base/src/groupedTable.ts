@@ -129,6 +129,9 @@ export class GroupedTable {
       onResult: () => {},
       totals: undefined,
       totalMenu: undefined,
+      // Une selection et un ordre manuel par section n'auraient pas de sens.
+      selectionChanged: undefined,
+      canReorder: () => false,
       addRow: () => this.host.addPageIn(values),
     }, { embedded: true })
     table.setQuery({ ...q, where })

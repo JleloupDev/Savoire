@@ -12,6 +12,10 @@ import { TITLE_COLUMN } from './manifest'
 import type { CellAnnotation } from './annotations'
 
 export const ROW_HEIGHT = 32
+/** Retour a la ligne : trois lignes de texte par cellule. */
+export const WRAP_HEIGHT = 64
+/** Colonne de selection (case, poignee de l'ordre manuel). */
+const SELECT_WIDTH = 34
 export const PAGE_SIZE = 200
 const OVERSCAN = 8
 /** Tableau integre (un groupe) : lignes montrees d'abord, puis par « Voir plus ». */
@@ -81,6 +85,21 @@ export interface TableHost {
   commentCell?(row: QueryRow, key: string, anchor: HTMLElement): void
   /** Accepter ou refuser une valeur proposee, depuis la cellule ; absent : pas de boutons. */
   decide?(id: string, accept: boolean): void
+  /** Deplace une colonne avant une autre (glisser son en-tete). */
+  moveColumn?(key: string, before: string): void
+  /** Colonnes figees a gauche (le nom compte pour une) ; 0 : aucune. */
+  frozen?(): number
+  /** Retour a la ligne dans les cellules (lignes plus hautes). */
+  wrap?(): boolean
+  /** Selection de lignes : absent, pas de cases ; appele a chaque changement. */
+  selectionChanged?(rows: QueryRow[]): void
+  /** Apercu lateral d'une ligne. */
+  peek?(row: QueryRow): void
+  /** Ordre manuel : poignee pour glisser une ligne avant une autre (null : a la fin). */
+  canReorder?(): boolean
+  reorder?(id: string, before: string | null, order: string[]): void
+  /** Colle des textes dans des cellules (copier-coller depuis un tableur). */
+  paste?(cells: { row: QueryRow; key: string; text: string }[]): void
 }
 
 export class BaseTable {
@@ -103,6 +122,8 @@ export class BaseTable {
   private editing = false
   /** Lignes deja dessinees, par contenu : une mise a jour de l'index ne recree que ce qui a change. */
   private drawn = new Map<string, { sig: string; el: HTMLElement }>()
+  /** Lignes cochees (ids). */
+  private selected = new Set<string>()
 
   constructor(private readonly host: TableHost, opts: TableOptions = {}) {
     this.embedded = !!opts.embedded
@@ -118,6 +139,168 @@ export class BaseTable {
     this.el = h('div', { class: this.embedded ? 'base-table base-table-embedded' : 'base-table', 'data-testid': 'base-table' },
       this.head, this.body, this.more, this.adder, this.foot)
     if (!this.embedded) this.el.addEventListener('scroll', () => this.schedule())
+    this.el.addEventListener('keydown', e => this.onKey(e))
+    this.el.addEventListener('copy', e => this.onCopy(e))
+    this.el.addEventListener('paste', e => this.onPaste(e))
+  }
+
+  private get rowHeight(): number {
+    return this.host.wrap?.() ? WRAP_HEIGHT : ROW_HEIGHT
+  }
+
+  private get selectable(): boolean {
+    return !!this.host.selectionChanged
+  }
+
+  /** Ligne a la position `i` (si elle est chargee). */
+  rowAt(i: number): QueryRow | undefined {
+    const page = Math.floor(i / PAGE_SIZE)
+    return this.pages.get(page)?.[i - page * PAGE_SIZE]
+  }
+
+  /** Lignes cochees, parmi celles chargees. */
+  selectedRows(): QueryRow[] {
+    return this.loadedRows().filter(r => this.selected.has(r.id))
+  }
+
+  clearSelection(): void {
+    if (!this.selected.size) return
+    this.selected.clear()
+    this.drawn.clear()
+    this.host.selectionChanged?.([])
+    this.renderRows(true)
+    this.renderHead()
+  }
+
+  private setSelected(id: string, on: boolean): void {
+    if (on) this.selected.add(id)
+    else this.selected.delete(id)
+    this.host.selectionChanged?.(this.selectedRows())
+  }
+
+  /** Decalage a gauche de chaque colonne figee (position collante). */
+  private stickyLefts(cols: TableColumn[]): Map<string, number> {
+    const out = new Map<string, number>()
+    const n = this.host.frozen?.() ?? 0
+    let left = this.selectable ? SELECT_WIDTH : 0
+    for (let i = 0; i < Math.min(n, cols.length); i++) {
+      out.set(cols[i].key, left)
+      left += cols[i].width
+    }
+    return out
+  }
+
+  private stick(el: HTMLElement, left: number | undefined, last: boolean): void {
+    if (left === undefined) return
+    el.classList.add('base-sticky')
+    if (last) el.classList.add('base-sticky-last')
+    el.style.left = `${left}px`
+  }
+
+  // ── Clavier, copier, coller ──────────────────────────────────────────────
+
+  private cellOf(target: EventTarget | null): HTMLElement | null {
+    const el = target as HTMLElement | null
+    return el?.closest?.('.base-td[data-key]') as HTMLElement | null
+  }
+
+  private position(td: HTMLElement): { index: number; key: string } | null {
+    const tr = td.closest('.base-tr') as HTMLElement | null
+    const index = Number(tr?.dataset.index)
+    return tr && Number.isInteger(index) ? { index, key: td.dataset.key ?? '' } : null
+  }
+
+  private focusCell(index: number, key: string): void {
+    const top = index * this.rowHeight
+    if (!this.embedded) {
+      if (top < this.el.scrollTop + 32) this.el.scrollTop = Math.max(0, top - 32)
+      else if (top + this.rowHeight > this.el.scrollTop + this.el.clientHeight) this.el.scrollTop = top + this.rowHeight - this.el.clientHeight + 4
+      this.renderRows(true)
+    }
+    const td = this.body.querySelector(`.base-tr[data-index="${index}"] .base-td[data-key="${key.replace(/["\\]/g, '\\$&')}"]`) as HTMLElement | null
+    td?.focus()
+  }
+
+  private onKey(e: KeyboardEvent): void {
+    const td = this.cellOf(e.target)
+    if (!td || this.editing || e.target !== td) return
+    const pos = this.position(td)
+    if (!pos) return
+    const keys = this.host.columns().map(c => c.key)
+    const col = keys.indexOf(pos.key)
+    const max = (this.embedded ? Math.min(this.total, this.shown) : this.total) - 1
+    let next: { index: number; key: string } | null = null
+    switch (e.key) {
+      case 'ArrowDown': next = { index: Math.min(max, pos.index + 1), key: pos.key }; break
+      case 'ArrowUp': next = { index: Math.max(0, pos.index - 1), key: pos.key }; break
+      case 'ArrowRight': case 'Tab': next = { index: pos.index, key: keys[Math.min(keys.length - 1, col + (e.shiftKey && e.key === 'Tab' ? -1 : 1))] }; break
+      case 'ArrowLeft': next = { index: pos.index, key: keys[Math.max(0, col - 1)] }; break
+      case 'Delete':
+      case 'Backspace': {
+        const row = this.rowAt(pos.index)
+        const c = this.host.columns().find(x => x.key === pos.key)
+        if (row && c && !this.host.readOnly() && c.key !== TITLE_COLUMN && !c.formula && !c.formulaError && !AUTO_PROPERTY_TYPES.includes(c.type)) {
+          e.preventDefault()
+          this.host.edit(row, c.key, null)
+        }
+        return
+      }
+      case 'Escape': if (this.selected.size) { e.preventDefault(); this.clearSelection() } return
+      default: return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    if (next) this.focusCell(next.index, next.key)
+  }
+
+  /** Texte d'une cellule, pour le presse-papiers. */
+  private cellText(row: QueryRow, col: TableColumn): string {
+    if (col.key === TITLE_COLUMN) return row.title
+    const v = col.formula ? (r => r.ok ? r.value : null)(col.formula.evaluate(row)) : row.values[col.key]
+    if (v === null || v === undefined) return ''
+    return Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v)
+  }
+
+  private onCopy(e: ClipboardEvent): void {
+    if (this.editing) return
+    const cols = this.host.columns()
+    let text: string | null = null
+    const rows = this.selectedRows()
+    if (rows.length) {
+      // Lignes cochees : un tableau (tabulations), comme un tableur.
+      text = [cols.map(c => c.label).join('\t'), ...rows.map(r => cols.map(c => this.cellText(r, c).replace(/[\t\n]/g, ' ')).join('\t'))].join('\n')
+    } else {
+      const td = this.cellOf(document.activeElement)
+      const pos = td && this.position(td)
+      const row = pos ? this.rowAt(pos.index) : undefined
+      const col = pos ? cols.find(c => c.key === pos.key) : undefined
+      if (row && col) text = this.cellText(row, col)
+    }
+    if (text === null || !e.clipboardData) return
+    e.clipboardData.setData('text/plain', text)
+    e.preventDefault()
+  }
+
+  private onPaste(e: ClipboardEvent): void {
+    if (this.editing || this.host.readOnly() || !this.host.paste) return
+    const td = this.cellOf(document.activeElement)
+    const pos = td && this.position(td)
+    const text = e.clipboardData?.getData('text/plain')
+    if (!pos || text === undefined) return
+    e.preventDefault()
+    const keys = this.host.columns().map(c => c.key)
+    const start = keys.indexOf(pos.key)
+    const lines = text.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n')
+    const cells: { row: QueryRow; key: string; text: string }[] = []
+    lines.forEach((line, i) => {
+      const row = this.rowAt(pos.index + i)
+      if (!row) return
+      line.split('\t').forEach((t, j) => {
+        const key = keys[start + j]
+        if (key) cells.push({ row, key, text: t })
+      })
+    })
+    if (cells.length) this.host.paste(cells)
   }
 
   /**
@@ -229,14 +412,35 @@ export class BaseTable {
   }
 
   private width(): number {
-    return this.host.columns().reduce((n, c) => n + c.width, 0) + 40
+    return this.host.columns().reduce((n, c) => n + c.width, 0) + 40 + (this.selectable ? SELECT_WIDTH : 0)
   }
 
   private renderHead(): void {
     const cols = this.host.columns()
+    const lefts = this.stickyLefts(cols)
+    const lastFrozen = [...lefts.keys()].pop()
     const cells = cols.map(col => {
       const th = h('div', { class: 'base-th', 'data-key': col.key, 'data-testid': 'base-th', title: col.label })
       th.style.width = `${col.width}px`
+      this.stick(th, lefts.get(col.key), col.key === lastFrozen)
+      // Glisser un en-tete sur un autre : la colonne passe devant (le nom reste premier).
+      if (this.host.moveColumn && !this.host.readOnly() && col.key !== TITLE_COLUMN) {
+        th.draggable = true
+        th.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/x-base-col', col.key); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move' })
+      }
+      if (this.host.moveColumn && !this.host.readOnly()) {
+        th.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('text/x-base-col')) { e.preventDefault(); th.classList.add('base-th-over') } })
+        th.addEventListener('dragleave', () => th.classList.remove('base-th-over'))
+        th.addEventListener('drop', e => {
+          th.classList.remove('base-th-over')
+          const from = e.dataTransfer?.getData('text/x-base-col')
+          if (!from || from === col.key) return
+          e.preventDefault()
+          // Deposer sur le nom : juste apres lui.
+          const target = col.key === TITLE_COLUMN ? cols[1]?.key : col.key
+          if (target && target !== from) this.host.moveColumn!(from, target)
+        })
+      }
       const label = h('button', { class: 'base-th-label', type: 'button' }, col.label)
       label.addEventListener('click', () => this.host.columnMenu(col.key, th))
       th.append(label)
@@ -250,7 +454,22 @@ export class BaseTable {
     const add = h('button', { class: 'base-th-add', type: 'button', title: 'Ajouter une colonne', 'data-testid': 'base-add-column' }, '+')
     add.disabled = this.host.readOnly()
     add.addEventListener('click', () => this.host.addColumn(add))
-    this.head.replaceChildren(...cells, add)
+    const lead: HTMLElement[] = []
+    if (this.selectable) {
+      const all = h('input', { type: 'checkbox', title: 'Tout cocher', 'data-testid': 'base-select-all' })
+      const loaded = this.loadedRows()
+      all.checked = loaded.length > 0 && loaded.every(r => this.selected.has(r.id))
+      all.addEventListener('change', () => {
+        for (const r of loaded) { if (all.checked) this.selected.add(r.id); else this.selected.delete(r.id) }
+        this.host.selectionChanged?.(this.selectedRows())
+        this.renderRows(true)
+      })
+      const box = h('div', { class: 'base-th base-th-select' }, all)
+      box.style.width = `${SELECT_WIDTH}px`
+      this.stick(box, (this.host.frozen?.() ?? 0) > 0 ? 0 : undefined, false)
+      lead.push(box)
+    }
+    this.head.replaceChildren(...lead, ...cells, add)
     this.head.style.width = `${this.width()}px`
   }
 
@@ -279,19 +498,21 @@ export class BaseTable {
     const count = this.embedded ? Math.min(this.total, this.shown) : this.total
     const viewport = this.el.clientHeight || 600
     const top = this.embedded ? 0 : this.el.scrollTop
-    const first = this.embedded ? 0 : Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN)
-    const last = this.embedded ? count - 1 : Math.min(this.total - 1, Math.ceil((top + viewport) / ROW_HEIGHT) + OVERSCAN)
+    const rh = this.rowHeight
+    const first = this.embedded ? 0 : Math.max(0, Math.floor(top / rh) - OVERSCAN)
+    const last = this.embedded ? count - 1 : Math.min(this.total - 1, Math.ceil((top + viewport) / rh) + OVERSCAN)
     if (this.embedded) {
       this.more.hidden = this.total <= this.shown
       this.more.textContent = `Voir plus (${this.total - this.shown} de plus)`
       this.more.style.width = `${this.width()}px`
     }
-    this.body.style.height = `${count * ROW_HEIGHT}px`
+    this.body.style.height = `${count * rh}px`
     this.body.style.width = `${this.width()}px`
     const cols = this.host.columns()
     const ctx = this.host.cells()
     // Les reglages des proprietes (couleurs, format) changent l'affichage des cellules.
-    const colSig = JSON.stringify([cols, this.host.readOnly(), ctx.members.length, cols.map(c => ctx.def?.(c.key) ?? null), this.host.revision?.() ?? 0])
+    const colSig = JSON.stringify([cols, this.host.readOnly(), ctx.members.length, cols.map(c => ctx.def?.(c.key) ?? null), this.host.revision?.() ?? 0,
+      this.host.frozen?.() ?? 0, rh, this.host.canReorder?.() ?? false])
     const rows: HTMLElement[] = []
     const kept = new Map<string, { sig: string; el: HTMLElement }>()
     for (let i = first; i <= last; i++) {
@@ -300,15 +521,16 @@ export class BaseTable {
       if (!row) {
         this.ensurePage(page)
         const ph = h('div', { class: 'base-tr base-tr-loading' }, '…')
-        ph.style.top = `${i * ROW_HEIGHT}px`
+        ph.style.top = `${i * rh}px`
         rows.push(ph)
         continue
       }
       // Meme contenu : meme element (un double-clic n'est pas perdu quand l'index bouge).
-      const sig = JSON.stringify([row.title, row.path, row.values, this.host.annotationSig?.(row) ?? '']) + colSig
+      const sig = JSON.stringify([row.title, row.path, row.values, this.host.annotationSig?.(row) ?? '', this.selected.has(row.id)]) + colSig
       const prev = this.drawn.get(row.id)
       const el = prev && prev.sig === sig ? prev.el : this.renderRow(row, i, cols)
-      el.style.top = `${i * ROW_HEIGHT}px`
+      el.style.top = `${i * rh}px`
+      el.dataset.index = String(i)
       kept.set(row.id, { sig, el })
       rows.push(el)
     }
@@ -329,13 +551,51 @@ export class BaseTable {
 
   private renderRow(row: QueryRow, index: number, cols: TableColumn[]): HTMLElement {
     const light = row.path === ''
-    const tr = h('div', { class: light ? 'base-tr base-tr-light' : 'base-tr', 'data-testid': 'base-row', 'data-id': row.id })
-    tr.style.top = `${index * ROW_HEIGHT}px`
+    const tr = h('div', { class: light ? 'base-tr base-tr-light' : 'base-tr', 'data-testid': 'base-row', 'data-id': row.id, 'data-index': String(index) })
+    const rh = this.rowHeight
+    tr.style.top = `${index * rh}px`
+    tr.style.height = `${rh}px`
+    if (rh !== ROW_HEIGHT) tr.classList.add('base-tr-wrap')
+    if (this.selected.has(row.id)) tr.classList.add('base-tr-selected')
     const ctx = this.host.cells()
     const ro = this.host.readOnly()
+    const lefts = this.stickyLefts(cols)
+    const lastFrozen = [...lefts.keys()].pop()
+    if (this.selectable) {
+      const box = h('input', { type: 'checkbox', title: 'Cocher la ligne', 'data-testid': 'base-select' })
+      box.checked = this.selected.has(row.id)
+      box.addEventListener('change', () => {
+        this.setSelected(row.id, box.checked)
+        tr.classList.toggle('base-tr-selected', box.checked)
+        // L'element dessine ne correspond plus a son empreinte : il sera refait au prochain dessin.
+        this.drawn.delete(row.id)
+        this.renderHead()
+      })
+      const cell = h('div', { class: 'base-td base-td-select' }, box)
+      cell.style.width = `${SELECT_WIDTH}px`
+      this.stick(cell, (this.host.frozen?.() ?? 0) > 0 ? 0 : undefined, false)
+      // Ordre manuel : la poignee se glisse sur une autre ligne.
+      if (!ro && this.host.canReorder?.()) {
+        const grip = h('span', { class: 'base-row-grip', title: 'Glisser pour déplacer', draggable: 'true', 'data-testid': 'base-row-grip' }, '⋮⋮')
+        grip.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/x-base-order', row.id); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move' })
+        cell.prepend(grip)
+        tr.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('text/x-base-order')) { e.preventDefault(); tr.classList.add('base-tr-over') } })
+        tr.addEventListener('dragleave', () => tr.classList.remove('base-tr-over'))
+        tr.addEventListener('drop', e => {
+          tr.classList.remove('base-tr-over')
+          const id = e.dataTransfer?.getData('text/x-base-order')
+          if (!id || id === row.id) return
+          e.preventDefault()
+          this.host.reorder?.(id, row.id, this.loadedRows().map(r => r.id))
+        })
+      }
+      tr.append(cell)
+    }
     for (const col of cols) {
       const td = h('div', { class: 'base-td', 'data-key': col.key, tabindex: '-1' })
       td.style.width = `${col.width}px`
+      this.stick(td, lefts.get(col.key), col.key === lastFrozen)
+      td.addEventListener('mousedown', ev => { if (ev.target === td) setTimeout(() => { if (!this.editing) td.focus() }, 0) })
       if (col.key === TITLE_COLUMN) {
         td.classList.add('base-td-title')
         const name = light
@@ -349,6 +609,11 @@ export class BaseTable {
           const remove = h('button', { class: 'base-row-action', type: 'button', title: 'Supprimer la ligne', 'data-testid': 'base-remove' }, '×')
           remove.addEventListener('click', e => { e.stopPropagation(); this.host.remove(row) })
           td.append(promote, remove)
+        }
+        if (this.host.peek) {
+          const peek = h('button', { class: 'base-row-action base-row-peek', type: 'button', title: 'Aperçu', 'data-testid': 'base-peek' }, '⤢')
+          peek.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); this.host.peek!(row) })
+          td.append(peek)
         }
         if (!ro) td.addEventListener('dblclick', () => this.editCell(td, col, row.title, v => this.host.rename(row, String(v ?? '').trim() || 'Sans titre')))
       } else if (col.formula || col.formulaError) {

@@ -106,6 +106,12 @@ export interface BaseViewDef {
   chartCalc: 'sum' | 'mean' | 'min' | 'max'
   /** Frise : relation « bloque » (fleches vers les lignes liees). '' : aucune. */
   dependsOn: string
+  /** Tableau : colonnes figees a gauche (le nom compte pour une). */
+  frozen: number
+  /** Tableau : retour a la ligne dans les cellules. */
+  wrap: boolean
+  /** Ordre manuel des lignes (ids), quand la vue n'a pas de tri. Les autres suivent. */
+  rowOrder: string[]
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
   /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
@@ -123,6 +129,10 @@ export interface BaseManifest {
 }
 
 export const DEFAULT_WIDTH = 160
+/** Ordre manuel : lignes retenues au plus (les autres suivent, par nom). */
+export const MAX_MANUAL_ORDER = 5000
+/** Cle de tri de l'ordre manuel (calculee dans le client). */
+export const RANK_KEY = '=@rang'
 export const TITLE_WIDTH = 240
 
 function isMap(v: TreeValue | undefined): v is ITreeMap {
@@ -146,7 +156,7 @@ export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 't
   return {
     id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', dateGroup: '', subGroupBy: '', hideEmpty: false,
     collapsed: [], hidden: [], totals: {}, dateBy: '', endBy: '', cover: '', cardSize: 'medium', scale: 'day',
-    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '',
+    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '', frozen: 0, wrap: false, rowOrder: [],
   }
 }
 
@@ -214,6 +224,9 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         chartY: str(v.get('chartY'), ''),
         chartCalc: (['sum', 'mean', 'min', 'max'] as const).find(x => x === v.get('chartCalc')) ?? 'sum',
         dependsOn: str(v.get('dependsOn'), ''),
+        frozen: Math.max(0, Math.min(10, Math.floor(num(v.get('frozen'), 0)))),
+        wrap: v.get('wrap') === true,
+        rowOrder: json<unknown[]>(v.get('rowOrder'), []).filter((x): x is string => typeof x === 'string').slice(0, MAX_MANUAL_ORDER),
         hidden: json(v.get('hidden'), []),
         totals: readTotals(json(v.get('totals'), {})),
       })
@@ -393,6 +406,9 @@ function viewEntries(v: BaseViewDef): Record<string, string | number | boolean> 
     chartY: v.chartY,
     chartCalc: v.chartCalc,
     dependsOn: v.dependsOn,
+    frozen: v.frozen,
+    wrap: v.wrap,
+    rowOrder: JSON.stringify(v.rowOrder.slice(0, MAX_MANUAL_ORDER)),
     hidden: JSON.stringify(v.hidden),
     totals: JSON.stringify(v.totals),
   }

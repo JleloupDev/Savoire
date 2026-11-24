@@ -56,6 +56,7 @@ export function world(initial: Omit<Note, 'id'>[], bases: { id: string; path: st
     renameFile: vi.fn(async (id: string, path: string) => { notes.find(n => n.id === id)!.path = path; notify() }),
     deleteFile: vi.fn(async (id: string) => { const i = notes.findIndex(n => n.id === id); if (i >= 0) notes.splice(i, 1); notify() }),
     getCurrentUser: () => ({ id: 'u1', name: 'Alice' }),
+    read: async (id: string) => notes.find(n => n.id === id)?.text ?? '',
     getFileTree: () => notes.map(n => ({ docId: n.id, path: n.path, crdtVersion: { clock: 0 } })),
     openTree: async (id: string) => treePair(id)[0],
     closeTree: () => {},

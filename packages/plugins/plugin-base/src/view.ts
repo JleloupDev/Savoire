@@ -11,12 +11,12 @@ import {
 } from '@savoire/plugin-api'
 import type {
   CompiledFormula,
-  FileContext, FileView, IndexState, PluginAPI, PropertyMember, PropertyType, PropertyValue,
+  FileContext, FileView, FormulaRow, IndexState, PluginAPI, PropertyMember, PropertyType, PropertyValue,
   Query, QueryFilter, QueryResult, QueryRow, QuerySort, QuerySource,
 } from '@savoire/plugin-api'
-import { h, valueText, type CellContext } from './cells'
+import { h, openEditor, valueText, type CellContext } from './cells'
 import {
-  DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, VIEW_TYPES, defaultView, isFormulaKey, readManifest,
+  DEFAULT_WIDTH, FORMULA_PREFIX, MAX_MANUAL_ORDER, ManifestStore, RANK_KEY, TITLE_COLUMN, TITLE_WIDTH, VIEW_TYPES, defaultView, isFormulaKey, readManifest,
   type BaseManifest, type BaseSort, type BaseViewDef, type BaseViewType, type ChartKind, type TimelineScale,
 } from './manifest'
 import { countFilters, isoDay, mapFilterKeys, toWhere, type FilterContext } from './filters'
@@ -24,6 +24,8 @@ import { renderFilterEditor, type FilterEditorHost } from './filterEditor'
 import { LightRows } from './rows'
 import { createPageRow, folderOfBase, renameNoteProperty, renamePageRow, writeNoteProperties, writeNoteProperty, type NotesVault } from './notes'
 import { renderPropertySettings } from './propertySettings'
+import { RowPeek } from './peek'
+import { cellCsv, parseCellText, parseCsv, toCsv } from './csv'
 import { RelatedRows, asLinks, baseSourceOf, relationChoicesOf, rollupFormula, rowLink, syncBackLinks, ROLLUP_CALCS, type RollupCalc } from './relations'
 import { BaseTable, type TableColumn, type TableHost } from './table'
 import { BaseKanban, type KanbanHost } from './kanban'
@@ -47,6 +49,10 @@ import { CellAnnotations, type CellCommentTarget } from './annotations'
 export let activeBaseView: BaseViewHandle | null = null
 
 export interface BaseViewHandle {
+  /** Les lignes de la vue en CSV (colonnes visibles). */
+  exportCsv?(): Promise<string>
+  /** Cree des lignes depuis un CSV ; rend leur nombre. */
+  importCsv?(text: string): Promise<number>
   addPage(values?: Record<string, PropertyValue>, title?: string): Promise<void>
   addLightRow(values?: Record<string, PropertyValue>): Promise<void>
 }
@@ -144,8 +150,29 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     id => onRelated(id),
   ) : null
   const rollups = new Map<string, { sig: string; formula: CompiledFormula }>()
+
+  // Ordre manuel : le rang d'une ligne dans la liste de la vue (tri dans le client).
+  let rankSig = ''
+  let rankMap = new Map<string, number>()
+  const rankOf = (id: string | undefined): number | null => {
+    const order = view().rowOrder
+    const sig = order.join('\u0000')
+    if (sig !== rankSig) { rankSig = sig; rankMap = new Map(order.map((x, i) => [x, i])) }
+    return id !== undefined && rankMap.has(id) ? rankMap.get(id)! : null
+  }
+  const rankFormula = {
+    clientOnly: true as const,
+    source: 'ordre manuel',
+    props: [],
+    aggregates: false,
+    aggregateCalls: null,
+    evaluateAggregates: () => ({ ok: false as const, error: 'Ordre manuel.' }),
+    toFilter: () => null,
+    evaluate: (row: FormulaRow) => ({ ok: true as const, value: rankOf((row as FormulaRow & { id?: string }).id) }),
+  }
   /** Une colonne calculee : formule ou rollup. */
   const computed = (key: string): { formula: CompiledFormula } | { error: string } => {
+    if (key === RANK_KEY) return { formula: rankFormula }
     const col = manifest.columns.find(c => c.key === key)
     if (col?.rollup && related) {
       const sig = JSON.stringify(col.rollup)
@@ -166,7 +193,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return 'formula' in f ? f.formula : undefined
   })
   /** Empreinte des formules : une formule modifiee relance une requete qui filtre ou trie dessus. */
-  const formulaSig = () => JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => [c.key, c.formula, c.rollup]))
+  const formulaSig = () => JSON.stringify([manifest.columns.filter(c => isFormulaKey(c.key)).map(c => [c.key, c.formula, c.rollup]), view().rowOrder])
   let lastFormulaSig = ''
 
   /** Affichage du resultat d'un rollup : selon le type de la propriete resumee. */
@@ -216,7 +243,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const sourceWhere = 'notes' in from ? toWhere(manifest.source.filters, manifest.source.filterMode, filterCtx()) : undefined
     const all = [sourceWhere, where].filter((x): x is QueryFilter => !!x)
     return {
-      from, where: all.length === 0 ? undefined : all.length === 1 ? all[0] : { and: all }, sort: toSort(v.sorts),
+      from, where: all.length === 0 ? undefined : all.length === 1 ? all[0] : { and: all },
+      // Sans tri : l'ordre manuel s'il y en a un (les lignes hors liste a la fin, par nom).
+      sort: v.sorts.length === 0 && v.rowOrder.length ? [{ field: { prop: RANK_KEY } }, { field: { doc: 'title' } }] : toSort(v.sorts),
       ...(search.trim() ? { text: search.trim() } : {}),
     }
   }
@@ -394,6 +423,217 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     } catch (err) { report(err) }
   }
 
+  // ── Confort du tableau : colonnes, ordre, collage, selection ─────────────
+
+  /** Deplace une colonne avant une autre ; les ordres sont renumerotes. */
+  const moveColumn = (key: string, before: string) => {
+    if (readOnly || !store.writable || key === before) return
+    const cols = columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).sort((a, b) => a.order - b.order)
+    const keys = cols.map(c => c.key).filter(k => k !== key)
+    const i = keys.indexOf(before)
+    keys.splice(i < 0 ? keys.length : i, 0, key)
+    keys.forEach((k, n) => { if (cols.find(c => c.key === k)?.order !== n + 1) store.setColumn(k, { order: n + 1 }) })
+  }
+
+  /** Ordre manuel : `id` passe avant `before` (null : a la fin). */
+  const reorderRows = (id: string, before: string | null, loaded: string[]) => {
+    const v = view()
+    const base = v.rowOrder.length ? [...v.rowOrder, ...loaded.filter(x => !v.rowOrder.includes(x))] : loaded
+    const list = base.filter(x => x !== id)
+    const i = before ? list.indexOf(before) : -1
+    list.splice(i < 0 ? list.length : i, 0, id)
+    store.setView(v.id, { rowOrder: list.slice(0, MAX_MANUAL_ORDER) })
+  }
+
+  /** Une valeur tapee ou collee, selon le type de la colonne. */
+  const parseFor = (key: string, text: string): PropertyValue => parseCellText(typeOf(key), text, !!types?.get(key)?.multiple)
+
+  /** Coller un tableau (tableur) a partir d'une cellule. */
+  const pasteCells = (cells: { row: QueryRow; key: string; text: string }[]) => {
+    if (readOnly) return
+    const cols = allColumns()
+    for (const c of cells) {
+      if (c.key === TITLE_COLUMN) { if (c.text.trim()) rename(c.row, c.text.trim()); continue }
+      const col = cols.find(x => x.key === c.key)
+      if (!col || col.formula || col.formulaError || isFormulaKey(c.key) || AUTO_PROPERTY_TYPES.includes(col.type)) continue
+      edit(c.row, c.key, parseFor(c.key, c.text))
+    }
+  }
+
+  /** Lignes cochees dans le tableau. */
+  let selection: QueryRow[] = []
+  let bulk: HTMLElement | null = null
+  const status = (text: string) => {
+    const el = container?.querySelector('[data-testid="base-error"]')
+    if (el) el.textContent = text
+  }
+
+  /** Met des lignes a la corbeille (pages) ou les retire (lignes legeres). */
+  const removeRows = async (rows: QueryRow[]) => {
+    if (readOnly) return
+    let n = 0
+    for (const r of rows) {
+      try {
+        if (r.path === '') await lightRows.remove(r.id)
+        else if (docVault?.deleteFile) await docVault.deleteFile(r.id)
+        else continue
+        n++
+      } catch (err) { report(err) }
+    }
+    status(n ? `${n} ligne${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''} (pages à la corbeille).` : '')
+  }
+
+  /** Copie des lignes : une page avec le meme texte, ou une ligne legere avec les memes valeurs. */
+  const duplicateRows = async (rows: QueryRow[]) => {
+    if (readOnly || !vault) return
+    for (const r of rows) {
+      try {
+        if (r.path === '') {
+          const full = await lightRows.get(r.id)
+          if (full) await lightRows.add(`${full.title || 'Sans titre'} (copie)`, full.values)
+          continue
+        }
+        const text = await docVault!.read(r.id)
+        const folder = r.path.includes('/') ? r.path.slice(0, r.path.lastIndexOf('/')) : ''
+        const { id } = await createPageRow(vault, folder, `${r.title || 'Sans titre'} (copie)`)
+        await vault.editText?.(id, () => text)
+      } catch (err) { report(err) }
+    }
+  }
+
+  /** Une valeur pour toutes les lignes cochees. */
+  const openBulkEdit = (anchor: HTMLElement) => {
+    if (readOnly) return
+    closePopover()
+    popoverKind = 'bulk'
+    const rows = selection
+    const keys = allColumns().filter(c => c.key !== TITLE_COLUMN && !c.formula && !c.formulaError && !AUTO_PROPERTY_TYPES.includes(c.type)).map(c => c.key)
+    const sel = h('select', { class: 'base-input', 'data-testid': 'base-bulk-key' }, h('option', { value: '' }, '— propriété —'), ...keys.map(k => h('option', { value: k }, label(k))))
+    const slot = h('span', { class: 'base-bulk-slot', 'data-testid': 'base-bulk-slot' })
+    sel.addEventListener('change', () => {
+      const key = sel.value
+      slot.replaceChildren()
+      if (!key) return
+      const type = typeOf(key)
+      if (type === 'checkbox') {
+        const on = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-bulk-check' }, 'Cocher')
+        const off = h('button', { class: 'base-btn', type: 'button' }, 'Décocher')
+        on.addEventListener('click', () => { for (const r of rows) edit(r, key, true); closePopover() })
+        off.addEventListener('click', () => { for (const r of rows) edit(r, key, false); closePopover() })
+        slot.append(on, off)
+        return
+      }
+      openEditor(slot, key, type, null, cells(), v => { for (const r of rows) edit(r, key, v); closePopover() }, () => {})
+    })
+    popover.replaceChildren(h('div', { class: 'base-pop-list', 'data-testid': 'base-bulk-editor' },
+      h('div', { class: 'base-pop-sub' }, `${rows.length} ligne${rows.length > 1 ? 's' : ''}`),
+      h('div', { class: 'base-pop-row' }, sel), slot))
+    popover.hidden = false
+    popover.style.left = `${anchor.offsetLeft}px`
+  }
+
+  const renderBulk = () => {
+    if (!bulk) return
+    bulk.hidden = selection.length === 0
+    if (!selection.length) { bulk.replaceChildren(); return }
+    const b = (text: string, testid: string, run: (el: HTMLElement) => void) => {
+      const el = h('button', { class: 'base-btn', type: 'button', 'data-testid': testid }, text)
+      el.disabled = readOnly
+      el.addEventListener('click', () => run(el))
+      return el
+    }
+    const n = selection.length
+    bulk.replaceChildren(
+      h('span', { class: 'base-bulk-count', 'data-testid': 'base-bulk-count' }, `${n} sélectionnée${n > 1 ? 's' : ''}`),
+      b('Modifier…', 'base-bulk-edit', el => openBulkEdit(el)),
+      b('Dupliquer', 'base-bulk-duplicate', () => { const rows = selection; table?.clearSelection(); void duplicateRows(rows) }),
+      b('Supprimer', 'base-bulk-delete', () => { const rows = selection; table?.clearSelection(); void removeRows(rows) }),
+      h('span', { class: 'base-spacer' }),
+      b('✕', 'base-bulk-clear', () => table?.clearSelection()))
+  }
+
+  // ── CSV ──────────────────────────────────────────────────────────────────
+
+  const baseName = () => defaultFolder.slice(defaultFolder.lastIndexOf('/') + 1) || 'base'
+
+  /** Les lignes de la vue, colonnes visibles, en CSV. */
+  const exportCsv = async (): Promise<string> => {
+    if (!rowsEngine) return ''
+    const cols = visibleColumns()
+    const { rows } = await fetchBaseRows(rowsEngine, query())
+    return toCsv([cols.map(c => c.label), ...rows.map(r => cols.map(c => cellCsv(cellValue(r, c.key))))])
+  }
+
+  const downloadCsv = async () => {
+    try {
+      const text = await exportCsv()
+      const blob = new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = h('a', { href: url, download: `${baseName()}.csv` })
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+    } catch (err) { report(err) }
+  }
+
+  /**
+   * Des lignes depuis un CSV : la premiere ligne nomme les proprietes ; la
+   * colonne Nom (Name, Titre) donne le nom, sinon la premiere. Des pages, ou
+   * des lignes legeres au-dela de 1000 lignes.
+   */
+  const importCsv = async (text: string): Promise<number> => {
+    if (readOnly) return 0
+    const [header, ...data] = parseCsv(text)
+    if (!header?.length) return 0
+    const keys = header.map(h => h.replace(/:/g, '').trim())
+    let titleIdx = keys.findIndex(k => /^(nom|name|titre|title)$/i.test(k))
+    if (titleIdx < 0) titleIdx = 0
+    const props = keys.map((k, i) => i === titleIdx || !k ? null : k)
+    const light = data.length > 1000 && lightRows.available
+    let n = 0
+    for (const line of data) {
+      const values: Record<string, PropertyValue> = {}
+      props.forEach((k, i) => {
+        if (!k) return
+        const v = parseFor(k, line[i] ?? '')
+        if (v !== null) values[k] = v
+      })
+      const title = (line[titleIdx] ?? '').trim() || 'Sans titre'
+      try {
+        if (light) await lightRows.add(title, { ...(await creationValues()), ...values })
+        else if (vault) await createPageRow(vault, manifest.source.folder, title, { ...(await creationValues()), ...values })
+        n++
+      } catch (err) { report(err); break }
+    }
+    // Les proprietes du fichier deviennent des colonnes.
+    for (const k of props) if (k && !columnsOf(manifest).some(c => c.key === k)) store.setColumn(k, {})
+    status(`${n} ligne${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''}.`)
+    return n
+  }
+
+  const openMoreMenu = (anchor: HTMLElement) => {
+    closePopover()
+    popoverKind = 'more'
+    const item = (text: string, testid: string, run: () => void, enabled = true) => {
+      const b = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': testid }, text)
+      b.disabled = !enabled
+      b.addEventListener('click', () => { closePopover(); run() })
+      return b
+    }
+    const file = h('input', { type: 'file', accept: '.csv,text/csv,text/tab-separated-values', class: 'base-file-input', 'data-testid': 'base-import-file' })
+    file.addEventListener('change', () => {
+      const f = file.files?.[0]
+      if (f) void f.text().then(importCsv).catch(report)
+    })
+    popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-more-menu' },
+      item('Exporter la vue en CSV', 'base-export-csv', () => void downloadCsv()),
+      item('Importer un CSV…', 'base-import-csv', () => file.click(), !readOnly),
+      file))
+    popover.hidden = false
+    popover.style.left = `${Math.max(0, anchor.offsetLeft - 120)}px`
+  }
+
   // ── Revision dans la base ────────────────────────────────────────────────
   // Cellules commentees ou avec une valeur proposee : une marque, et leur fil
   // dans une carte posee sur la base (api.review), sans ouvrir le panneau.
@@ -464,6 +704,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     totalMenu: (key, anchor) => openTotalMenu(key, anchor),
     addRow: () => void addPage(),
     revision: () => relatedTick,
+    moveColumn: (key, before) => moveColumn(key, before),
+    frozen: () => view().frozen,
+    wrap: () => view().wrap,
+    selectionChanged: rows => { selection = rows; renderBulk() },
+    peek: row => peekPanel.show(row),
+    canReorder: () => !readOnly && store.writable && view().sorts.length === 0,
+    reorder: (id, before, order) => reorderRows(id, before, order),
+    paste: cells => pasteCells(cells),
     annotation: (row, key) => notes.of(row.id, key),
     annotationSig: row => notes.rowSig(row.id),
     openAnnotations,
@@ -607,6 +855,18 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const calendar = layoutHost ? new BaseCalendar(layoutHost) : null
   const timeline = layoutHost ? new BaseTimeline(layoutHost) : null
   const chart = layoutHost ? new BaseChart(layoutHost) : null
+  const peekPanel = new RowPeek({
+    columns: allColumns,
+    cells,
+    readOnly: () => readOnly,
+    typeOf,
+    label,
+    valueOf: (row, key) => cellValue(row, key),
+    edit,
+    rename,
+    open: row => void api?.workspace.openFile(row.path),
+    readBody: async row => row.path && docVault ? docVault.read(row.id) : null,
+  }, () => {})
   // Le titre du formulaire : le nom de la base.
   const form = layoutHost ? new BaseForm(layoutHost, () => defaultFolder.slice(defaultFolder.lastIndexOf('/') + 1)) : null
   const swimlanes = kanbanHost ? new Swimlanes({ ...kanbanHost, toggleGroup }) : null
@@ -621,6 +881,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const onResult = (r: QueryResult) => {
+    if (peekPanel.current) peekPanel.update(r.rows.find(x => x.id === peekPanel.current!.id))
     let added = false
     for (const row of r.rows) {
       for (const [k, v] of Object.entries(row.values)) {
@@ -704,6 +965,21 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const set = (patch: Partial<BaseViewDef>) => store.setView(v.id, patch)
     const rows: (HTMLElement | null)[] = [h('div', { class: 'base-pop-sub' }, VIEW_TYPES.find(t => t.type === v.type)?.label ?? '')]
     switch (v.type) {
+      case 'table': {
+        rows.push(choose('Colonnes figées', 'base-layout-frozen', String(v.frozen) as '0', [['0', 'Aucune'], ['1', 'Le nom'], ['2', '2 colonnes'], ['3', '3 colonnes'], ['4', '4 colonnes']], f => set({ frozen: Number(f) })))
+        const wrap = h('input', { type: 'checkbox', 'data-testid': 'base-layout-wrap' })
+        wrap.checked = v.wrap
+        wrap.disabled = !editable
+        wrap.addEventListener('change', () => set({ wrap: wrap.checked }))
+        rows.push(h('label', { class: 'base-pop-row' }, wrap, 'Retour à la ligne dans les cellules'))
+        if (v.rowOrder.length) {
+          const reset = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-layout-reset-order' }, 'Oublier l’ordre manuel')
+          reset.disabled = !editable
+          reset.addEventListener('click', () => set({ rowOrder: [] }))
+          rows.push(reset)
+        }
+        break
+      }
       case 'gallery':
         rows.push(pick('Couverture', 'base-layout-cover', v.cover, k => !isFormulaKey(k), cover => set({ cover }), 'Aucune'))
         rows.push(choose('Taille des cartes', 'base-layout-size', v.cardSize, [['small', 'Petites'], ['medium', 'Moyennes'], ['large', 'Grandes']], cardSize => set({ cardSize })))
@@ -774,12 +1050,13 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         b.title = t.label
         return b
       })) : null,
-      ['kanban', 'gallery', 'calendar', 'timeline', 'chart'].includes(v.type) ? btn('⚙ Vue', 'base-view-settings', b => togglePopover('layout', b)) : null,
+      ['table', 'kanban', 'gallery', 'calendar', 'timeline', 'chart'].includes(v.type) ? btn('⚙ Vue', 'base-view-settings', b => togglePopover('layout', b)) : null,
       btn(`Filtrer${countFilters(v.filters) ? ` (${countFilters(v.filters)})` : ''}`, 'base-filter', b => togglePopover('filters', b), countFilters(v.filters) > 0),
       btn(`Trier${v.sorts.length ? ` (${v.sorts.length})` : ''}`, 'base-sort', b => togglePopover('sorts', b), v.sorts.length > 0),
       v.type === 'table' || v.type === 'kanban' ? btn(v.groupBy ? `Grouper : ${label(v.groupBy)}${v.type === 'kanban' && v.subGroupBy ? ` · ${label(v.subGroupBy)}` : ''}` : 'Grouper', 'base-group', b => togglePopover('group', b), !!v.groupBy && v.type !== 'kanban') : null,
       btn('Colonnes', 'base-columns', b => togglePopover('columns', b)),
       btn('Source', 'base-source', b => togglePopover('source', b)),
+      btn('⋯', 'base-more', b => { if (popoverKind === 'more') closePopover(); else openMoreMenu(b) }),
       h('span', { class: 'base-spacer' }),
       searchBox(),
       stateEl = h('span', { class: 'base-state', 'data-testid': 'base-index-state' }),
@@ -1216,6 +1493,10 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] }), editable),
       item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] }), editable),
       key !== TITLE_COLUMN ? item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] }), editable) : null,
+      v.type === 'table' ? item(visibleColumns().findIndex(c => c.key === key) + 1 === v.frozen ? 'Ne plus figer' : 'Figer jusqu’à cette colonne', 'base-col-freeze', () => {
+        const n = visibleColumns().findIndex(c => c.key === key) + 1
+        store.setView(v.id, { frozen: n === v.frozen ? 0 : n })
+      }, editable) : null,
       key !== TITLE_COLUMN && v.type === 'table' ? item(v.groupBy === key ? 'Ne plus grouper' : 'Grouper par cette propriété', 'base-col-group', () => store.setView(v.id, { groupBy: v.groupBy === key ? '' : key, collapsed: [] }), editable) : null,
       key !== TITLE_COLUMN && types ? item(`⚙ Propriété : ${PROPERTY_TYPE_INFO[typeOf(key)]?.label ?? typeOf(key)}…`, 'base-col-settings', () => openPropertySettings(key, anchor), !readOnly) : null,
       key !== TITLE_COLUMN ? item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key), editable) : null,
@@ -1231,7 +1512,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'total', 'settings'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'total', 'settings', 'bulk', 'more'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))
@@ -1344,7 +1625,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         e.stopPropagation()
         if (e.key === 'Escape') { e.preventDefault(); closeCard() }
       })
-      const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, body, footer, card)
+      bulk = h('div', { class: 'base-bulk', 'data-testid': 'base-bulk' })
+      bulk.hidden = true
+      const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, bulk, h('div', { class: 'base-main' }, body, peekPanel.el), footer, card)
       root.addEventListener('focusin', () => { activeBaseView = handle })
       root.addEventListener('mousedown', e => {
         if (card && !card.hidden && !card.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-testid="base-cell-annotation"]')) closeCard()
@@ -1398,6 +1681,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     },
     addPage,
     addLightRow,
+    exportCsv,
+    importCsv,
   }
   return handle
 }
