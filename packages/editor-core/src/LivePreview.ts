@@ -35,6 +35,7 @@ import {
 import { blockDragExtension } from './BlockDrag'
 import { COLOR_EMOJI_SOURCE, colorOfEmoji, plumeColorTheme } from './PlumeMarkdown'
 import { frontmatterEnd, isPropertiesEffect, propertiesDecorations } from './PropertiesPanel'
+import { TitlePlaceholder } from './NoteTitle'
 import { lineColorOf } from './FormattingService'
 import { newTableRowBelow, tableAt } from './TableRows'
 import { applyTableWidths, tableResizers, withTableWidths, withoutTableWidths } from './TableWidths'
@@ -1154,7 +1155,8 @@ const blockAwareLineNumbers = gutter({
   },
   // Called for each replaced block widget (Decoration.replace({ block: true })).
   widgetMarker(view, widget, block) {
-    if (widget instanceof SourceDoneWidget || widget instanceof FoldedGap || widget instanceof HeadingSpace) return null
+    // Les blocs poses entre deux lignes (espaces des titres, titre en filigrane) n'ont pas de numero.
+    if (widget instanceof SourceDoneWidget || widget instanceof FoldedGap || widget instanceof HeadingSpace || widget instanceof TitlePlaceholder) return null
     const { state } = view
     const first = state.doc.lineAt(block.from).number
     const last  = state.doc.lineAt(Math.max(block.from, block.to - 1)).number

@@ -158,6 +158,19 @@ export class DocumentView {
   }
 
   /**
+   * Le document a ete renomme. L'editeur Markdown suit sans se remonter
+   * (curseur et focus restent) ; rend false si la vue ne sait pas suivre
+   * (vue d'un plugin, autre type) : l'appelant la remonte alors.
+   */
+  setPath(path: string): boolean {
+    const ext = path.split('.').pop()?.toLowerCase() ?? ''
+    if (!this.editorController || ext !== this.ext) return false
+    this.options.path = path
+    void this.editorController.openFile(path)
+    return true
+  }
+
+  /**
    * Bascule la vue en lecture seule sans la remonter. Rend false si la vue
    * ouverte ne sait pas le faire — l'appelant doit alors remonter.
    */

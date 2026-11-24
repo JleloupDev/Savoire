@@ -450,6 +450,13 @@ export function AppShell() {
 
   const documentsRef = useRef<DocumentDto[]>(documents)
   documentsRef.current = documents
+  // Le document actif renomme (titre de la note, arborescence, pair) : le fil d'Ariane suit.
+  useEffect(() => {
+    setActiveDoc(cur => {
+      const now = cur && documents.find(d => d.id === cur.id)
+      return now && now.path !== cur.path ? now : cur
+    })
+  }, [documents])
 
   const selectedVaultRef = useRef<VaultSummary | null>(selectedVault)
   selectedVaultRef.current = selectedVault

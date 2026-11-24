@@ -124,6 +124,8 @@ export function DocumentPanelHost({
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<DocumentView | null>(null)
+  /** Chemin sous lequel la vue a ete montee (ou a suivi un renommage). */
+  const mountedPathRef = useRef(doc.path)
   const unsubPluginLoadedRef = useRef<(() => void) | null>(null)
   const [modeTick, setModeTick] = useState(0)
   const [controller, setController] = useState<EditorController | null>(null)
@@ -232,6 +234,7 @@ export function DocumentPanelHost({
     const openable = isOpenableWithoutPlugin(ext) || !!fileTypeRegistry.resolve(ext)
     const crdt = openable ? session?.openDocument(doc.id) : undefined
 
+    mountedPathRef.current = doc.path
     const view = new DocumentView({
       path: doc.path,
       container,
@@ -294,7 +297,16 @@ export function DocumentPanelHost({
       setController(null)
       refs.onControllerReady.current(null)
     }
-  }, [doc.id, doc.path, refs, userId, vaultId, modeTick, remountKey])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- le chemin suit sans remonter (effet suivant)
+  }, [doc.id, ext, refs, userId, vaultId, modeTick, remountKey])
+
+  // Renomme : la vue garde sa place (curseur, focus) si elle sait suivre ;
+  // sinon (vue d'un plugin) on la remonte.
+  useEffect(() => {
+    if (mountedPathRef.current === doc.path) return
+    mountedPathRef.current = doc.path
+    if (!viewRef.current?.setPath(doc.path)) setRemountKey(k => k + 1)
+  }, [doc.path])
 
   // Images deposees : l'editeur (Plume) les prend lui-meme, au point de
   // depot. Ici, seulement ce qui tombe a cote du texte (barre, marge) : meme
@@ -482,7 +494,18 @@ function EditorAreaPanel({
         const client = refs.vaultAPI.current
         if (!api || !client) return
         for (const panel of [...api.panels]) {
-          if (panel.id.startsWith('doc-') && client.isTrashed(panel.id.slice(4))) api.removePanel(panel)
+          if (!panel.id.startsWith('doc-')) continue
+          const id = panel.id.slice(4)
+          if (client.isTrashed(id)) { api.removePanel(panel); continue }
+          // Un document renomme (titre de la note, arborescence, pair) : l'onglet
+          // suit, et l'editeur garde sa place (DocumentPanelHost ne le remonte pas).
+          const params = panel.params as EditorPanelParams | undefined
+          const path = client.documents.find(d => d.id === id)?.path
+          if (params?.doc && path && path !== params.doc.path) {
+            panel.api.updateParameters({ ...params, doc: { ...params.doc, path } })
+            panel.api.setTitle(displayFileName(path, false))
+            if (panel.api.isActive) manager.notifyActiveDocument(path)
+          }
         }
         return
       }

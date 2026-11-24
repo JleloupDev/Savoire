@@ -14,6 +14,7 @@ import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
 import { resolveLinkPath } from '@savoire/plugin-api'
 import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand } from './types'
+import type { VaultAPI } from '@savoire/plugin-api'
 import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader, Hotkey, PluginCommand, PluginCommandContext } from '@savoire/plugin-api'
 import { resolveActivePlugins } from './PluginActivationResolver'
 import type { ActivationEntry } from './PluginActivationResolver'
@@ -30,6 +31,7 @@ import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSou
 import type { PropertiesHost } from './PropertiesPanel'
 import { brackets, dedentListItem, enterBeforeHeading, highlightSelectionMatches, indentListItem, listHome, tripleClickLine, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
 import { findReplace, openFind } from './FindReplace'
+import { noteTitleExtension, notePathChanged, renameNoteForTitle } from './NoteTitle'
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
 import { focusedSubEditor, hostOf, subEditorExtensions } from './SubEditor'
@@ -409,6 +411,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         findReplace,
         ...(options.readOnly ? [] : [brackets, smartPaste, renumberOrderedLists]),
         ...(options.docId ? [notePosition(options.docId)] : []),
+        // Le titre (H1) en haut de la note ; le fichier le suit (NoteTitle.ts).
+        ...(/\.md$/i.test(options.filePath ?? '') ? [noteTitleExtension({
+          path: () => this.activeFile,
+          placeholder: options.editorMode !== 'source',
+          rename: title => this.renameForTitle(title),
+        })] : []),
         // Une longue ligne passe a la ligne, en edition comme une fois rendue.
         EditorView.lineWrapping,
         // Passages surlignes par l'application (revision).
@@ -820,6 +828,18 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
 
+  /** Le titre de la note a change ici : le fichier prend son nom, les liens suivent. */
+  private renameForTitle(title: string): void {
+    // Le vault des plugins passe par le canal des deplacements (liens suivis).
+    const shared = this.pluginAPI.vault as VaultAPI | undefined
+    const vault = shared?.moveFiles ? shared : this.options.vault
+    const from = this.activeFile
+    if (!vault || !from || this.options.readOnly) return
+    renameNoteForTitle(vault, from, title)
+      .then(to => { if (to && this.activeFile === from) void this.openFile(to) })
+      .catch(err => console.warn('[titre] fichier non renomme', err))
+  }
+
   describeHotkey(commandId: string): string | null {
     const hotkeys = this.pluginAPI.hotkeys
     const first = hotkeys?.get(commandId)[0]
@@ -827,7 +847,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
   async openFile(path: string): Promise<void> {
+    const changed = path !== this.activeFile
     this.activeFile = path
+    if (changed && this.view) this.view.dispatch({ effects: notePathChanged.of(null) })
     this.events.emit('fileOpened', path)
   }
 
