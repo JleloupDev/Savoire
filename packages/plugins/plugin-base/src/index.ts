@@ -39,6 +39,8 @@ export { computeTotal, totalText, TOTAL_KINDS } from './totals'
 export { orderGroups, groupLabel, groupField, DATE_GROUPINGS } from './groups'
 export { shiftDate, monthGrid } from './views/calendar'
 export { parseCsv, toCsv, parseCellText } from './csv'
+export { periodOf, dueTemplates, triggered, actionValues, onAdded } from './structure'
+export type { ActionDef, AutomationDef, ButtonDef, TemplateSettings } from './structure'
 export type { DateGrouping } from './groups'
 export type { TotalKind } from './totals'
 

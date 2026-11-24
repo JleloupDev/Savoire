@@ -51,6 +51,9 @@ select.base-filter-join { padding-top:2px; }
 .base-tr-wrap .base-td { white-space:normal; align-items:flex-start; padding-top:6px; }
 .base-tr-wrap .base-td > span, .base-tr-wrap .base-title { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .base-row-peek { margin-left:auto; }
+.base-sub-toggle { border:none; background:transparent; color:var(--text-muted,#a6adc8); cursor:pointer; width:16px; padding:0; font-size:11px; flex:0 0 auto; }
+.base-cell-button { padding:1px 8px; }
+.base-td-button { justify-content:flex-start; }
 .base-bulk { display:flex; align-items:center; gap:6px; padding:5px 12px; background:color-mix(in srgb, var(--accent,#7c3aed) 12%, transparent); border-bottom:1px solid var(--border,#313244); flex-shrink:0; }
 .base-bulk[hidden] { display:none; }
 .base-bulk-count { font-weight:600; margin-right:6px; }

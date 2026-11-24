@@ -26,6 +26,7 @@ import { isTotalKind, type TotalKind } from './totals'
 import { readFilters, type BaseFilterItem, type FilterMode } from './filters'
 import { readRollup, type RollupDef } from './rollup'
 import type { DateGrouping } from './groups'
+import { readAutomations, readButton, readTemplateSettings, type AutomationDef, type ButtonDef, type TemplateSettings } from './structure'
 import { BASE_LOT_COUNT } from '@savoire/plugin-api'
 import type { ISharedTree, ITreeMap, TreeValue } from '@savoire/plugin-api'
 
@@ -54,6 +55,8 @@ export interface BaseColumn {
   formula?: string
   /** Colonne rollup (cle '=Nom') : une propriete des lignes liees, resumee. */
   rollup?: RollupDef
+  /** Colonne bouton (cle '=Nom') : des actions sur la ligne. */
+  button?: ButtonDef
 }
 
 export type BaseViewType = 'table' | 'kanban' | 'list' | 'gallery' | 'calendar' | 'timeline' | 'chart' | 'form'
@@ -112,6 +115,8 @@ export interface BaseViewDef {
   wrap: boolean
   /** Ordre manuel des lignes (ids), quand la vue n'a pas de tri. Les autres suivent. */
   rowOrder: string[]
+  /** Tableau : sous-elements, par une relation vers la meme base (le parent). '' : aucun. */
+  subItems: string
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
   /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
@@ -126,6 +131,10 @@ export interface BaseManifest {
   views: BaseViewDef[]
   lotCount: number
   lots: number[]
+  /** Structure verrouillee : colonnes et vues ne se modifient plus (les valeurs, si). */
+  locked: boolean
+  automations: AutomationDef[]
+  templates: TemplateSettings
 }
 
 export const DEFAULT_WIDTH = 160
@@ -156,7 +165,7 @@ export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 't
   return {
     id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', dateGroup: '', subGroupBy: '', hideEmpty: false,
     collapsed: [], hidden: [], totals: {}, dateBy: '', endBy: '', cover: '', cardSize: 'medium', scale: 'day',
-    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '', frozen: 0, wrap: false, rowOrder: [],
+    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '', frozen: 0, wrap: false, rowOrder: [], subItems: '',
   }
 }
 
@@ -169,6 +178,9 @@ export function defaultManifest(folder: string): BaseManifest {
     views: [defaultView()],
     lotCount: BASE_LOT_COUNT,
     lots: [],
+    locked: false,
+    automations: [],
+    templates: { defaultTemplate: '', repeats: {} },
   }
 }
 
@@ -188,10 +200,12 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
       if (!isMap(c)) continue
       const formula = c.get('formula')
       const rollup = readRollup(json(c.get('rollup'), null))
+      const button = readButton(json(c.get('button'), null))
       columns.push({
         key, width: num(c.get('width'), DEFAULT_WIDTH), order: num(c.get('order'), 0),
         ...(typeof formula === 'string' ? { formula } : {}),
         ...(rollup ? { rollup } : {}),
+        ...(button ? { button } : {}),
       })
     }
   }
@@ -226,6 +240,7 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         dependsOn: str(v.get('dependsOn'), ''),
         frozen: Math.max(0, Math.min(10, Math.floor(num(v.get('frozen'), 0)))),
         wrap: v.get('wrap') === true,
+        subItems: str(v.get('subItems'), ''),
         rowOrder: json<unknown[]>(v.get('rowOrder'), []).filter((x): x is string => typeof x === 'string').slice(0, MAX_MANUAL_ORDER),
         hidden: json(v.get('hidden'), []),
         totals: readTotals(json(v.get('totals'), {})),
@@ -246,6 +261,9 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
     views: views.length ? views : fallback.views,
     lotCount: num(base.get('lotCount'), BASE_LOT_COUNT),
     lots: isMap(lotsMap) ? lotsMap.keys().map(Number).filter(Number.isInteger).sort((a, b) => a - b) : [],
+    locked: base.get('locked') === true,
+    automations: readAutomations(json(base.get('automations'), [])),
+    templates: readTemplateSettings(json(base.get('templates'), null)),
   }
 }
 
@@ -293,6 +311,7 @@ export class ManifestStore {
               width: c.width, order: c.order,
               ...(c.formula !== undefined ? { formula: c.formula } : {}),
               ...(c.rollup ? { rollup: JSON.stringify(c.rollup) } : {}),
+              ...(c.button ? { button: JSON.stringify(c.button) } : {}),
             },
           }])),
         },
@@ -334,6 +353,7 @@ export class ManifestStore {
       if (patch.order !== undefined) m.set('order', patch.order)
       if (patch.formula !== undefined) m.set('formula', patch.formula)
       if (patch.rollup !== undefined) m.set('rollup', JSON.stringify(patch.rollup))
+      if (patch.button !== undefined) m.set('button', JSON.stringify(patch.button))
     })
   }
 
@@ -373,6 +393,18 @@ export class ManifestStore {
     this.write(base => this.child(base, 'views').delete(id))
   }
 
+  setLocked(locked: boolean): void {
+    this.write(base => base.set('locked', locked))
+  }
+
+  setAutomations(list: AutomationDef[]): void {
+    this.write(base => base.set('automations', JSON.stringify(list)))
+  }
+
+  setTemplates(settings: TemplateSettings): void {
+    this.write(base => base.set('templates', JSON.stringify(settings)))
+  }
+
   /** Note qu'un lot de lignes legeres existe (pour qu'on sache l'ouvrir). */
   markLot(n: number): void {
     const base = this.tree?.root.get('base')
@@ -408,6 +440,7 @@ function viewEntries(v: BaseViewDef): Record<string, string | number | boolean> 
     dependsOn: v.dependsOn,
     frozen: v.frozen,
     wrap: v.wrap,
+    subItems: v.subItems,
     rowOrder: JSON.stringify(v.rowOrder.slice(0, MAX_MANUAL_ORDER)),
     hidden: JSON.stringify(v.hidden),
     totals: JSON.stringify(v.totals),

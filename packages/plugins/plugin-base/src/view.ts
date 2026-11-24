@@ -7,7 +7,7 @@
 // base + lignes legeres de ses lots), le manifeste du document (ctx.tree).
 import {
   createIcon,
-  AUTO_PROPERTY_TYPES, BASE_ROW_TITLE, DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
+  AUTO_PROPERTY_TYPES, BASE_ROW_TITLE, DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, renderTemplate, setFrontmatterValue, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
 } from '@savoire/plugin-api'
 import type {
   CompiledFormula,
@@ -26,7 +26,11 @@ import { createPageRow, folderOfBase, renameNoteProperty, renamePageRow, writeNo
 import { renderPropertySettings } from './propertySettings'
 import { RowPeek } from './peek'
 import { cellCsv, parseCellText, parseCsv, toCsv } from './csv'
-import { RelatedRows, asLinks, baseSourceOf, relationChoicesOf, rollupFormula, rowLink, syncBackLinks, ROLLUP_CALCS, type RollupCalc } from './relations'
+import {
+  ACTION_KINDS, REPEATS, actionText, actionValues, dueTemplates, onAdded, templateFolder, triggered,
+  type ActionDef, type AutomationDef, type Repeat,
+} from './structure'
+import { RelatedRows, asLinks, baseSourceOf, linkKey, relationChoicesOf, rollupFormula, rowLink, syncBackLinks, ROLLUP_CALCS, type RollupCalc } from './relations'
 import { BaseTable, type TableColumn, type TableHost } from './table'
 import { BaseKanban, type KanbanHost } from './kanban'
 import { GroupedTable, type GroupSpec } from './groupedTable'
@@ -115,6 +119,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const store = new ManifestStore(ctx.tree, () => ({ ...manifest, columns: columnsOf(manifest), views: manifest.views }))
+  /** Colonnes, vues et reglages modifiables : ni lecture seule, ni structure verrouillee. */
+  const canStructure = () => !readOnly && store.writable && !manifest.locked
   const lightRows = new LightRows(ctx.shared, store, () => manifest.lotCount)
 
   const view = (): BaseViewDef => manifest.views.find(v => v.id === activeId) ?? manifest.views[0] ?? defaultView()
@@ -174,6 +180,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const computed = (key: string): { formula: CompiledFormula } | { error: string } => {
     if (key === RANK_KEY) return { formula: rankFormula }
     const col = manifest.columns.find(c => c.key === key)
+    if (col?.button) return compile(JSON.stringify(col.button.label))
     if (col?.rollup && related) {
       const sig = JSON.stringify(col.rollup)
       let r = rollups.get(key)
@@ -217,8 +224,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return [title, ...columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).map((c): TableColumn => {
       if (!isFormulaKey(c.key)) return { key: c.key, label: label(c.key), width: c.width, type: typeOf(c.key) }
       const f = computed(c.key)
+      const btn = manifest.columns.find(x => x.key === c.key)?.button
       return {
-        key: c.key, label: label(c.key), width: c.width, type: 'text', ...rollupDisplay(c.key),
+        key: c.key, label: label(c.key), width: c.width, type: 'text', ...rollupDisplay(c.key), ...(btn ? { button: { label: btn.label } } : {}),
         ...('formula' in f ? { formula: f.formula } : { formulaError: f.error }),
       }
     })]
@@ -241,7 +249,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const from = source()
     // Sans id de base, le filtre de source rejoint celui de la vue.
     const sourceWhere = 'notes' in from ? toWhere(manifest.source.filters, manifest.source.filterMode, filterCtx()) : undefined
-    const all = [sourceWhere, where].filter((x): x is QueryFilter => !!x)
+    // Sous-elements : le tableau montre les lignes sans parent ; les enfants se deplient.
+    const topLevel: QueryFilter | undefined = subItemsKey() && !search.trim() ? { field: { prop: subItemsKey() }, op: 'empty' } : undefined
+    const all = [sourceWhere, where, topLevel].filter((x): x is QueryFilter => !!x)
     return {
       from, where: all.length === 0 ? undefined : all.length === 1 ? all[0] : { and: all },
       // Sans tri : l'ordre manuel s'il y en a un (les lignes hors liste a la fin, par nom).
@@ -371,13 +381,37 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       const resolve = (link: string) => related?.find(target, link)?.id ?? vault.resolveDocumentId(`${link.replace(/^\[\[|\]\]$/g, '').split('|')[0]}.md`)
       void syncBackLinks(vault, resolve, rowLink(row.path), row.id, back, asLinks(row.values[key]), asLinks(value)).catch(report)
     }
-    const touch = touchValues()
-    const many = Object.keys(touch).length > 0
+    // Automatisations : « quand cette propriete change » ajoute ses valeurs a la meme ecriture.
+    const auto: Record<string, PropertyValue> = {}
+    for (const a of triggered(manifest.automations, key, value)) Object.assign(auto, actionValues(a.then, actionCtx()))
+    delete auto[key]
+    writeValues(row, { [key]: value, ...auto, ...touchValues() })
+  }
+
+  /** Ecrit plusieurs valeurs d'une ligne en une fois (une seule modification de la note). */
+  const writeValues = (row: QueryRow, values: Record<string, PropertyValue>) => {
+    const keys = Object.keys(values)
+    if (!keys.length) return
     const job = row.path === ''
-      ? (many ? lightRows.setCells(row.id, { [key]: value, ...touch }) : lightRows.setCell(row.id, key, value))
+      ? (keys.length > 1 ? lightRows.setCells(row.id, values) : lightRows.setCell(row.id, keys[0], values[keys[0]]))
       : !vault ? Promise.reject(new Error('Aucun vault.'))
-        : many ? writeNoteProperties(vault, row.id, { [key]: value, ...touch }) : writeNoteProperty(vault, row.id, key, value)
+        : keys.length > 1 ? writeNoteProperties(vault, row.id, values) : writeNoteProperty(vault, row.id, keys[0], values[keys[0]])
     void job.catch(report)
+  }
+
+  /** Contexte des actions (boutons, automatisations) : maintenant, moi. */
+  const actionCtx = () => ({ now: nowStamp(), me: me(), multiple: (k: string) => !!types?.get(k)?.multiple })
+
+  /** Un bouton : ses actions sur la ligne, plus les automatisations qu'elles declenchent. */
+  const runButton = (row: QueryRow, key: string) => {
+    if (readOnly) return
+    const b = manifest.columns.find(c => c.key === key)?.button
+    if (!b) return
+    const values = actionValues(b.then, actionCtx())
+    for (const [k, v] of Object.entries({ ...values })) {
+      for (const a of triggered(manifest.automations, k, v)) for (const [k2, v2] of Object.entries(actionValues(a.then, actionCtx()))) if (!(k2 in values)) values[k2] = v2
+    }
+    writeValues(row, { ...values, ...touchValues() })
   }
 
   const rename = (row: QueryRow, title: string) => {
@@ -397,18 +431,87 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     void job.catch(report)
   }
 
+  /** Valeurs des automatisations « quand une page est ajoutee ». */
+  const addedValues = (): Record<string, PropertyValue> => {
+    const out: Record<string, PropertyValue> = {}
+    for (const a of onAdded(manifest.automations)) Object.assign(out, actionValues(a.then, actionCtx()))
+    return out
+  }
+
   const addPage = async (values: Record<string, PropertyValue> = {}, title = 'Sans titre') => {
     if (readOnly || !vault) return
+    // Le modele par defaut de la base, s'il y en a un.
+    const tpl = manifest.templates.defaultTemplate
+    if (tpl && docVault?.resolveDocumentId(tpl)) { await addFromTemplate(tpl, values, title); return }
     try {
       const own = Object.fromEntries(Object.entries(values).filter(([k]) => !isFormulaKey(k)))
-      await createPageRow(vault, manifest.source.folder, title, { ...(await creationValues()), ...own })
+      await createPageRow(vault, manifest.source.folder, title, { ...(await creationValues()), ...addedValues(), ...own })
     } catch (err) { report(err) }
+  }
+
+  // ── Modeles de ligne ─────────────────────────────────────────────────────
+  // Les notes du dossier Modeles/<Base>/ : une nouvelle page en reprend le
+  // texte (variables {{date}}, {{title}}...) et les proprietes.
+
+  const baseLabel = () => defaultFolder.slice(defaultFolder.lastIndexOf('/') + 1) || 'Base'
+  const templateFiles = (): { id: string; path: string; name: string }[] => {
+    const folder = templateFolder(baseLabel()).toLowerCase() + '/'
+    return (docVault?.getFileTree?.() ?? [])
+      .filter(e => e.path.toLowerCase().startsWith(folder) && e.path.toLowerCase().endsWith('.md'))
+      .map(e => ({ id: e.docId, path: e.path, name: e.path.slice(e.path.lastIndexOf('/') + 1).replace(/\.md$/i, '') }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** Une page depuis un modele : son texte, puis les valeurs posees par la base. */
+  const addFromTemplate = async (templatePath: string, values: Record<string, PropertyValue> = {}, title = 'Sans titre') => {
+    if (readOnly || !vault || !docVault) return
+    try {
+      const id = docVault.resolveDocumentId(templatePath)
+      if (!id) throw new Error(`Modèle introuvable : ${templatePath}`)
+      const raw = await docVault.read(id)
+      const created = await createPageRow(vault, manifest.source.folder, title)
+      const name = created.path.slice(created.path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+      const own = Object.fromEntries(Object.entries({ ...(await creationValues()), ...addedValues(), ...values }).filter(([k]) => !isFormulaKey(k)))
+      await vault.editText?.(created.id, () => Object.entries(own).reduce(
+        (md, [k, v]) => v === null || v === undefined ? md : setFrontmatterValue(md, k, v), renderTemplate(raw, { title: name })))
+    } catch (err) { report(err) }
+  }
+
+  /** Nouveau modele : une note dans Modeles/<Base>/, ouverte pour l'ecrire. */
+  const newTemplate = async () => {
+    if (readOnly || !vault) return
+    try {
+      const folder = templateFolder(baseLabel())
+      const props = Object.fromEntries(columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN && !isFormulaKey(c.key) && !AUTO_PROPERTY_TYPES.includes(typeOf(c.key))).map(c => [c.key, null]))
+      const { path: p } = await createPageRow(vault, folder, 'Modèle', props as Record<string, PropertyValue>)
+      void api?.workspace.openFile(p)
+    } catch (err) { report(err) }
+  }
+
+  /** Modeles repetes : une page par periode (jour, semaine, mois), creee a l'ouverture de la base. */
+  let repeating = false
+  const runRepeats = async () => {
+    if (readOnly || repeating || !canStructure()) return
+    const due = dueTemplates(manifest.templates, new Date())
+    if (!due.length) return
+    repeating = true
+    try {
+      const repeats = { ...manifest.templates.repeats }
+      for (const d of due) repeats[d.path] = { ...repeats[d.path], last: d.period }
+      // La periode est notee d'abord : un autre membre qui ouvre la base ne refait pas la page.
+      store.setTemplates({ ...manifest.templates, repeats })
+      for (const d of due) {
+        if (!docVault?.resolveDocumentId(d.path)) continue
+        const name = d.path.slice(d.path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+        await addFromTemplate(d.path, {}, `${name} ${d.period}`)
+      }
+    } finally { repeating = false }
   }
 
   const addLightRow = async (values: Record<string, PropertyValue> = {}) => {
     if (readOnly) return
     try {
-      await lightRows.add('Sans titre', { ...(await creationValues()), ...values })
+      await lightRows.add('Sans titre', { ...(await creationValues()), ...addedValues(), ...values })
     } catch (err) { report(err) }
   }
 
@@ -423,11 +526,50 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     } catch (err) { report(err) }
   }
 
+  // ── Sous-elements ────────────────────────────────────────────────────────
+  // Une relation vers la meme base porte le parent ; le tableau montre les
+  // lignes sans parent, et deplie les enfants (nombre : par groupes du moteur).
+
+  const subItemsKey = (): string => {
+    const v = view()
+    if (v.type !== 'table' || v.groupBy || !v.subItems) return ''
+    return typeOf(v.subItems) === 'relation' ? v.subItems : ''
+  }
+  let childCounts = new Map<string, number>()
+  let childStop: (() => void) | null = null
+  let childSig = ''
+  const followChildCounts = () => {
+    const key = subItemsKey()
+    const sig = key ? JSON.stringify([key, source()]) : ''
+    if (sig === childSig) return
+    childSig = sig
+    childStop?.()
+    childStop = null
+    childCounts = new Map()
+    if (!key || !engine) return
+    childStop = engine.watch({ from: source(), groupBy: { prop: key }, limit: 1 }, r => {
+      const next = new Map<string, number>()
+      for (const g of r.groups ?? []) if (typeof g.key === 'string') next.set(linkKey(g.key), (next.get(linkKey(g.key)) ?? 0) + g.count)
+      childCounts = next
+      table?.refresh()
+    })
+  }
+
+  /** Cree une relation vers cette base, avec sa propriete en retour (sous-elements, dependances). */
+  const createSelfRelation = (key: string, back: string) => {
+    if (!types || !baseId || readOnly) return
+    try {
+      if (!types.get(key)) types.set({ key, type: 'relation', relation: { base: baseId, back } })
+      if (!types.get(back)) types.set({ key: back, type: 'relation', relation: { base: baseId, back: key } })
+    } catch (err) { report(err) }
+    for (const k of [key, back]) if (!columnsOf(manifest).some(c => c.key === k)) store.setColumn(k, {})
+  }
+
   // ── Confort du tableau : colonnes, ordre, collage, selection ─────────────
 
   /** Deplace une colonne avant une autre ; les ordres sont renumerotes. */
   const moveColumn = (key: string, before: string) => {
-    if (readOnly || !store.writable || key === before) return
+    if (!canStructure() || key === before) return
     const cols = columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).sort((a, b) => a.order - b.order)
     const keys = cols.map(c => c.key).filter(k => k !== key)
     const i = keys.indexOf(before)
@@ -552,6 +694,165 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       b('✕', 'base-bulk-clear', () => table?.clearSelection()))
   }
 
+  // ── Actions, automatisations, boutons ───────────────────────────────────
+
+  /** Editeur d'une action : quoi faire, sur quelle propriete, avec quelle valeur. */
+  const actionEditor = (initial: ActionDef | undefined, testid: string) => {
+    const keys = propertyChoices(false).filter(k => !isFormulaKey(k) && !AUTO_PROPERTY_TYPES.includes(typeOf(k)))
+    const kind = h('select', { class: 'base-input', 'data-testid': `${testid}-kind` }, ...ACTION_KINDS.map(a => h('option', { value: a.kind }, a.label)))
+    kind.value = initial?.kind ?? 'set'
+    const key = h('select', { class: 'base-input', 'data-testid': `${testid}-key` }, h('option', { value: '' }, '— propriété —'), ...keys.map(k => h('option', { value: k }, label(k))))
+    key.value = initial?.key ?? ''
+    const value = h('input', { class: 'base-input', placeholder: 'valeur', 'data-testid': `${testid}-value` })
+    value.value = initial?.kind === 'set' ? valueText(initial.value) : ''
+    const sync = () => { value.hidden = kind.value !== 'set' }
+    kind.addEventListener('change', sync)
+    sync()
+    const el = h('div', { class: 'base-pop-row' }, kind, key, value)
+    const read = (): ActionDef | null => {
+      if (!key.value) return null
+      if (kind.value === 'set') return { kind: 'set', key: key.value, value: parseFor(key.value, value.value) }
+      return { kind: kind.value as 'now' | 'me' | 'clear', key: key.value }
+    }
+    return { el, read }
+  }
+
+  /** Les automatisations de la base : liste, activer, retirer, ajouter. */
+  const openAutomations = (anchor: HTMLElement) => {
+    closePopover()
+    popoverKind = 'automations'
+    const draw = () => {
+      if (popoverKind !== 'automations') return
+      const list = manifest.automations
+      const rows = list.map(a => {
+        const on = h('input', { type: 'checkbox', title: 'Active', 'data-testid': 'base-automation-on' })
+        on.checked = a.enabled
+        on.addEventListener('change', () => { store.setAutomations(list.map(x => x.id === a.id ? { ...x, enabled: on.checked } : x)); setTimeout(draw) })
+        const del = h('button', { class: 'base-btn', type: 'button', title: 'Retirer', 'data-testid': 'base-automation-remove' }, '×')
+        del.addEventListener('click', () => { store.setAutomations(list.filter(x => x.id !== a.id)); setTimeout(draw) })
+        const when = a.when.kind === 'added' ? 'Quand une page est ajoutée'
+          : `Quand ${label(a.when.key)} change${a.when.value !== undefined ? ` en « ${valueText(a.when.value)} »` : ''}`
+        return h('div', { class: 'base-pop-row', 'data-testid': 'base-automation' }, on,
+          h('span', { class: 'base-pop-label' }, `${when} : ${a.then.map(x => actionText(x, label)).join(', ')}`), del)
+      })
+      // Nouvelle automatisation.
+      const trigger = h('select', { class: 'base-input', 'data-testid': 'base-automation-trigger' },
+        h('option', { value: 'added' }, 'Quand une page est ajoutée'), h('option', { value: 'changed' }, 'Quand une propriété change'))
+      const whenKey = propertySelect('', false, () => {}, 'base-automation-when-key')
+      const whenValue = h('input', { class: 'base-input', placeholder: 'valeur (facultatif)', 'data-testid': 'base-automation-when-value' })
+      const syncWhen = () => { whenKey.hidden = whenValue.hidden = trigger.value !== 'changed' }
+      trigger.addEventListener('change', syncWhen)
+      syncWhen()
+      const action = actionEditor(undefined, 'base-automation-action')
+      const add = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-automation-add' }, 'Ajouter')
+      add.addEventListener('click', () => {
+        const then = action.read()
+        if (!then) return
+        const key = (whenKey as HTMLSelectElement).value
+        if (trigger.value === 'changed' && !key) return
+        const when: AutomationDef['when'] = trigger.value === 'added' ? { kind: 'added' }
+          : { kind: 'changed', key, ...(whenValue.value.trim() ? { value: parseFor(key, whenValue.value) } : {}) }
+        store.setAutomations([...list, { id: `a${Date.now().toString(36)}`, name: '', enabled: true, when, then: [then] }])
+        setTimeout(draw)
+      })
+      popover.replaceChildren(h('div', { class: 'base-pop-list base-settings', 'data-testid': 'base-automations-editor' },
+        h('div', { class: 'base-pop-sub' }, 'Automatisations'),
+        ...(rows.length ? rows : [h('div', { class: 'base-hint' }, 'Aucune automatisation.')]),
+        h('div', { class: 'base-pop-sub' }, 'Nouvelle'),
+        h('div', { class: 'base-pop-row' }, trigger, whenKey, whenValue),
+        h('div', { class: 'base-pop-sub' }, 'Alors'),
+        action.el,
+        h('div', { class: 'base-pop-row' }, add),
+        h('div', { class: 'base-hint' }, 'Elles s’exécutent quand la modification est faite depuis la base.')))
+    }
+    draw()
+    popover.hidden = false
+    placePopover(anchor, 260)
+  }
+
+  /** Nouvelle colonne bouton (ou modification) : son libelle et son action. */
+  const openButtonEditor = (anchor: HTMLElement, key?: string, initialName = '') => {
+    if (!canStructure()) return
+    closePopover()
+    popoverKind = 'button'
+    const existing = key ? manifest.columns.find(c => c.key === key)?.button : undefined
+    const name = h('input', { class: 'base-input', placeholder: 'Nom de la colonne', 'data-testid': 'base-button-name' })
+    name.value = key ? key.slice(FORMULA_PREFIX.length) : initialName
+    const text = h('input', { class: 'base-input', placeholder: 'Libellé du bouton', 'data-testid': 'base-button-label' })
+    text.value = existing?.label ?? ''
+    const action = actionEditor(existing?.then[0], 'base-button-action')
+    const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-button-ok' }, key ? 'Enregistrer' : 'Ajouter')
+    ok.addEventListener('click', () => {
+      const n = name.value.replace(/:/g, '').trim()
+      const then = action.read()
+      if (!n || !then) return
+      const button = { label: text.value.trim() || n, then: [then] }
+      const newKey = FORMULA_PREFIX + n
+      if (key && key !== newKey) {
+        const old = manifest.columns.find(c => c.key === key)
+        store.setColumn(newKey, { button, ...(old ? { width: old.width, order: old.order } : {}) })
+        store.removeColumn(key)
+      } else store.setColumn(newKey, { button })
+      closePopover()
+    })
+    popover.replaceChildren(h('div', { class: 'base-pop-list', 'data-testid': 'base-button-editor' },
+      h('div', { class: 'base-pop-row' }, h('span', { class: 'base-pop-icon' }, '⏵'), name, text),
+      h('div', { class: 'base-pop-sub' }, 'Au clic'), action.el, h('div', { class: 'base-pop-row' }, ok)))
+    popover.hidden = false
+    popover.style.left = `${Math.max(0, anchor.offsetLeft - 200)}px`
+  }
+
+  /** Menu des nouvelles pages : modeles, modele par defaut, repetition. */
+  const openPageMenu = (anchor: HTMLElement) => {
+    closePopover()
+    popoverKind = 'pages'
+    const draw = () => {
+      if (popoverKind !== 'pages') return
+      const files = templateFiles()
+      const settings = manifest.templates
+      const editable = canStructure()
+      const rows = files.map(f => {
+        const use = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': 'base-template-use', 'data-path': f.path },
+          `📄 ${f.name}${settings.defaultTemplate === f.path ? ' (par défaut)' : ''}`)
+        use.addEventListener('click', () => { closePopover(); void addFromTemplate(f.path) })
+        const def = h('input', { type: 'radio', name: 'base-default-template', title: 'Modèle par défaut', 'data-testid': 'base-template-default' })
+        def.checked = settings.defaultTemplate === f.path
+        def.disabled = !editable
+        def.addEventListener('change', () => { store.setTemplates({ ...settings, defaultTemplate: f.path }); setTimeout(draw) })
+        const rep = h('select', { class: 'base-input', title: 'Répéter', 'data-testid': 'base-template-repeat' }, ...REPEATS.map(r => h('option', { value: r.value }, r.label)))
+        rep.value = settings.repeats[f.path]?.every ?? ''
+        rep.disabled = !editable
+        rep.addEventListener('change', () => {
+          const repeats = { ...settings.repeats }
+          // La periode en cours compte comme faite : la premiere page vient a la prochaine.
+          if (rep.value) repeats[f.path] = { every: rep.value as Repeat, last: dueTemplates({ defaultTemplate: '', repeats: { x: { every: rep.value as Repeat, last: '' } } }, new Date())[0].period }
+          else delete repeats[f.path]
+          store.setTemplates({ ...settings, repeats })
+        })
+        const edit = h('button', { class: 'base-btn', type: 'button', title: 'Modifier le modèle' }, '✎')
+        edit.addEventListener('click', () => { closePopover(); void api?.workspace.openFile(f.path) })
+        return h('div', { class: 'base-pop-row', 'data-testid': 'base-template' }, def, use, rep, edit)
+      })
+      const none = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': 'base-template-none' }, 'Page vide')
+      none.addEventListener('click', () => { closePopover(); void addPage({}, 'Sans titre') })
+      const noDefault = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-template-no-default' }, 'Pas de modèle par défaut')
+      noDefault.disabled = !editable || !settings.defaultTemplate
+      noDefault.addEventListener('click', () => { store.setTemplates({ ...settings, defaultTemplate: '' }); setTimeout(draw) })
+      const create = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-template-new' }, '+ Nouveau modèle')
+      create.disabled = readOnly
+      create.addEventListener('click', () => { closePopover(); void newTemplate() })
+      popover.replaceChildren(h('div', { class: 'base-pop-list base-settings', 'data-testid': 'base-page-menu' },
+        h('div', { class: 'base-pop-sub' }, `Modèles (${templateFolder(baseLabel())}/)`),
+        ...(rows.length ? rows : [h('div', { class: 'base-hint' }, 'Aucun modèle pour cette base.')]),
+        h('div', { class: 'base-pop-row' }, create, noDefault),
+        h('div', { class: 'base-hint' }, 'Un modèle répété crée sa page quand la base est ouverte.')))
+      if (settings.defaultTemplate) popover.firstElementChild?.insertBefore(none, popover.firstElementChild.children[1] ?? null)
+    }
+    draw()
+    popover.hidden = false
+    placePopover(anchor, 260)
+  }
+
   // ── CSV ──────────────────────────────────────────────────────────────────
 
   const baseName = () => defaultFolder.slice(defaultFolder.lastIndexOf('/') + 1) || 'base'
@@ -629,9 +930,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-more-menu' },
       item('Exporter la vue en CSV', 'base-export-csv', () => void downloadCsv()),
       item('Importer un CSV…', 'base-import-csv', () => file.click(), !readOnly),
+      item('⚡ Automatisations…', 'base-automations', () => openAutomations(anchor), canStructure()),
+      item(manifest.locked ? '🔓 Déverrouiller la structure' : '🔒 Verrouiller la structure', 'base-lock',
+        () => store.setLocked(!manifest.locked), !readOnly && store.writable),
       file))
     popover.hidden = false
-    popover.style.left = `${Math.max(0, anchor.offsetLeft - 120)}px`
+    placePopover(anchor, 120)
   }
 
   // ── Revision dans la base ────────────────────────────────────────────────
@@ -709,9 +1013,21 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     wrap: () => view().wrap,
     selectionChanged: rows => { selection = rows; renderBulk() },
     peek: row => peekPanel.show(row),
-    canReorder: () => !readOnly && store.writable && view().sorts.length === 0,
+    canReorder: () => canStructure() && view().sorts.length === 0,
     reorder: (id, before, order) => reorderRows(id, before, order),
     paste: cells => pasteCells(cells),
+    runButton: (row, key) => runButton(row, key),
+    locked: () => manifest.locked,
+    childQuery: row => {
+      const key = subItemsKey()
+      if (!key || !row.path) return null
+      const q = query()
+      const child: QueryFilter = { field: { prop: key }, op: 'contains', value: rowLink(row.path) }
+      const base = toWhere(view().filters, view().filterMode, filterCtx())
+      return { from: q.from, where: base ? { and: [base, child] } : child, sort: q.sort }
+    },
+    childCount: row => row.path ? childCounts.get(linkKey(row.path)) ?? 0 : 0,
+    addChild: row => { const key = subItemsKey(); if (key && row.path) void addPage({ [key]: [rowLink(row.path)] }) },
     annotation: (row, key) => notes.of(row.id, key),
     annotationSig: row => notes.rowSig(row.id),
     openAnnotations,
@@ -726,7 +1042,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   /** Replie ou deplie un groupe de la vue (tableau groupe, couloirs). */
   const toggleGroup = (id: string) => {
-    if (readOnly || !store.writable) return
+    if (!canStructure()) return
     const v = view()
     store.setView(v.id, { collapsed: v.collapsed.includes(id) ? v.collapsed.filter(x => x !== id) : [...v.collapsed, id] })
   }
@@ -918,7 +1234,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const filterHost = (): FilterEditorHost => ({
-    editable: !readOnly && store.writable,
+    editable: canStructure(),
     keys: () => propertyChoices(true),
     label,
     typeOf: key => key === TITLE_COLUMN ? 'text' : isFormulaKey(key) ? 'text' : typeOf(key),
@@ -944,7 +1260,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   /** Reglages propres a la disposition (date du calendrier, couverture, axes du graphique...). */
   const layoutSettings = (v: BaseViewDef): HTMLElement => {
-    const editable = !readOnly && store.writable
+    const editable = canStructure()
     const keys = propertyChoices(false).filter(k => !isFormulaKey(k) || manifest.columns.some(c => c.key === k))
     const pick = (label: string, testid: string, value: string, filter: (k: string) => boolean, onChange: (v: string) => void, none = '—') => {
       const sel = h('select', { class: 'base-input', 'data-testid': testid }, h('option', { value: '' }, none), ...keys.filter(filter).map(k => h('option', { value: k }, label === '' ? k : labelOf(k))))
@@ -972,6 +1288,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         wrap.disabled = !editable
         wrap.addEventListener('change', () => set({ wrap: wrap.checked }))
         rows.push(h('label', { class: 'base-pop-row' }, wrap, 'Retour à la ligne dans les cellules'))
+        rows.push(pick('Sous-éléments', 'base-layout-subitems', v.subItems, k => typeOf(k) === 'relation', subItems => set({ subItems }), 'Aucun'))
+        if (!v.subItems && editable) {
+          const mk = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-layout-make-subitems' }, 'Créer « Parent » et « Sous-éléments »')
+          mk.addEventListener('click', () => { createSelfRelation('Parent', 'Sous-éléments'); set({ subItems: 'Parent' }) })
+          rows.push(mk)
+        }
         if (v.rowOrder.length) {
           const reset = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-layout-reset-order' }, 'Oublier l’ordre manuel')
           reset.disabled = !editable
@@ -995,6 +1317,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         rows.push(pick('Fin', 'base-layout-end', v.endBy, isDate, endBy => set({ endBy }), 'Fin de la période'))
         rows.push(choose('Échelle', 'base-layout-scale', v.scale, [['day', 'Jours'], ['week', 'Semaines'], ['month', 'Mois']], scale => set({ scale: scale as TimelineScale })))
         rows.push(pick('Dépendances', 'base-layout-deps', v.dependsOn, k => typeOf(k) === 'relation', dependsOn => set({ dependsOn }), 'Aucune'))
+        if (!v.dependsOn && editable) {
+          const mk = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-layout-make-deps' }, 'Créer « Bloque » et « Bloqué par »')
+          mk.addEventListener('click', () => { createSelfRelation('Bloque', 'Bloqué par'); set({ dependsOn: 'Bloque' }) })
+          rows.push(mk)
+        }
         break
       case 'chart':
         rows.push(choose('Forme', 'base-layout-chart', v.chartKind, [['bar', 'Barres'], ['hbar', 'Barres horizontales'], ['line', 'Courbe'], ['donut', 'Anneau']], chartKind => set({ chartKind: chartKind as ChartKind })))
@@ -1015,7 +1342,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         `${VIEW_TYPES.find(t => t.type === v.type)?.glyph ?? '▦'} ${v.name}`)
       tab.addEventListener('click', () => { activeId = v.id; update() })
       tab.addEventListener('dblclick', () => {
-        if (readOnly || !store.writable) return
+        if (!canStructure()) return
         const input = h('input', { class: 'base-tab-input', value: v.name })
         input.value = v.name
         const done = () => { const name = input.value.trim(); if (name && name !== v.name) store.setView(v.id, { name }); else update() }
@@ -1026,7 +1353,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       })
       return tab
     }))
-    if (!readOnly && store.writable) {
+    if (canStructure()) {
       const add = h('button', { class: 'base-tab base-tab-add', type: 'button', title: 'Nouvelle vue', 'data-testid': 'base-add-view' }, '+')
       add.addEventListener('click', () => {
         const id = `v${Date.now().toString(36)}`
@@ -1043,7 +1370,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       b.toggleAttribute('disabled', readOnly && testid.startsWith('base-new'))
       return b
     }
-    const editable = !readOnly && store.writable
+    const editable = canStructure()
     const actions = h('div', { class: 'base-actions' },
       editable ? h('span', { class: 'base-layouts' }, ...VIEW_TYPES.map(t => {
         const b = btn(t.type === v.type ? `${t.glyph} ${t.label}` : t.glyph, `base-type-${t.type}`, () => setLayout(v, t.type), t.type === v.type)
@@ -1061,6 +1388,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       searchBox(),
       stateEl = h('span', { class: 'base-state', 'data-testid': 'base-index-state' }),
       btn('+ Page', 'base-new-page', () => void addPage()),
+      btn('▾', 'base-new-page-menu', b => { if (popoverKind === 'pages') closePopover(); else openPageMenu(b) }),
       lightRows.available ? btn('+ Ligne', 'base-new-row', () => void addLightRow()) : null,
     )
     toolbar.replaceChildren(tabs, actions)
@@ -1070,6 +1398,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   // ── Fenetres de reglage ──────────────────────────────────────────────────
 
   let popoverKind: string | null = null
+  /** Pose la fenetre pres de son bouton, sans deborder de la vue. */
+  const placePopover = (anchor: HTMLElement, shift = 0) => {
+    const max = (container?.clientWidth ?? 0) - popover.offsetWidth - 8
+    popover.style.left = `${Math.max(0, max > 0 ? Math.min(anchor.offsetLeft - shift, max) : anchor.offsetLeft - shift)}px`
+  }
   const closePopover = () => { popoverKind = null; popover.hidden = true; popover.replaceChildren(); popover.style.top = ''; popover.style.bottom = '' }
   const togglePopover = (kind: string, anchor: HTMLElement) => {
     if (popoverKind === kind) { closePopover(); return }
@@ -1091,14 +1424,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const select = h('select', { class: 'base-input', ...(testid ? { 'data-testid': testid } : {}) })
     select.append(h('option', { value: '' }, '—'), ...propertyChoices(withTitle).map(k => h('option', { value: k }, label(k))))
     select.value = value
-    select.disabled = readOnly || !store.writable
+    select.disabled = !canStructure()
     select.addEventListener('change', () => onChange(select.value))
     return select
   }
 
   const renderPopover = () => {
     const v = view()
-    const editable = !readOnly && store.writable
+    const editable = canStructure()
     let content: HTMLElement
     switch (popoverKind) {
       case 'filters':
@@ -1188,7 +1521,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const openAddColumn = (anchor: HTMLElement) => {
-    if (readOnly || !store.writable) return
+    if (!canStructure()) return
     closePopover()
     popoverKind = 'add-column'
     const name = h('input', { class: 'base-input', placeholder: 'Propriété', 'data-testid': 'base-new-column-name', list: 'base-props-list' })
@@ -1196,12 +1529,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const type = h('select', { class: 'base-input', 'data-testid': 'base-new-column-type' },
       ...PROPERTY_TYPES.map(t => h('option', { value: t }, PROPERTY_TYPE_INFO[t].label)),
       h('option', { value: 'formula' }, 'ƒ Formule'),
-      h('option', { value: 'rollup' }, '↗ Rollup'))
-    name.addEventListener('input', () => { if (type.value !== 'formula' && type.value !== 'rollup') type.value = typeOf(name.value.trim()) })
+      h('option', { value: 'rollup' }, '↗ Rollup'),
+      h('option', { value: 'button' }, '⏵ Bouton'))
+    name.addEventListener('input', () => { if (!['formula', 'rollup', 'button'].includes(type.value)) type.value = typeOf(name.value.trim()) })
     type.addEventListener('change', () => {
       const n = name.value.replace(/:/g, '').trim()
       if (type.value === 'formula') openFormulaEditor(anchor, n ? FORMULA_PREFIX + n : undefined)
       if (type.value === 'rollup') openRollupEditor(anchor, undefined, n)
+      if (type.value === 'button') openButtonEditor(anchor, undefined, n)
     })
     const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-new-column-ok' }, 'Ajouter')
     const confirm = () => {
@@ -1227,7 +1562,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
    * apercu calcule sur la premiere ligne. `key` absente : nouvelle colonne.
    */
   const openFormulaEditor = (anchor: HTMLElement, key?: string) => {
-    if (readOnly || !store.writable) return
+    if (!canStructure()) return
     closePopover()
     popoverKind = 'formula'
     const existing = key ? formulaOf(key) : undefined
@@ -1285,7 +1620,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
    * calcul. `key` absente : nouvelle colonne.
    */
   const openRollupEditor = (anchor: HTMLElement, key?: string, initialName = '') => {
-    if (readOnly || !store.writable) return
+    if (!canStructure()) return
     closePopover()
     popoverKind = 'rollup'
     const existing = key ? manifest.columns.find(c => c.key === key)?.rollup : undefined
@@ -1340,7 +1675,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const openTotalMenu = (key: string, anchor: HTMLElement) => {
-    if (readOnly || !store.writable) return
+    if (!canStructure()) return
     const v = view()
     closePopover()
     popoverKind = 'total'
@@ -1430,7 +1765,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       if (popoverKind !== 'settings') return
       popover.replaceChildren(renderPropertySettings({
         key,
-        editable: !readOnly,
+        editable: !readOnly && !manifest.locked,
         def: () => types.get(key),
         type: () => typeOf(key),
         knownValues: () => knownValues(key),
@@ -1450,7 +1785,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     settingsRedraw = draw
     draw()
     popover.hidden = false
-    popover.style.left = `${Math.max(0, anchor.offsetLeft - 120)}px`
+    placePopover(anchor, 120)
   }
   let settingsRedraw: (() => void) | null = null
 
@@ -1459,7 +1794,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       const v = view()
       closePopover()
       popoverKind = 'column'
-      const editable = !readOnly && store.writable
+      const editable = canStructure()
       const item = (text: string, testid: string, run: () => void) => {
         const b = h('button', { class: 'base-menu-item', type: 'button', 'data-testid': testid }, text)
         b.disabled = !editable
@@ -1469,7 +1804,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-column-menu' },
         item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] })),
         item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] })),
-        manifest.columns.find(c => c.key === key)?.rollup
+        manifest.columns.find(c => c.key === key)?.button
+          ? item('⏵ Modifier le bouton', 'base-col-button', () => openButtonEditor(anchor, key))
+          : manifest.columns.find(c => c.key === key)?.rollup
           ? item('↗ Modifier le rollup', 'base-col-rollup', () => openRollupEditor(anchor, key))
           : item('ƒ Modifier la formule', 'base-col-formula', () => openFormulaEditor(anchor, key)),
         item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] })),
@@ -1488,7 +1825,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       b.addEventListener('click', () => { closePopover(); run() })
       return b
     }
-    const editable = !readOnly && store.writable
+    const editable = canStructure()
     const menu = h('div', { class: 'base-menu', 'data-testid': 'base-column-menu' },
       item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] }), editable),
       item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] }), editable),
@@ -1498,7 +1835,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         store.setView(v.id, { frozen: n === v.frozen ? 0 : n })
       }, editable) : null,
       key !== TITLE_COLUMN && v.type === 'table' ? item(v.groupBy === key ? 'Ne plus grouper' : 'Grouper par cette propriété', 'base-col-group', () => store.setView(v.id, { groupBy: v.groupBy === key ? '' : key, collapsed: [] }), editable) : null,
-      key !== TITLE_COLUMN && types ? item(`⚙ Propriété : ${PROPERTY_TYPE_INFO[typeOf(key)]?.label ?? typeOf(key)}…`, 'base-col-settings', () => openPropertySettings(key, anchor), !readOnly) : null,
+      key !== TITLE_COLUMN && types ? item(`⚙ Propriété : ${PROPERTY_TYPE_INFO[typeOf(key)]?.label ?? typeOf(key)}…`, 'base-col-settings', () => openPropertySettings(key, anchor), !readOnly && !manifest.locked) : null,
       key !== TITLE_COLUMN ? item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key), editable) : null,
     )
     popover.replaceChildren(menu)
@@ -1512,12 +1849,13 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'total', 'settings', 'bulk', 'more'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'button', 'total', 'settings', 'bulk', 'more', 'automations', 'pages'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))
       return
     }
+    followChildCounts()
     const q = query()
     const sig = formulaSig()
     const force = (sig !== lastFormulaSig || relatedDirty) && needsFormulas(q)
@@ -1652,6 +1990,10 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       let day = isoDay(new Date())
       const dayTimer = setInterval(() => { const d = isoDay(new Date()); if (d !== day) { day = d; update() } }, 60_000)
       unsubs.push(() => clearInterval(dayTimer))
+      // Modeles repetes : a l'ouverture, puis toutes les heures tant que la base est ouverte.
+      const repeatTimer = setInterval(() => void runRepeats(), 3_600_000)
+      unsubs.push(() => clearInterval(repeatTimer))
+      setTimeout(() => void runRepeats(), 1500)
       update()
     },
     setReadOnly(ro: boolean) {
@@ -1675,6 +2017,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       chart?.destroy()
       form?.destroy()
       related?.close()
+      childStop?.()
       lightRows.close()
       if (activeBaseView === handle) activeBaseView = null
       container = null

@@ -41,7 +41,12 @@ export interface TableColumn {
   /** Colonne calculee : type et propriete d'affichage du resultat (rollup), sinon devine. */
   resultType?: PropertyType
   resultKey?: string
+  /** Colonne bouton : son libelle (un clic execute ses actions). */
+  button?: { label: string }
 }
+
+/** Profondeur maximale des sous-elements affiches. */
+const MAX_DEPTH = 4
 
 /** Type d'affichage d'un resultat de formule. */
 function resultType(v: PropertyValue): PropertyType {
@@ -100,6 +105,16 @@ export interface TableHost {
   reorder?(id: string, before: string | null, order: string[]): void
   /** Colle des textes dans des cellules (copier-coller depuis un tableur). */
   paste?(cells: { row: QueryRow; key: string; text: string }[]): void
+  /** Sous-elements : la requete des enfants d'une ligne ; absent : pas de sous-elements. */
+  childQuery?(row: QueryRow): Query | null
+  /** Nombre d'enfants d'une ligne (pour la fleche). */
+  childCount?(row: QueryRow): number
+  /** Ajoute un sous-element a une ligne. */
+  addChild?(row: QueryRow): void
+  /** Un bouton d'une colonne, pour une ligne. */
+  runButton?(row: QueryRow, key: string): void
+  /** Structure verrouillee : largeurs, ordre et ajout de colonnes figes. */
+  locked?(): boolean
 }
 
 export class BaseTable {
@@ -124,6 +139,8 @@ export class BaseTable {
   private drawn = new Map<string, { sig: string; el: HTMLElement }>()
   /** Lignes cochees (ids). */
   private selected = new Set<string>()
+  /** Lignes depliees (sous-elements) : leurs enfants, suivis en direct. */
+  private expanded = new Map<string, { rows: QueryRow[]; stop: () => void }>()
 
   constructor(private readonly host: TableHost, opts: TableOptions = {}) {
     this.embedded = !!opts.embedded
@@ -152,10 +169,88 @@ export class BaseTable {
     return !!this.host.selectionChanged
   }
 
-  /** Ligne a la position `i` (si elle est chargee). */
-  rowAt(i: number): QueryRow | undefined {
+  /** Ligne de premier niveau a la position `i` (si elle est chargee). */
+  private topAt(i: number): QueryRow | undefined {
     const page = Math.floor(i / PAGE_SIZE)
     return this.pages.get(page)?.[i - page * PAGE_SIZE]
+  }
+
+  /** Ligne affichee a la position `i` (sous-elements compris). */
+  rowAt(i: number): QueryRow | undefined {
+    return this.displayAt(i).row
+  }
+
+  // ── Sous-elements ────────────────────────────────────────────────────────
+
+  /** Deplie ou replie les enfants d'une ligne. */
+  toggleChildren(row: QueryRow): void {
+    const open = this.expanded.get(row.id)
+    if (open) {
+      open.stop()
+      this.expanded.delete(row.id)
+      this.renderRows(true)
+      return
+    }
+    const q = this.host.childQuery?.(row)
+    if (!q) return
+    const entry = { rows: [] as QueryRow[], stop: () => {} }
+    this.expanded.set(row.id, entry)
+    entry.stop = this.host.engine.watch({ ...q, limit: PAGE_SIZE }, r => {
+      entry.rows = r.rows
+      this.renderRows(true)
+    })
+    this.renderRows(true)
+  }
+
+  private closeChildren(): void {
+    for (const e of this.expanded.values()) e.stop()
+    this.expanded.clear()
+  }
+
+  /** Les enfants depliees d'une ligne, a plat, avec leur profondeur. */
+  private flatChildren(id: string, depth: number, seen: Set<string>): { row: QueryRow; depth: number }[] {
+    const e = this.expanded.get(id)
+    if (!e || depth > MAX_DEPTH) return []
+    const out: { row: QueryRow; depth: number }[] = []
+    for (const r of e.rows) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      out.push({ row: r, depth })
+      out.push(...this.flatChildren(r.id, depth + 1, seen))
+    }
+    return out
+  }
+
+  /** Lignes de premier niveau depliees (chargees), par position, et leurs enfants a plat. */
+  private insertions(): { at: number; kids: { row: QueryRow; depth: number }[] }[] {
+    if (!this.expanded.size) return []
+    const out: { at: number; kids: { row: QueryRow; depth: number }[] }[] = []
+    for (const [k, rows] of this.pages) {
+      rows.forEach((r, j) => {
+        if (!this.expanded.has(r.id)) return
+        const kids = this.flatChildren(r.id, 1, new Set([r.id]))
+        if (kids.length) out.push({ at: k * PAGE_SIZE + j, kids })
+      })
+    }
+    return out.sort((a, b) => a.at - b.at)
+  }
+
+  /** Nombre de lignes affichees (sous-elements compris). */
+  private displayCount(): number {
+    return this.total + this.insertions().reduce((n, x) => n + x.kids.length, 0)
+  }
+
+  /** Ce qu'il y a a la position affichee `d` : une ligne (et sa profondeur), ou la position d'une ligne a charger. */
+  private displayAt(d: number): { row?: QueryRow; depth: number; top: number } {
+    let shift = 0
+    for (const ins of this.insertions()) {
+      if (d <= ins.at + shift) break
+      const k = d - (ins.at + shift) - 1
+      if (k < ins.kids.length) return { row: ins.kids[k].row, depth: ins.kids[k].depth, top: ins.at }
+      shift += ins.kids.length
+    }
+    const top = d - shift
+    return { row: this.topAt(top), depth: 0, top }
   }
 
   /** Lignes cochees, parmi celles chargees. */
@@ -228,7 +323,7 @@ export class BaseTable {
     if (!pos) return
     const keys = this.host.columns().map(c => c.key)
     const col = keys.indexOf(pos.key)
-    const max = (this.embedded ? Math.min(this.total, this.shown) : this.total) - 1
+    const max = (this.embedded ? Math.min(this.displayCount(), this.shown) : this.displayCount()) - 1
     let next: { index: number; key: string } | null = null
     switch (e.key) {
       case 'ArrowDown': next = { index: Math.min(max, pos.index + 1), key: pos.key }; break
@@ -312,6 +407,7 @@ export class BaseTable {
     if (same && !force) return
     this.query = query
     this.stopWatch?.()
+    this.closeChildren()
     this.reset()
     this.stopWatch = this.host.engine.watch({ ...query, limit: PAGE_SIZE }, r => this.onFirstPage(r))
   }
@@ -348,6 +444,7 @@ export class BaseTable {
   destroy(): void {
     this.stopWatch?.()
     this.stopWatch = null
+    this.closeChildren()
     if (this.frame !== null) cancelAnimationFrame(this.frame)
   }
 
@@ -424,11 +521,12 @@ export class BaseTable {
       th.style.width = `${col.width}px`
       this.stick(th, lefts.get(col.key), col.key === lastFrozen)
       // Glisser un en-tete sur un autre : la colonne passe devant (le nom reste premier).
-      if (this.host.moveColumn && !this.host.readOnly() && col.key !== TITLE_COLUMN) {
+      const frozenHead = this.host.readOnly() || !!this.host.locked?.()
+      if (this.host.moveColumn && !frozenHead && col.key !== TITLE_COLUMN) {
         th.draggable = true
         th.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/x-base-col', col.key); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move' })
       }
-      if (this.host.moveColumn && !this.host.readOnly()) {
+      if (this.host.moveColumn && !frozenHead) {
         th.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('text/x-base-col')) { e.preventDefault(); th.classList.add('base-th-over') } })
         th.addEventListener('dragleave', () => th.classList.remove('base-th-over'))
         th.addEventListener('drop', e => {
@@ -444,7 +542,7 @@ export class BaseTable {
       const label = h('button', { class: 'base-th-label', type: 'button' }, col.label)
       label.addEventListener('click', () => this.host.columnMenu(col.key, th))
       th.append(label)
-      if (!this.host.readOnly()) {
+      if (!frozenHead) {
         const grip = h('span', { class: 'base-th-grip', title: 'Largeur' })
         grip.addEventListener('mousedown', e => this.startResize(e, col, th))
         th.append(grip)
@@ -452,7 +550,7 @@ export class BaseTable {
       return th
     })
     const add = h('button', { class: 'base-th-add', type: 'button', title: 'Ajouter une colonne', 'data-testid': 'base-add-column' }, '+')
-    add.disabled = this.host.readOnly()
+    add.disabled = this.host.readOnly() || !!this.host.locked?.()
     add.addEventListener('click', () => this.host.addColumn(add))
     const lead: HTMLElement[] = []
     if (this.selectable) {
@@ -495,15 +593,16 @@ export class BaseTable {
   private renderRows(force: boolean): void {
     if (this.editing && !force) return
     // Integre : toutes les lignes montrees (« Voir plus » en ajoute) ; sinon la fenetre visible.
-    const count = this.embedded ? Math.min(this.total, this.shown) : this.total
+    const all = this.displayCount()
+    const count = this.embedded ? Math.min(all, this.shown) : all
     const viewport = this.el.clientHeight || 600
     const top = this.embedded ? 0 : this.el.scrollTop
     const rh = this.rowHeight
     const first = this.embedded ? 0 : Math.max(0, Math.floor(top / rh) - OVERSCAN)
-    const last = this.embedded ? count - 1 : Math.min(this.total - 1, Math.ceil((top + viewport) / rh) + OVERSCAN)
+    const last = this.embedded ? count - 1 : Math.min(all - 1, Math.ceil((top + viewport) / rh) + OVERSCAN)
     if (this.embedded) {
-      this.more.hidden = this.total <= this.shown
-      this.more.textContent = `Voir plus (${this.total - this.shown} de plus)`
+      this.more.hidden = all <= this.shown
+      this.more.textContent = `Voir plus (${all - this.shown} de plus)`
       this.more.style.width = `${this.width()}px`
     }
     this.body.style.height = `${count * rh}px`
@@ -516,19 +615,20 @@ export class BaseTable {
     const rows: HTMLElement[] = []
     const kept = new Map<string, { sig: string; el: HTMLElement }>()
     for (let i = first; i <= last; i++) {
-      const page = Math.floor(i / PAGE_SIZE)
-      const row = this.pages.get(page)?.[i - page * PAGE_SIZE]
+      const at = this.displayAt(i)
+      const row = at.row
       if (!row) {
-        this.ensurePage(page)
+        this.ensurePage(Math.floor(at.top / PAGE_SIZE))
         const ph = h('div', { class: 'base-tr base-tr-loading' }, '…')
         ph.style.top = `${i * rh}px`
         rows.push(ph)
         continue
       }
       // Meme contenu : meme element (un double-clic n'est pas perdu quand l'index bouge).
-      const sig = JSON.stringify([row.title, row.path, row.values, this.host.annotationSig?.(row) ?? '', this.selected.has(row.id)]) + colSig
+      const sig = JSON.stringify([row.title, row.path, row.values, this.host.annotationSig?.(row) ?? '', this.selected.has(row.id),
+        at.depth, this.expanded.has(row.id), this.host.childCount?.(row) ?? 0]) + colSig
       const prev = this.drawn.get(row.id)
-      const el = prev && prev.sig === sig ? prev.el : this.renderRow(row, i, cols)
+      const el = prev && prev.sig === sig ? prev.el : this.renderRow(row, i, cols, at.depth)
       el.style.top = `${i * rh}px`
       el.dataset.index = String(i)
       kept.set(row.id, { sig, el })
@@ -549,7 +649,7 @@ export class BaseTable {
     if (!same) this.body.replaceChildren(...rows)
   }
 
-  private renderRow(row: QueryRow, index: number, cols: TableColumn[]): HTMLElement {
+  private renderRow(row: QueryRow, index: number, cols: TableColumn[], depth = 0): HTMLElement {
     const light = row.path === ''
     const tr = h('div', { class: light ? 'base-tr base-tr-light' : 'base-tr', 'data-testid': 'base-row', 'data-id': row.id, 'data-index': String(index) })
     const rh = this.rowHeight
@@ -602,6 +702,16 @@ export class BaseTable {
           ? h('span', { class: 'base-title', 'data-testid': 'base-title' }, row.title || 'Sans titre')
           : h('a', { class: 'base-title base-title-page', href: '#', 'data-testid': 'base-title' }, row.title || 'Sans titre')
         if (!light) name.addEventListener('click', e => { e.preventDefault(); this.host.open(row) })
+        // Sous-elements : retrait selon la profondeur, fleche pour deplier.
+        if (this.host.childQuery) {
+          if (depth) td.style.paddingLeft = `${8 + depth * 18}px`
+          const count = this.host.childCount?.(row) ?? 0
+          const open = this.expanded.has(row.id)
+          const toggle = h('button', { class: 'base-sub-toggle', type: 'button', title: open ? 'Replier' : 'Déplier les sous-éléments', 'data-testid': 'base-sub-toggle' }, open ? '▾' : '▸')
+          toggle.style.visibility = count || open ? 'visible' : 'hidden'
+          toggle.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); this.toggleChildren(row) })
+          td.append(toggle)
+        }
         td.append(h('span', { class: 'base-kind', title: light ? 'Ligne légère' : 'Page' }, light ? '·' : '📄'), name)
         if (!ro && light) {
           const promote = h('button', { class: 'base-row-action', type: 'button', title: 'Promouvoir en page', 'data-testid': 'base-promote' }, '⇪')
@@ -610,12 +720,29 @@ export class BaseTable {
           remove.addEventListener('click', e => { e.stopPropagation(); this.host.remove(row) })
           td.append(promote, remove)
         }
+        if (this.host.addChild && !ro && !light) {
+          const child = h('button', { class: 'base-row-action', type: 'button', title: 'Ajouter un sous-élément', 'data-testid': 'base-add-child' }, '+')
+          child.addEventListener('click', e => {
+            e.preventDefault()
+            e.stopPropagation()
+            this.host.addChild!(row)
+            // Les enfants se voient tout de suite.
+            if (!this.expanded.has(row.id)) this.toggleChildren(row)
+          })
+          td.append(child)
+        }
         if (this.host.peek) {
           const peek = h('button', { class: 'base-row-action base-row-peek', type: 'button', title: 'Aperçu', 'data-testid': 'base-peek' }, '⤢')
           peek.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); this.host.peek!(row) })
           td.append(peek)
         }
         if (!ro) td.addEventListener('dblclick', () => this.editCell(td, col, row.title, v => this.host.rename(row, String(v ?? '').trim() || 'Sans titre')))
+      } else if (col.button) {
+        td.classList.add('base-td-button')
+        const b = h('button', { class: 'base-btn base-cell-button', type: 'button', 'data-testid': 'base-cell-button' }, col.button.label)
+        b.disabled = ro
+        b.addEventListener('click', e => { e.stopPropagation(); this.host.runButton?.(row, col.key) })
+        td.append(b)
       } else if (col.formula || col.formulaError) {
         td.classList.add('base-td-formula')
         const r = col.formula ? col.formula.evaluate(row) : { ok: false as const, error: col.formulaError! }
