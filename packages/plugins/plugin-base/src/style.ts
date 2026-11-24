@@ -279,6 +279,9 @@ select.base-filter-join { padding-top:2px; }
 .base-form-choices { display:flex; flex-wrap:wrap; gap:8px; }
 .base-form-submit { align-self:flex-start; padding:5px 16px; font-size:13px; }
 .base-form-status { font-size:12px; color:var(--text-muted,#a6adc8); }
+.base-linked { margin:6px 0; border:1px solid var(--border,#313244); border-radius:8px; overflow:hidden; height:420px; resize:vertical; min-height:200px; }
+.base-linked-inner { height:100%; }
+.base-view-embedded .base-toolbar { padding-top:6px; }
 .base-footer { display:flex; gap:12px; padding:4px 12px; border-top:1px solid var(--border,#313244); font-size:11.5px; color:var(--text-faint,#6c7086); flex-shrink:0; }
 .base-error { color:var(--color-danger,#f38ba8); }
 .base-hint { color:var(--text-faint,#6c7086); padding:12px; }

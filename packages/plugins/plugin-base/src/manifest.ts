@@ -117,6 +117,8 @@ export interface BaseViewDef {
   rowOrder: string[]
   /** Tableau : sous-elements, par une relation vers la meme base (le parent). '' : aucun. */
   subItems: string
+  /** Vue liee : propre a une base integree dans une note, masquee dans les onglets de la base. */
+  linked: boolean
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
   /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
@@ -165,7 +167,7 @@ export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 't
   return {
     id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', dateGroup: '', subGroupBy: '', hideEmpty: false,
     collapsed: [], hidden: [], totals: {}, dateBy: '', endBy: '', cover: '', cardSize: 'medium', scale: 'day',
-    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '', frozen: 0, wrap: false, rowOrder: [], subItems: '',
+    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '', frozen: 0, wrap: false, rowOrder: [], subItems: '', linked: false,
   }
 }
 
@@ -241,6 +243,7 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         frozen: Math.max(0, Math.min(10, Math.floor(num(v.get('frozen'), 0)))),
         wrap: v.get('wrap') === true,
         subItems: str(v.get('subItems'), ''),
+        linked: v.get('linked') === true,
         rowOrder: json<unknown[]>(v.get('rowOrder'), []).filter((x): x is string => typeof x === 'string').slice(0, MAX_MANUAL_ORDER),
         hidden: json(v.get('hidden'), []),
         totals: readTotals(json(v.get('totals'), {})),
@@ -441,6 +444,7 @@ function viewEntries(v: BaseViewDef): Record<string, string | number | boolean> 
     frozen: v.frozen,
     wrap: v.wrap,
     subItems: v.subItems,
+    linked: v.linked,
     rowOrder: JSON.stringify(v.rowOrder.slice(0, MAX_MANUAL_ORDER)),
     hidden: JSON.stringify(v.hidden),
     totals: JSON.stringify(v.totals),

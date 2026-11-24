@@ -79,7 +79,22 @@ function stateText(s: IndexState): string {
   }
 }
 
-export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | undefined): FileView & BaseViewHandle {
+/** Base integree dans une note (vue liee). */
+export interface EmbeddedOptions {
+  /** Nom de la vue montree ; absent : la premiere. */
+  view?: string
+  /** Une vue propre a la page vient d'etre creee : reecrire le lien de la note. Rend false si impossible. */
+  ownView?(name: string): boolean
+  /** Ouvrir la base elle-meme. */
+  openBase?(): void
+}
+
+export interface BaseViewOptions {
+  embedded?: EmbeddedOptions
+}
+
+export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | undefined, opts: BaseViewOptions = {}): FileView & BaseViewHandle {
+  const embedded = opts.embedded
   ensureStyle()
   // Le vault du document (chemins, creation, renommage) ; l'edition d'une
   // note hors de son editeur vient de l'API des plugins (VaultAPI.editText).
@@ -97,7 +112,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const defaultFolder = folderOfBase(path)
   let readOnly = !!ctx.readOnly
   let manifest: BaseManifest = readManifest(ctx.tree, defaultFolder)
-  let activeId = manifest.views[0].id
+  /** Vue de depart : celle nommee par la note (base integree), sinon la premiere vue non liee. */
+  const startView = (m: BaseManifest) => {
+    const wanted = embedded?.view?.toLowerCase()
+    return (wanted ? m.views.find(v => v.name.toLowerCase() === wanted) : undefined) ?? m.views.find(v => !v.linked) ?? m.views[0]
+  }
+  let activeId = startView(manifest).id
   /** Proprietes vues dans les lignes, par frequence : colonnes par defaut, choix proposes. */
   const seen = new Map<string, { count: number; sample: PropertyValue }>()
   let members: PropertyMember[] = []
@@ -1243,6 +1263,20 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     relationChoices: key => cells().relationChoices?.(key, '') ?? Promise.resolve([]),
   })
 
+  /** Copie la vue montree en vue liee (masquee dans la base) et pointe le lien de la note dessus. */
+  const makeOwnView = () => {
+    const v = view()
+    const names = new Set(manifest.views.map(x => x.name.toLowerCase()))
+    let name = `${v.name} (page)`
+    for (let n = 2; names.has(name.toLowerCase()); n++) name = `${v.name} (page ${n})`
+    const id = `v${Date.now().toString(36)}`
+    const order = Math.max(0, ...manifest.views.map(x => x.order)) + 1
+    const { id: _from, ...copy } = v
+    store.setView(id, { ...copy, name, order, linked: true })
+    activeId = id
+    if (!embedded?.ownView?.(name)) update()
+  }
+
   /** Change la disposition d'une vue, avec des reglages par defaut utiles. */
   const setLayout = (v: BaseViewDef, type: BaseViewType) => {
     if (type === v.type) return
@@ -1337,12 +1371,15 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   }
 
   const renderToolbar = () => {
-    const tabs = h('div', { class: 'base-tabs' }, ...manifest.views.map(v => {
+    // Integree : seulement sa vue. Dans la base : les vues non liees (et l'active).
+    const shown = embedded ? manifest.views.filter(v => v.id === activeId) : manifest.views.filter(v => !v.linked || v.id === activeId)
+    const tabs = h('div', { class: 'base-tabs' }, ...shown.map(v => {
       const tab = h('button', { class: v.id === activeId ? 'base-tab base-tab-active' : 'base-tab', type: 'button', 'data-testid': 'base-tab', 'data-id': v.id },
         `${VIEW_TYPES.find(t => t.type === v.type)?.glyph ?? '▦'} ${v.name}`)
       tab.addEventListener('click', () => { activeId = v.id; update() })
       tab.addEventListener('dblclick', () => {
-        if (!canStructure()) return
+        // Integree, le nom de la vue est dans le lien de la note : on ne le change pas d'ici.
+        if (!canStructure() || embedded) return
         const input = h('input', { class: 'base-tab-input', value: v.name })
         input.value = v.name
         const done = () => { const name = input.value.trim(); if (name && name !== v.name) store.setView(v.id, { name }); else update() }
@@ -1353,7 +1390,19 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       })
       return tab
     }))
-    if (canStructure()) {
+    if (embedded) {
+      const cur = view()
+      if (!cur.linked && canStructure() && embedded.ownView) {
+        const own = h('button', { class: 'base-tab base-tab-add', type: 'button', title: 'Filtres et tris propres à cette page', 'data-testid': 'base-own-view' }, 'Vue propre à cette page')
+        own.addEventListener('click', () => makeOwnView())
+        tabs.append(own)
+      }
+      if (embedded.openBase) {
+        const open = h('button', { class: 'base-tab', type: 'button', 'data-testid': 'base-open-base' }, `↗ ${baseLabel()}`)
+        open.addEventListener('click', () => embedded.openBase!())
+        tabs.append(open)
+      }
+    } else if (canStructure()) {
       const add = h('button', { class: 'base-tab base-tab-add', type: 'button', title: 'Nouvelle vue', 'data-testid': 'base-add-view' }, '+')
       add.addEventListener('click', () => {
         const id = `v${Date.now().toString(36)}`
@@ -1847,7 +1896,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   const update = () => {
     if (!container) return
-    if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
+    if (!manifest.views.some(v => v.id === activeId)) activeId = startView(manifest).id
     renderToolbar()
     if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'button', 'total', 'settings', 'bulk', 'more', 'automations', 'pages'].includes(popoverKind)) renderPopover()
     const v = view()
@@ -1965,7 +2014,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       })
       bulk = h('div', { class: 'base-bulk', 'data-testid': 'base-bulk' })
       bulk.hidden = true
-      const root = h('div', { class: 'base-view', 'data-testid': 'base-view' }, toolbar, popover, bulk, h('div', { class: 'base-main' }, body, peekPanel.el), footer, card)
+      const root = h('div', { class: embedded ? 'base-view base-view-embedded' : 'base-view', 'data-testid': 'base-view' }, toolbar, popover, bulk, h('div', { class: 'base-main' }, body, peekPanel.el), footer, card)
       root.addEventListener('focusin', () => { activeBaseView = handle })
       root.addEventListener('mousedown', e => {
         if (card && !card.hidden && !card.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-testid="base-cell-annotation"]')) closeCard()

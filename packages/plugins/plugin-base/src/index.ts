@@ -10,15 +10,18 @@
 //    legere peut etre promue en page.
 // Toutes les lectures passent par api.query ; les types des proprietes sont
 // ceux du vault (api.properties). Tout s'edite a plusieurs en temps reel.
-import type { FileContext, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
+import type { BlockContext, FileContext, PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { activeBaseView, createBaseView } from './view'
 import { BASE_QUERY_FENCE_RE, renderBaseQueryBlock } from './queryBlock'
 import { ensureStyle } from './style'
 import { parseBaseEmbed, renderBaseEmbed } from './embed'
+import { canLinkView, renderLinkedView } from './linkedView'
 import { cellProposalType } from './proposals'
 import { baseAgentTools } from './agentTools'
 
 export { createBaseView } from './view'
+export type { BaseViewOptions, EmbeddedOptions } from './view'
+export { renderLinkedView, retargetEmbed, canLinkView } from './linkedView'
 export { ManifestStore, readManifest, defaultManifest, TITLE_COLUMN } from './manifest'
 export type { BaseManifest, BaseViewDef, BaseFilter, BaseFilterGroup, BaseFilterItem, FilterMode, BaseSort, BaseColumn } from './manifest'
 export { LightRows, readRow } from './rows'
@@ -102,10 +105,12 @@ export function createBasePlugin(): VaultPlugin {
         deserialize: (raw: string) => String(raw).trim(),
         serialize: (data: unknown) => String(data),
         createEditorWidget: () => ({ mount: () => {}, destroy: () => {} }),
-        renderClient: (data: unknown) => {
+        renderClient: (data: unknown, ctx?: BlockContext) => {
           ensureStyle()
           const target = parseBaseEmbed(String(data))
-          return target ? renderBaseEmbed(target, api) : document.createElement('div')
+          if (!target) return document.createElement('div')
+          // Dans une note modifiable : la vue liee, modifiable sur place ; sinon la lecture seule.
+          return api && canLinkView(api, ctx) ? renderLinkedView(target, api, ctx!) : renderBaseEmbed(target, api)
         },
       })
       // Raccourcis possibles : par le moteur de commandes, jamais par un
