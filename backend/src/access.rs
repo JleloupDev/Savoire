@@ -305,12 +305,15 @@ pub async fn link_vault_write(c: &mut PgConnection, caller: &str, vault_id: &str
 }
 
 /// Un lien vers une note lit aussi les pieces jointes rangees dans son dossier ; rien d'autre.
+/// Un lien vers un fichier (PDF, Word...) lit ses propres octets.
 pub async fn link_attachment_read(c: &mut PgConnection, caller: &str, vault_id: &str, attachment_id: &str) -> AppResult<()> {
     if is_view_caller(caller) {
         let view = parse_view_caller(caller)?;
         let attached = repos::doc_get(c, attachment_id).await?;
         if view.vault_id == vault_id
-            && attached.is_some_and(|a| a.vault_id == vault_id && a.parent_doc_id.as_deref() == Some(view.doc_id.as_str()))
+            && attached.is_some_and(|a| {
+                a.vault_id == vault_id && (a.doc_id == view.doc_id || a.parent_doc_id.as_deref() == Some(view.doc_id.as_str()))
+            })
         {
             return Ok(());
         }
@@ -323,7 +326,7 @@ pub async fn link_attachment_read(c: &mut PgConnection, caller: &str, vault_id: 
     if l.resource_type == ResourceType::Document
         && let Some(file) = repos::doc_get(c, attachment_id).await?
         && file.vault_id == vault_id
-        && file.parent_doc_id.as_deref() == Some(l.resource_id.as_str())
+        && (file.doc_id == l.resource_id || file.parent_doc_id.as_deref() == Some(l.resource_id.as_str()))
     {
         return Ok(());
     }

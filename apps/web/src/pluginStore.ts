@@ -502,9 +502,20 @@ export function modulePluginEntries(path: string): StoreEntry[] {
   return catalogEntries().filter(e => e.editorDefault || (e.extensions?.includes(ext) ?? false))
 }
 
+/** Contexte d'un module : aucun poste de travail (explorateur, graphe). */
+const noContext = { vaultBrowserRefs: null as never, setGraphContributor: () => {} } as PluginLoadContext
+
+/**
+ * Tout le catalogue, charge a la demande, pour un module : une note qui
+ * declare un plugin dans ses proprietes (portee de la note) l'a aussi par un
+ * lien de partage, et pas seulement les quelques plugins de pluginRegistry.
+ */
+export function modulePluginRegistry(): Record<string, () => Promise<VaultPlugin>> {
+  return Object.fromEntries(catalogEntries().map(e => [e.id, () => e.load(noContext)]))
+}
+
 /** Charge les plugins d'un module (ceux qui ne demandent aucun contexte du poste de travail). */
 export async function loadModulePlugins(path: string): Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }> {
-  const noContext = { vaultBrowserRefs: null as never, setGraphContributor: () => {} } as PluginLoadContext
   const entries = modulePluginEntries(path)
   const loaded = await Promise.all(entries.map(async e => ({ e, plugin: await e.load(noContext).catch(() => null) })))
   const ok = loaded.filter((x): x is { e: StoreEntry; plugin: VaultPlugin } => !!x.plugin)

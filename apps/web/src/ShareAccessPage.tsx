@@ -66,6 +66,10 @@ function createShareVault(handle: SharedDocumentHandle): VaultAPI {
     resolveDocumentId:   (path) => path === handle.path ? handle.docId : undefined,
     getVaultId:          () => handle.vaultId,
     getToken:            () => handle.accessToken,
+    // Le fichier partage lui-meme (PDF, Word...) : ses octets, pour son apercu.
+    readBinary:          (path) => path === handle.path && handle.attachments
+      ? handle.attachments.ownBytes()
+      : Promise.resolve(null),
     // Les images de la note : seulement celles rangees dans son dossier.
     resolveAttachmentUrl: (target) => handle.attachments?.url(target)
       ?? Promise.reject(new Error(`resolveAttachmentUrl(${target}): aucune image lisible par ce lien`)),
@@ -74,7 +78,7 @@ function createShareVault(handle: SharedDocumentHandle): VaultAPI {
 
 // ── ShareDocumentEditor ───────────────────────────────────────────────────────
 
-function ShareDocumentEditor({ handle, loadPlugins, mode }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader; mode: NoteEditorMode }) {
+function ShareDocumentEditor({ handle, loadPlugins, mode, registry }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader; mode: NoteEditorMode; registry: PluginRegistry }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ro = handle.permission === 'read'
 
@@ -113,7 +117,7 @@ function ShareDocumentEditor({ handle, loadPlugins, mode }: { handle: SharedDocu
         getTransportState: () => handle.transport.getState(),
         pluginAPI: pluginApi,
         defaultPlugins,
-        pluginRegistry,
+        pluginRegistry: registry,
       })
       view.mount()
       void handle.transport.join(handle.vaultId, handle.docId)
@@ -147,7 +151,10 @@ function ShareDocumentEditor({ handle, loadPlugins, mode }: { handle: SharedDocu
 
 // ── Page shell ────────────────────────────────────────────────────────────────
 
-export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sharingApi: ISharingAPI; loadPlugins?: SharePluginLoader }) {
+/** Plugins chargeables a la demande, par id : ceux qu'une note declare dans ses proprietes. */
+export type PluginRegistry = Record<string, () => Promise<VaultPlugin>>
+
+export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins, registry = pluginRegistry }: { sharingApi: ISharingAPI; loadPlugins?: SharePluginLoader; registry?: PluginRegistry }) {
   const { token } = useParams<{ token: string }>()
   const [handle, setHandle] = useState<SharedDocumentHandle | null>(null)
   const [info, setInfo] = useState<{ filename: string; path: string; permission: SharedDocumentHandle['permission'] } | null>(null)
@@ -191,7 +198,7 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sha
     return (
       <FullPage>
         <div data-testid="share-embed" style={{ flex: 1, overflow: 'hidden' }}>
-          {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} />}
+          {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} />}
         </div>
       </FullPage>
     )
@@ -211,7 +218,7 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins }: { sha
         {/\.md$/i.test(info.path) && <EditorModeSwitch value={mode} />}
       </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} />}
+        {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} />}
       </div>
     </FullPage>
   )

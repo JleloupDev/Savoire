@@ -9,7 +9,7 @@ import { CollabOrchestrator } from '@savoire/application'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import { pluginRegistry } from './pluginRegistry'
-import { loadModulePlugins } from './pluginStore'
+import { loadModulePlugins, modulePluginRegistry } from './pluginStore'
 import { crdtViewsOf, GUEST_NAME } from './ShareAccessPage'
 
 interface ViewAccessDto {
@@ -121,7 +121,7 @@ export function ViewGrantPage() {
         getTransportState: () => transport!.getState(),
         pluginAPI: pluginApi,
         defaultPlugins,
-        pluginRegistry,
+        pluginRegistry: { ...pluginRegistry, ...modulePluginRegistry() },
       })
       view.mount()
       void transport.join(access.vaultId, access.docId)

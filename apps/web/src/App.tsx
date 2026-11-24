@@ -10,7 +10,8 @@ import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
 import { ViewGrantPage } from './ViewGrantPage'
 import { OAuthConsentPage } from './OAuthConsentPage'
-import { loadModulePlugins } from './pluginStore'
+import { loadModulePlugins, modulePluginRegistry } from './pluginStore'
+import { pluginRegistry } from './pluginRegistry'
 import { ToastContainer } from './ToastContainer'
 import { FeedbackBubble } from './FeedbackBubble'
 import { getServerChoice } from './serverConnection'
@@ -42,7 +43,7 @@ export function App() {
               {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
               <Route path={CALLBACK_PATH} element={<LoginPage />} />
               <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />
-              <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} loadPlugins={loadModulePlugins} />} />
+              <Route path="/share/:token" element={<ShareAccessPage sharingApi={sharingApi} loadPlugins={loadModulePlugins} registry={{ ...pluginRegistry, ...modulePluginRegistry() }} />} />
               <Route path="/view" element={<ViewGrantPage />} />
               {/* Ecran d'accord OAuth du MCP (ChatGPT, Claude.ai). */}
               <Route path="/oauth/consent" element={<OAuthConsentPage />} />

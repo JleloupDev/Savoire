@@ -383,6 +383,23 @@ async fn note_link_reads_only_images_of_its_folder() {
 }
 
 #[tokio::test]
+async fn file_link_reads_its_own_bytes() {
+    let app = app!();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "v").await;
+    let pdf = app.document(&ta, &v).await;
+    let other = app.document(&ta, &v).await;
+    for f in [&pdf, &other] {
+        assert_eq!(upload(&app, &ta, &format!("/api/v1/vaults/{v}/attachments/{f}"), PNG).await.0, 200);
+    }
+    // Un lien vers un fichier (PDF...) lit ses octets, pas ceux d'un autre fichier.
+    let (link, _) = app.link_token(&ta, &format!("/api/v1/documents/{pdf}/sharing/links"), "read").await;
+    assert_eq!(app.get(&link, &format!("/api/v1/vaults/{v}/attachments/{pdf}")).await.0, 200);
+    assert_eq!(app.get(&link, &format!("/api/v1/vaults/{v}/attachments/{other}")).await.0, 403);
+    assert_eq!(upload(&app, &link, &format!("/api/v1/vaults/{v}/attachments/{pdf}"), PNG).await.0, 403);
+}
+
+#[tokio::test]
 async fn upload_stops_at_quota() {
     let app = app!(json!({ "Limits": { "AccountBytes": 20 } }));
     let (alice, ta) = app.user("alice").await;

@@ -38,6 +38,12 @@ export class SharedNoteAttachments {
     return url
   }
 
+  /** Les octets du fichier partage lui-meme (PDF, Word...), lus avec le jeton du lien. */
+  async ownBytes(): Promise<Uint8Array> {
+    const blob = await this.storage.fetchAttachment(this.vaultId, this.docId, this.token())
+    return new Uint8Array(await blob.arrayBuffer())
+  }
+
   dispose(): void {
     for (const u of this.created.splice(0)) URL.revokeObjectURL(u)
     this.urls.clear()

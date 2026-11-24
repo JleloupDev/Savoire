@@ -240,7 +240,7 @@ describe('ShareAccessPage — images de la note partagee', () => {
 
   it('le vault de la page resout les images par le resolveur du lien (dossier de la note)', async () => {
     const url = vi.fn(async (target: string) => `blob:${target}`)
-    await renderPage('tok', makeSharingApi(makeHandle({ attachments: { url, dispose: vi.fn() } })))
+    await renderPage('tok', makeSharingApi(makeHandle({ attachments: { url, ownBytes: vi.fn(), dispose: vi.fn() } })))
     const vault = DocumentView.lastOptions.vault as { resolveAttachmentUrl?(t: string): Promise<string> }
     await expect(vault.resolveAttachmentUrl!('Photo.png')).resolves.toBe('blob:Photo.png')
     expect(url).toHaveBeenCalledWith('Photo.png')
