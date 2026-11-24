@@ -24,6 +24,7 @@ import { renderFilterEditor, type FilterEditorHost } from './filterEditor'
 import { LightRows } from './rows'
 import { createPageRow, folderOfBase, renameNoteProperty, renamePageRow, writeNoteProperties, writeNoteProperty, type NotesVault } from './notes'
 import { renderPropertySettings } from './propertySettings'
+import { RelatedRows, asLinks, baseSourceOf, relationChoicesOf, rollupFormula, rowLink, syncBackLinks, ROLLUP_CALCS, type RollupCalc } from './relations'
 import { BaseTable, type TableColumn } from './table'
 import { BaseKanban } from './kanban'
 import { needsFormulas, withFormulas } from './formulaEngine'
@@ -107,21 +108,73 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return c
   }
   const formulaOf = (key: string): string | undefined => manifest.columns.find(c => c.key === key)?.formula
+
+  // ── Relations et rollups ─────────────────────────────────────────────────
+  // Les lignes des bases visees par les relations, suivies en direct ; un
+  // rollup se calcule sur elles (relations.ts).
+
+  const pathOfBase = (id: string) => docVault?.getFileTree?.().find(e => e.docId === id)?.path
+  const relationBase = (key: string): string | undefined => {
+    const d = types?.get(key)
+    return d?.type === 'relation' ? d.relation?.base : undefined
+  }
+  let onRelated: (base: string) => void = () => {}
+  const related = engine ? new RelatedRows(
+    engine,
+    id => id === baseId ? Promise.resolve(source()) : baseSourceOf(api, id, pathOfBase(id)),
+    id => onRelated(id),
+  ) : null
+  const rollups = new Map<string, { sig: string; formula: CompiledFormula }>()
+  /** Une colonne calculee : formule ou rollup. */
+  const computed = (key: string): { formula: CompiledFormula } | { error: string } => {
+    const col = manifest.columns.find(c => c.key === key)
+    if (col?.rollup && related) {
+      const sig = JSON.stringify(col.rollup)
+      let r = rollups.get(key)
+      if (!r || r.sig !== sig) {
+        const def = col.rollup
+        r = { sig, formula: rollupFormula(def, () => relationBase(def.relation), related) }
+        rollups.set(key, r)
+      }
+      return { formula: r.formula }
+    }
+    if (col?.rollup) return { error: 'Rollup indisponible sans moteur de requêtes.' }
+    return compile(col?.formula ?? '')
+  }
   /** Le moteur, plus les filtres et tris sur formules (calcules ici, voir formulaEngine). */
   const rowsEngine = engine && withFormulas(engine, key => {
-    const f = compile(formulaOf(key) ?? '')
+    const f = computed(key)
     return 'formula' in f ? f.formula : undefined
   })
   /** Empreinte des formules : une formule modifiee relance une requete qui filtre ou trie dessus. */
-  const formulaSig = () => JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => [c.key, c.formula]))
+  const formulaSig = () => JSON.stringify(manifest.columns.filter(c => isFormulaKey(c.key)).map(c => [c.key, c.formula, c.rollup]))
   let lastFormulaSig = ''
+
+  /** Affichage du resultat d'un rollup : selon le type de la propriete resumee. */
+  const rollupDisplay = (key: string): Pick<TableColumn, 'resultType' | 'resultKey'> => {
+    const r = manifest.columns.find(c => c.key === key)?.rollup
+    if (!r) return {}
+    const target = r.prop === TITLE_COLUMN ? 'text' : typeOf(r.prop)
+    if (r.calc === 'show') {
+      const shown: Partial<Record<PropertyType, PropertyType>> = {
+        select: 'multiselect', status: 'multiselect', multiselect: 'multiselect', person: 'person', createdBy: 'person', modifiedBy: 'person',
+        relation: 'relation', link: 'relation', files: 'files',
+      }
+      return shown[target] ? { resultType: shown[target], resultKey: r.prop } : {}
+    }
+    if (['sum', 'mean', 'median', 'min', 'max'].includes(r.calc) && target === 'number') return { resultType: 'number', resultKey: r.prop }
+    return {}
+  }
 
   const allColumns = (): TableColumn[] => {
     const title: TableColumn = { key: TITLE_COLUMN, label: 'Nom', width: manifest.columns.find(c => c.key === TITLE_COLUMN)?.width ?? TITLE_WIDTH, type: 'text' }
     return [title, ...columnsOf(manifest).filter(c => c.key !== TITLE_COLUMN).map((c): TableColumn => {
       if (!isFormulaKey(c.key)) return { key: c.key, label: label(c.key), width: c.width, type: typeOf(c.key) }
-      const f = compile(formulaOf(c.key) ?? '')
-      return { key: c.key, label: label(c.key), width: c.width, type: 'text', ...('formula' in f ? { formula: f.formula } : { formulaError: f.error }) }
+      const f = computed(c.key)
+      return {
+        key: c.key, label: label(c.key), width: c.width, type: 'text', ...rollupDisplay(c.key),
+        ...('formula' in f ? { formula: f.formula } : { formulaError: f.error }),
+      }
     })]
   }
   const visibleColumns = (): TableColumn[] => allColumns().filter(c => c.key === TITLE_COLUMN || !view().hidden.includes(c.key))
@@ -182,6 +235,18 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     def: key => types?.get(key),
     addOption,
     ...(upload ? { upload } : {}),
+    relationChoices: async (key, text) => {
+      const target = relationBase(key)
+      if (!target || !related) return []
+      let rows = related.rows(target)
+      // Premiere ouverture : on attend la lecture de la base visee.
+      for (let i = 0; !rows && i < 40; i++) { await new Promise(r => setTimeout(r, 50)); rows = related.rows(target) }
+      return relationChoicesOf(rows ?? [], text)
+    },
+    relationTitle: (key, link) => {
+      const target = relationBase(key)
+      return target ? related?.find(target, link)?.title : undefined
+    },
   })
 
   // ── Valeurs posees par l'appli ───────────────────────────────────────────
@@ -243,6 +308,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       }
       void api.review.propose(baseId, CELL_PROPOSAL, proposal).catch(report)
       return
+    }
+    // Relation dans les deux sens : les lignes liees pointent en retour.
+    const rel = types?.get(key)
+    if (rel?.type === 'relation' && rel.relation?.back && row.path !== '' && vault) {
+      const target = rel.relation.base
+      const back = rel.relation.back
+      const resolve = (link: string) => related?.find(target, link)?.id ?? vault.resolveDocumentId(`${link.replace(/^\[\[|\]\]$/g, '').split('|')[0]}.md`)
+      void syncBackLinks(vault, resolve, rowLink(row.path), row.id, back, asLinks(row.values[key]), asLinks(value)).catch(report)
     }
     const touch = touchValues()
     const many = Object.keys(touch).length > 0
@@ -365,6 +438,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     totals: () => totalTexts,
     totalMenu: (key, anchor) => openTotalMenu(key, anchor),
     addRow: () => void addPage(),
+    revision: () => relatedTick,
     annotation: (row, key) => notes.of(row.id, key),
     annotationSig: row => notes.rowSig(row.id),
     openAnnotations,
@@ -391,7 +465,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   const cellValue = (row: QueryRow, key: string): PropertyValue | undefined => {
     if (key === TITLE_COLUMN) return row.title
     if (!isFormulaKey(key)) return row.values[key]
-    const f = compile(formulaOf(key) ?? '')
+    const f = computed(key)
     if (!('formula' in f)) return undefined
     const r = f.formula.evaluate(row)
     return r.ok ? r.value : undefined
@@ -404,7 +478,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       if (totalTexts.size) { totalTexts = new Map(); table?.renderFoot() }
       return
     }
-    const key = JSON.stringify([q, wanted, formulaSig()])
+    const key = JSON.stringify([q, wanted, formulaSig(), relatedTick])
     if (key === totalsKey) return
     totalsKey = key
     stopTotals()
@@ -473,6 +547,15 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     valueOf: (row, key) => cellValue(row, key),
   }) : null
 
+  // Une base visee a change : les rollups se recalculent (et ce qui filtre ou trie dessus).
+  let relatedTick = 0
+  let relatedDirty = false
+  onRelated = () => {
+    relatedTick++
+    relatedDirty = true
+    update()
+  }
+
   const onResult = (r: QueryResult) => {
     let added = false
     for (const row of r.rows) {
@@ -516,6 +599,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     typeOf: key => key === TITLE_COLUMN ? 'text' : isFormulaKey(key) ? 'text' : typeOf(key),
     members: () => members,
     knownValues,
+    relationChoices: key => cells().relationChoices?.(key, '') ?? Promise.resolve([]),
   })
 
   const renderToolbar = () => {
@@ -685,12 +769,13 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const list = h('datalist', { id: 'base-props-list' }, ...propertyChoices(false).map(k => h('option', { value: k })))
     const type = h('select', { class: 'base-input', 'data-testid': 'base-new-column-type' },
       ...PROPERTY_TYPES.map(t => h('option', { value: t }, PROPERTY_TYPE_INFO[t].label)),
-      h('option', { value: 'formula' }, 'ƒ Formule'))
-    name.addEventListener('input', () => { if (type.value !== 'formula') type.value = typeOf(name.value.trim()) })
+      h('option', { value: 'formula' }, 'ƒ Formule'),
+      h('option', { value: 'rollup' }, '↗ Rollup'))
+    name.addEventListener('input', () => { if (type.value !== 'formula' && type.value !== 'rollup') type.value = typeOf(name.value.trim()) })
     type.addEventListener('change', () => {
-      if (type.value !== 'formula') return
       const n = name.value.replace(/:/g, '').trim()
-      openFormulaEditor(anchor, n ? FORMULA_PREFIX + n : undefined)
+      if (type.value === 'formula') openFormulaEditor(anchor, n ? FORMULA_PREFIX + n : undefined)
+      if (type.value === 'rollup') openRollupEditor(anchor, undefined, n)
     })
     const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-new-column-ok' }, 'Ajouter')
     const confirm = () => {
@@ -767,6 +852,65 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     popover.style.left = `${Math.max(0, anchor.offsetLeft - 200)}px`
     check()
     ;(name.value ? input : name).focus()
+  }
+
+  /**
+   * Edition d'un rollup : la relation, la propriete des lignes liees et le
+   * calcul. `key` absente : nouvelle colonne.
+   */
+  const openRollupEditor = (anchor: HTMLElement, key?: string, initialName = '') => {
+    if (readOnly || !store.writable) return
+    closePopover()
+    popoverKind = 'rollup'
+    const existing = key ? manifest.columns.find(c => c.key === key)?.rollup : undefined
+    const name = h('input', { class: 'base-input', placeholder: 'Nom de la colonne', 'data-testid': 'base-rollup-name' })
+    name.value = key ? key.slice(FORMULA_PREFIX.length) : initialName
+    const relations = propertyChoices(false).filter(k => !isFormulaKey(k) && typeOf(k) === 'relation')
+    const relSelect = h('select', { class: 'base-input', 'data-testid': 'base-rollup-relation' },
+      h('option', { value: '' }, '— relation —'), ...relations.map(k => h('option', { value: k }, label(k))))
+    relSelect.value = existing?.relation ?? relations[0] ?? ''
+    const propSelect = h('select', { class: 'base-input', 'data-testid': 'base-rollup-prop' })
+    const calcSelect = h('select', { class: 'base-input', 'data-testid': 'base-rollup-calc' },
+      ...ROLLUP_CALCS.map(c => h('option', { value: c.calc }, c.label)))
+    calcSelect.value = existing?.calc ?? 'show'
+    // Proprietes proposees : celles des lignes de la base visee.
+    const fillProps = () => {
+      const target = relationBase(relSelect.value)
+      const rows = target ? related?.rows(target) : null
+      const keys = new Set<string>()
+      for (const r of rows ?? []) for (const k of Object.keys(r.values)) keys.add(k)
+      if (existing?.prop && existing.prop !== TITLE_COLUMN) keys.add(existing.prop)
+      const current = propSelect.value || existing?.prop || TITLE_COLUMN
+      propSelect.replaceChildren(h('option', { value: TITLE_COLUMN }, 'Nom'), ...[...keys].sort().map(k => h('option', { value: k }, label(k))))
+      propSelect.value = keys.has(current) || current === TITLE_COLUMN ? current : TITLE_COLUMN
+      if (target && !rows) setTimeout(fillProps, 150)
+    }
+    relSelect.addEventListener('change', fillProps)
+    fillProps()
+    const hint = h('div', { class: 'base-pop-sub' }, relations.length ? 'Une propriété des lignes liées, affichée ou résumée.' : 'Ajoutez d’abord une propriété de type Relation.')
+    const ok = h('button', { class: 'base-btn', type: 'button', 'data-testid': 'base-rollup-ok' }, key ? 'Enregistrer' : 'Ajouter')
+    ok.addEventListener('click', () => {
+      const n = name.value.replace(/:/g, '').trim()
+      if (!n) { name.focus(); return }
+      if (!relSelect.value) return
+      const rollup = { relation: relSelect.value, prop: propSelect.value || TITLE_COLUMN, calc: calcSelect.value as RollupCalc }
+      const newKey = FORMULA_PREFIX + n
+      if (key && key !== newKey) {
+        const old = manifest.columns.find(c => c.key === key)
+        store.setColumn(newKey, { rollup, ...(old ? { width: old.width, order: old.order } : {}) })
+        store.removeColumn(key)
+      } else store.setColumn(newKey, { rollup })
+      closePopover()
+    })
+    popover.replaceChildren(h('div', { class: 'base-pop-list', 'data-testid': 'base-rollup-editor' },
+      h('div', { class: 'base-pop-row' }, h('span', { class: 'base-pop-icon' }, '↗'), name),
+      h('div', { class: 'base-pop-row' }, 'Relation', relSelect),
+      h('div', { class: 'base-pop-row' }, 'Propriété', propSelect),
+      h('div', { class: 'base-pop-row' }, 'Calcul', calcSelect),
+      hint, h('div', { class: 'base-pop-row' }, ok)))
+    popover.hidden = false
+    popover.style.left = `${Math.max(0, anchor.offsetLeft - 200)}px`
+    name.focus()
   }
 
   const openTotalMenu = (key: string, anchor: HTMLElement) => {
@@ -864,7 +1008,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         def: () => types.get(key),
         type: () => typeOf(key),
         knownValues: () => knownValues(key),
-        setDef: def => types.set(def),
+        setDef: def => {
+          types.set(def)
+          // Relation dans les deux sens : la propriete en retour pointe vers cette base.
+          const back = def.type === 'relation' ? def.relation?.back : undefined
+          if (back && baseId && !types.get(back)) types.set({ key: back, type: 'relation', relation: { base: baseId, back: key } })
+        },
         renameKey: next => renameKey(key, next),
         renameValue: (from, to) => renameValue(key, from, to),
         bases: baseFiles,
@@ -894,7 +1043,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       popover.replaceChildren(h('div', { class: 'base-menu', 'data-testid': 'base-column-menu' },
         item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] })),
         item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] })),
-        item('ƒ Modifier la formule', 'base-col-formula', () => openFormulaEditor(anchor, key)),
+        manifest.columns.find(c => c.key === key)?.rollup
+          ? item('↗ Modifier le rollup', 'base-col-rollup', () => openRollupEditor(anchor, key))
+          : item('ƒ Modifier la formule', 'base-col-formula', () => openFormulaEditor(anchor, key)),
         item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] })),
         item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key)),
       ))
@@ -931,7 +1082,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column', 'formula', 'total', 'settings'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula', 'rollup', 'total', 'settings'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))
@@ -939,8 +1090,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     }
     const q = query()
     const sig = formulaSig()
-    const force = sig !== lastFormulaSig && needsFormulas(q)
+    const force = (sig !== lastFormulaSig || relatedDirty) && needsFormulas(q)
     lastFormulaSig = sig
+    relatedDirty = false
     if (v.type === 'kanban') {
       syncTotals(q, v)
       table.setQuery({ ...q, limit: 1 }, force)
@@ -1012,6 +1164,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       stopTotals()
       table?.destroy()
       kanban?.destroy()
+      related?.close()
       lightRows.close()
       if (activeBaseView === handle) activeBaseView = null
       container = null

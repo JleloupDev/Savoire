@@ -27,10 +27,11 @@ class Channel implements IIndexChannel {
 export const tick = (ms = 60) => new Promise(r => setTimeout(r, ms))
 
 /** Un vault partage par deux membres : memes notes, arbres de la base et lots relies. */
-export function world(initial: Omit<Note, 'id'>[]) {
+export function world(initial: Omit<Note, 'id'>[], bases: { id: string; path: string }[] = []) {
   let counter = 0
   const notes: Note[] = initial.map(n => ({ ...n, id: `n${++counter}` }))
   notes.push({ id: 'base1', path: 'Projets.base', text: '' })
+  for (const b of bases) notes.push({ ...b, text: '' })
   const changed = new Set<() => void>()
   const notify = () => { for (const cb of [...changed]) cb() }
   const settings = new Channel()
@@ -55,6 +56,9 @@ export function world(initial: Omit<Note, 'id'>[]) {
     renameFile: vi.fn(async (id: string, path: string) => { notes.find(n => n.id === id)!.path = path; notify() }),
     deleteFile: vi.fn(async (id: string) => { const i = notes.findIndex(n => n.id === id); if (i >= 0) notes.splice(i, 1); notify() }),
     getCurrentUser: () => ({ id: 'u1', name: 'Alice' }),
+    getFileTree: () => notes.map(n => ({ docId: n.id, path: n.path, crdtVersion: { clock: 0 } })),
+    openTree: async (id: string) => treePair(id)[0],
+    closeTree: () => {},
   } as unknown as VaultAPI
 
   function member(peer: 0 | 1) {
@@ -102,21 +106,21 @@ export async function spec(): Promise<FileTypeSpec> {
   return specs[0]
 }
 
-export async function mount(w: ReturnType<typeof world>, peer: 0 | 1, api: PluginAPI) {
+export async function mount(w: ReturnType<typeof world>, peer: 0 | 1, api: PluginAPI, base = { id: 'base1', path: 'Projets.base' }) {
   const s = await spec()
   // Le plugin garde l'API recue au chargement : on recharge avec celle du membre.
   await plugin.onload({ ...api, files: { register: () => {} }, commands: { register: () => {} } } as unknown as PluginAPI)
   const ctx: FileContext = {
-    vaultId: 'v', path: 'Projets.base', tree: w.tree('base1', peer), vault: w.vault,
+    vaultId: 'v', path: base.path, tree: w.tree(base.id, peer), vault: w.vault,
     shared: {
       openMap: () => { throw new Error('inutile') },
-      openTree: async name => w.tree(annexDocId('base1', name), peer),
+      openTree: async name => w.tree(annexDocId(base.id, name), peer),
       closeTree: () => {},
     },
   }
   const el = document.createElement('div')
   document.body.appendChild(el)
-  const view = s.open!('Projets.base', ctx)
+  const view = s.open!(base.path, ctx)
   view.mount(el)
   return { el, view, ctx }
 }

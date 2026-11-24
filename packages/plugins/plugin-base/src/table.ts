@@ -24,6 +24,9 @@ export interface TableColumn {
   formula?: CompiledFormula
   /** Formule mal ecrite : le message, montre dans chaque cellule. */
   formulaError?: string
+  /** Colonne calculee : type et propriete d'affichage du resultat (rollup), sinon devine. */
+  resultType?: PropertyType
+  resultKey?: string
 }
 
 /** Type d'affichage d'un resultat de formule. */
@@ -56,6 +59,8 @@ export interface TableHost {
   totalMenu?(key: string, anchor: HTMLElement): void
   /** « + Nouvelle page » sous la derniere ligne, comme dans Notion ; absent : pas de bouton. */
   addRow?(): void
+  /** Change quand des valeurs calculees ailleurs changent (rollups) : les lignes se redessinent. */
+  revision?(): unknown
   /** Revision : ce qui vise une cellule (commentaires, valeurs proposees). */
   annotation?(row: QueryRow, key: string): CellAnnotation | null
   /** Signature de ce qui vise une ligne : elle se redessine quand elle change. */
@@ -261,7 +266,7 @@ export class BaseTable {
     const cols = this.host.columns()
     const ctx = this.host.cells()
     // Les reglages des proprietes (couleurs, format) changent l'affichage des cellules.
-    const colSig = JSON.stringify([cols, this.host.readOnly(), ctx.members.length, cols.map(c => ctx.def?.(c.key) ?? null)])
+    const colSig = JSON.stringify([cols, this.host.readOnly(), ctx.members.length, cols.map(c => ctx.def?.(c.key) ?? null), this.host.revision?.() ?? 0])
     const rows: HTMLElement[] = []
     const kept = new Map<string, { sig: string; el: HTMLElement }>()
     for (let i = first; i <= last; i++) {
@@ -324,7 +329,7 @@ export class BaseTable {
       } else if (col.formula || col.formulaError) {
         td.classList.add('base-td-formula')
         const r = col.formula ? col.formula.evaluate(row) : { ok: false as const, error: col.formulaError! }
-        if (r.ok) td.append(renderValue(resultType(r.value), r.value, ctx))
+        if (r.ok) td.append(renderValue(col.resultType ?? resultType(r.value), r.value, ctx, col.resultKey))
         else {
           td.classList.add('base-td-error')
           td.title = r.error

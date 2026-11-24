@@ -14,6 +14,7 @@ import type {
 } from '@savoire/plugin-api'
 import { isFormulaKey } from './manifest'
 import { fetchBaseRows } from './queryBlock'
+import { isClientOnly } from './relations'
 
 /** La formule d'une cle, compilee ; undefined si elle n'existe pas ou est fausse. */
 export type FormulaLookup = (key: string) => CompiledFormula | undefined
@@ -186,10 +187,27 @@ export function withFormulas(inner: IQueryEngine, formula: FormulaLookup): IQuer
   const client = clientFormulas(inner, formula)
   /** undefined : pas encore su ; false : le moteur refuse les formules. */
   let engineOk: boolean | undefined
+  /** Une colonne que seul le client sait calculer (rollup) : tout se fait ici. */
+  const clientOnly = (q: Query) => {
+    let found = false
+    const visit = (f: QueryField | undefined) => { if (f && isFormulaField(f) && isClientOnly(formula((f as { prop: string }).prop))) found = true }
+    const walk = (w: QueryFilter | undefined): void => {
+      if (!w) return
+      if ('and' in w) w.and.forEach(walk)
+      else if ('or' in w) w.or.forEach(walk)
+      else if ('not' in w) walk(w.not)
+      else visit(w.field)
+    }
+    walk(q.where)
+    q.sort?.forEach(s => visit(s.field))
+    visit(q.groupBy)
+    q.aggregate?.forEach(a => visit(a.field))
+    return found
+  }
   return {
     async query(q, options) {
       if (!needsFormulas(q)) return inner.query(q, options)
-      if (engineOk === false) return client.query(q, options)
+      if (engineOk === false || clientOnly(q)) return client.query(q, options)
       try {
         const r = await inner.query(toEngineQuery(q, formula), options)
         engineOk = true
@@ -202,7 +220,7 @@ export function withFormulas(inner: IQueryEngine, formula: FormulaLookup): IQuer
     },
     watch(q, cb) {
       if (!needsFormulas(q)) return inner.watch(q, cb)
-      if (engineOk === false) return client.watch(q, cb)
+      if (engineOk === false || clientOnly(q)) return client.watch(q, cb)
       if (engineOk === true) return inner.watch(toEngineQuery(q, formula), cb)
       let stopped = false
       let stop = () => {}

@@ -21,6 +21,8 @@ export interface FilterEditorHost {
   typeOf(key: string): PropertyType
   members(): PropertyMember[]
   knownValues(key: string): Promise<string[]>
+  /** Relation : les lignes de la base visee (lien et nom). */
+  relationChoices?(key: string): Promise<{ link: string; title: string }[]>
 }
 
 interface OpInfo { op: BaseFilterOp; label: string; needsValue: boolean }
@@ -128,6 +130,16 @@ function valueInput(host: FilterEditorHost, f: BaseFilter, set: (patch: Partial<
   }
   if (type === 'checkbox') {
     return select([['true', 'Cochée'], ['false', 'Non cochée']], f.value === false || f.value === 'false' ? 'false' : 'true', v => set({ value: v === 'true' }))
+  }
+  if (type === 'relation' && host.relationChoices) {
+    const current = valueText(f.value)
+    const s = select([['', '—'], ...(current ? [[current, current] as [string, string]] : [])], current, v => set({ value: v || undefined }))
+    void host.relationChoices(f.key).then(rows => {
+      s.replaceChildren(h('option', { value: '' }, '—'), ...rows.map(r => h('option', { value: r.link }, r.title)))
+      if (current && !rows.some(r => r.link === current)) s.append(h('option', { value: current }, current))
+      s.value = current
+    })
+    return s
   }
   if (type === 'person') {
     const id = valueText(f.value)

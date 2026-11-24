@@ -7,7 +7,7 @@
 // se deplacer, Entree pour choisir ou creer, Echap pour annuler. En choix
 // multiple, un clic coche ou decoche et le menu reste ouvert ; on valide en
 // le quittant.
-import { h } from './cells'
+import { h } from './dom'
 
 export interface MenuItem {
   value: string

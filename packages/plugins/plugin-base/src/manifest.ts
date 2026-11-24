@@ -8,8 +8,9 @@
 //   base: {
 //     version: 1,
 //     source:  { folder, filters, filterMode } dossier des lignes-pages, filtre
-//     columns: { <cle>: { width, order, formula? } }  proprietes affichees ;
-//                                             une cle '=Nom' : colonne formule
+//     columns: { <cle>: { width, order, formula?, rollup? } }  proprietes
+//                                             affichees ; une cle '=Nom' :
+//                                             colonne formule ou rollup
 //     views:   { <id>: { name, type, order, filters, filterMode, sorts, groupBy, hidden, totals } }
 //     lotCount, lots: { <n>: true }           lots de lignes legeres (query.ts)
 //   }
@@ -23,6 +24,7 @@
 // manifeste par defaut, et ne l'ecrit qu'a la premiere modification.
 import { isTotalKind, type TotalKind } from './totals'
 import { readFilters, type BaseFilterItem, type FilterMode } from './filters'
+import { readRollup, type RollupDef } from './rollup'
 import { BASE_LOT_COUNT } from '@savoire/plugin-api'
 import type { ISharedTree, ITreeMap, TreeValue } from '@savoire/plugin-api'
 
@@ -49,6 +51,8 @@ export interface BaseColumn {
   order: number
   /** Colonne formule (cle '=Nom') : son expression, syntaxe Notion. */
   formula?: string
+  /** Colonne rollup (cle '=Nom') : une propriete des lignes liees, resumee. */
+  rollup?: RollupDef
 }
 
 export type BaseViewType = 'table' | 'kanban'
@@ -131,9 +135,11 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
       const c = columnsMap.get(key)
       if (!isMap(c)) continue
       const formula = c.get('formula')
+      const rollup = readRollup(json(c.get('rollup'), null))
       columns.push({
         key, width: num(c.get('width'), DEFAULT_WIDTH), order: num(c.get('order'), 0),
         ...(typeof formula === 'string' ? { formula } : {}),
+        ...(rollup ? { rollup } : {}),
       })
     }
   }
@@ -215,7 +221,11 @@ export class ManifestStore {
         columns: {
           kind: 'map',
           entries: Object.fromEntries(d.columns.map(c => [c.key, {
-            kind: 'map', entries: { width: c.width, order: c.order, ...(c.formula !== undefined ? { formula: c.formula } : {}) },
+            kind: 'map', entries: {
+              width: c.width, order: c.order,
+              ...(c.formula !== undefined ? { formula: c.formula } : {}),
+              ...(c.rollup ? { rollup: JSON.stringify(c.rollup) } : {}),
+            },
           }])),
         },
         views: {
@@ -254,6 +264,7 @@ export class ManifestStore {
       if (patch.width !== undefined) m.set('width', Math.round(patch.width))
       if (patch.order !== undefined) m.set('order', patch.order)
       if (patch.formula !== undefined) m.set('formula', patch.formula)
+      if (patch.rollup !== undefined) m.set('rollup', JSON.stringify(patch.rollup))
     })
   }
 
