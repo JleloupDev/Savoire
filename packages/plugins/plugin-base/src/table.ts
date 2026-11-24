@@ -14,6 +14,16 @@ import type { CellAnnotation } from './annotations'
 export const ROW_HEIGHT = 32
 export const PAGE_SIZE = 200
 const OVERSCAN = 8
+/** Tableau integre (un groupe) : lignes montrees d'abord, puis par « Voir plus ». */
+export const EMBEDDED_ROWS = 50
+
+export interface TableOptions {
+  /**
+   * Dans une section (tableau groupe) : pas de defilement propre, toutes les
+   * lignes montrees jusqu'a EMBEDDED_ROWS, puis « Voir plus ».
+   */
+  embedded?: boolean
+}
 
 export interface TableColumn {
   key: string
@@ -79,6 +89,9 @@ export class BaseTable {
   private readonly body: HTMLElement
   private readonly foot: HTMLElement
   private readonly adder: HTMLElement
+  private readonly more: HTMLElement
+  private readonly embedded: boolean
+  private shown = EMBEDDED_ROWS
   private query: Query | null = null
   private stopWatch: (() => void) | null = null
   private pages = new Map<number, QueryRow[]>()
@@ -91,15 +104,20 @@ export class BaseTable {
   /** Lignes deja dessinees, par contenu : une mise a jour de l'index ne recree que ce qui a change. */
   private drawn = new Map<string, { sig: string; el: HTMLElement }>()
 
-  constructor(private readonly host: TableHost) {
+  constructor(private readonly host: TableHost, opts: TableOptions = {}) {
+    this.embedded = !!opts.embedded
     this.head = h('div', { class: 'base-thead', 'data-testid': 'base-thead' })
     this.body = h('div', { class: 'base-tbody', 'data-testid': 'base-tbody' })
     this.foot = h('div', { class: 'base-tfoot', 'data-testid': 'base-tfoot' })
     // Ajouter une ligne en etant a la fin du tableau, sans remonter a la barre.
     this.adder = h('button', { class: 'base-tadd', type: 'button', 'data-testid': 'base-add-row-bottom' }, '+ Nouvelle page')
     this.adder.addEventListener('click', () => this.host.addRow?.())
-    this.el = h('div', { class: 'base-table', 'data-testid': 'base-table' }, this.head, this.body, this.adder, this.foot)
-    this.el.addEventListener('scroll', () => this.schedule())
+    this.more = h('button', { class: 'base-tadd base-tmore', type: 'button', 'data-testid': 'base-table-more' })
+    this.more.hidden = true
+    this.more.addEventListener('click', () => { this.shown += EMBEDDED_ROWS; this.renderRows(true) })
+    this.el = h('div', { class: this.embedded ? 'base-table base-table-embedded' : 'base-table', 'data-testid': 'base-table' },
+      this.head, this.body, this.more, this.adder, this.foot)
+    if (!this.embedded) this.el.addEventListener('scroll', () => this.schedule())
   }
 
   /**
@@ -257,11 +275,18 @@ export class BaseTable {
 
   private renderRows(force: boolean): void {
     if (this.editing && !force) return
+    // Integre : toutes les lignes montrees (« Voir plus » en ajoute) ; sinon la fenetre visible.
+    const count = this.embedded ? Math.min(this.total, this.shown) : this.total
     const viewport = this.el.clientHeight || 600
-    const top = this.el.scrollTop
-    const first = Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN)
-    const last = Math.min(this.total - 1, Math.ceil((top + viewport) / ROW_HEIGHT) + OVERSCAN)
-    this.body.style.height = `${this.total * ROW_HEIGHT}px`
+    const top = this.embedded ? 0 : this.el.scrollTop
+    const first = this.embedded ? 0 : Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN)
+    const last = this.embedded ? count - 1 : Math.min(this.total - 1, Math.ceil((top + viewport) / ROW_HEIGHT) + OVERSCAN)
+    if (this.embedded) {
+      this.more.hidden = this.total <= this.shown
+      this.more.textContent = `Voir plus (${this.total - this.shown} de plus)`
+      this.more.style.width = `${this.width()}px`
+    }
+    this.body.style.height = `${count * ROW_HEIGHT}px`
     this.body.style.width = `${this.width()}px`
     const cols = this.host.columns()
     const ctx = this.host.cells()

@@ -25,8 +25,11 @@ import { LightRows } from './rows'
 import { createPageRow, folderOfBase, renameNoteProperty, renamePageRow, writeNoteProperties, writeNoteProperty, type NotesVault } from './notes'
 import { renderPropertySettings } from './propertySettings'
 import { RelatedRows, asLinks, baseSourceOf, relationChoicesOf, rollupFormula, rowLink, syncBackLinks, ROLLUP_CALCS, type RollupCalc } from './relations'
-import { BaseTable, type TableColumn } from './table'
-import { BaseKanban } from './kanban'
+import { BaseTable, type TableColumn, type TableHost } from './table'
+import { BaseKanban, type KanbanHost } from './kanban'
+import { GroupedTable, type GroupSpec } from './groupedTable'
+import { Swimlanes } from './swimlanes'
+import { DATE_GROUPINGS, groupField, isDateType, type DateGrouping } from './groups'
 import { needsFormulas, withFormulas } from './formulaEngine'
 import { fetchBaseRows } from './queryBlock'
 import { TOTAL_KINDS, computeTotal, totalText, type TotalKind } from './totals'
@@ -421,7 +424,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
 
   // ── Rendu ────────────────────────────────────────────────────────────────
 
-  const table = rowsEngine ? new BaseTable({
+  const tableHost: TableHost | null = rowsEngine ? {
     engine: rowsEngine,
     readOnly: () => readOnly,
     columns: visibleColumns,
@@ -448,7 +451,23 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       void (accept ? review.accept(id) : review.reject(id)).catch(report)
     },
     ...(review?.renderDraft && baseId ? { commentCell } : {}),
-  }) : null
+  } : null
+  const table = tableHost ? new BaseTable(tableHost) : null
+
+  /** Replie ou deplie un groupe de la vue (tableau groupe, couloirs). */
+  const toggleGroup = (id: string) => {
+    if (readOnly || !store.writable) return
+    const v = view()
+    store.setView(v.id, { collapsed: v.collapsed.includes(id) ? v.collapsed.filter(x => x !== id) : [...v.collapsed, id] })
+  }
+  const groupedTable = tableHost ? new GroupedTable({ ...tableHost, toggleGroup, addPageIn: values => void addPage(values) }) : null
+  /** Ce qu'il faut pour grouper sur une cle. */
+  const groupSpec = (key: string, v: BaseViewDef): GroupSpec => {
+    const type = key === TITLE_COLUMN ? 'text' : isFormulaKey(key) ? 'text' : typeOf(key)
+    const dateGroup = isDateType(type) && v.dateGroup ? v.dateGroup : undefined
+    const field = isFormulaKey(key) ? { prop: key } : groupField(key, type, dateGroup)
+    return { key, type, field, options: types?.get(key)?.options ?? [], dateGroup, hideEmpty: v.hideEmpty, collapsed: v.collapsed }
+  }
 
   // ── Totaux des colonnes ──────────────────────────────────────────────────
   // Calcules sur toutes les lignes de la vue (BASE_QUERY_MAX_ROWS au plus),
@@ -526,7 +545,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       table?.renderFoot()
     })
   }
-  const kanban = rowsEngine ? new BaseKanban({
+  const kanbanHost: KanbanHost | null = rowsEngine ? {
     engine: rowsEngine,
     readOnly: () => readOnly,
     columns: visibleColumns,
@@ -545,7 +564,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     open: row => void api?.workspace.openFile(row.path),
     addPage: values => void addPage(values),
     valueOf: (row, key) => cellValue(row, key),
-  }) : null
+  } : null
+  const kanban = kanbanHost ? new BaseKanban(kanbanHost) : null
+  const swimlanes = kanbanHost ? new Swimlanes({ ...kanbanHost, toggleGroup }) : null
 
   // Une base visee a change : les rollups se recalculent (et ce qui filtre ou trie dessus).
   let relatedTick = 0
@@ -647,7 +668,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       }, v.type === 'kanban') : null,
       btn(`Filtrer${countFilters(v.filters) ? ` (${countFilters(v.filters)})` : ''}`, 'base-filter', b => togglePopover('filters', b), countFilters(v.filters) > 0),
       btn(`Trier${v.sorts.length ? ` (${v.sorts.length})` : ''}`, 'base-sort', b => togglePopover('sorts', b), v.sorts.length > 0),
-      v.type === 'kanban' ? btn(`Grouper : ${v.groupBy ? label(v.groupBy) : '—'}`, 'base-group', b => togglePopover('group', b)) : null,
+      btn(v.groupBy ? `Grouper : ${label(v.groupBy)}${v.type === 'kanban' && v.subGroupBy ? ` · ${label(v.subGroupBy)}` : ''}` : 'Grouper', 'base-group', b => togglePopover('group', b), !!v.groupBy && v.type !== 'kanban'),
       btn('Colonnes', 'base-columns', b => togglePopover('columns', b)),
       btn('Source', 'base-source', b => togglePopover('source', b)),
       h('span', { class: 'base-spacer' }),
@@ -680,8 +701,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     return [...keys]
   }
 
-  const propertySelect = (value: string, withTitle: boolean, onChange: (v: string) => void) => {
-    const select = h('select', { class: 'base-input' })
+  const propertySelect = (value: string, withTitle: boolean, onChange: (v: string) => void, testid?: string) => {
+    const select = h('select', { class: 'base-input', ...(testid ? { 'data-testid': testid } : {}) })
     select.append(h('option', { value: '' }, '—'), ...propertyChoices(withTitle).map(k => h('option', { value: k }, label(k))))
     select.value = value
     select.disabled = readOnly || !store.writable
@@ -713,10 +734,26 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         content.append(add)
         break
       }
-      case 'group':
-        content = h('div', { class: 'base-pop-list' }, h('div', { class: 'base-pop-row' }, 'Grouper par',
-          propertySelect(v.groupBy, false, groupBy => store.setView(v.id, { groupBy }))))
+      case 'group': {
+        const gtype = v.groupBy ? (isFormulaKey(v.groupBy) ? 'text' : typeOf(v.groupBy)) : 'text'
+        const dates = h('select', { class: 'base-input', 'data-testid': 'base-group-date' },
+          h('option', { value: '' }, 'Valeur exacte'), ...DATE_GROUPINGS.map(d => h('option', { value: d.value }, d.label)))
+        dates.value = v.dateGroup
+        dates.disabled = !editable
+        dates.addEventListener('change', () => store.setView(v.id, { dateGroup: dates.value as DateGrouping | '' }))
+        const hide = h('input', { type: 'checkbox', 'data-testid': 'base-group-hide-empty' })
+        hide.checked = v.hideEmpty
+        hide.disabled = !editable
+        hide.addEventListener('change', () => store.setView(v.id, { hideEmpty: hide.checked }))
+        content = h('div', { class: 'base-pop-list', 'data-testid': 'base-group-settings' },
+          h('div', { class: 'base-pop-row' }, v.type === 'kanban' ? 'Colonnes' : 'Grouper par',
+            propertySelect(v.groupBy, false, groupBy => store.setView(v.id, { groupBy, collapsed: [] }), 'base-group-by')),
+          isDateType(gtype) ? h('div', { class: 'base-pop-row' }, 'Par', dates) : null,
+          v.type === 'kanban' ? h('div', { class: 'base-pop-row' }, 'Sous-groupes',
+            propertySelect(v.subGroupBy, false, subGroupBy => store.setView(v.id, { subGroupBy, collapsed: [] }), 'base-subgroup-by')) : null,
+          h('label', { class: 'base-pop-row' }, hide, 'Masquer les groupes vides'))
         break
+      }
       case 'columns': {
         content = h('div', { class: 'base-pop-list', 'data-testid': 'base-columns-list' })
         const cols = allColumns().filter(c => c.key !== TITLE_COLUMN)
@@ -1067,7 +1104,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       item('Trier ↑', 'base-col-sort-asc', () => store.setView(v.id, { sorts: [{ key, dir: 'asc' }] }), editable),
       item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] }), editable),
       key !== TITLE_COLUMN ? item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] }), editable) : null,
-      key !== TITLE_COLUMN && v.type === 'table' ? item('Grouper par (kanban)', 'base-col-group', () => store.setView(v.id, { type: 'kanban', groupBy: key }), editable) : null,
+      key !== TITLE_COLUMN && v.type === 'table' ? item(v.groupBy === key ? 'Ne plus grouper' : 'Grouper par cette propriété', 'base-col-group', () => store.setView(v.id, { groupBy: v.groupBy === key ? '' : key, collapsed: [] }), editable) : null,
       key !== TITLE_COLUMN && types ? item(`⚙ Propriété : ${PROPERTY_TYPE_INFO[typeOf(key)]?.label ?? typeOf(key)}…`, 'base-col-settings', () => openPropertySettings(key, anchor), !readOnly) : null,
       key !== TITLE_COLUMN ? item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key), editable) : null,
     )
@@ -1096,10 +1133,31 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (v.type === 'kanban') {
       syncTotals(q, v)
       table.setQuery({ ...q, limit: 1 }, force)
-      kanban.setQuery(q, v.groupBy, force)
-      kanban.refresh()
-      if (body.firstChild !== kanban.el) body.replaceChildren(kanban.el)
+      groupedTable?.destroy()
+      if (v.subGroupBy && v.subGroupBy !== v.groupBy && v.groupBy) {
+        kanban.destroy()
+        swimlanes!.setQuery(q, v.groupBy, groupSpec(v.subGroupBy, v), force)
+        swimlanes!.refresh()
+        if (body.firstChild !== swimlanes!.el) body.replaceChildren(swimlanes!.el)
+      } else {
+        swimlanes?.destroy()
+        kanban.setQuery(q, v.groupBy, force)
+        kanban.refresh()
+        if (body.firstChild !== kanban.el) body.replaceChildren(kanban.el)
+      }
+    } else if (v.groupBy && groupedTable) {
+      kanban.destroy()
+      swimlanes?.destroy()
+      // Le tableau principal ne sert qu'au compte des lignes.
+      table.setQuery({ ...q, limit: 1 }, force)
+      syncTotals(q, v)
+      groupedTable.setQuery(q, groupSpec(v.groupBy, v), force)
+      groupedTable.refresh()
+      if (body.firstChild !== groupedTable.el) body.replaceChildren(groupedTable.el)
     } else {
+      kanban.destroy()
+      swimlanes?.destroy()
+      groupedTable?.destroy()
       table.setQuery(q, force)
       syncTotals(q, v)
       table.refresh()
@@ -1164,6 +1222,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       stopTotals()
       table?.destroy()
       kanban?.destroy()
+      groupedTable?.destroy()
+      swimlanes?.destroy()
       related?.close()
       lightRows.close()
       if (activeBaseView === handle) activeBaseView = null

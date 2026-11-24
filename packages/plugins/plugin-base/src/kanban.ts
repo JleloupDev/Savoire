@@ -73,6 +73,7 @@ export class BaseKanban {
   }
 
   destroy(): void {
+    this.query = null
     this.stopGroups?.()
     this.stopGroups = null
     for (const lane of this.lanes.values()) lane.stop()

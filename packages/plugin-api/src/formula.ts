@@ -519,6 +519,21 @@ const FUNCTIONS: Record<string, FnDef> = {
   month: eager(1, 1, ([d]) => asDate(d).getUTCMonth() + 1),
   day: eager(1, 1, ([d]) => asDate(d).getUTCDate()),
   weekday: eager(1, 1, ([d]) => asDate(d).getUTCDay() || 7),
+  // Numero de semaine ISO 8601 (la semaine du jeudi).
+  week: eager(1, 1, ([d]) => {
+    const x = asDate(d)
+    const t = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate()))
+    t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7))
+    const jan1 = Date.UTC(t.getUTCFullYear(), 0, 1)
+    return Math.ceil(((t.getTime() - jan1) / 86_400_000 + 1) / 7)
+  }),
+  // Annee de la semaine ISO (le 1er janvier peut etre dans la semaine 53 de l'annee d'avant).
+  weekyear: eager(1, 1, ([d]) => {
+    const x = asDate(d)
+    const t = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate()))
+    t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7))
+    return t.getUTCFullYear()
+  }),
 }
 
 /** Noms des fonctions disponibles (aide de l'editeur). */

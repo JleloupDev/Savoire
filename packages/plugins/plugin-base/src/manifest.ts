@@ -25,6 +25,7 @@
 import { isTotalKind, type TotalKind } from './totals'
 import { readFilters, type BaseFilterItem, type FilterMode } from './filters'
 import { readRollup, type RollupDef } from './rollup'
+import type { DateGrouping } from './groups'
 import { BASE_LOT_COUNT } from '@savoire/plugin-api'
 import type { ISharedTree, ITreeMap, TreeValue } from '@savoire/plugin-api'
 
@@ -66,8 +67,16 @@ export interface BaseViewDef {
   filters: BaseFilterItem[]
   filterMode: FilterMode
   sorts: BaseSort[]
-  /** Propriete de regroupement (kanban). '' : aucune. */
+  /** Propriete de regroupement (colonnes du kanban, sections du tableau). '' : aucune. */
   groupBy: string
+  /** Une date se groupe par jour, semaine, mois ou annee. '' : par valeur. */
+  dateGroup: DateGrouping | ''
+  /** Sous-groupes du kanban (couloirs). '' : aucun. */
+  subGroupBy: string
+  /** Groupes sans ligne masques. */
+  hideEmpty: boolean
+  /** Groupes replies (ids, groups.ts). */
+  collapsed: string[]
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
   /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
@@ -105,7 +114,10 @@ function str(v: TreeValue | undefined, fallback: string): string {
 }
 
 export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 'table', order = 0): BaseViewDef {
-  return { id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', hidden: [], totals: {} }
+  return {
+    id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', dateGroup: '', subGroupBy: '', hideEmpty: false,
+    collapsed: [], hidden: [], totals: {},
+  }
 }
 
 /** Manifeste par defaut d'une base neuve : le dossier qui porte son nom. */
@@ -159,6 +171,10 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         filterMode: v.get('filterMode') === 'or' ? 'or' : 'and',
         sorts: json(v.get('sorts'), []),
         groupBy: str(v.get('groupBy'), ''),
+        dateGroup: (['day', 'week', 'month', 'year'] as const).find(d => d === v.get('dateGroup')) ?? '',
+        subGroupBy: str(v.get('subGroupBy'), ''),
+        hideEmpty: v.get('hideEmpty') === true,
+        collapsed: json<unknown[]>(v.get('collapsed'), []).filter((x): x is string => typeof x === 'string'),
         hidden: json(v.get('hidden'), []),
         totals: readTotals(json(v.get('totals'), {})),
       })
@@ -299,7 +315,7 @@ export class ManifestStore {
   }
 }
 
-function viewEntries(v: BaseViewDef): Record<string, string | number> {
+function viewEntries(v: BaseViewDef): Record<string, string | number | boolean> {
   return {
     name: v.name,
     type: v.type,
@@ -308,6 +324,10 @@ function viewEntries(v: BaseViewDef): Record<string, string | number> {
     filterMode: v.filterMode,
     sorts: JSON.stringify(v.sorts),
     groupBy: v.groupBy,
+    dateGroup: v.dateGroup,
+    subGroupBy: v.subGroupBy,
+    hideEmpty: v.hideEmpty,
+    collapsed: JSON.stringify(v.collapsed),
     hidden: JSON.stringify(v.hidden),
     totals: JSON.stringify(v.totals),
   }
