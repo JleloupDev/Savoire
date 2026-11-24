@@ -37,6 +37,7 @@ export type { CellProposal } from './proposals'
 export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere } from './formulaEngine'
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
 export { orderGroups, groupLabel, groupField, DATE_GROUPINGS } from './groups'
+export { shiftDate, monthGrid } from './views/calendar'
 export type { DateGrouping } from './groups'
 export type { TotalKind } from './totals'
 

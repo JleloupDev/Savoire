@@ -56,7 +56,21 @@ export interface BaseColumn {
   rollup?: RollupDef
 }
 
-export type BaseViewType = 'table' | 'kanban'
+export type BaseViewType = 'table' | 'kanban' | 'list' | 'gallery' | 'calendar' | 'timeline' | 'chart' | 'form'
+
+export const VIEW_TYPES: { type: BaseViewType; label: string; glyph: string }[] = [
+  { type: 'table', label: 'Tableau', glyph: '▦' },
+  { type: 'kanban', label: 'Kanban', glyph: '▤' },
+  { type: 'list', label: 'Liste', glyph: '☰' },
+  { type: 'gallery', label: 'Galerie', glyph: '▩' },
+  { type: 'calendar', label: 'Calendrier', glyph: '▣' },
+  { type: 'timeline', label: 'Frise', glyph: '▬' },
+  { type: 'chart', label: 'Graphique', glyph: '▮' },
+  { type: 'form', label: 'Formulaire', glyph: '✎' },
+]
+
+export type ChartKind = 'bar' | 'hbar' | 'line' | 'donut'
+export type TimelineScale = 'day' | 'week' | 'month'
 
 export interface BaseViewDef {
   id: string
@@ -77,6 +91,21 @@ export interface BaseViewDef {
   hideEmpty: boolean
   /** Groupes replies (ids, groups.ts). */
   collapsed: string[]
+  /** Calendrier, frise : la date des lignes ; frise : la date de fin (sinon la fin de la periode). */
+  dateBy: string
+  endBy: string
+  /** Galerie, kanban : la propriete qui porte l'image de couverture. '' : aucune. */
+  cover: string
+  /** Galerie : taille des cartes. */
+  cardSize: 'small' | 'medium' | 'large'
+  /** Frise : echelle. */
+  scale: TimelineScale
+  /** Graphique : forme, valeur mesuree ('' : nombre de lignes) et son calcul. groupBy : l'axe. */
+  chartKind: ChartKind
+  chartY: string
+  chartCalc: 'sum' | 'mean' | 'min' | 'max'
+  /** Frise : relation « bloque » (fleches vers les lignes liees). '' : aucune. */
+  dependsOn: string
   /** Colonnes masquees dans cette vue. */
   hidden: string[]
   /** Total en bas de chaque colonne (tableau) : cle -> calcul. */
@@ -116,7 +145,8 @@ function str(v: TreeValue | undefined, fallback: string): string {
 export function defaultView(id = 'v1', name = 'Tableau', type: BaseViewType = 'table', order = 0): BaseViewDef {
   return {
     id, name, type, order, filters: [], filterMode: 'and', sorts: [], groupBy: '', dateGroup: '', subGroupBy: '', hideEmpty: false,
-    collapsed: [], hidden: [], totals: {},
+    collapsed: [], hidden: [], totals: {}, dateBy: '', endBy: '', cover: '', cardSize: 'medium', scale: 'day',
+    chartKind: 'bar', chartY: '', chartCalc: 'sum', dependsOn: '',
   }
 }
 
@@ -161,7 +191,7 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
     for (const id of viewsMap.keys()) {
       const v = viewsMap.get(id)
       if (!isMap(v)) continue
-      const type = v.get('type') === 'kanban' ? 'kanban' : 'table'
+      const type = VIEW_TYPES.find(t => t.type === v.get('type'))?.type ?? 'table'
       views.push({
         id,
         name: str(v.get('name'), 'Vue'),
@@ -175,6 +205,15 @@ export function readManifest(tree: ISharedTree | undefined, folder: string): Bas
         subGroupBy: str(v.get('subGroupBy'), ''),
         hideEmpty: v.get('hideEmpty') === true,
         collapsed: json<unknown[]>(v.get('collapsed'), []).filter((x): x is string => typeof x === 'string'),
+        dateBy: str(v.get('dateBy'), ''),
+        endBy: str(v.get('endBy'), ''),
+        cover: str(v.get('cover'), ''),
+        cardSize: (['small', 'medium', 'large'] as const).find(x => x === v.get('cardSize')) ?? 'medium',
+        scale: (['day', 'week', 'month'] as const).find(x => x === v.get('scale')) ?? 'day',
+        chartKind: (['bar', 'hbar', 'line', 'donut'] as const).find(x => x === v.get('chartKind')) ?? 'bar',
+        chartY: str(v.get('chartY'), ''),
+        chartCalc: (['sum', 'mean', 'min', 'max'] as const).find(x => x === v.get('chartCalc')) ?? 'sum',
+        dependsOn: str(v.get('dependsOn'), ''),
         hidden: json(v.get('hidden'), []),
         totals: readTotals(json(v.get('totals'), {})),
       })
@@ -271,6 +310,7 @@ export class ManifestStore {
   setColumn(key: string, patch: Partial<Omit<BaseColumn, 'key'>>): void {
     this.write(base => {
       const cols = this.child(base, 'columns')
+      this.materialize(cols)
       let c = cols.get(key)
       if (!isMap(c)) {
         const max = Math.max(0, ...cols.keys().map(k => { const x = cols.get(k); return isMap(x) ? num(x.get('order'), 0) : 0 }))
@@ -285,7 +325,23 @@ export class ManifestStore {
   }
 
   removeColumn(key: string): void {
-    this.write(base => this.child(base, 'columns').delete(key))
+    this.write(base => {
+      const cols = this.child(base, 'columns')
+      this.materialize(cols)
+      cols.delete(key)
+    })
+  }
+
+  /**
+   * Aucune colonne de propriete enregistree : la vue montrait celles des
+   * lignes (defaults) ; on les ecrit avant de modifier les colonnes.
+   */
+  private materialize(cols: ITreeMap): void {
+    if (cols.keys().some(k => k !== TITLE_COLUMN && !isFormulaKey(k))) return
+    for (const c of this.defaults().columns) {
+      if (c.key === TITLE_COLUMN || isFormulaKey(c.key) || isMap(cols.get(c.key))) continue
+      cols.set(c.key, { kind: 'map', entries: { width: c.width, order: c.order } })
+    }
   }
 
   setView(id: string, patch: Partial<Omit<BaseViewDef, 'id'>>): void {
@@ -328,6 +384,15 @@ function viewEntries(v: BaseViewDef): Record<string, string | number | boolean> 
     subGroupBy: v.subGroupBy,
     hideEmpty: v.hideEmpty,
     collapsed: JSON.stringify(v.collapsed),
+    dateBy: v.dateBy,
+    endBy: v.endBy,
+    cover: v.cover,
+    cardSize: v.cardSize,
+    scale: v.scale,
+    chartKind: v.chartKind,
+    chartY: v.chartY,
+    chartCalc: v.chartCalc,
+    dependsOn: v.dependsOn,
     hidden: JSON.stringify(v.hidden),
     totals: JSON.stringify(v.totals),
   }

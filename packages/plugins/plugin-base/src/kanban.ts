@@ -9,6 +9,7 @@ import type { IQueryEngine, PropertyValue, Query, QueryFilter, QueryRow } from '
 import { isFormulaKey } from './manifest'
 import { h, renderValue, valueText, type CellContext } from './cells'
 import type { TableColumn } from './table'
+import { fillCover, type LayoutHost } from './views/host'
 
 const CARDS_PER_LANE = 100
 
@@ -25,6 +26,9 @@ export interface KanbanHost {
   addPage(values: Record<string, PropertyValue>): void
   /** Valeur d'une colonne pour une ligne (une formule se calcule) ; defaut : row.values. */
   valueOf?(row: QueryRow, key: string): PropertyValue | undefined
+  /** Couverture des cartes : la valeur de la propriete de couverture (vue). */
+  coverOf?(row: QueryRow): PropertyValue | undefined
+  imageUrl?(ref: string): Promise<string | null>
 }
 
 interface Lane {
@@ -149,6 +153,11 @@ export class BaseKanban {
       const card = h('div', { class: 'base-card', 'data-testid': 'base-card', 'data-id': row.id, draggable: this.host.readOnly() || isFormulaKey(this.group) ? 'false' : 'true' })
       const title = h(row.path ? 'a' : 'span', { class: 'base-card-title', href: row.path ? '#' : undefined }, row.title || 'Sans titre')
       if (row.path) title.addEventListener('click', e => { e.preventDefault(); this.host.open(row) })
+      if (this.host.coverOf) {
+        const cover = h('div', { class: 'base-card-cover' })
+        fillCover({ imageUrl: this.host.imageUrl } as LayoutHost, cover, this.host.coverOf(row))
+        card.append(cover)
+      }
       card.append(title)
       for (const f of fields) {
         const v = row.values[f.key]

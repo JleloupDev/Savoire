@@ -16,8 +16,8 @@ import type {
 } from '@savoire/plugin-api'
 import { h, valueText, type CellContext } from './cells'
 import {
-  DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, defaultView, isFormulaKey, readManifest,
-  type BaseManifest, type BaseSort, type BaseViewDef,
+  DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, VIEW_TYPES, defaultView, isFormulaKey, readManifest,
+  type BaseManifest, type BaseSort, type BaseViewDef, type BaseViewType, type ChartKind, type TimelineScale,
 } from './manifest'
 import { countFilters, isoDay, mapFilterKeys, toWhere, type FilterContext } from './filters'
 import { renderFilterEditor, type FilterEditorHost } from './filterEditor'
@@ -30,6 +30,12 @@ import { BaseKanban, type KanbanHost } from './kanban'
 import { GroupedTable, type GroupSpec } from './groupedTable'
 import { Swimlanes } from './swimlanes'
 import { DATE_GROUPINGS, groupField, isDateType, type DateGrouping } from './groups'
+import { BaseList } from './views/list'
+import { BaseCalendar } from './views/calendar'
+import { BaseTimeline } from './views/timeline'
+import { BaseChart } from './views/chart'
+import { BaseForm } from './views/form'
+import type { LayoutHost } from './views/host'
 import { needsFormulas, withFormulas } from './formulaEngine'
 import { fetchBaseRows } from './queryBlock'
 import { TOTAL_KINDS, computeTotal, totalText, type TotalKind } from './totals'
@@ -41,7 +47,7 @@ import { CellAnnotations, type CellCommentTarget } from './annotations'
 export let activeBaseView: BaseViewHandle | null = null
 
 export interface BaseViewHandle {
-  addPage(values?: Record<string, PropertyValue>): Promise<void>
+  addPage(values?: Record<string, PropertyValue>, title?: string): Promise<void>
   addLightRow(values?: Record<string, PropertyValue>): Promise<void>
 }
 
@@ -88,9 +94,19 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
   let container: HTMLElement | null = null
   const unsubs: (() => void)[] = []
 
-  const columnsOf = (m: BaseManifest) => m.stored
-    ? m.columns
-    : [...seen.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8).map(([key], i) => ({ key, width: DEFAULT_WIDTH, order: i + 1 }))
+  const discovered = () => [...seen.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8).map(([key], i) => ({ key, width: DEFAULT_WIDTH, order: i + 1 }))
+  /**
+   * Colonnes de la base. Un manifeste sans aucune colonne de propriete (base
+   * creee sur un dossier encore vide) montre celles des lignes, comme un
+   * manifeste neuf ; elles s'ecrivent a la premiere modification des colonnes.
+   */
+  const columnsOf = (m: BaseManifest) => {
+    if (!m.stored) return discovered()
+    if (m.columns.some(c => c.key !== TITLE_COLUMN && !isFormulaKey(c.key))) return m.columns
+    const extra = discovered()
+    const maxOrder = Math.max(0, ...extra.map(c => c.order))
+    return [...extra, ...m.columns.map(c => c.key === TITLE_COLUMN ? c : { ...c, order: c.order + maxOrder })]
+  }
 
   const store = new ManifestStore(ctx.tree, () => ({ ...manifest, columns: columnsOf(manifest), views: manifest.views }))
   const lightRows = new LightRows(ctx.shared, store, () => manifest.lotCount)
@@ -231,6 +247,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       return `[[${docVault.linkTarget?.(p) ?? p}]]`
     }
     : undefined
+  /** Adresse d'une image (couvertures) : pieces jointes du vault, ou du web telles quelles. */
+  const imageUrl = async (ref: string): Promise<string | null> => {
+    if (/^https?:\/\//i.test(ref)) return ref
+    if (!docVault?.resolveAttachmentUrl) return null
+    try { return await docVault.resolveAttachmentUrl(ref) } catch { return null }
+  }
   const cells = (): CellContext => ({
     members,
     knownValues,
@@ -346,11 +368,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     void job.catch(report)
   }
 
-  const addPage = async (values: Record<string, PropertyValue> = {}) => {
+  const addPage = async (values: Record<string, PropertyValue> = {}, title = 'Sans titre') => {
     if (readOnly || !vault) return
     try {
       const own = Object.fromEntries(Object.entries(values).filter(([k]) => !isFormulaKey(k)))
-      await createPageRow(vault, manifest.source.folder, 'Sans titre', { ...(await creationValues()), ...own })
+      await createPageRow(vault, manifest.source.folder, title, { ...(await creationValues()), ...own })
     } catch (err) { report(err) }
   }
 
@@ -564,8 +586,29 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     open: row => void api?.workspace.openFile(row.path),
     addPage: values => void addPage(values),
     valueOf: (row, key) => cellValue(row, key),
+    coverOf: row => { const c = view().cover; return c ? cellValue(row, c) : undefined },
+    imageUrl,
   } : null
   const kanban = kanbanHost ? new BaseKanban(kanbanHost) : null
+
+  // ── Autres dispositions : liste, galerie, calendrier, frise, graphique, formulaire ──
+  const layoutHost: LayoutHost | null = rowsEngine ? {
+    engine: rowsEngine,
+    readOnly: () => readOnly,
+    columns: visibleColumns,
+    cells,
+    valueOf: (row, key) => cellValue(row, key),
+    open: row => void api?.workspace.openFile(row.path),
+    edit,
+    addPage: (values, title) => addPage(values, title),
+    imageUrl,
+  } : null
+  const list = layoutHost ? new BaseList(layoutHost) : null
+  const calendar = layoutHost ? new BaseCalendar(layoutHost) : null
+  const timeline = layoutHost ? new BaseTimeline(layoutHost) : null
+  const chart = layoutHost ? new BaseChart(layoutHost) : null
+  // Le titre du formulaire : le nom de la base.
+  const form = layoutHost ? new BaseForm(layoutHost, () => defaultFolder.slice(defaultFolder.lastIndexOf('/') + 1)) : null
   const swimlanes = kanbanHost ? new Swimlanes({ ...kanbanHost, toggleGroup }) : null
 
   // Une base visee a change : les rollups se recalculent (et ce qui filtre ou trie dessus).
@@ -587,7 +630,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     }
     const count = container?.querySelector('[data-testid="base-count"]')
     if (count) count.textContent = `${r.total} ligne${r.total > 1 ? 's' : ''}`
-    if (added && !manifest.stored) queueMicrotask(() => table?.refresh())
+    if (added && !manifest.columns.some(c => c.key !== TITLE_COLUMN && !isFormulaKey(c.key))) queueMicrotask(() => update())
   }
 
   let body: HTMLElement
@@ -623,10 +666,77 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     relationChoices: key => cells().relationChoices?.(key, '') ?? Promise.resolve([]),
   })
 
+  /** Change la disposition d'une vue, avec des reglages par defaut utiles. */
+  const setLayout = (v: BaseViewDef, type: BaseViewType) => {
+    if (type === v.type) return
+    const cols = allColumns().filter(c => c.key !== TITLE_COLUMN)
+    const firstOf = (...kinds: PropertyType[]) => kinds.map(k => cols.find(c => !c.formula && c.type === k)?.key).find(Boolean) ?? ''
+    const patch: Partial<BaseViewDef> = { type }
+    if (type === 'table') patch.groupBy = ''
+    // Kanban, graphique : la premiere propriete de choix, sinon le premier texte.
+    if ((type === 'kanban' || type === 'chart') && !v.groupBy) patch.groupBy = firstOf('status', 'select', 'person', 'checkbox', 'text')
+    if ((type === 'calendar' || type === 'timeline') && !v.dateBy) patch.dateBy = firstOf('date', 'created', 'modified')
+    if ((type === 'gallery' || type === 'kanban') && !v.cover) patch.cover = firstOf('files')
+    if (type !== 'kanban') patch.subGroupBy = ''
+    store.setView(v.id, patch)
+  }
+
+  /** Reglages propres a la disposition (date du calendrier, couverture, axes du graphique...). */
+  const layoutSettings = (v: BaseViewDef): HTMLElement => {
+    const editable = !readOnly && store.writable
+    const keys = propertyChoices(false).filter(k => !isFormulaKey(k) || manifest.columns.some(c => c.key === k))
+    const pick = (label: string, testid: string, value: string, filter: (k: string) => boolean, onChange: (v: string) => void, none = '—') => {
+      const sel = h('select', { class: 'base-input', 'data-testid': testid }, h('option', { value: '' }, none), ...keys.filter(filter).map(k => h('option', { value: k }, label === '' ? k : labelOf(k))))
+      sel.value = value
+      sel.disabled = !editable
+      sel.addEventListener('change', () => onChange(sel.value))
+      return h('div', { class: 'base-pop-row' }, h('span', { class: 'base-setting-label' }, label), sel)
+    }
+    const choose = <T extends string>(label: string, testid: string, value: T, options: [T, string][], onChange: (v: T) => void) => {
+      const sel = h('select', { class: 'base-input', 'data-testid': testid }, ...options.map(([o, l]) => h('option', { value: o }, l)))
+      sel.value = value
+      sel.disabled = !editable
+      sel.addEventListener('change', () => onChange(sel.value as T))
+      return h('div', { class: 'base-pop-row' }, h('span', { class: 'base-setting-label' }, label), sel)
+    }
+    const labelOf = (k: string) => label(k)
+    const isDate = (k: string) => isDateType(typeOf(k))
+    const set = (patch: Partial<BaseViewDef>) => store.setView(v.id, patch)
+    const rows: (HTMLElement | null)[] = [h('div', { class: 'base-pop-sub' }, VIEW_TYPES.find(t => t.type === v.type)?.label ?? '')]
+    switch (v.type) {
+      case 'gallery':
+        rows.push(pick('Couverture', 'base-layout-cover', v.cover, k => !isFormulaKey(k), cover => set({ cover }), 'Aucune'))
+        rows.push(choose('Taille des cartes', 'base-layout-size', v.cardSize, [['small', 'Petites'], ['medium', 'Moyennes'], ['large', 'Grandes']], cardSize => set({ cardSize })))
+        break
+      case 'kanban':
+        rows.push(pick('Couverture', 'base-layout-cover', v.cover, k => !isFormulaKey(k), cover => set({ cover }), 'Aucune'))
+        break
+      case 'calendar':
+        rows.push(pick('Date', 'base-layout-date', v.dateBy, isDate, dateBy => set({ dateBy })))
+        break
+      case 'timeline':
+        rows.push(pick('Début', 'base-layout-date', v.dateBy, isDate, dateBy => set({ dateBy })))
+        rows.push(pick('Fin', 'base-layout-end', v.endBy, isDate, endBy => set({ endBy }), 'Fin de la période'))
+        rows.push(choose('Échelle', 'base-layout-scale', v.scale, [['day', 'Jours'], ['week', 'Semaines'], ['month', 'Mois']], scale => set({ scale: scale as TimelineScale })))
+        rows.push(pick('Dépendances', 'base-layout-deps', v.dependsOn, k => typeOf(k) === 'relation', dependsOn => set({ dependsOn }), 'Aucune'))
+        break
+      case 'chart':
+        rows.push(choose('Forme', 'base-layout-chart', v.chartKind, [['bar', 'Barres'], ['hbar', 'Barres horizontales'], ['line', 'Courbe'], ['donut', 'Anneau']], chartKind => set({ chartKind: chartKind as ChartKind })))
+        rows.push(pick('Axe', 'base-layout-x', v.groupBy, k => !isFormulaKey(k), groupBy => set({ groupBy })))
+        if (v.groupBy && isDate(v.groupBy)) rows.push(choose('Par', 'base-layout-dategroup', v.dateGroup, [['', 'Jour exact'], ...DATE_GROUPINGS.map(d => [d.value, d.label] as [DateGrouping, string])], dateGroup => set({ dateGroup: dateGroup as DateGrouping | '' })))
+        rows.push(pick('Mesure', 'base-layout-y', v.chartY, k => isFormulaKey(k) || typeOf(k) === 'number', chartY => set({ chartY }), 'Nombre de lignes'))
+        if (v.chartY) rows.push(choose('Calcul', 'base-layout-calc', v.chartCalc, [['sum', 'Somme'], ['mean', 'Moyenne'], ['min', 'Minimum'], ['max', 'Maximum']], chartCalc => set({ chartCalc })))
+        break
+      default:
+        rows.push(h('div', { class: 'base-hint' }, 'Pas de réglage propre à cette disposition.'))
+    }
+    return h('div', { class: 'base-pop-list', 'data-testid': 'base-layout-settings' }, ...rows)
+  }
+
   const renderToolbar = () => {
     const tabs = h('div', { class: 'base-tabs' }, ...manifest.views.map(v => {
       const tab = h('button', { class: v.id === activeId ? 'base-tab base-tab-active' : 'base-tab', type: 'button', 'data-testid': 'base-tab', 'data-id': v.id },
-        `${v.type === 'kanban' ? '▤' : '▦'} ${v.name}`)
+        `${VIEW_TYPES.find(t => t.type === v.type)?.glyph ?? '▦'} ${v.name}`)
       tab.addEventListener('click', () => { activeId = v.id; update() })
       tab.addEventListener('dblclick', () => {
         if (readOnly || !store.writable) return
@@ -659,16 +769,15 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     }
     const editable = !readOnly && store.writable
     const actions = h('div', { class: 'base-actions' },
-      editable ? btn('▦ Tableau', 'base-type-table', () => store.setView(v.id, { type: 'table' }), v.type === 'table') : null,
-      editable ? btn('▤ Kanban', 'base-type-kanban', () => {
-        // Par defaut : la premiere propriete de choix, sinon le premier texte.
-        const cols = allColumns().filter(c => c.key !== TITLE_COLUMN)
-        const group = v.groupBy || cols.find(c => c.type === 'status')?.key || cols.find(c => c.type === 'select')?.key || cols.find(c => c.type === 'text')?.key || ''
-        store.setView(v.id, { type: 'kanban', groupBy: group })
-      }, v.type === 'kanban') : null,
+      editable ? h('span', { class: 'base-layouts' }, ...VIEW_TYPES.map(t => {
+        const b = btn(t.type === v.type ? `${t.glyph} ${t.label}` : t.glyph, `base-type-${t.type}`, () => setLayout(v, t.type), t.type === v.type)
+        b.title = t.label
+        return b
+      })) : null,
+      ['kanban', 'gallery', 'calendar', 'timeline', 'chart'].includes(v.type) ? btn('⚙ Vue', 'base-view-settings', b => togglePopover('layout', b)) : null,
       btn(`Filtrer${countFilters(v.filters) ? ` (${countFilters(v.filters)})` : ''}`, 'base-filter', b => togglePopover('filters', b), countFilters(v.filters) > 0),
       btn(`Trier${v.sorts.length ? ` (${v.sorts.length})` : ''}`, 'base-sort', b => togglePopover('sorts', b), v.sorts.length > 0),
-      btn(v.groupBy ? `Grouper : ${label(v.groupBy)}${v.type === 'kanban' && v.subGroupBy ? ` · ${label(v.subGroupBy)}` : ''}` : 'Grouper', 'base-group', b => togglePopover('group', b), !!v.groupBy && v.type !== 'kanban'),
+      v.type === 'table' || v.type === 'kanban' ? btn(v.groupBy ? `Grouper : ${label(v.groupBy)}${v.type === 'kanban' && v.subGroupBy ? ` · ${label(v.subGroupBy)}` : ''}` : 'Grouper', 'base-group', b => togglePopover('group', b), !!v.groupBy && v.type !== 'kanban') : null,
       btn('Colonnes', 'base-columns', b => togglePopover('columns', b)),
       btn('Source', 'base-source', b => togglePopover('source', b)),
       h('span', { class: 'base-spacer' }),
@@ -781,6 +890,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         })
         break
       }
+      case 'layout':
+        content = layoutSettings(v)
+        break
       case 'source': {
         const folder = h('input', { class: 'base-input', 'data-testid': 'base-source-folder', placeholder: 'tout le vault' })
         folder.value = manifest.source.folder
@@ -1130,38 +1242,88 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const force = (sig !== lastFormulaSig || relatedDirty) && needsFormulas(q)
     lastFormulaSig = sig
     relatedDirty = false
-    if (v.type === 'kanban') {
-      syncTotals(q, v)
-      table.setQuery({ ...q, limit: 1 }, force)
-      groupedTable?.destroy()
-      if (v.subGroupBy && v.subGroupBy !== v.groupBy && v.groupBy) {
-        kanban.destroy()
-        swimlanes!.setQuery(q, v.groupBy, groupSpec(v.subGroupBy, v), force)
-        swimlanes!.refresh()
-        if (body.firstChild !== swimlanes!.el) body.replaceChildren(swimlanes!.el)
-      } else {
-        swimlanes?.destroy()
-        kanban.setQuery(q, v.groupBy, force)
-        kanban.refresh()
-        if (body.firstChild !== kanban.el) body.replaceChildren(kanban.el)
+    // Une seule disposition vit a la fois : les autres rendent leurs abonnements.
+    const keep = (active: string) => {
+      if (active !== 'kanban') kanban.destroy()
+      if (active !== 'swimlanes') swimlanes?.destroy()
+      if (active !== 'grouped') groupedTable?.destroy()
+      if (active !== 'list') list?.destroy()
+      if (active !== 'calendar') calendar?.destroy()
+      if (active !== 'timeline') timeline?.destroy()
+      if (active !== 'chart') chart?.destroy()
+      if (active !== 'form') form?.destroy()
+    }
+    const show = (el: HTMLElement) => { if (body.firstChild !== el) body.replaceChildren(el) }
+    // Hors tableau, le tableau principal ne sert qu'au compte des lignes.
+    if (v.type !== 'table') table.setQuery({ ...q, limit: 1 }, force)
+    switch (v.type) {
+      case 'kanban':
+        syncTotals(q, v)
+        if (v.subGroupBy && v.subGroupBy !== v.groupBy && v.groupBy) {
+          keep('swimlanes')
+          swimlanes!.setQuery(q, v.groupBy, groupSpec(v.subGroupBy, v), force)
+          swimlanes!.refresh()
+          show(swimlanes!.el)
+        } else {
+          keep('kanban')
+          kanban.setQuery(q, v.groupBy, force)
+          kanban.refresh()
+          show(kanban.el)
+        }
+        return
+      case 'list':
+      case 'gallery':
+        keep('list')
+        syncTotals(q, v)
+        list!.setQuery(q, { kind: v.type, cover: v.cover || undefined, size: v.cardSize }, force)
+        list!.refresh()
+        show(list!.el)
+        return
+      case 'calendar':
+        keep('calendar')
+        syncTotals(q, v)
+        calendar!.setQuery(q, v.dateBy, force)
+        calendar!.refresh()
+        show(calendar!.el)
+        return
+      case 'timeline':
+        keep('timeline')
+        syncTotals(q, v)
+        timeline!.setQuery(q, { dateBy: v.dateBy, endBy: v.endBy, scale: v.scale, dependsOn: v.dependsOn || undefined }, force)
+        timeline!.refresh()
+        show(timeline!.el)
+        return
+      case 'chart': {
+        keep('chart')
+        syncTotals(q, v)
+        const g = v.groupBy ? groupSpec(v.groupBy, v) : null
+        chart!.setQuery(q, {
+          key: v.groupBy, type: g?.type ?? 'text', field: g?.field ?? { prop: '' }, options: g?.options ?? [], dateGroup: g?.dateGroup,
+          kind: v.chartKind, y: v.chartY, calc: v.chartCalc,
+        }, force)
+        show(chart!.el)
+        return
       }
-    } else if (v.groupBy && groupedTable) {
-      kanban.destroy()
-      swimlanes?.destroy()
-      // Le tableau principal ne sert qu'au compte des lignes.
+      case 'form':
+        keep('form')
+        syncTotals(q, v)
+        form!.refresh()
+        show(form!.el)
+        return
+    }
+    if (v.groupBy && groupedTable) {
+      keep('grouped')
       table.setQuery({ ...q, limit: 1 }, force)
       syncTotals(q, v)
       groupedTable.setQuery(q, groupSpec(v.groupBy, v), force)
       groupedTable.refresh()
-      if (body.firstChild !== groupedTable.el) body.replaceChildren(groupedTable.el)
+      show(groupedTable.el)
     } else {
-      kanban.destroy()
-      swimlanes?.destroy()
-      groupedTable?.destroy()
+      keep('table')
       table.setQuery(q, force)
       syncTotals(q, v)
       table.refresh()
-      if (body.firstChild !== table.el) body.replaceChildren(table.el)
+      show(table.el)
     }
   }
 
@@ -1224,6 +1386,11 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       kanban?.destroy()
       groupedTable?.destroy()
       swimlanes?.destroy()
+      list?.destroy()
+      calendar?.destroy()
+      timeline?.destroy()
+      chart?.destroy()
+      form?.destroy()
       related?.close()
       lightRows.close()
       if (activeBaseView === handle) activeBaseView = null
