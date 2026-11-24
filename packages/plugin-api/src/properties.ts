@@ -15,15 +15,70 @@ export type PropertyType =
   | 'select'
   | 'multiselect'
   | 'link'         // lien vers une note : chemin ou [[cible]]
-  | 'person'       // identifiant d'un membre
+  | 'person'       // identifiant d'un membre (ou une liste, voir PropertyDef.multiple)
+  | 'status'       // un choix, ses options rangees en a faire / en cours / termine
+  | 'url'
+  | 'email'
+  | 'phone'
+  | 'files'        // pieces jointes : liens [[fichier]] ou adresses web
+  | 'relation'     // lignes d'une autre base : liens [[note]] (voir PropertyDef.relation)
+  | 'id'           // numero unique, pose a la creation de la ligne (prefixe : PropertyDef.prefix)
+  | 'created'      // date-heure de creation, posee a la creation de la ligne
+  | 'modified'     // date-heure de la derniere modification par une base
+  | 'createdBy'    // qui a cree la ligne (id d'un membre)
+  | 'modifiedBy'   // qui l'a modifiee en dernier par une base
 
 /** Une valeur, telle que l'index la conserve. Les listes : multiselect, liens multiples. */
 export type PropertyValue = string | number | boolean | null | string[]
 
 export interface PropertyOption {
   value: string
-  /** Une des couleurs de l'appli (red, orange, yellow, green, blue, purple). */
+  /** Une des couleurs de l'appli (gray, brown, orange, yellow, green, blue, purple, pink, red). */
   color?: string
+  /** Statut : groupe de l'option. */
+  group?: StatusGroup
+}
+
+/** Groupes d'un statut, dans cet ordre. */
+export type StatusGroup = 'todo' | 'doing' | 'done'
+export const STATUS_GROUPS: readonly { group: StatusGroup; label: string }[] = [
+  { group: 'todo', label: 'À faire' },
+  { group: 'doing', label: 'En cours' },
+  { group: 'done', label: 'Terminé' },
+]
+/** Options d'un statut neuf. */
+export const DEFAULT_STATUS_OPTIONS: readonly PropertyOption[] = [
+  { value: 'Pas commencé', color: 'gray', group: 'todo' },
+  { value: 'En cours', color: 'blue', group: 'doing' },
+  { value: 'Terminé', color: 'green', group: 'done' },
+]
+
+/** Affichage d'un nombre. */
+export type NumberFormat = 'number' | 'integer' | 'decimal' | 'percent' | 'euro' | 'dollar' | 'pound' | 'franc'
+export const NUMBER_FORMATS: readonly { format: NumberFormat; label: string }[] = [
+  { format: 'number', label: 'Nombre' },
+  { format: 'integer', label: 'Entier' },
+  { format: 'decimal', label: 'Deux décimales' },
+  { format: 'percent', label: 'Pourcentage' },
+  { format: 'euro', label: 'Euro' },
+  { format: 'dollar', label: 'Dollar' },
+  { format: 'pound', label: 'Livre' },
+  { format: 'franc', label: 'Franc suisse' },
+]
+
+/** Un nombre ecrit selon son format (fr-FR). */
+export function formatNumber(n: number, format: NumberFormat | undefined): string {
+  const fr = (o: Intl.NumberFormatOptions) => n.toLocaleString('fr-FR', o)
+  switch (format) {
+    case 'integer': return fr({ maximumFractionDigits: 0 })
+    case 'decimal': return fr({ minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    case 'percent': return `${fr({ maximumFractionDigits: 2 })} %`
+    case 'euro': return fr({ style: 'currency', currency: 'EUR' })
+    case 'dollar': return fr({ style: 'currency', currency: 'USD' })
+    case 'pound': return fr({ style: 'currency', currency: 'GBP' })
+    case 'franc': return fr({ style: 'currency', currency: 'CHF' })
+    default: return fr({ maximumFractionDigits: 10 })
+  }
 }
 
 export interface PropertyDef {
@@ -32,8 +87,37 @@ export interface PropertyDef {
   /** Nom affiche ; la cle par defaut. */
   label?: string
   type: PropertyType
-  /** Valeurs proposees (select, multiselect). */
+  /** Valeurs proposees (select, multiselect, status). */
   options?: PropertyOption[]
+  /** Nombre : son affichage. */
+  format?: NumberFormat
+  /** Nombre : en chiffres, en barre ou en anneau (sur `max`, 100 par defaut). */
+  display?: 'number' | 'bar' | 'ring'
+  max?: number
+  /** Personne : plusieurs membres. */
+  multiple?: boolean
+  /** Numero unique : son prefixe (« TACHE » donne TACHE-12). */
+  prefix?: string
+  /**
+   * Relation : la base visee (id de son document .base) et, si la relation
+   * va dans les deux sens, la propriete de ses lignes qui pointe en retour.
+   */
+  relation?: { base: string; back?: string }
+}
+
+/** Types dont la valeur est posee par l'appli, jamais saisie. */
+export const AUTO_PROPERTY_TYPES: readonly PropertyType[] = ['id', 'created', 'modified', 'createdBy', 'modifiedBy']
+
+/** Types dont la valeur est une liste. */
+export function isListType(type: PropertyType, def?: Pick<PropertyDef, 'multiple'>): boolean {
+  return type === 'multiselect' || type === 'files' || type === 'relation' || (type === 'person' && !!def?.multiple)
+}
+
+/** Une date, ou une periode « debut/fin » (ISO 8601). */
+export function splitDateRange(value: string): { start: string; end?: string } {
+  const i = value.indexOf('/')
+  if (i < 0) return { start: value }
+  return { start: value.slice(0, i), end: value.slice(i + 1) || undefined }
 }
 
 export interface PropertySchema {
@@ -70,7 +154,8 @@ export interface IPropertyTypes {
 }
 
 export const PROPERTY_TYPES: readonly PropertyType[] = [
-  'text', 'number', 'date', 'checkbox', 'select', 'multiselect', 'link', 'person',
+  'text', 'number', 'date', 'checkbox', 'select', 'multiselect', 'status', 'link', 'relation', 'person',
+  'url', 'email', 'phone', 'files', 'id', 'created', 'modified', 'createdBy', 'modifiedBy',
 ]
 
 /** Libelle et icone de chaque type, les memes partout. */
@@ -83,9 +168,20 @@ export const PROPERTY_TYPE_INFO: Readonly<Record<PropertyType, { label: string; 
   multiselect: { label: 'Choix multiple', icon: 'list' },
   link: { label: 'Lien', icon: 'link' },
   person: { label: 'Personne', icon: 'user' },
+  status: { label: 'Statut', icon: 'circle-dot-dashed' },
+  url: { label: 'Adresse web', icon: 'globe' },
+  email: { label: 'E-mail', icon: 'at-sign' },
+  phone: { label: 'Téléphone', icon: 'phone' },
+  files: { label: 'Fichiers', icon: 'paperclip' },
+  relation: { label: 'Relation', icon: 'arrow-up-right' },
+  id: { label: 'Numéro unique', icon: 'fingerprint' },
+  created: { label: 'Créé le', icon: 'calendar-plus' },
+  modified: { label: 'Modifié le', icon: 'calendar-clock' },
+  createdBy: { label: 'Créé par', icon: 'user-plus' },
+  modifiedBy: { label: 'Modifié par', icon: 'user-pen' },
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/
+const DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?(\/\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?)?$/
 const LINK_RE = /^\[\[[^\]]+\]\]$/
 
 /** Type devine depuis une valeur, quand aucun n'est declare. */
@@ -118,13 +214,30 @@ export function coercePropertyValue(value: PropertyValue | undefined, type: Prop
       return value
     }
     case 'multiselect':
+    case 'files':
+    case 'relation':
       if (Array.isArray(value)) return value
       return value === '' ? [] : [String(value)]
+    case 'person':
+      // Une liste de membres reste une liste (PropertyDef.multiple).
+      if (Array.isArray(value)) return value
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+      return value
+    case 'id':
+      if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value)
+      return typeof value === 'boolean' ? String(value) : value
     case 'text':
     case 'select':
+    case 'status':
     case 'date':
     case 'link':
-    case 'person':
+    case 'url':
+    case 'email':
+    case 'phone':
+    case 'created':
+    case 'modified':
+    case 'createdBy':
+    case 'modifiedBy':
       if (typeof value === 'number' || typeof value === 'boolean') return String(value)
       return value
   }

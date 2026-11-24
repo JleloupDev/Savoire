@@ -163,9 +163,17 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 function emptyValue(type: PropertyType): PropertyValue {
   if (type === 'checkbox') return false
-  if (type === 'multiselect') return []
+  if (type === 'multiselect' || type === 'relation' || type === 'files') return []
   return null
 }
+
+/** Types des bases rendus par un editeur existant du panneau. */
+const EDITOR_OF: Partial<Record<PropertyType, PropertyType>> = {
+  status: 'select', relation: 'multiselect', files: 'multiselect',
+}
+/** Valeurs posees par l'appli (bases) : affichees, pas saisies. */
+const READ_ONLY_TYPES: ReadonlySet<PropertyType> = new Set<PropertyType>(['id', 'created', 'modified', 'createdBy', 'modifiedBy'])
+const INPUT_TYPE: Partial<Record<PropertyType, string>> = { url: 'url', email: 'email', phone: 'tel' }
 
 function linkTarget(value: string): string {
   const m = /^\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(value.trim())
@@ -273,8 +281,9 @@ export class PropertiesPanel {
     return row
   }
 
-  private renderEditor(cell: HTMLElement, key: string, type: PropertyType, value: PropertyValue, raw: PropertyValue): void {
-    const ro = this.host.readOnly
+  private renderEditor(cell: HTMLElement, key: string, declared: PropertyType, value: PropertyValue, raw: PropertyValue): void {
+    const ro = this.host.readOnly || READ_ONLY_TYPES.has(declared)
+    const type: PropertyType = EDITOR_OF[declared] ?? declared
     const mismatch = (ok: boolean) => { if (!ok && raw !== null) { cell.classList.add('plume-prop-mismatch'); cell.title = 'Valeur différente du type de la propriété' } }
     const textInput = (inputType: string, current: string, commit: (v: string) => void) => {
       const input = el('input', 'plume-prop-input')
@@ -308,7 +317,9 @@ export class PropertiesPanel {
       }
       case 'date': {
         const s = typeof value === 'string' ? value : ''
-        const ok = /^\d{4}-\d{2}-\d{2}/.test(s)
+        // Une periode « debut/fin » (bases) se modifie en texte.
+        const ok = /^\d{4}-\d{2}-\d{2}/.test(s) && !s.includes('/')
+        if (s.includes('/')) { textInput('text', s, v => this.setValue(key, v.trim() || null)); return }
         mismatch(ok)
         const withTime = s.includes('T')
         textInput(ok || value === null ? (withTime ? 'datetime-local' : 'date') : 'text', withTime ? s.slice(0, 16) : s, v => this.setValue(key, v || null))
@@ -413,7 +424,7 @@ export class PropertiesPanel {
       case 'text':
       default:
         mismatch(!Array.isArray(value))
-        textInput('text', value === null ? '' : Array.isArray(value) ? value.join(', ') : String(value), v => this.setValue(key, v === '' ? null : v))
+        textInput(INPUT_TYPE[type] ?? 'text', value === null ? '' : Array.isArray(value) ? value.join(', ') : String(value), v => this.setValue(key, v === '' ? null : v))
     }
   }
 

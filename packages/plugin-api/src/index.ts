@@ -118,6 +118,7 @@ export {
 } from './query'
 export {
   PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, coercePropertyValue, propertyTypeOf,
+  STATUS_GROUPS, DEFAULT_STATUS_OPTIONS, NUMBER_FORMATS, formatNumber, AUTO_PROPERTY_TYPES, isListType, splitDateRange,
   parseFrontmatter, findFrontmatter, setFrontmatterValue, removeFrontmatterKey,
   renameFrontmatterKey, frontmatterKeys, minimalTextChange,
 } from './properties'

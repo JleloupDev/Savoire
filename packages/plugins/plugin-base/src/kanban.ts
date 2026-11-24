@@ -112,7 +112,9 @@ export class BaseKanban {
     const count = h('span', { class: 'base-lane-count' })
     const cards = h('div', { class: 'base-lane-cards' })
     const el = h('div', { class: 'base-lane', 'data-testid': 'base-lane', 'data-value': title },
-      h('div', { class: 'base-lane-head' }, h('span', { class: 'base-pill' }, title), count),
+      h('div', { class: 'base-lane-head' }, key === null
+        ? h('span', { class: 'base-pill' }, title)
+        : renderValue(this.host.columns().find(c => c.key === this.group)?.type ?? 'select', key, this.host.cells(), this.group), count),
       cards)
     // Groupe par formule : les cartes ne se deplacent pas, la valeur se calcule.
     if (!this.host.readOnly() && !isFormulaKey(this.group)) {
@@ -150,7 +152,7 @@ export class BaseKanban {
       for (const f of fields) {
         const v = row.values[f.key]
         if (v === undefined || v === null || (Array.isArray(v) && v.length === 0)) continue
-        card.append(h('div', { class: 'base-card-field' }, h('span', { class: 'base-card-label' }, f.label), renderValue(f.type, v, ctx)))
+        card.append(h('div', { class: 'base-card-field' }, h('span', { class: 'base-card-label' }, f.label), renderValue(f.type, v, ctx, f.key)))
       }
       card.addEventListener('dragstart', e => {
         e.dataTransfer?.setData('text/x-base-row', row.id)

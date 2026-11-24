@@ -5,6 +5,7 @@
 // visibles existent dans la page, les donnees arrivent par pages
 // (api.query, pagination par curseur). La premiere page est suivie en direct
 // (watch) : une cellule changee par un autre membre se voit tout de suite.
+import { AUTO_PROPERTY_TYPES } from '@savoire/plugin-api'
 import type { CompiledFormula, IQueryEngine, PropertyType, PropertyValue, Query, QueryResult, QueryRow } from '@savoire/plugin-api'
 import { h, openEditor, renderValue, type CellContext } from './cells'
 import { TITLE_COLUMN } from './manifest'
@@ -258,7 +259,9 @@ export class BaseTable {
     this.body.style.height = `${this.total * ROW_HEIGHT}px`
     this.body.style.width = `${this.width()}px`
     const cols = this.host.columns()
-    const colSig = JSON.stringify([cols, this.host.readOnly(), this.host.cells().members.length])
+    const ctx = this.host.cells()
+    // Les reglages des proprietes (couleurs, format) changent l'affichage des cellules.
+    const colSig = JSON.stringify([cols, this.host.readOnly(), ctx.members.length, cols.map(c => ctx.def?.(c.key) ?? null)])
     const rows: HTMLElement[] = []
     const kept = new Map<string, { sig: string; el: HTMLElement }>()
     for (let i = first; i <= last; i++) {
@@ -329,8 +332,8 @@ export class BaseTable {
         }
       } else {
         const value = row.values[col.key]
-        td.append(renderValue(col.type, value, ctx))
-        if (!ro) {
+        td.append(renderValue(col.type, value, ctx, col.key))
+        if (!ro && !AUTO_PROPERTY_TYPES.includes(col.type)) {
           if (col.type === 'checkbox') {
             td.classList.add('base-td-check')
             td.addEventListener('click', () => this.host.edit(row, col.key, !(value === true || value === 'true')))
@@ -385,7 +388,7 @@ export class BaseTable {
       }
       const shown = value === null || value === '' || (Array.isArray(value) && value.length === 0)
         ? h('i', { class: 'base-td-empty' }, 'vide')
-        : key === TITLE_COLUMN ? document.createTextNode(String(value)) : renderValue(col.type, value, this.host.cells())
+        : key === TITLE_COLUMN ? document.createTextNode(String(value)) : renderValue(col.type, value, this.host.cells(), col.key)
       const after = h('span', {
         class: 'base-td-after', 'data-testid': 'base-cell-proposal',
         title: a.proposals.length > 1 ? `${a.proposals.length} valeurs proposées : cliquer pour les voir` : 'Valeur proposée : cliquer pour le fil',

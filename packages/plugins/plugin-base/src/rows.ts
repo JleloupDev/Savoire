@@ -128,6 +128,27 @@ export class LightRows {
     })
   }
 
+  /** Change plusieurs cellules d'une ligne en une transaction. */
+  async setCells(id: string, values: Record<string, PropertyValue>): Promise<void> {
+    const { tree, row } = await this.rowMap(id)
+    if (!row) throw new Error('Cette ligne n\'existe plus.')
+    tree.transact(() => {
+      for (const [key, value] of Object.entries(values)) {
+        if (value === null || (Array.isArray(value) && value.length === 0 && key !== BASE_ROW_TITLE)) row.delete(key)
+        else row.set(key, cellInit(value))
+      }
+    })
+  }
+
+  /** Renomme une propriete d'une ligne (la valeur ne change pas). */
+  async renameKey(id: string, from: string, to: string): Promise<void> {
+    const { tree, row } = await this.rowMap(id)
+    if (!row || from === to) return
+    const v = cellValue(row.get(from))
+    if (v === null) return
+    tree.transact(() => { row.set(to, cellInit(v)); row.delete(from) })
+  }
+
   async get(id: string): Promise<LightRow | null> {
     const { row } = await this.rowMap(id)
     return row ? readRow(id, row) : null

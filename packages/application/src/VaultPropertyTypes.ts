@@ -16,10 +16,18 @@ import type { IVaultSyncSession } from './contracts'
 /** Section des reglages du vault qui porte les types. */
 export const PROPERTY_TYPES_SECTION = 'properties'
 
-interface StoredDef {
-  type: PropertyType
-  label?: string
-  options?: PropertyOption[]
+type StoredDef = Omit<PropertyDef, 'key'>
+
+const FORMATS: ReadonlySet<string> = new Set(['number', 'integer', 'decimal', 'percent', 'euro', 'dollar', 'pound', 'franc'])
+const GROUPS: ReadonlySet<string> = new Set(['todo', 'doing', 'done'])
+
+function readOption(o: unknown): PropertyOption | null {
+  const x = o as Partial<PropertyOption> | null
+  if (!x || typeof x.value !== 'string') return null
+  const out: PropertyOption = { value: x.value }
+  if (typeof x.color === 'string' && x.color) out.color = x.color
+  if (typeof x.group === 'string' && GROUPS.has(x.group)) out.group = x.group
+  return out
 }
 
 function readDef(key: string, value: unknown): PropertyDef | undefined {
@@ -27,8 +35,15 @@ function readDef(key: string, value: unknown): PropertyDef | undefined {
   if (!v || typeof v !== 'object' || !PROPERTY_TYPES.includes(v.type as PropertyType)) return undefined
   const def: PropertyDef = { key, type: v.type as PropertyType }
   if (typeof v.label === 'string' && v.label) def.label = v.label
-  if (Array.isArray(v.options)) {
-    def.options = v.options.filter(o => o && typeof o.value === 'string').map(o => (o.color ? { value: o.value, color: o.color } : { value: o.value }))
+  if (Array.isArray(v.options)) def.options = v.options.map(readOption).filter((o): o is PropertyOption => !!o)
+  if (typeof v.format === 'string' && FORMATS.has(v.format)) def.format = v.format
+  if (v.display === 'bar' || v.display === 'ring' || v.display === 'number') def.display = v.display
+  if (typeof v.max === 'number' && Number.isFinite(v.max) && v.max > 0) def.max = v.max
+  if (v.multiple === true) def.multiple = true
+  if (typeof v.prefix === 'string' && v.prefix) def.prefix = v.prefix.slice(0, 20)
+  const rel = v.relation as { base?: unknown; back?: unknown } | undefined
+  if (rel && typeof rel.base === 'string' && rel.base) {
+    def.relation = { base: rel.base, ...(typeof rel.back === 'string' && rel.back ? { back: rel.back } : {}) }
   }
   return def
 }
@@ -68,7 +83,13 @@ export class VaultPropertyTypes implements IPropertyTypes {
     if (!PROPERTY_TYPES.includes(def.type)) throw new Error(`Type de propriété inconnu : ${def.type}`)
     const stored: StoredDef = { type: def.type }
     if (def.label) stored.label = def.label
-    if (def.options?.length) stored.options = def.options
+    if (def.options?.length) stored.options = def.options.map(o => ({ value: o.value, ...(o.color ? { color: o.color } : {}), ...(o.group ? { group: o.group } : {}) }))
+    if (def.format) stored.format = def.format
+    if (def.display) stored.display = def.display
+    if (def.max !== undefined) stored.max = def.max
+    if (def.multiple) stored.multiple = true
+    if (def.prefix) stored.prefix = def.prefix
+    if (def.relation?.base) stored.relation = { base: def.relation.base, ...(def.relation.back ? { back: def.relation.back } : {}) }
     this.channel.set(def.key, stored)
   }
 

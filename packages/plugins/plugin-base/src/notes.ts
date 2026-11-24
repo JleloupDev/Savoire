@@ -9,7 +9,7 @@
 // Convention des notes de dossier (plugin-filetree, folderNotes.ts) : une
 // base `Projets/Taches.base` et le dossier frere `Projets/Taches/` forment un
 // seul noeud ; les nouvelles lignes-pages y sont creees.
-import { removeFrontmatterKey, setFrontmatterValue } from '@savoire/plugin-api'
+import { removeFrontmatterKey, renameFrontmatterKey, setFrontmatterValue } from '@savoire/plugin-api'
 import type { PropertyValue, VaultAPI } from '@savoire/plugin-api'
 
 /** Ce dont les lignes-pages ont besoin du vault. */
@@ -49,6 +49,18 @@ function requireEditText(vault: NotesVault): NonNullable<VaultAPI['editText']> {
 export async function writeNoteProperty(vault: NotesVault, docId: string, key: string, value: PropertyValue | undefined): Promise<void> {
   const editText = requireEditText(vault)
   await editText(docId, md => value === undefined ? removeFrontmatterKey(md, key) : setFrontmatterValue(md, key, value))
+}
+
+/** Ecrit plusieurs proprietes d'un coup (une seule modification de la note). undefined : retire. */
+export async function writeNoteProperties(vault: NotesVault, docId: string, values: Record<string, PropertyValue | undefined>): Promise<void> {
+  const editText = requireEditText(vault)
+  await editText(docId, md => Object.entries(values).reduce((acc, [k, v]) => v === undefined ? removeFrontmatterKey(acc, k) : setFrontmatterValue(acc, k, v), md))
+}
+
+/** Renomme une propriete dans le frontmatter d'une note (la valeur ne change pas). */
+export async function renameNoteProperty(vault: NotesVault, docId: string, from: string, to: string): Promise<void> {
+  const editText = requireEditText(vault)
+  await editText(docId, md => renameFrontmatterKey(md, from, to))
 }
 
 /**

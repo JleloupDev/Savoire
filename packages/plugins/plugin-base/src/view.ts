@@ -7,7 +7,7 @@
 // base + lignes legeres de ses lots), le manifeste du document (ctx.tree).
 import {
   createIcon,
-  BASE_ROW_TITLE, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
+  AUTO_PROPERTY_TYPES, BASE_ROW_TITLE, DEFAULT_STATUS_OPTIONS, PROPERTY_TYPES, PROPERTY_TYPE_INFO, guessPropertyType, tryCompileFormula,
 } from '@savoire/plugin-api'
 import type {
   CompiledFormula,
@@ -19,10 +19,11 @@ import {
   DEFAULT_WIDTH, FORMULA_PREFIX, ManifestStore, TITLE_COLUMN, TITLE_WIDTH, defaultView, isFormulaKey, readManifest,
   type BaseManifest, type BaseSort, type BaseViewDef,
 } from './manifest'
-import { countFilters, isoDay, toWhere, type FilterContext } from './filters'
+import { countFilters, isoDay, mapFilterKeys, toWhere, type FilterContext } from './filters'
 import { renderFilterEditor, type FilterEditorHost } from './filterEditor'
 import { LightRows } from './rows'
-import { createPageRow, folderOfBase, renamePageRow, writeNoteProperty, type NotesVault } from './notes'
+import { createPageRow, folderOfBase, renameNoteProperty, renamePageRow, writeNoteProperties, writeNoteProperty, type NotesVault } from './notes'
+import { renderPropertySettings } from './propertySettings'
 import { BaseTable, type TableColumn } from './table'
 import { BaseKanban } from './kanban'
 import { needsFormulas, withFormulas } from './formulaEngine'
@@ -156,11 +157,69 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       return [...new Set([...options, ...(r.groups ?? []).map(g => g.key).filter((k): k is string => typeof k === 'string')])]
     } catch { return options }
   }
+  /** Une valeur saisie dans un choix devient une option declaree (comme Notion). */
+  const addOption = (key: string, value: string) => {
+    if (!types || readOnly) return
+    const d = types.get(key)
+    const type = d?.type ?? typeOf(key)
+    if (type !== 'select' && type !== 'multiselect' && type !== 'status') return
+    const options = d?.options ?? []
+    if (options.some(o => o.value === value)) return
+    try {
+      types.set({ ...(d ?? { key, type }), key, type, options: [...options, { value, ...(type === 'status' ? { group: 'todo' as const } : {}) }] })
+    } catch { /* sans vault */ }
+  }
+  const upload = docVault?.uploadAttachment
+    ? async (file: File) => {
+      const p = await docVault.uploadAttachment!(file, { notePath: path })
+      return `[[${docVault.linkTarget?.(p) ?? p}]]`
+    }
+    : undefined
   const cells = (): CellContext => ({
     members,
     knownValues,
     openLink: target => void api?.workspace.openFile(target),
+    def: key => types?.get(key),
+    addOption,
+    ...(upload ? { upload } : {}),
   })
+
+  // ── Valeurs posees par l'appli ───────────────────────────────────────────
+  // Numero unique, cree le / par a la creation d'une ligne ; modifie le / par
+  // a chaque modification faite depuis la base.
+
+  const me = () => api?.vault?.getCurrentUser?.()?.id
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  const nowStamp = () => { const d = new Date(); return `${isoDay(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}` }
+  const autoColumns = (wanted: readonly string[]) => columnsOf(manifest)
+    .filter(c => !isFormulaKey(c.key) && c.key !== TITLE_COLUMN && wanted.includes(typeOf(c.key)))
+  const nextId = async (key: string): Promise<number> => {
+    if (!engine) return 1
+    try {
+      const r = await engine.query({ from: source(), aggregate: [{ op: 'max', field: { prop: key } }], limit: 1 })
+      const max = r.aggregates?.[0]
+      return (typeof max === 'number' && Number.isFinite(max) ? Math.floor(max) : 0) + 1
+    } catch { return 1 }
+  }
+  const creationValues = async (): Promise<Record<string, PropertyValue>> => {
+    const out: Record<string, PropertyValue> = {}
+    for (const c of autoColumns(AUTO_PROPERTY_TYPES)) {
+      switch (typeOf(c.key)) {
+        case 'created': case 'modified': out[c.key] = nowStamp(); break
+        case 'createdBy': case 'modifiedBy': { const id = me(); if (id) out[c.key] = id; break }
+        case 'id': out[c.key] = await nextId(c.key); break
+      }
+    }
+    return out
+  }
+  const touchValues = (): Record<string, PropertyValue> => {
+    const out: Record<string, PropertyValue> = {}
+    for (const c of autoColumns(['modified', 'modifiedBy'])) {
+      if (typeOf(c.key) === 'modified') out[c.key] = nowStamp()
+      else { const id = me(); if (id) out[c.key] = id }
+    }
+    return out
+  }
 
   // ── Ecritures ────────────────────────────────────────────────────────────
 
@@ -185,9 +244,12 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       void api.review.propose(baseId, CELL_PROPOSAL, proposal).catch(report)
       return
     }
+    const touch = touchValues()
+    const many = Object.keys(touch).length > 0
     const job = row.path === ''
-      ? lightRows.setCell(row.id, key, value)
-      : vault ? writeNoteProperty(vault, row.id, key, value) : Promise.reject(new Error('Aucun vault.'))
+      ? (many ? lightRows.setCells(row.id, { [key]: value, ...touch }) : lightRows.setCell(row.id, key, value))
+      : !vault ? Promise.reject(new Error('Aucun vault.'))
+        : many ? writeNoteProperties(vault, row.id, { [key]: value, ...touch }) : writeNoteProperty(vault, row.id, key, value)
     void job.catch(report)
   }
 
@@ -212,14 +274,14 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (readOnly || !vault) return
     try {
       const own = Object.fromEntries(Object.entries(values).filter(([k]) => !isFormulaKey(k)))
-      await createPageRow(vault, manifest.source.folder, 'Sans titre', own)
+      await createPageRow(vault, manifest.source.folder, 'Sans titre', { ...(await creationValues()), ...own })
     } catch (err) { report(err) }
   }
 
   const addLightRow = async (values: Record<string, PropertyValue> = {}) => {
     if (readOnly) return
     try {
-      await lightRows.add('Sans titre', values)
+      await lightRows.add('Sans titre', { ...(await creationValues()), ...values })
     } catch (err) { report(err) }
   }
 
@@ -395,7 +457,16 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     readOnly: () => readOnly,
     columns: visibleColumns,
     cells,
-    options: key => types?.get(key)?.options?.map(o => o.value) ?? [],
+    options: key => {
+      const d = types?.get(key)
+      const opts = d?.options ?? []
+      // Statut : les options dans l'ordre de leurs groupes (a faire, en cours, termine).
+      if (d?.type === 'status') {
+        const rank = (g?: string) => ['todo', 'doing', 'done'].indexOf(g ?? 'todo')
+        return [...opts].sort((a, b) => rank(a.group) - rank(b.group)).map(o => o.value)
+      }
+      return opts.map(o => o.value)
+    },
     edit,
     open: row => void api?.workspace.openFile(row.path),
     addPage: values => void addPage(values),
@@ -487,7 +558,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       editable ? btn('▤ Kanban', 'base-type-kanban', () => {
         // Par defaut : la premiere propriete de choix, sinon le premier texte.
         const cols = allColumns().filter(c => c.key !== TITLE_COLUMN)
-        const group = v.groupBy || cols.find(c => c.type === 'select')?.key || cols.find(c => c.type === 'text')?.key || ''
+        const group = v.groupBy || cols.find(c => c.type === 'status')?.key || cols.find(c => c.type === 'select')?.key || cols.find(c => c.type === 'text')?.key || ''
         store.setView(v.id, { type: 'kanban', groupBy: group })
       }, v.type === 'kanban') : null,
       btn(`Filtrer${countFilters(v.filters) ? ` (${countFilters(v.filters)})` : ''}`, 'base-filter', b => togglePopover('filters', b), countFilters(v.filters) > 0),
@@ -626,7 +697,8 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       const key = name.value.replace(/:/g, '').trim()
       if (!key || key === TITLE_COLUMN || isFormulaKey(key)) return
       if (types && !types.get(key) && type.value !== typeOf(key)) {
-        try { types.set({ key, type: type.value as PropertyType }) } catch { /* sans vault */ }
+        const t = type.value as PropertyType
+        try { types.set({ key, type: t, ...(t === 'status' ? { options: [...DEFAULT_STATUS_OPTIONS] } : {}) }) } catch { /* sans vault */ }
       }
       store.setColumn(key, {})
       closePopover()
@@ -729,6 +801,84 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     else { popover.style.top = 'auto'; popover.style.bottom = `${Math.max(0, box.bottom - at.top + 4)}px` }
   }
 
+  // ── Renommages dans toutes les lignes de la base ─────────────────────────
+
+  const allRows = async (): Promise<QueryRow[]> => {
+    if (!engine) return []
+    return (await fetchBaseRows(engine, { from: source() })).rows
+  }
+
+  /** Renomme une propriete : lignes, type du vault, colonnes et vues. */
+  const renameKey = async (from: string, to: string) => {
+    if (readOnly || !vault) return
+    for (const r of await allRows()) {
+      if (r.values[from] === undefined) continue
+      await (r.path === '' ? lightRows.renameKey(r.id, from, to) : renameNoteProperty(vault, r.id, from, to))
+    }
+    const d = types?.get(from)
+    if (d && types && !types.get(to)) types.set({ ...d, key: to })
+    const col = columnsOf(manifest).find(c => c.key === from)
+    if (col) { store.setColumn(to, { width: col.width, order: col.order }); store.removeColumn(from) }
+    const swap = (k: string) => k === from ? to : k
+    for (const v of manifest.views) {
+      store.setView(v.id, {
+        filters: mapFilterKeys(v.filters, swap),
+        sorts: v.sorts.map(x => ({ ...x, key: swap(x.key) })),
+        hidden: v.hidden.map(swap),
+        totals: Object.fromEntries(Object.entries(v.totals).map(([k, t]) => [swap(k), t])),
+        groupBy: swap(v.groupBy),
+      })
+    }
+    if (manifest.source.filters.length) store.setSource({ filters: mapFilterKeys(manifest.source.filters, swap) })
+    closePopover()
+  }
+
+  /** Renomme une valeur (option) dans toutes les lignes de la base. */
+  const renameValue = async (key: string, from: string, to: string) => {
+    if (readOnly || !vault) return
+    for (const r of await allRows()) {
+      const v = r.values[key]
+      let next: PropertyValue | undefined
+      if (Array.isArray(v)) { if (v.includes(from)) next = v.map(x => x === from ? to : x) }
+      else if (v === from) next = to
+      if (next === undefined) continue
+      await (r.path === '' ? lightRows.setCell(r.id, key, next) : writeNoteProperty(vault, r.id, key, next))
+    }
+  }
+
+  const baseFiles = (): { id: string; path: string }[] => {
+    const tree = docVault?.getFileTree?.() ?? []
+    return tree.filter(e => e.path.toLowerCase().endsWith('.base') && !e.path.startsWith('.trash/'))
+      .map(e => ({ id: e.docId, path: e.path })).sort((a, b) => a.path.localeCompare(b.path))
+  }
+
+  const openPropertySettings = (key: string, anchor: HTMLElement) => {
+    if (!types) return
+    closePopover()
+    popoverKind = 'settings'
+    const draw = () => {
+      if (popoverKind !== 'settings') return
+      popover.replaceChildren(renderPropertySettings({
+        key,
+        editable: !readOnly,
+        def: () => types.get(key),
+        type: () => typeOf(key),
+        knownValues: () => knownValues(key),
+        setDef: def => types.set(def),
+        renameKey: next => renameKey(key, next),
+        renameValue: (from, to) => renameValue(key, from, to),
+        bases: baseFiles,
+        selfBase: baseId,
+        report,
+      }))
+    }
+    settingsRedraw = draw
+    draw()
+    popover.hidden = false
+    popover.style.left = `${Math.max(0, anchor.offsetLeft - 120)}px`
+  }
+  let settingsRedraw: (() => void) | null = null
+
   const openColumnMenu = (key: string, anchor: HTMLElement) => {
     if (isFormulaKey(key)) {
       const v = view()
@@ -767,10 +917,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
       item('Trier ↓', 'base-col-sort-desc', () => store.setView(v.id, { sorts: [{ key, dir: 'desc' }] }), editable),
       key !== TITLE_COLUMN ? item('Masquer dans cette vue', 'base-col-hide', () => store.setView(v.id, { hidden: [...v.hidden, key] }), editable) : null,
       key !== TITLE_COLUMN && v.type === 'table' ? item('Grouper par (kanban)', 'base-col-group', () => store.setView(v.id, { type: 'kanban', groupBy: key }), editable) : null,
-      key !== TITLE_COLUMN && types ? h('div', { class: 'base-menu-sub' }, 'Type (tout le vault)') : null,
-      ...(key !== TITLE_COLUMN && types ? PROPERTY_TYPES.map(t => item(`${PROPERTY_TYPE_INFO[t].label}${typeOf(key) === t ? ' ✓' : ''}`, `base-col-type-${t}`, () => {
-        types.set({ ...(types.get(key) ?? { key }), key, type: t })
-      }, !readOnly)) : []),
+      key !== TITLE_COLUMN && types ? item(`⚙ Propriété : ${PROPERTY_TYPE_INFO[typeOf(key)]?.label ?? typeOf(key)}…`, 'base-col-settings', () => openPropertySettings(key, anchor), !readOnly) : null,
       key !== TITLE_COLUMN ? item('Retirer de la base', 'base-col-remove', () => store.removeColumn(key), editable) : null,
     )
     popover.replaceChildren(menu)
@@ -784,7 +931,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     if (!container) return
     if (!manifest.views.some(v => v.id === activeId)) activeId = manifest.views[0].id
     renderToolbar()
-    if (popoverKind && !['add-column', 'column', 'formula', 'total'].includes(popoverKind)) renderPopover()
+    if (popoverKind && !['add-column', 'column', 'formula', 'total', 'settings'].includes(popoverKind)) renderPopover()
     const v = view()
     if (!engine || !table || !kanban) {
       body.replaceChildren(h('div', { class: 'base-hint' }, 'Aucun moteur de requêtes : ouvrez un vault pour voir les lignes de la base.'))
@@ -838,7 +985,7 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
         manifest = readManifest(ctx.tree, defaultFolder)
         update()
       }))
-      if (types) unsubs.push(types.onChange(() => update()))
+      if (types) unsubs.push(types.onChange(() => { update(); if (popoverKind === 'settings') settingsRedraw?.() }))
       if (review && baseId) {
         unsubs.push(review.onChange(refreshAnnotations))
         unsubs.push(review.onInlineChange(refreshAnnotations))

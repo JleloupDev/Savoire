@@ -132,7 +132,7 @@ export function renderBaseEmbed(target: BaseEmbedTarget, api: PluginAPI | undefi
           const t: PropertyType = typeof v.value === 'number' ? 'number' : typeof v.value === 'boolean' ? 'checkbox' : Array.isArray(v.value) ? 'multiselect' : 'text'
           return renderValue(t, v.value, ctx)
         }
-        return renderValue(typeOf(k), row.values[k] ?? null, ctx)
+        return renderValue(typeOf(k), row.values[k] ?? null, ctx, k)
       }
       const name = (row: QueryRow): Node => {
         if (!row.path) return document.createTextNode(row.title || 'Sans titre')
