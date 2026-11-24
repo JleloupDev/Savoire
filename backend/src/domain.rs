@@ -68,6 +68,10 @@ api_enum!(Permission { Read => "read", Write => "write", Admin => "admin", None 
 api_enum!(ResourceType { Vault => "vault", Document => "document", Folder => "folder" });
 api_enum!(SubjectType { User => "user" });
 api_enum!(VaultRole { Owner => "owner", Editor => "editor", Viewer => "viewer" });
+// Ce qu'un lien vers une page ouvre en plus d'elle : ses sous-pages (le
+// dossier de la page, images comprises), rien, ou les pages qu'elle lie (liste
+// fixee a la creation du lien).
+api_enum!(ShareScope { Subpages => "subpages", Page => "page", Linked => "linked" });
 api_enum!(IndexerMode { Managed => "managed", Organization => "organization", None => "none" });
 
 // ── Agregats ─────────────────────────────────────────────────────────────────
@@ -209,6 +213,7 @@ pub struct ShareLink {
     pub expires_at: Option<Ts>,
     pub revoked_at: Option<Ts>,
     pub path: Option<String>,
+    pub scope: ShareScope,
 }
 
 impl ShareLink {
@@ -232,6 +237,7 @@ impl ShareLink {
             expires_at,
             revoked_at: None,
             path: ShareLink::clean_path(path),
+            scope: ShareScope::Subpages,
         }
     }
     pub fn is_valid(&self) -> bool {

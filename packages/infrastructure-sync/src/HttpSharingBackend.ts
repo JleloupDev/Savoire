@@ -4,7 +4,7 @@ import { serverUrl } from './serverAddress'
 import { fetchWithRenewal } from './http'
 import type {
   ISharingBackend, SharedDocumentHandle,
-  AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
+  AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup, ShareLinkOptions,
   AppAclTarget, AppAclView, IAclApi,
 } from '@savoire/application'
 import { YjsCrdtAdapter } from './YjsCrdtAdapter'
@@ -91,10 +91,16 @@ export class HttpSharingBackend implements ISharingBackend, IAclApi {
     return res.json() as Promise<AppUserLookup>
   }
 
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink> {
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string, options?: ShareLinkOptions): Promise<AppShareLink> {
+    const body: Record<string, unknown> = { permission }
+    if (resourceType === 'document') {
+      if (path) body.path = path
+      if (options?.scope) body.scope = options.scope
+      if (options?.scope === 'linked') body.documents = options.documents ?? []
+    }
     return this.fetch(`${this.resourcePath(resourceType, id)}/sharing/links`, token, {
       method: 'POST',
-      body: JSON.stringify(resourceType === 'document' && path ? { permission, path } : { permission }),
+      body: JSON.stringify(body),
     })
   }
 
@@ -110,12 +116,16 @@ export class HttpSharingBackend implements ISharingBackend, IAclApi {
     return res.json() as Promise<AppShareLinkAccess>
   }
 
-  async openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>> {
+  async openSharedDocument(shareToken: string, docId?: string): Promise<Omit<SharedDocumentHandle, 'dispose'>> {
     const res = await fetch(serverUrl(`/api/v1/share/${encodeURIComponent(shareToken)}/access`, this.baseUrl))
     if (!res.ok) throw new Error(`${res.status}`)
     const access = await res.json() as AppShareLinkAccess
+    const documents = access.documents?.length ? access.documents : [{ id: access.resourceId, path: access.path ?? null }]
+    // Un document du lien (sous-page, page liee), sinon sa page.
+    const entry = (docId && documents.find(d => d.id === docId)) || documents[0]
+    const resourceId = entry.id
 
-    const path = access.path ?? `doc-${access.resourceId}.md`
+    const path = entry.path ?? (resourceId === access.resourceId ? access.path : undefined) ?? `doc-${resourceId}.md`
     const crdt = new YjsCrdtAdapter()
     const transport = new SignalRTransport({
       serverUrl: this.baseUrl,
@@ -129,7 +139,7 @@ export class HttpSharingBackend implements ISharingBackend, IAclApi {
 
     // Les images rangees dans le dossier de la note, lues avec le jeton du lien.
     const attachments = access.vaultId
-      ? new SharedNoteAttachments(new RestVaultStorage({ baseUrl: this.baseUrl }), access.vaultId, access.resourceId, () => access.accessToken)
+      ? new SharedNoteAttachments(new RestVaultStorage({ baseUrl: this.baseUrl }), access.vaultId, resourceId, () => access.accessToken)
       : undefined
 
     return {
@@ -137,12 +147,13 @@ export class HttpSharingBackend implements ISharingBackend, IAclApi {
       transport,
       sync,
       attachments,
-      docId: access.resourceId,
+      docId: resourceId,
       vaultId: access.vaultId ?? '',
       path,
       filename: path.split('/').at(-1) ?? path,
       permission: access.permission as 'read' | 'write',
       accessToken: access.accessToken,
+      documents,
     }
   }
 }

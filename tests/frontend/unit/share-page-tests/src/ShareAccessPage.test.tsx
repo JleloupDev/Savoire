@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { ShareAccessPage } from '../../../../../apps/web/src/ShareAccessPage'
+import { ShareAccessPage, sharedDocumentFor } from '../../../../../apps/web/src/ShareAccessPage'
 import { DocumentView } from './__mocks__/editor-core'
 import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
 
@@ -56,6 +56,7 @@ function makeHandle(overrides?: Partial<SharedDocumentHandle>): SharedDocumentHa
     filename: 'hello.md',
     permission: 'read',
     accessToken: 'tok',
+    documents: [{ id: 'd1', path: 'notes/hello.md' }],
     dispose: vi.fn(),
     ...overrides,
   }
@@ -240,7 +241,7 @@ describe('ShareAccessPage — images de la note partagee', () => {
 
   it('le vault de la page resout les images par le resolveur du lien (dossier de la note)', async () => {
     const url = vi.fn(async (target: string) => `blob:${target}`)
-    await renderPage('tok', makeSharingApi(makeHandle({ attachments: { url, ownBytes: vi.fn(), dispose: vi.fn() } })))
+    await renderPage('tok', makeSharingApi(makeHandle({ attachments: { url, urlOf: vi.fn(), ownBytes: vi.fn(), dispose: vi.fn() } })))
     const vault = DocumentView.lastOptions.vault as { resolveAttachmentUrl?(t: string): Promise<string> }
     await expect(vault.resolveAttachmentUrl!('Photo.png')).resolves.toBe('blob:Photo.png')
     expect(url).toHaveBeenCalledWith('Photo.png')
@@ -250,5 +251,40 @@ describe('ShareAccessPage — images de la note partagee', () => {
     await renderPage('tok', makeSharingApi(makeHandle()))
     const vault = DocumentView.lastOptions.vault as { resolveAttachmentUrl?(t: string): Promise<string> }
     await expect(vault.resolveAttachmentUrl!('Photo.png')).rejects.toThrow()
+  })
+
+  it('lists the pages of the link and opens one of them', async () => {
+    const documents = [
+      { id: 'd1', path: 'A/Projet.md' },
+      { id: 'd2', path: 'A/Projet/Sous.md' },
+      { id: 'd3', path: null },
+    ]
+    const api = makeSharingApi(makeHandle({ path: 'A/Projet.md', filename: 'Projet.md', documents }))
+    await renderPage('tok', api)
+    const pages = Array.from(container.querySelectorAll('[data-testid="share-page"]'))
+    // Sans chemin connu, une page n'est pas listee.
+    expect(pages.map(p => p.textContent)).toEqual(['Projet', 'Sous'])
+    await act(async () => {
+      (pages[1] as HTMLButtonElement).click()
+      await new Promise(r => setTimeout(r, 0))
+    })
+    expect(api.openSharedDocument).toHaveBeenLastCalledWith('tok', expect.anything(), 'd2')
+  })
+
+  it('shows no page list for a page shared alone', async () => {
+    await renderPage('tok', makeSharingApi(makeHandle()))
+    expect(container.querySelector('[data-testid="share-pages"]')).toBeNull()
+  })
+})
+
+describe('sharedDocumentFor', () => {
+  const handle = { documents: [{ id: 'p', path: 'A/Projet.md' }, { id: 's', path: 'A/Projet/Sous page.md' }, { id: 'i', path: 'A/Projet/Photo.png' }, { id: 'x', path: null }] }
+  it('finds a shared page by link name or path', () => {
+    expect(sharedDocumentFor(handle, 'Sous page')?.id).toBe('s')
+    expect(sharedDocumentFor(handle, 'A/Projet/Sous page.md')?.id).toBe('s')
+    expect(sharedDocumentFor(handle, 'Photo.png')?.id).toBe('i')
+  })
+  it('finds nothing outside the link', () => {
+    expect(sharedDocumentFor(handle, 'Ailleurs')).toBeUndefined()
   })
 })

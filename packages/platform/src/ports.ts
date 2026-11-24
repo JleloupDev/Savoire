@@ -171,7 +171,7 @@ export interface IVaultFiles {
    * Annonce le dossier de documents (« A/B », vide : racine) : les droits
    * d'un dossier s'appliquent a son contenu. Profil serveur seulement.
    */
-  placeFolders?(documents: { docId: string; folder: string }[]): Promise<void>
+  placeFolders?(documents: { docId: string; folder: string; name?: string }[]): Promise<void>
   /** Un dossier est deplace : ses droits le suivent. Profil serveur seulement. */
   moveFolderRights?(from: string, to: string): Promise<void>
   /**

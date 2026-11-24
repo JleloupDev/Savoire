@@ -421,7 +421,7 @@ pub async fn perms_expired(c: &mut PgConnection, at: Ts) -> AppResult<Vec<Resour
 
 // ── Liens de partage ─────────────────────────────────────────────────────────
 
-const LINK_COLS: &str = "id, token, resource_type, resource_id, permission, created_by, created_at, expires_at, revoked_at, path";
+const LINK_COLS: &str = "id, token, resource_type, resource_id, permission, created_by, created_at, expires_at, revoked_at, path, scope";
 
 fn link_row(r: &sqlx::postgres::PgRow) -> ShareLink {
     ShareLink {
@@ -435,6 +435,7 @@ fn link_row(r: &sqlx::postgres::PgRow) -> ShareLink {
         expires_at: r.get("expires_at"),
         revoked_at: r.get("revoked_at"),
         path: r.get("path"),
+        scope: ShareScope::parse(r.get("scope")).unwrap_or(ShareScope::Page),
     }
 }
 
@@ -466,7 +467,7 @@ pub async fn links_for_resource(c: &mut PgConnection, rt: ResourceType, rid: &st
 }
 
 pub async fn link_add(c: &mut PgConnection, l: &ShareLink) -> AppResult<()> {
-    sqlx::query(sqlx::AssertSqlSafe(format!("INSERT INTO share_links ({LINK_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")))
+    sqlx::query(sqlx::AssertSqlSafe(format!("INSERT INTO share_links ({LINK_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)")))
         .bind(&l.id)
         .bind(&l.token)
         .bind(l.resource_type.as_str())
@@ -477,9 +478,35 @@ pub async fn link_add(c: &mut PgConnection, l: &ShareLink) -> AppResult<()> {
         .bind(l.expires_at)
         .bind(l.revoked_at)
         .bind(&l.path)
+        .bind(l.scope.as_str())
         .execute(&mut *c)
         .await?;
     Ok(())
+}
+
+/// Les pages d'un lien « page et pages liees » (fixees a sa creation).
+pub async fn link_documents_add(c: &mut PgConnection, link_id: &str, doc_ids: &[String]) -> AppResult<()> {
+    for d in doc_ids {
+        sqlx::query("INSERT INTO share_link_documents (link_id, doc_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+            .bind(link_id)
+            .bind(d)
+            .execute(&mut *c)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn link_documents(c: &mut PgConnection, link_id: &str) -> AppResult<Vec<String>> {
+    Ok(sqlx::query_scalar("SELECT doc_id FROM share_link_documents WHERE link_id = $1").bind(link_id).fetch_all(&mut *c).await?)
+}
+
+pub async fn link_has_document(c: &mut PgConnection, link_id: &str, doc_id: &str) -> AppResult<bool> {
+    Ok(sqlx::query_scalar::<_, i32>("SELECT 1 FROM share_link_documents WHERE link_id = $1 AND doc_id = $2")
+        .bind(link_id)
+        .bind(doc_id)
+        .fetch_optional(&mut *c)
+        .await?
+        .is_some())
 }
 
 pub async fn link_set_revoked(c: &mut PgConnection, id: &str, at: Option<Ts>) -> AppResult<()> {
@@ -661,6 +688,24 @@ pub async fn doc_set_placement(c: &mut PgConnection, doc_id: &str, parent: Optio
 pub async fn doc_set_folder(c: &mut PgConnection, doc_id: &str, folder: &str) -> AppResult<()> {
     sqlx::query("UPDATE vault_documents SET folder = $2 WHERE doc_id = $1").bind(doc_id).bind(folder).execute(&mut *c).await?;
     Ok(())
+}
+
+pub async fn doc_set_name(c: &mut PgConnection, doc_id: &str, name: &str) -> AppResult<()> {
+    sqlx::query("UPDATE vault_documents SET name = $2 WHERE doc_id = $1").bind(doc_id).bind(name).execute(&mut *c).await?;
+    Ok(())
+}
+
+/// Les documents d'un dossier et de ses sous-dossiers.
+pub async fn docs_under_folder(c: &mut PgConnection, vault_id: &str, folder: &str) -> AppResult<Vec<VaultDocumentRecord>> {
+    let rows = sqlx::query(
+        "SELECT doc_id, vault_id, parent_doc_id, name, folder FROM vault_documents
+         WHERE vault_id = $1 AND (folder = $2 OR left(folder, length($2) + 1) = $2 || '/')",
+    )
+    .bind(vault_id)
+    .bind(folder)
+    .fetch_all(&mut *c)
+    .await?;
+    Ok(rows.iter().map(doc_row).collect())
 }
 
 pub async fn doc_children(c: &mut PgConnection, vault_id: &str, parent: &str) -> AppResult<Vec<VaultDocumentRecord>> {

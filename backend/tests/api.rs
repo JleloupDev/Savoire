@@ -399,6 +399,74 @@ async fn file_link_reads_its_own_bytes() {
     assert_eq!(upload(&app, &link, &format!("/api/v1/vaults/{v}/attachments/{pdf}"), PNG).await.0, 403);
 }
 
+/// Lien vers une page selon sa portee : sous-pages (defaut), page seule, pages liees.
+#[tokio::test]
+async fn link_scopes() {
+    let app = app!();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "v").await;
+    let v2 = app.vault(&alice, &ta, "v2").await;
+    let mut ids = vec![];
+    for _ in 0..5 {
+        ids.push(app.document(&ta, &v).await);
+    }
+    let foreign = app.document(&ta, &v2).await;
+    let (page, sub, deep, outside, linked) = (&ids[0], &ids[1], &ids[2], &ids[3], &ids[4]);
+    for f in &ids {
+        assert_eq!(upload(&app, &ta, &format!("/api/v1/vaults/{v}/attachments/{f}"), PNG).await.0, 200);
+    }
+    let placed = json!([
+        { "docId": page, "folder": "A", "name": "Projet.md" },
+        { "docId": sub, "folder": "A/Projet", "name": "Sous.md" },
+        { "docId": deep, "folder": "A/Projet/x", "name": "Photo.png" },
+        { "docId": outside, "folder": "A", "name": "Autre.md" },
+        { "docId": linked, "folder": "B", "name": "Liee.md" },
+    ]);
+    let r = app.put(&ta, &format!("/api/v1/vaults/{v}/documents/folders"), placed).await;
+    assert_eq!(r.0, 200, "{}", r.1);
+    assert_eq!(r.1["rejected"], json!([]));
+    let can = |link: String, id: String| {
+        let app = &app;
+        let v = v.clone();
+        async move { app.get(&link, &format!("/api/v1/vaults/{v}/attachments/{id}")).await.0 }
+    };
+
+    // Par defaut : la page et ses sous-pages (son dossier, a toute profondeur).
+    let r = app.post(&ta, &format!("/api/v1/documents/{page}/sharing/links"), json!({ "permission": "read", "path": "A/Projet.md" })).await;
+    assert_eq!(r.1["scope"], "subpages");
+    let a = app.get("", &format!("/api/v1/share/{}/access", r.1["token"].as_str().unwrap())).await;
+    let mut paths: Vec<String> = a.1["documents"].as_array().unwrap().iter().map(|d| d["path"].as_str().unwrap().to_string()).collect();
+    paths.sort();
+    assert_eq!(paths, ["A/Projet.md", "A/Projet/Sous.md", "A/Projet/x/Photo.png"]);
+    let link = a.1["accessToken"].as_str().unwrap().to_string();
+    for (id, code) in [(page, 200), (sub, 200), (deep, 200), (outside, 403), (linked, 403)] {
+        assert_eq!(can(link.clone(), id.clone()).await, code, "{id}");
+    }
+
+    // La page seule.
+    let r = app.post(&ta, &format!("/api/v1/documents/{page}/sharing/links"), json!({ "permission": "read", "scope": "page" })).await;
+    let a = app.get("", &format!("/api/v1/share/{}/access", r.1["token"].as_str().unwrap())).await;
+    assert_eq!(a.1["documents"].as_array().unwrap().len(), 1);
+    let link = a.1["accessToken"].as_str().unwrap().to_string();
+    assert_eq!(can(link.clone(), page.clone()).await, 200);
+    assert_eq!(can(link, sub.clone()).await, 403);
+
+    // Les pages liees : celles donnees a la creation, pas les sous-pages.
+    let r = app.post(&ta, &format!("/api/v1/documents/{page}/sharing/links"), json!({ "permission": "read", "scope": "linked", "documents": [linked] })).await;
+    assert_eq!(r.0, 200, "{}", r.1);
+    let a = app.get("", &format!("/api/v1/share/{}/access", r.1["token"].as_str().unwrap())).await;
+    assert_eq!(a.1["documents"][1]["path"], "B/Liee.md");
+    let link = a.1["accessToken"].as_str().unwrap().to_string();
+    assert_eq!(can(link.clone(), linked.clone()).await, 200);
+    assert_eq!(can(link, sub.clone()).await, 403);
+
+    // Une page d'un autre vault n'entre pas dans un lien.
+    let r = app.post(&ta, &format!("/api/v1/documents/{page}/sharing/links"), json!({ "permission": "read", "scope": "linked", "documents": [foreign] })).await;
+    assert_eq!(r.0, 403);
+    let r = app.post(&ta, &format!("/api/v1/documents/{page}/sharing/links"), json!({ "permission": "read", "scope": "tout" })).await;
+    assert_eq!(r.0, 400);
+}
+
 #[tokio::test]
 async fn upload_stops_at_quota() {
     let app = app!(json!({ "Limits": { "AccountBytes": 20 } }));

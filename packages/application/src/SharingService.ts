@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import type {
   ISharingAPI, ISharingBackend, SharedDocumentHandle,
-  AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup,
+  AppResourceSharing, AppResourcePermission, AppShareLink, AppShareLinkAccess, AppUserLookup, ShareLinkOptions,
 } from './contracts'
 import type { IIdentityProvider } from '@savoire/plugin-api'
 import { CollabOrchestrator } from './CollabOrchestrator'
@@ -27,7 +27,8 @@ export class SharingService implements ISharingAPI {
   }
 
   /** `path` : chemin du document (lien vers un document) ; la page du lien en tire l'editeur et le nom. */
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink> {
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string, options?: ShareLinkOptions): Promise<AppShareLink> {
+    if (options) return this.backend.createShareLink(resourceType, id, permission, token, path, options)
     return path === undefined
       ? this.backend.createShareLink(resourceType, id, permission, token)
       : this.backend.createShareLink(resourceType, id, permission, token, path)
@@ -41,8 +42,8 @@ export class SharingService implements ISharingAPI {
     return this.backend.accessShareLink(shareToken)
   }
 
-  async openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle> {
-    const raw = await this.backend.openSharedDocument(shareToken)
+  async openSharedDocument(shareToken: string, identity: IIdentityProvider, docId?: string): Promise<SharedDocumentHandle> {
+    const raw = docId === undefined ? await this.backend.openSharedDocument(shareToken) : await this.backend.openSharedDocument(shareToken, docId)
     const orchestrator = new CollabOrchestrator(raw.crdt, raw.transport, identity)
     return {
       ...raw,

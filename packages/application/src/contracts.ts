@@ -433,7 +433,25 @@ export interface AppShareLink {
   expiresAt: string | null
   revokedAt: string | null
   isValid: boolean
+  /** Lien vers une page : ce qu'il ouvre en plus d'elle (voir ShareScope). */
+  scope?: ShareScope
 }
+
+/**
+ * Ce qu'un lien vers une page ouvre : la page et ses sous-pages (son dossier,
+ * images comprises ; par defaut), la page seule, ou la page et les pages
+ * qu'elle lie (de proche en proche, liste fixee a la creation du lien).
+ */
+export type ShareScope = 'subpages' | 'page' | 'linked'
+
+/** Options d'un lien vers une page. `documents` : les pages liees (portee 'linked'). */
+export interface ShareLinkOptions {
+  scope?: ShareScope
+  documents?: string[]
+}
+
+/** Un document ouvert par un lien. `path` : absent si le serveur ne le connait pas encore. */
+export interface SharedDocumentEntry { id: string; path: string | null }
 
 export interface AppResourceSharing {
   resourceType: string
@@ -450,6 +468,9 @@ export interface AppShareLinkAccess {
   expiresAt: string | null
   vaultId?: string
   path?: string
+  scope?: ShareScope
+  /** Les documents que le lien ouvre : la page d'abord. */
+  documents?: SharedDocumentEntry[]
 }
 
 export interface SharedDocumentHandle {
@@ -461,13 +482,15 @@ export interface SharedDocumentHandle {
    * Images rangees dans le dossier de la note partagee (les seules que le
    * lien peut lire). Absent si le vault de la note est inconnu.
    */
-  attachments?: { url(target: string): Promise<string>; ownBytes(): Promise<Uint8Array>; dispose(): void }
+  attachments?: { url(target: string): Promise<string>; urlOf(id: string): Promise<string>; ownBytes(): Promise<Uint8Array>; dispose(): void }
   docId: string
   vaultId: string
   path: string
   filename: string
   permission: 'read' | 'write'
   accessToken: string
+  /** Les documents que le lien ouvre (la page d'abord), pour passer de l'un a l'autre. */
+  documents: SharedDocumentEntry[]
   dispose(): void
 }
 
@@ -507,10 +530,11 @@ export interface ISharingBackend {
   grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
   revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
   lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string, options?: ShareLinkOptions): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
-  openSharedDocument(shareToken: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
+  /** `docId` : un document du lien (sinon sa page). */
+  openSharedDocument(shareToken: string, docId?: string): Promise<Omit<SharedDocumentHandle, 'dispose'>>
 }
 
 /** La part du partage qui depend du profil de synchro. Voir IVaultSyncSession.sharing. */
@@ -522,10 +546,11 @@ export interface ISharingAPI {
   grantPermission(resourceType: 'vault' | 'document', id: string, subjectId: string, permission: string, token: string): Promise<AppResourcePermission>
   revokePermission(resourceType: 'vault' | 'document', id: string, targetUserId: string, token: string): Promise<void>
   lookupUserByEmail(email: string, token: string): Promise<AppUserLookup | null>
-  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string): Promise<AppShareLink>
+  createShareLink(resourceType: 'vault' | 'document', id: string, permission: string, token: string, path?: string, options?: ShareLinkOptions): Promise<AppShareLink>
   revokeShareLink(linkId: string, token: string): Promise<void>
   accessShareLink(shareToken: string): Promise<AppShareLinkAccess>
-  openSharedDocument(shareToken: string, identity: IIdentityProvider): Promise<SharedDocumentHandle>
+  /** `docId` : un document du lien (sinon sa page). */
+  openSharedDocument(shareToken: string, identity: IIdentityProvider, docId?: string): Promise<SharedDocumentHandle>
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

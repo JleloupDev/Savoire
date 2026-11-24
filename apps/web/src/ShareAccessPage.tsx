@@ -4,13 +4,14 @@
 // Exchanges the share token for a SharedDocumentHandle (CRDT + metadata),
 // then renders the document as read-only or editable according to the permission.
 
-import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
+import { resolveLinkPath } from '@savoire/plugin-api'
 import { createIconElement } from '@savoire/ui-components'
-import type { ISharingAPI, SharedDocumentHandle } from '@savoire/application'
+import type { ISharingAPI, SharedDocumentEntry, SharedDocumentHandle } from '@savoire/application'
 import { LocalKeyProvider } from '@savoire/infrastructure-sync'
 import { pluginRegistry } from './pluginRegistry'
 import { useNoteEditorModeOr, type NoteEditorMode } from './displayPreferences'
@@ -56,29 +57,46 @@ function guestId(handle: SharedDocumentHandle): string {
   return `share:${handle.docId.slice(0, 8)}`
 }
 
+/** Le document du lien que vise un lien `[[...]]` ou un chemin. */
+export function sharedDocumentFor(handle: Pick<SharedDocumentHandle, 'documents'>, target: string): SharedDocumentEntry | undefined {
+  const paths = handle.documents.flatMap(d => d.path ? [d.path] : [])
+  const path = paths.includes(target) ? target : resolveLinkPath(target, paths)
+  return path ? handle.documents.find(d => d.path === path) : undefined
+}
+
 function createShareVault(handle: SharedDocumentHandle): VaultAPI {
+  const paths = (): string[] => {
+    const all = handle.documents.flatMap(d => d.path ? [d.path] : [])
+    return all.includes(handle.path) ? all : [handle.path, ...all]
+  }
   return {
     read:                (id) => Promise.reject(new Error(`read(${id}) not supported on shared document: content is delivered via CRDT`)),
     readDocumentByPath:  (path) => Promise.reject(new Error(`readDocumentByPath(${path}) not supported on shared document: only the shared file is accessible`)),
     write:               () => Promise.resolve(),
-    list:                () => Promise.resolve([handle.path]),
-    exists:              (id) => Promise.resolve(id === handle.docId),
-    resolveDocumentId:   (path) => path === handle.path ? handle.docId : undefined,
+    // Les documents que le lien ouvre (la page, ses sous-pages ou ses pages liees).
+    list:                () => Promise.resolve(paths()),
+    exists:              (id) => Promise.resolve(id === handle.docId || handle.documents.some(d => d.id === id)),
+    resolveDocumentId:   (path) => path === handle.path ? handle.docId : sharedDocumentFor(handle, path)?.id,
     getVaultId:          () => handle.vaultId,
     getToken:            () => handle.accessToken,
     // Le fichier partage lui-meme (PDF, Word...) : ses octets, pour son apercu.
     readBinary:          (path) => path === handle.path && handle.attachments
       ? handle.attachments.ownBytes()
       : Promise.resolve(null),
-    // Les images de la note : seulement celles rangees dans son dossier.
-    resolveAttachmentUrl: (target) => handle.attachments?.url(target)
-      ?? Promise.reject(new Error(`resolveAttachmentUrl(${target}): aucune image lisible par ce lien`)),
+    // Les images que le lien ouvre (sous-pages, pages liees), puis celles
+    // rangees avec la note.
+    resolveAttachmentUrl: (target) => {
+      const shared = sharedDocumentFor(handle, target)
+      if (shared && handle.attachments) return handle.attachments.urlOf(shared.id)
+      return handle.attachments?.url(target)
+        ?? Promise.reject(new Error(`resolveAttachmentUrl(${target}): aucune image lisible par ce lien`))
+    },
   }
 }
 
 // ── ShareDocumentEditor ───────────────────────────────────────────────────────
 
-function ShareDocumentEditor({ handle, loadPlugins, mode, registry }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader; mode: NoteEditorMode; registry: PluginRegistry }) {
+function ShareDocumentEditor({ handle, loadPlugins, mode, registry, onOpen }: { handle: SharedDocumentHandle; loadPlugins: SharePluginLoader; mode: NoteEditorMode; registry: PluginRegistry; onOpen: (docId: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ro = handle.permission === 'read'
 
@@ -95,6 +113,13 @@ function ShareDocumentEditor({ handle, loadPlugins, mode, registry }: { handle: 
       const pluginApi = PluginAPIImpl.create(vault, handle.sync)
       // Les icones des plugins (sinon leur nom s'affiche en texte).
       pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
+      // Un lien vers une autre page du partage l'ouvre ici ; les autres ne menent nulle part.
+      if (pluginApi.workspace) {
+        pluginApi.workspace.openFile = async (target: string) => {
+          const doc = sharedDocumentFor(handle, target)
+          if (doc && doc.id !== handle.docId) onOpen(doc.id)
+        }
+      }
       loader = new PluginLoader()
       const plugins = await loadPlugins(handle.path)
       const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
@@ -157,12 +182,22 @@ export type PluginRegistry = Record<string, () => Promise<VaultPlugin>>
 export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins, registry = pluginRegistry }: { sharingApi: ISharingAPI; loadPlugins?: SharePluginLoader; registry?: PluginRegistry }) {
   const { token } = useParams<{ token: string }>()
   const [handle, setHandle] = useState<SharedDocumentHandle | null>(null)
-  const [info, setInfo] = useState<{ filename: string; path: string; permission: SharedDocumentHandle['permission'] } | null>(null)
+  const [info, setInfo] = useState<{ filename: string; path: string; permission: SharedDocumentHandle['permission']; docId: string; documents: SharedDocumentEntry[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Un invite n'a souvent rien choisi : mode classique (tableaux, callouts
   // modifiables tels quels), sinon le mode qu'il a choisi.
   const mode = useNoteEditorModeOr('classic')
+  // Le document ouvert du lien (une sous-page, une page liee), dans l'adresse.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const docId = searchParams.get('doc') ?? undefined
+  const openDoc = useCallback((id: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('doc', id)
+      return next
+    })
+  }, [setSearchParams])
 
   useEffect(() => {
     if (!token) return
@@ -174,18 +209,18 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins, registr
     setHandle(null)
     const keyProvider = new LocalKeyProvider()
     keyProvider.init()
-      .then(() => sharingApi.openSharedDocument(token, keyProvider))
+      .then(() => docId ? sharingApi.openSharedDocument(token, keyProvider, docId) : sharingApi.openSharedDocument(token, keyProvider))
       .then(h => {
         if (disposed) { h.dispose(); return }
         activeHandle = h
         setHandle(h)
-        setInfo({ filename: h.filename, path: h.path, permission: h.permission })
+        setInfo({ filename: h.filename, path: h.path, permission: h.permission, docId: h.docId, documents: h.documents ?? [] })
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
 
     return () => { disposed = true; activeHandle?.dispose() }
-  }, [token, sharingApi, mode])
+  }, [token, sharingApi, mode, docId])
 
   if (loading) return <FullPage><Status>Vérification du lien…</Status></FullPage>
   if (error)   return <FullPage><Status error>Lien invalide ou expiré. ({error})</Status></FullPage>
@@ -198,7 +233,7 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins, registr
     return (
       <FullPage>
         <div data-testid="share-embed" style={{ flex: 1, overflow: 'hidden' }}>
-          {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} />}
+          {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} onOpen={openDoc} />}
         </div>
       </FullPage>
     )
@@ -217,10 +252,45 @@ export function ShareAccessPage({ sharingApi, loadPlugins = basePlugins, registr
         </div>
         {/\.md$/i.test(info.path) && <EditorModeSwitch value={mode} />}
       </div>
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} />}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {info.documents.length > 1 && <SharedPages documents={info.documents} current={info.docId} onOpen={openDoc} />}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {handle && <ShareDocumentEditor handle={handle} loadPlugins={loadPlugins} mode={mode} registry={registry} onOpen={openDoc} />}
+        </div>
       </div>
     </FullPage>
+  )
+}
+
+/** Les pages du lien (sous-pages, pages liees), pour passer de l'une a l'autre. */
+function SharedPages({ documents, current, onOpen }: { documents: SharedDocumentEntry[]; current: string; onOpen: (id: string) => void }) {
+  const shown = documents.filter(d => d.path)
+  return (
+    <nav data-testid="share-pages" aria-label="Pages partagées" style={{ width: 240, flexShrink: 0, overflow: 'auto', borderRight: '1px solid var(--border)', background: 'var(--bg-surface)', padding: '8px 0', fontSize: '0.82rem' }}>
+      {shown.map(d => {
+        const path = d.path!
+        const depth = path.split('/').length - (shown[0]?.path?.split('/').length ?? 1)
+        const name = (path.split('/').at(-1) ?? path).replace(/\.(md|page)$/i, '')
+        const active = d.id === current
+        return (
+          <button
+            key={d.id}
+            data-testid="share-page"
+            data-doc-id={d.id}
+            title={path}
+            onClick={() => { if (!active) onOpen(d.id) }}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: active ? 'default' : 'pointer',
+              padding: `4px 12px 4px ${12 + Math.max(0, depth) * 12}px`, background: active ? 'var(--bg-hover, rgba(127,109,242,0.12))' : 'transparent',
+              color: active ? 'var(--text)' : 'var(--text-muted)', fontWeight: active ? 600 : 400,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'inherit', fontSize: 'inherit',
+            }}
+          >
+            {name}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 

@@ -237,3 +237,44 @@ export function rewriteMovedLinks(text: string, ctx: LinkMoveContext, oldSource:
       })
   }
 }
+
+// ── Liens d'un texte ─────────────────────────────────────────────────────────
+
+/**
+ * Les documents que vise un texte : liens [[...]], ![[...]] et Markdown
+ * [..](..) locaux, hors code. `source` : chemin du texte, pour les liens
+ * Markdown relatifs. Rend les chemins trouves parmi `resolver` (sans doublon).
+ */
+export function linkedPathsOf(text: string, source: string, resolver: LinkResolver): string[] {
+  const found = new Set<string>()
+  let fence: string | null = null
+  for (const line of text.split('\n')) {
+    const f = line.match(FENCE_LINE_RE)
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null
+      continue
+    }
+    if (f) { fence = f[1]; continue }
+    for (const part of line.split(/(`[^`]*`)/)) {
+      if (part.startsWith('`') && part.endsWith('`') && part.length > 1) continue
+      for (const m of part.matchAll(WIKI_LINK_RE)) {
+        const t = m[2].trim()
+        const hit = t ? resolver.resolve(t) : undefined
+        if (hit !== undefined) found.add(hit)
+      }
+      for (const m of part.matchAll(MD_LINK_RE)) {
+        const raw = m[2]
+        const url = raw.startsWith('<') ? raw.slice(1, -1) : raw
+        if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('#')) continue
+        const hash = url.indexOf('#')
+        let decoded = hash < 0 ? url : url.slice(0, hash)
+        try { decoded = decodeURI(decoded) } catch { /* tel quel */ }
+        const candidate = decoded.startsWith('/') ? decoded.replace(/^\/+/, '') : joinRelative(folderOfPath(source), decoded)
+        const hit = resolver.resolve(candidate) ?? resolver.resolve(decoded)
+        if (hit !== undefined) found.add(hit)
+      }
+    }
+  }
+  found.delete(source)
+  return [...found]
+}

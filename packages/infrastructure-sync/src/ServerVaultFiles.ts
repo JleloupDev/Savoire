@@ -30,7 +30,7 @@ export class ServerVaultFiles implements IVaultFiles {
   }
 
   /** Le serveur apprend le dossier de chaque document (droits herites des dossiers). */
-  placeFolders(documents: { docId: string; folder: string }[]): Promise<void> {
+  placeFolders(documents: { docId: string; folder: string; name?: string }[]): Promise<void> {
     return this.storage.placeDocumentFolders(this.vaultId, documents, this.token())
   }
 

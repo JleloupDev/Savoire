@@ -127,7 +127,7 @@ export {
 } from './formula'
 export { BLOCK_DESTROY_EVENT, BLOCK_ENTER_EVENT } from './blocks'
 export type { LinkResolver } from './links'
-export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName, rewriteMovedLinks } from './links'
+export { resolveLinkPath, createLinkResolver, linkTargetFor, fileExtensionOf, withNoteExtension, noteName, rewriteMovedLinks, linkedPathsOf } from './links'
 export type { LinkMoveContext } from './links'
 export { relinkAfterMoves, moveWithLinks } from './relink'
 export type { Move, RelinkVault, CitingLookup } from './relink'

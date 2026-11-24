@@ -7,7 +7,8 @@ import { PublishWebTab } from './PublishWebTab'
 import { AclTab } from './AclTab'
 import type { PublicationService } from './publication'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup } from '@savoire/application'
+import type { IVaultSharing, AppResourceSharing, AppResourcePermission, AppShareLink, AppUserLookup, ShareLinkOptions, ShareScope } from '@savoire/application'
+import type { PageRef, SharePages } from './shareScope'
 import type { VaultSummary, DocumentDto } from './types'
 import { t, ti } from '@savoire/i18n'
 import { notify } from '@savoire/notifications'
@@ -109,9 +110,32 @@ function LinkRow({ link, onRevoke }: { link: AppShareLink; onRevoke: () => void 
         {linkUrl(link.token)}
       </span>
       <span style={permBadge(link.permission)}>{link.permission}</span>
+      {link.scope && link.resourceType === 'document' && <span data-testid="link-scope-badge" style={{ fontSize: '0.68rem', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>{SCOPE_BADGES[link.scope]}</span>}
       {link.expiresAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>exp. {fmtDate(link.expiresAt)}</span>}
       <button style={btnGhost} onClick={copy}>{copied ? '✓' : t('app', 'sharing.copy')}</button>
       <button style={btnDanger} onClick={onRevoke}>{t('app', 'sharing.revoke')}</button>
+    </div>
+  )
+}
+
+/** Les pages qu'ouvrira le lien. Pages liees : un avertissement, car elles vont loin de lien en lien. */
+function ScopePreview({ scope, pages }: { scope: ShareScope; pages: PageRef[] | null }) {
+  if (scope === 'page') return <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Seule cette page sera ouverte par le lien.</div>
+  if (pages === null) return <div style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-faint)' }}>Recherche des pages liées…</div>
+  const linked = scope === 'linked'
+  const head = linked
+    ? (pages.length === 0 ? 'Cette page ne mène à aucune autre page : seule elle sera ouverte.'
+      : `Attention : vous allez partager aussi ${pages.length === 1 ? 'cette page' : `ces ${pages.length} pages`}. Les liens mènent de page en page, cela peut aller loin.`)
+    : (pages.length === 0 ? 'Cette page n’a pas de sous-page pour l’instant. Celles ajoutées ensuite seront ouvertes aussi.'
+      : `Le lien ouvrira aussi ${pages.length === 1 ? 'sa sous-page' : `ses ${pages.length} sous-pages`} (et celles ajoutées ensuite) :`)
+  return (
+    <div data-testid="link-scope-preview" style={{ marginTop: 8, padding: linked && pages.length ? '8px 10px' : 0, borderRadius: 6, border: linked && pages.length ? '1px solid var(--color-warning, #d97706)' : 'none', background: linked && pages.length ? 'rgba(217,119,6,0.08)' : 'transparent' }}>
+      <div style={{ fontSize: '0.75rem', color: linked && pages.length ? 'var(--text)' : 'var(--text-muted)', fontWeight: linked && pages.length ? 600 : 400 }}>{head}</div>
+      {pages.length > 0 && (
+        <ul data-testid="link-scope-pages" style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 160, overflow: 'auto', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-code)' }}>
+          {pages.map(p => <li key={p.id}>{p.path}</li>)}
+        </ul>
+      )}
     </div>
   )
 }
@@ -132,9 +156,23 @@ interface Props {
   onClose: () => void
   /** Publication sur le web (onglet « Web », pour une note). */
   publications?: PublicationService
+  /** Les pages qu'ouvrirait un lien vers la note (sous-pages, pages liees). */
+  pagesOf?: SharePages
 }
 
-export function SharingPanel({ token, vault, document: doc, sharingApi, onClose, publications }: Props) {
+const SCOPE_LABELS: Record<ShareScope, string> = {
+  subpages: 'La page et ses sous-pages',
+  page: 'La page seule',
+  linked: 'La page et les pages liées',
+}
+
+const SCOPE_BADGES: Record<ShareScope, string> = {
+  subpages: '+ sous-pages',
+  page: 'page seule',
+  linked: '+ pages liées',
+}
+
+export function SharingPanel({ token, vault, document: doc, sharingApi, onClose, publications, pagesOf }: Props) {
   useMobileBack(onClose)
   // Which resource to manage: the vault, the note, or one of the note's folders
   // (« folder:A/B ») : droits herites, surchargeables (AclTab).
@@ -160,6 +198,19 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
   // Link form
   const [linkPermission, setLinkPermission] = useState('read')
   const [linkBusy, setLinkBusy] = useState(false)
+  // Ce que le lien ouvre en plus de la page (lien vers une note).
+  const [linkScope, setLinkScope] = useState<ShareScope>('subpages')
+  const [scopePages, setScopePages] = useState<PageRef[] | null>(null)
+  const scopedLink = target === 'document' && folderTarget === null && !!doc
+  useEffect(() => {
+    if (!scopedLink || tab !== 'links') return
+    let cancelled = false
+    setScopePages(null)
+    if (linkScope === 'page' || !pagesOf) { setScopePages([]); return }
+    if (linkScope === 'subpages') { setScopePages(pagesOf.subpages()); return }
+    pagesOf.linked().then(p => { if (!cancelled) setScopePages(p) }, e => { if (!cancelled) { setScopePages([]); setError(String(e)) } })
+    return () => { cancelled = true }
+  }, [scopedLink, tab, linkScope, pagesOf])
 
   const resourceId = folderTarget !== null ? undefined : target === 'vault' ? vault?.id : doc?.id
   const resourceName = folderTarget !== null ? `${folderTarget}/` : target === 'vault' ? vault?.name : doc?.path
@@ -228,7 +279,10 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
     if (!resourceId) return
     setLinkBusy(true)
     try {
-      await sharingApi.createShareLink(target, resourceId, linkPermission, token, target === 'document' ? doc?.path : undefined)
+      const options: ShareLinkOptions | undefined = scopedLink
+        ? { scope: linkScope, ...(linkScope === 'linked' ? { documents: (scopePages ?? []).map(p => p.id) } : {}) }
+        : undefined
+      await sharingApi.createShareLink(target, resourceId, linkPermission, token, target === 'document' ? doc?.path : undefined, options)
       await reload()
       notify('success', t('app', 'notify.sharing.linkCreated'))
     } catch (e) {
@@ -359,10 +413,16 @@ export function SharingPanel({ token, vault, document: doc, sharingApi, onClose,
                     <option value="read">{t('app', 'sharing.permission.read')}</option>
                     <option value="write">{t('app', 'sharing.permission.write')}</option>
                   </select>
-                  <button style={btnPrimary} onClick={() => void handleCreateLink()} disabled={linkBusy}>
+                  {scopedLink && (
+                    <select data-testid="link-scope" style={sel} value={linkScope} onChange={e => setLinkScope(e.target.value as ShareScope)}>
+                      {(['subpages', 'page', 'linked'] as const).map(s => <option key={s} value={s}>{SCOPE_LABELS[s]}</option>)}
+                    </select>
+                  )}
+                  <button data-testid="link-create" style={btnPrimary} onClick={() => void handleCreateLink()} disabled={linkBusy || (scopedLink && linkScope === 'linked' && scopePages === null)}>
                     {linkBusy ? '…' : t('app', 'sharing.createLinkSubmit')}
                   </button>
                 </div>
+                {scopedLink && <ScopePreview scope={linkScope} pages={scopePages} />}
               </div>
 
               {/* Links list */}

@@ -444,7 +444,8 @@ export class VaultClient implements VaultAPI {
       const meta = this.directory.getById(id)
       if (!meta) return []
       const slash = meta.path.lastIndexOf('/')
-      return [{ docId: id, folder: slash < 0 ? '' : meta.path.slice(0, slash) }]
+      // Le nom aussi : le serveur connait le chemin (sous-pages d'un lien de partage).
+      return [{ docId: id, folder: slash < 0 ? '' : meta.path.slice(0, slash), name: meta.path.slice(slash + 1) }]
     })
     this.foldersToAnnounce.clear()
     if (docs.length === 0) return

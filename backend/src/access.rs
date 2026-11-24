@@ -304,7 +304,54 @@ pub async fn link_vault_write(c: &mut PgConnection, caller: &str, vault_id: &str
     Err(AppError::denied("Lien de partage sans permission d'écriture sur ce vault."))
 }
 
-/// Un lien vers une note lit aussi les pieces jointes rangees dans son dossier ; rien d'autre.
+/// Le dossier des sous-pages d'une page : « A/Projet » pour « A/Projet.page »
+/// (note de dossier). Chemin connu du serveur (dossier et nom annonces par
+/// les clients), sinon celui donne a la creation du lien.
+pub fn subpages_folder(page: &VaultDocumentRecord, link_path: Option<&str>) -> Option<String> {
+    let path = match (page.folder.as_deref(), page.name.as_deref()) {
+        (Some(f), Some(n)) if !n.is_empty() => if f.is_empty() { n.to_string() } else { format!("{f}/{n}") },
+        _ => link_path?.to_string(),
+    };
+    let name_start = path.rfind('/').map_or(0, |i| i + 1);
+    let stem = match path.rfind('.') {
+        Some(i) if i > name_start => &path[..i],
+        _ => path.as_str(),
+    };
+    (!stem.is_empty()).then(|| stem.to_string())
+}
+
+/// Le document est-il ouvert par ce lien (sa page, ses sous-pages, ses pages liees) ?
+pub async fn link_covers(c: &mut PgConnection, l: &ShareLink, vault_id: &str, doc_id: &str) -> AppResult<bool> {
+    if l.resource_type == ResourceType::Vault {
+        return Ok(l.resource_id == vault_id);
+    }
+    if l.resource_type != ResourceType::Document {
+        return Ok(false);
+    }
+    let Some(doc) = repos::doc_get(c, doc_id).await? else { return Ok(false) };
+    if doc.vault_id != vault_id {
+        return Ok(false);
+    }
+    if l.resource_id == doc_id {
+        return Ok(true);
+    }
+    match l.scope {
+        ShareScope::Page => Ok(false),
+        ShareScope::Linked => repos::link_has_document(c, &l.id, doc_id).await,
+        ShareScope::Subpages => {
+            // Une image rangee avec la page en est une sous-page.
+            if doc.parent_doc_id.as_deref() == Some(l.resource_id.as_str()) {
+                return Ok(true);
+            }
+            let Some(page) = repos::doc_get(c, &l.resource_id).await? else { return Ok(false) };
+            let Some(root) = subpages_folder(&page, l.path.as_deref()) else { return Ok(false) };
+            let folder = doc.folder.as_deref().unwrap_or("");
+            Ok(folder == root || folder.starts_with(&format!("{root}/")))
+        }
+    }
+}
+
+/// Ce qu'un lien vers une page lit : la page et sa portee (voir link_covers).
 /// Un lien vers un fichier (PDF, Word...) lit ses propres octets.
 pub async fn link_attachment_read(c: &mut PgConnection, caller: &str, vault_id: &str, attachment_id: &str) -> AppResult<()> {
     if is_view_caller(caller) {
@@ -320,14 +367,7 @@ pub async fn link_attachment_read(c: &mut PgConnection, caller: &str, vault_id: 
         return Err(AppError::denied("Jeton de vue non valide pour cette piece jointe."));
     }
     let l = valid_link(c, caller).await?;
-    if l.resource_type == ResourceType::Vault && l.resource_id == vault_id {
-        return Ok(());
-    }
-    if l.resource_type == ResourceType::Document
-        && let Some(file) = repos::doc_get(c, attachment_id).await?
-        && file.vault_id == vault_id
-        && (file.doc_id == l.resource_id || file.parent_doc_id.as_deref() == Some(l.resource_id.as_str()))
-    {
+    if link_covers(c, &l, vault_id, attachment_id).await? {
         return Ok(());
     }
     Err(AppError::denied("Lien de partage non valide pour cette piece jointe."))
@@ -343,9 +383,7 @@ pub async fn link_document_read(c: &mut PgConnection, caller: &str, vault_id: &s
         return Err(AppError::denied("Token view non valide pour ce document."));
     }
     let l = valid_link(c, caller).await?;
-    if (l.resource_type == ResourceType::Vault && l.resource_id == vault_id)
-        || (l.resource_type == ResourceType::Document && l.resource_id == doc_id)
-    {
+    if link_covers(c, &l, vault_id, doc_id).await? {
         return Ok(());
     }
     Err(AppError::denied("Lien de partage non valide pour ce document."))
@@ -361,10 +399,7 @@ pub async fn link_document_write(c: &mut PgConnection, caller: &str, vault_id: &
         return Err(AppError::denied("Token view sans permission d'écriture sur ce document."));
     }
     let l = valid_link(c, caller).await?;
-    if ((l.resource_type == ResourceType::Vault && l.resource_id == vault_id)
-        || (l.resource_type == ResourceType::Document && l.resource_id == doc_id))
-        && l.allows_write()
-    {
+    if l.allows_write() && link_covers(c, &l, vault_id, doc_id).await? {
         return Ok(());
     }
     Err(AppError::denied("Lien de partage sans permission d'écriture sur ce document."))

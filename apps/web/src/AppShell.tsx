@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
+import { sharePagesOf, type SharePages } from './shareScope'
 import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/platform'
 import { YMapVaultDirectory, serverUrl } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
@@ -460,6 +461,15 @@ export function AppShell() {
   selectedVaultIdRef.current = selectedVault?.id ?? null
 
   const vaultAPIRef = useRef<VaultClient | undefined>(undefined)
+  // Les pages qu'ouvrirait un lien vers la note active (sous-pages, pages liees).
+  const sharePages = useMemo<SharePages | undefined>(() => {
+    if (!activeDoc) return undefined
+    const page = { id: activeDoc.id, path: activeDoc.path }
+    return {
+      subpages: () => vaultAPIRef.current ? sharePagesOf(vaultAPIRef.current, page).subpages() : [],
+      linked: () => vaultAPIRef.current ? sharePagesOf(vaultAPIRef.current, page).linked() : Promise.resolve([]),
+    }
+  }, [activeDoc?.id, activeDoc?.path])
   const vaultSessionRef = useRef<IVaultSyncSession | undefined>(undefined)
   // `sync.openRoom` des plugins : servi par la session du vault actif. La room
   // directe ne sert plus qu'au document partage isole, qui n'a pas de session.
@@ -1967,6 +1977,7 @@ export function AppShell() {
           vault={selectedVault}
           document={activeDoc}
           sharingApi={vaultSharing}
+          pagesOf={sharePages}
           onClose={() => setSharingOpen(false)}
         />
       )}

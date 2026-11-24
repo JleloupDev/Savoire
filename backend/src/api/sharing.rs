@@ -77,6 +77,7 @@ pub struct LinkDto {
     expires_at: Option<Ts>,
     revoked_at: Option<Ts>,
     is_valid: bool,
+    scope: String,
 }
 
 fn link_dto(l: &ShareLink) -> LinkDto {
@@ -91,6 +92,7 @@ fn link_dto(l: &ShareLink) -> LinkDto {
         expires_at: l.expires_at,
         revoked_at: l.revoked_at,
         is_valid: l.is_valid(),
+        scope: l.scope.as_str().into(),
     }
 }
 
@@ -209,7 +211,15 @@ pub struct LinkRequest {
     permission: String,
     expires_at: Option<Ts>,
     path: Option<String>,
+    /// Lien vers une page : 'subpages' (defaut), 'page' ou 'linked'.
+    scope: Option<String>,
+    /// Portee 'linked' : les pages liees, calculees par l'appli (le serveur ne lit pas les notes).
+    #[serde(default)]
+    documents: Vec<String>,
 }
+
+/// Au plus tant de pages liees dans un lien.
+const MAX_LINKED: usize = 2000;
 
 async fn create_link(st: &AppState, caller: &str, rt: &str, rid: &str, req: LinkRequest) -> AppResult<Response> {
     let permission = parse_perm(&req.permission)?;
@@ -223,8 +233,29 @@ async fn create_link(st: &AppState, caller: &str, rt: &str, rid: &str, req: Link
     let mut c = st.db.acquire().await?;
     access::require_share_right(&mut c, caller, t, rid).await?;
     let path = if t == ResourceType::Document { req.path.as_deref() } else { None };
-    let link = ShareLink::create(t, rid, permission, caller, req.expires_at, path);
+    let mut link = ShareLink::create(t, rid, permission, caller, req.expires_at, path);
+    let mut linked = vec![];
+    if t == ResourceType::Document {
+        link.scope = match req.scope.as_deref() {
+            None => ShareScope::Subpages,
+            Some(s) => ShareScope::parse(s).ok_or_else(|| AppError::validation(format!("Portee inconnue : '{s}'")))?,
+        };
+        if link.scope == ShareScope::Linked {
+            if req.documents.len() > MAX_LINKED {
+                return Err(AppError::validation(format!("{MAX_LINKED} pages liees au plus.")));
+            }
+            let vault = repos::doc_vault_id(&mut c, rid).await?;
+            for d in req.documents.iter().filter(|d| d.as_str() != rid) {
+                // Une page d'un autre vault n'entre pas dans le lien.
+                if repos::doc_vault_id(&mut c, d).await? != vault {
+                    return Err(AppError::denied("Une page liee n'est pas dans le vault de la page partagee."));
+                }
+                linked.push(d.clone());
+            }
+        }
+    }
     repos::link_add(&mut c, &link).await?;
+    repos::link_documents_add(&mut c, &link.id, &linked).await?;
     Ok(ok(&link_dto(&link)))
 }
 
@@ -263,6 +294,7 @@ pub async fn access_link(State(st): State<AppState>, ReqParts(parts): ReqParts, 
     } else {
         repos::doc_vault_id(&mut c, &link.resource_id).await?
     };
+    let documents = if link.resource_type == ResourceType::Document { shared_documents(&mut c, &link).await? } else { vec![] };
     Ok(ok(&json!({
         "accessToken": jwt,
         "resourceType": link.resource_type.as_str(),
@@ -271,7 +303,50 @@ pub async fn access_link(State(st): State<AppState>, ReqParts(parts): ReqParts, 
         "expiresAt": link.expires_at,
         "vaultId": vault_id,
         "path": link.path,
+        "scope": link.scope.as_str(),
+        "documents": documents,
     })))
+}
+
+/// Chemin d'un document connu du serveur (dossier et nom annonces), s'il l'est.
+fn path_of(d: &VaultDocumentRecord) -> Option<String> {
+    let name = d.name.as_deref().filter(|n| !n.is_empty())?;
+    Some(match d.folder.as_deref() {
+        Some(f) if !f.is_empty() => format!("{f}/{name}"),
+        _ => name.to_string(),
+    })
+}
+
+/// Les documents ouverts par un lien vers une page : elle d'abord, puis sa portee.
+async fn shared_documents(c: &mut PgConnection, link: &ShareLink) -> AppResult<Vec<serde_json::Value>> {
+    let Some(page) = repos::doc_get(c, &link.resource_id).await? else { return Ok(vec![]) };
+    let mut out = vec![json!({ "id": page.doc_id, "path": path_of(&page).or_else(|| link.path.clone()) })];
+    let mut seen = std::collections::HashSet::from([page.doc_id.clone()]);
+    let others: Vec<VaultDocumentRecord> = match link.scope {
+        ShareScope::Page => vec![],
+        ShareScope::Subpages => {
+            let mut v = repos::doc_children(c, &page.vault_id, &page.doc_id).await?;
+            if let Some(root) = access::subpages_folder(&page, link.path.as_deref()) {
+                v.extend(repos::docs_under_folder(c, &page.vault_id, &root).await?);
+            }
+            v
+        }
+        ShareScope::Linked => {
+            let mut v = vec![];
+            for id in repos::link_documents(c, &link.id).await? {
+                if let Some(d) = repos::doc_get(c, &id).await? {
+                    v.push(d);
+                }
+            }
+            v
+        }
+    };
+    for d in others {
+        if seen.insert(d.doc_id.clone()) {
+            out.push(json!({ "id": d.doc_id, "path": path_of(&d) }));
+        }
+    }
+    Ok(out)
 }
 
 // ── Droits herites (ACL) ─────────────────────────────────────────────────────
@@ -482,6 +557,10 @@ pub struct DocumentFolder {
     doc_id: String,
     #[serde(default)]
     folder: Option<String>,
+    /// Nom du fichier (« Projet.page ») : le serveur connait ainsi le chemin
+    /// des documents, pour les sous-pages d'un lien de partage.
+    #[serde(default)]
+    name: Option<String>,
 }
 
 const MAX_PLACED: usize = 500;
@@ -507,7 +586,18 @@ pub async fn place_documents(State(st): State<AppState>, Auth(p): Auth, Path(vau
             rejected.push(d.doc_id);
             continue;
         }
+        let name = d.name.as_deref().map(str::trim).filter(|n| !n.is_empty() && !n.contains('/') && n.chars().count() <= 255);
         if doc.folder.as_deref() == Some(folder.as_str()) {
+            // Meme dossier : seulement le nom, s'il a change (renommage).
+            if let Some(n) = name
+                && doc.name.as_deref() != Some(n)
+            {
+                if access::for_document(&mut c, &p.sub, &vault, &d.doc_id).await?.can_write() {
+                    repos::doc_set_name(&mut c, &d.doc_id, n).await?;
+                } else {
+                    rejected.push(d.doc_id);
+                }
+            }
             continue;
         }
         let can_here = access::for_document(&mut c, &p.sub, &vault, &d.doc_id).await?.can_write();
@@ -521,6 +611,9 @@ pub async fn place_documents(State(st): State<AppState>, Auth(p): Auth, Path(vau
             continue;
         }
         repos::doc_set_folder(&mut c, &d.doc_id, &folder).await?;
+        if let Some(n) = name {
+            repos::doc_set_name(&mut c, &d.doc_id, n).await?;
+        }
         changed = true;
     }
     drop(c);

@@ -145,7 +145,7 @@ export class RestVaultStorage implements IVaultStorage {
   }
 
   /** Dossier de documents (PUT .../documents/folders), par lots de 500. */
-  async placeDocumentFolders(vaultId: string, documents: { docId: string; folder: string }[], token: string): Promise<void> {
+  async placeDocumentFolders(vaultId: string, documents: { docId: string; folder: string; name?: string }[], token: string): Promise<void> {
     for (let i = 0; i < documents.length; i += 500) {
       const res = await this.fetchFn(this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/documents/folders`), {
         method: 'PUT',

@@ -25,6 +25,11 @@ export class SharedNoteAttachments {
     const name = target.trim().split('/').at(-1) ?? ''
     const id = (await this.names()).get(name)
     if (!id) throw new Error(`piece jointe hors du dossier de la note partagee : ${target}`)
+    return this.urlOf(id)
+  }
+
+  /** URL affichable d'un fichier du lien, par son id (le serveur verifie la portee). */
+  urlOf(id: string): Promise<string> {
     let url = this.urls.get(id)
     if (!url) {
       url = this.storage.fetchAttachment(this.vaultId, id, this.token()).then(blob => {
