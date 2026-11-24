@@ -155,6 +155,22 @@ export function isInside(path: string, folderPath: string): boolean {
   return path !== folderPath && path.startsWith(folderPath)
 }
 
+/**
+ * Dossier ou ranger `dragged` lache sur `target`, ou null si ce n'est pas
+ * possible. Lache sur une note simple, il va dans son dossier frere : la note
+ * devient note de dossier, avec `dragged` pour premiere sous-page.
+ */
+export function dropFolder(dragged: TreeNode, target: TreeNode): string | null {
+  if (dragged.kind === 'folder' || dragged.path === target.path) return null
+  const folder = target.kind === 'folder' ? target.path
+    : target.kind === 'folderNote' ? target.folderPath
+    : folderOfNote(target.path)
+  if (!folder || parentOf(dragged.path) === folder) return null
+  // Pas une note dans son propre dossier, ni sous l'une de ses sous-pages.
+  if (dragged.kind === 'folderNote' && (folder === dragged.folderPath || isInside(folder, dragged.folderPath))) return null
+  return folder
+}
+
 /** Remplace le prefixe `from` par `to` (deux dossiers avec `/` final). */
 export function rebasePath(path: string, from: string, to: string): string {
   return path.startsWith(from) ? to + path.slice(from.length) : path

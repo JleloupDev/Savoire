@@ -6,6 +6,7 @@ import {
   buildPathTree,
   createSubPage,
   deleteFolderDeep,
+  dropFolder,
   folderOfNote,
   groupEntries,
   listLevel,
@@ -175,6 +176,39 @@ describe('moveNote', () => {
     const { vault, paths } = makeVault(['Projet.md', 'Projet/X.md', 'Plan/X.md'])
     await expect(moveNote(vault, 'Projet.md', 'Plan.md')).rejects.toThrow()
     expect(paths()).toEqual(['Plan/X.md', 'Projet.md', 'Projet/X.md'])
+  })
+})
+
+describe('dropFolder', () => {
+  const file = (path: string) => ({ kind: 'file' as const, name: path.split('/').pop()!, path })
+  const note = (path: string, folderPath: string) => ({ kind: 'folderNote' as const, name: '', path, fileName: path.split('/').pop()!, folderPath })
+  const folder = (path: string) => ({ kind: 'folder' as const, name: '', path })
+
+  it('une note lachee sur une note simple va dans son dossier frere', () => {
+    expect(dropFolder(file('A.md'), file('Projet.md'))).toBe('Projet/')
+    expect(dropFolder(file('A.md'), file('Docs/Projet.page'))).toBe('Docs/Projet/')
+  })
+
+  it('lachee sur une note de dossier ou un dossier, elle va dedans', () => {
+    expect(dropFolder(file('A.md'), note('Projet.md', 'Projet/'))).toBe('Projet/')
+    expect(dropFolder(file('A.md'), folder('Archive/'))).toBe('Archive/')
+  })
+
+  it('refuse les lachers sans effet ou impossibles', () => {
+    expect(dropFolder(file('A.md'), file('A.md'))).toBeNull()
+    expect(dropFolder(file('Projet/A.md'), file('Projet.md'))).toBeNull()
+    expect(dropFolder(file('A.md'), file('Sans-extension'))).toBeNull()
+    expect(dropFolder(folder('Archive/'), file('Projet.md'))).toBeNull()
+    expect(dropFolder(note('Projet.md', 'Projet/'), file('Projet/X.md'))).toBeNull()
+  })
+
+  it('la note cible devient note de dossier', async () => {
+    const { vault, paths } = makeVault(['A.md', 'Projet.md'])
+    await moveNote(vault, 'A.md', dropFolder(file('A.md'), file('Projet.md'))! + 'A.md')
+    expect(paths()).toEqual(['Projet.md', 'Projet/A.md'])
+    expect(groupEntries(await vault.list(''))).toEqual([
+      { kind: 'folderNote', name: 'Projet', path: 'Projet.md', fileName: 'Projet.md', folderPath: 'Projet/' },
+    ])
   })
 })
 

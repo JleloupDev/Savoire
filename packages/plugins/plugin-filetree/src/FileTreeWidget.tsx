@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, useRef } from 'react'
 import type { ViewContext, VaultAPI, FileTypeSpec, IIndexerAPI, IconAPI } from '@savoire/plugin-api'
 import { fileExtensionOf } from '@savoire/plugin-api'
-import { extensionOf, groupEntries, isInside, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
+import { dropFolder, extensionOf, groupEntries, lastSegment, parentOf, stemOf, type TreeNode } from './folderNotes'
 import { collectFolder, createDocument, createSubPage, deleteFolderDeep, moveFolder, moveNote } from './folderOps'
 import { ConfirmDialog, TrashSection, type DialogChoice, type DialogRequest } from './TrashPanel'
 import { Icon, IconsContext } from './Icon'
@@ -202,20 +202,25 @@ function FileNodeRow({
 
   // ── Drag & drop ──────────────────────────────────────────────────────────
 
+  /** Ou irait la note qu'on glisse, si on la lache ici (null : nulle part). */
+  const dropHere = () => {
+    const dragged = draggedRef.current
+    return dragged && vault.renameFile ? dropFolder(dragged, node) : null
+  }
+
   async function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setIsDragOver(false)
     const dragged = draggedRef.current
+    const target = dropHere()
     draggedRef.current = null
-    if (!dragged || !folderPath || dragged.kind === 'folder' || !vault.renameFile) return
-    // Ne pas deplacer dans le meme dossier, ni une note dans son propre dossier.
-    if (parentOf(dragged.path) === folderPath) return
-    if (dragged.path === node.path) return
-    if (dragged.kind === 'folderNote' && (folderPath === dragged.folderPath || isInside(folderPath, dragged.folderPath))) return
-    const draggedFileName = fileNameOf(dragged)!
+    if (!dragged || !target) return
     try {
-      // Une note de dossier emmene son dossier.
-      relink(await moveNote(vault, dragged.path, folderPath + draggedFileName))
+      // Une note de dossier emmene son dossier. Lachee sur une note simple,
+      // elle en devient la sous-page : la ligne se deplie aussitot.
+      relink(await moveNote(vault, dragged.path, target + fileNameOf(dragged)!))
+      setExpanded(true)
+      setChildTick(t => t + 1)
       onRenamed()
     } catch (err) { alert(String(err)) }
   }
@@ -255,9 +260,9 @@ function FileNodeRow({
           }
         }}
         onDragEnd={() => { draggedRef.current = null }}
-        onDragOver={folderPath ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
-        onDragLeave={folderPath ? () => setIsDragOver(false) : undefined}
-        onDrop={folderPath ? (e) => void handleDrop(e) : undefined}
+        onDragOver={e => { if (dropHere()) { e.preventDefault(); e.stopPropagation(); setIsDragOver(true) } }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={e => { if (dropHere()) { e.stopPropagation(); void handleDrop(e) } }}
         onMouseEnter={e => {
           ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover, rgba(255,255,255,0.06))'
           const buttons = (e.currentTarget as HTMLElement).querySelectorAll('.del-btn, .ren-btn, .add-btn')
