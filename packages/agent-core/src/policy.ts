@@ -119,7 +119,51 @@ export const ACTION_LABELS: Record<AgentAction, string> = {
 
 export const MODE_LABELS: Record<AgentActionMode, string> = {
   direct: 'Oui',
-  ask: 'Demander avant',
+  ask: 'Demander l’autorisation avant d’écrire',
   propose: 'Proposer (Révision)',
   deny: 'Non',
+}
+
+/** Le libelle d'un mode pour une action : deleguer n'ecrit rien, il « demande avant ». */
+export function modeLabel(action: AgentAction, mode: AgentActionMode): string {
+  return mode === 'ask' && action === 'delegate' ? 'Demander avant' : MODE_LABELS[mode]
+}
+
+// ── Changer de mode : edition ou revision ───────────────────────────────────
+//
+// L'IA demande, la personne accepte ou refuse (MCP request_mode sur le
+// serveur, meme outil dans l'appli). Memes regles que backend/src/api/agents.rs.
+
+/** Ce qu'une IA peut demander : edition ('direct') ou revision ('propose'). */
+export type WritingMode = 'direct' | 'propose'
+
+export const REQUEST_MODE_TOOL = 'request_mode'
+export const GET_MODE_TOOL = 'get_mode'
+
+/** L'agent peut-il demander a changer de mode ? Oui, sauf si la personne l'a coupe. */
+export function canRequestMode(agent: Pick<AgentDefinition, 'canRequestMode'>): boolean {
+  return agent.canRequestMode !== false
+}
+
+/**
+ * Les droits apres le changement. Edition : modifier et creer se font
+ * directement. Revision : modifier propose, creer demande avant (creer n'a
+ * pas de mode proposition). Une action interdite le reste : changer de mode
+ * ne donne aucun droit nouveau.
+ */
+export function switchMode(p: AgentPermissions | undefined, mode: WritingMode): Required<AgentPermissions> {
+  const out = normalizePermissions(p)
+  const next = mode === 'direct' ? { edit: 'direct', create: 'direct' } as const : { edit: 'propose', create: 'ask' } as const
+  for (const a of ['edit', 'create'] as const) if (out[a] !== 'deny') out[a] = next[a]
+  return out
+}
+
+/** Le mode d'ecriture, en quelques mots (d'apres « modifier les notes »). */
+export function writingModeLabel(agent: Pick<AgentDefinition, 'permissions'>, person: PersonRights = { canWrite: true }): string {
+  switch (effectiveMode(agent, 'edit', person)) {
+    case 'direct': return 'édition (modifications directes)'
+    case 'propose': return 'révision (propositions dans Révision)'
+    case 'ask': return 'demander l’autorisation avant d’écrire'
+    default: return 'ne modifie pas les notes'
+  }
 }

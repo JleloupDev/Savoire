@@ -22,7 +22,7 @@ import {
   AGENT_ACTIONS,
   type AIChatRequest, type AIChatResponse, type AIMessage, type AIToolDefinition, type AgentDefinition, type ToolActor, type ToolSource,
 } from '@savoire/plugin-api'
-import { ACTION_LABELS, MAX_DELEGATION_DEPTH, MODE_LABELS, delegableAgents, effectiveMode, narrowAgent, type PersonRights } from './policy'
+import { ACTION_LABELS, MAX_DELEGATION_DEPTH, delegableAgents, effectiveMode, modeLabel, narrowAgent, type PersonRights } from './policy'
 import type { ApprovalAnswer, ApprovalRequest, ToolBox } from './toolbox'
 
 export type AgentStepKind = 'model' | 'tool' | 'approval' | 'delegate'
@@ -111,7 +111,7 @@ function uuid(): string {
 
 /** Les consignes systeme : qui est l'agent, pour qui il agit, ce qu'il peut faire. */
 export function systemPrompt(agent: AgentDefinition, actor: ToolActor, person: PersonRights): string {
-  const rights = AGENT_ACTIONS.map(a => `- ${ACTION_LABELS[a]} : ${MODE_LABELS[effectiveMode(agent, a, person)]}`).join('\n')
+  const rights = AGENT_ACTIONS.map(a => `- ${ACTION_LABELS[a]} : ${modeLabel(a, effectiveMode(agent, a, person))}`).join('\n')
   const scope = agent.scope?.folders?.length ? `\nTu ne travailles que dans ces dossiers : ${agent.scope.folders.join(', ')}.` : ''
   return [
     `Tu es « ${agent.name} », un agent de Savoire (des notes Markdown rangées dans un vault). Tu agis pour ${actor.onBehalfOf.displayName}.`,

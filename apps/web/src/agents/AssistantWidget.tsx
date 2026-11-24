@@ -10,7 +10,7 @@
 //  - Activite : executions, tokens par jour et par agent, accords en attente
 //    venus de l'exterieur (ChatGPT...), journal des actions externes.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentRun, ApprovalAnswer, ApprovalRequest } from '@savoire/agent-core'
+import { REQUEST_MODE_TOOL, type AgentRun, type ApprovalAnswer, type ApprovalRequest } from '@savoire/agent-core'
 import type { AIMessage, AgentDefinition, Widget } from '@savoire/plugin-api'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { EditorAreaRefs } from '../EditorAreaWidget'
@@ -399,6 +399,7 @@ function Activity({ userId }: { userId: string }) {
       {approvals.filter(a => a.status === 'pending').map(a => (
         <div key={a.id} data-testid="server-approval" style={CARD}>
           <div><b>{a.agentName}</b> · {new Date(a.createdAt).toLocaleString('fr-FR')}</div>
+          {a.tool === REQUEST_MODE_TOOL && <div data-testid="mode-request" style={{ marginTop: 4, fontWeight: 600 }}>Demande à changer de mode</div>}
           <div style={{ marginTop: 4 }}>{a.summary}</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             <button style={PRIMARY} onClick={() => void decide(a, true)}>Accepter</button>

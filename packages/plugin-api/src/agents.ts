@@ -103,6 +103,12 @@ export interface AgentDefinition {
   model?: string
   /** L'agent peut veiller sur la note ouverte (on l'allume dans le panneau Agents). */
   watch?: AgentWatchSettings
+  /**
+   * L'IA peut demander a passer en edition (modifier directement) ou en
+   * revision (proposer dans la Revision). La personne accepte ou refuse
+   * chaque demande. Absent : oui.
+   */
+  canRequestMode?: boolean
   /** D'ou il vient : fait a la main, ou d'un modele d'un plugin. */
   source?: { kind: 'manual' } | { kind: 'preset'; pluginId: string; presetId: string }
   createdAt?: string

@@ -10,7 +10,7 @@ import type { VaultClient } from '@savoire/platform'
 import type { AIMessage, AgentDefinition, PluginAPI, PluginTool, ToolActor } from '@savoire/plugin-api'
 import { aiService } from '../aiService'
 import { AppToolHost } from './appToolHost'
-import { agentDirectory, usedToday } from './agentDirectory'
+import { agentDirectory, notifyAgentsChanged, usedToday } from './agentDirectory'
 
 export interface RunParams {
   agent: AgentDefinition
@@ -37,6 +37,14 @@ export function assertAgentUsable(agent: AgentDefinition, vaultId: string): void
 
 type ToolParams = Pick<RunParams, 'client' | 'session' | 'api'>
 
+/** Changement de mode accepte par la personne (request_mode) : l'agent est enregistre, les ecrans se relisent. */
+async function saveAgentMode(agent: AgentDefinition): Promise<void> {
+  const dir = agentDirectory()
+  if (!dir) throw new Error('Agents indisponibles : reconnectez-vous.')
+  await dir.save(agent)
+  notifyAgentsChanged()
+}
+
 /** L'hote des outils et les outils des plugins : ce sur quoi toute boite d'outils de l'appli s'appuie. */
 export function appToolParts(p: ToolParams): { host: AppToolHost; pluginTools: PluginTool[] } {
   const moveFiles = p.api?.vault?.moveFiles?.bind(p.api.vault)
@@ -58,7 +66,7 @@ export function appToolBox(p: AppToolBoxParams): ToolBox {
   assertAgentUsable(p.agent, p.vaultId)
   const { host, pluginTools } = appToolParts(p)
   const actor: ToolActor = { agentId: p.agent.id, agentName: p.agent.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
-  return new ToolBox({ agent: p.agent, person: { canWrite: p.person.canWrite }, actor, runtime: 'app', host, pluginTools, approve: p.approve })
+  return new ToolBox({ agent: p.agent, person: { canWrite: p.person.canWrite }, actor, runtime: 'app', host, pluginTools, approve: p.approve, saveAgent: saveAgentMode })
 }
 
 export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
@@ -75,7 +83,8 @@ export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
   await Promise.all([...delegable].map(async id => { childUsage.set(id, await usedToday(id)) }))
   const depsFor = (a: AgentDefinition, used: number): EngineDeps => {
     const actor: ToolActor = { agentId: a.id, agentName: a.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
-    const tools = new ToolBox({ agent: a, person, actor, runtime: 'app', host, pluginTools, approve: p.approve })
+    // Seul l'agent lance change de mode : un sous-agent a des droits reduits, on ne les enregistre pas.
+    const tools = new ToolBox({ agent: a, person, actor, runtime: 'app', host, pluginTools, approve: p.approve, ...(a === agent ? { saveAgent: saveAgentMode } : {}) })
     return {
       agent: a, person, actor, tools,
       chat: req => aiService.chat(req, a.connectionId),

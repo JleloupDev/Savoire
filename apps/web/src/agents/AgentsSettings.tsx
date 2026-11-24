@@ -6,7 +6,7 @@
 // faire action par action, ou, et avec quel budget. Il se cree a la main ou a
 // partir d'un modele apporte par un plugin du store.
 import { useEffect, useState } from 'react'
-import { ACTION_LABELS, MODE_LABELS, normalizePermissions } from '@savoire/agent-core'
+import { ACTION_LABELS, canRequestMode, modeLabel, normalizePermissions, writingModeLabel } from '@savoire/agent-core'
 import { AGENT_ACTION_MODES, AGENT_ACTIONS, type AgentActionMode, type AgentDefinition, type AgentPreset } from '@savoire/plugin-api'
 import type { AIConnectionInfo } from '@savoire/plugin-api'
 import { isAndroidRuntime, isTauriRuntime } from '../tauriRuntime'
@@ -111,13 +111,25 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
                 <td style={{ width: 190 }}>
                   <select data-testid={`agent-perm-${a}`} style={INPUT} value={perms[a]}
                     onChange={e => set({ permissions: { ...perms, [a]: e.target.value as AgentActionMode } })}>
-                    {AGENT_ACTION_MODES[a].map(m => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
+                    {AGENT_ACTION_MODES[a].map(m => <option key={m} value={m}>{modeLabel(a, m)}</option>)}
                   </select>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <div style={{ ...MUTED, marginTop: 4 }}>
+          « Demander l’autorisation avant d’écrire » : l’agent attend votre accord avant chaque écriture.
+          « Proposer » : ses modifications arrivent dans la Révision, vous les acceptez ou non.
+        </div>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, marginTop: 8 }}>
+          <input data-testid="agent-can-request-mode" type="checkbox" checked={canRequestMode(draft)}
+            onChange={e => set({ canRequestMode: e.target.checked ? undefined : false })} />
+          Peut demander à changer de mode
+        </label>
+        <div style={MUTED}>
+          Passer de l’édition (il modifie directement) à la révision (il propose), ou l’inverse. Rien ne change sans votre accord.
+        </div>
 
         {perms.delegate !== 'deny' && (
           <>
@@ -212,7 +224,7 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
         {list?.length === 0 && <div style={MUTED}>Aucun agent pour l’instant.</div>}
         {list?.map(a => {
           const perms = normalizePermissions(a.permissions)
-          const rights = AGENT_ACTIONS.filter(x => perms[x] !== 'deny').map(x => `${ACTION_LABELS[x]} (${MODE_LABELS[perms[x]].toLowerCase()})`).join(', ')
+          const rights = AGENT_ACTIONS.filter(x => perms[x] !== 'deny').map(x => `${ACTION_LABELS[x]} (${modeLabel(x, perms[x]).toLowerCase()})`).join(', ')
           const subs = perms.delegate !== 'deny' ? (a.delegates ?? []).map(id => list.find(b => b.id === id)?.name).filter(Boolean).join(', ') : ''
           return (
             <div key={a.id} data-testid="agent-row" style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
@@ -220,6 +232,7 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
                 <div style={{ fontWeight: 600 }}>{a.name}{a.vaultId ? <span style={MUTED}> · agent du vault</span> : null}</div>
                 {a.description && <div style={MUTED}>{a.description}</div>}
                 <div style={{ ...MUTED, marginTop: 2 }}>{rights || 'Aucun droit'}</div>
+                {perms.edit !== 'deny' && <div data-testid="agent-writing-mode" style={{ ...MUTED, marginTop: 2 }}>Mode : {writingModeLabel(a)}</div>}
                 {subs && <div style={{ ...MUTED, marginTop: 2 }}>Sous-agents : {subs}</div>}
               </div>
               <button style={BTN} onClick={() => setDraft({ ...a })}>Modifier</button>
