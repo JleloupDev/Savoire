@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { DocumentView } from '@savoire/editor-core'
+import { startNeededPlugins, type NeededPluginLoader } from './neededPlugins'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
 import { resolveLinkPath } from '@savoire/plugin-api'
@@ -17,24 +18,25 @@ import { pluginRegistry } from './pluginRegistry'
 import { useNoteEditorModeOr, type NoteEditorMode } from './displayPreferences'
 import { EditorModeSwitch } from './EditorModeSwitch'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
-import excalidrawPlugin from '@savoire/plugin-excalidraw'
-import mindmapPlugin from '@savoire/plugin-mindmap'
-import calloutPlugin from '@savoire/plugin-callout'
-import codeBlockPlugin from '@savoire/plugin-code-block'
-import taskListPlugin from '@savoire/plugin-task-list'
-import noteEmbedPlugin from '@savoire/plugin-note-embed'
-import modulePlugin from '@savoire/plugin-module'
-import mermaidPlugin from '@savoire/plugin-mermaid'
-import tablePlugin from '@savoire/plugin-table'
 
-/** Les plugins d'un document partage, d'apres son chemin (l'application : ceux du module). */
-export type SharePluginLoader = (path: string) => Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }>
+/**
+ * Les plugins d'un document partage. L'application : seulement ceux dont il a
+ * besoin, d'apres son chemin et son texte (voir neededPluginEntries).
+ */
+export type SharePluginLoader = NeededPluginLoader
 
-/** Sans chargeur fourni : les plugins de base. */
-const basePlugins: SharePluginLoader = async () => ({
-  editor: [mermaidPlugin, calloutPlugin, codeBlockPlugin, noteEmbedPlugin, modulePlugin, taskListPlugin, tablePlugin],
-  fileTypes: [excalidrawPlugin, mindmapPlugin],
-})
+/** Sans chargeur fourni : les plugins de base, charges a la demande (rien n'est telecharge d'avance). */
+const basePlugins: SharePluginLoader = async () => {
+  const [mermaid, callout, codeBlock, noteEmbed, module, taskList, table, excalidraw, mindmap] = await Promise.all([
+    import('@savoire/plugin-mermaid'), import('@savoire/plugin-callout'), import('@savoire/plugin-code-block'),
+    import('@savoire/plugin-note-embed'), import('@savoire/plugin-module'), import('@savoire/plugin-task-list'),
+    import('@savoire/plugin-table'), import('@savoire/plugin-excalidraw'), import('@savoire/plugin-mindmap'),
+  ])
+  return {
+    editor: [mermaid.default, callout.default, codeBlock.default, noteEmbed.default, module.default, taskList.default, table.default],
+    fileTypes: [excalidraw.default, mindmap.default],
+  }
+}
 
 /**
  * Le texte et l'arbre partages du document, pour les editeurs CRDT des
@@ -106,6 +108,7 @@ function ShareDocumentEditor({ handle, loadPlugins, mode, registry, onOpen }: { 
     let cancelled = false
     let view: DocumentView | null = null
     let loader: PluginLoader | null = null
+    let offText: (() => void) | null = null
 
     const vault = createShareVault(handle)
 
@@ -120,12 +123,16 @@ function ShareDocumentEditor({ handle, loadPlugins, mode, registry, onOpen }: { 
           if (doc && doc.id !== handle.docId) onOpen(doc.id)
         }
       }
-      loader = new PluginLoader()
-      const plugins = await loadPlugins(handle.path)
-      const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
-      for (const p of plugins.fileTypes) await loader.loadInternal(p, pluginApi)
-      for (const p of defaultPlugins) await loader.loadInternal(p, pluginApi)
-      if (cancelled) { await loader.unloadAll(); return }
+      const pluginLoader = new PluginLoader()
+      loader = pluginLoader
+      // Seulement les plugins dont le document a besoin (voir neededPlugins).
+      const needed = await startNeededPlugins({
+        path: handle.path, editing: !ro, load: loadPlugins, loader: pluginLoader, api: pluginApi,
+        base: [createWikilinksPlugin()], cancelled: () => cancelled,
+      })
+      if (cancelled) { await pluginLoader.unloadAll(); return }
+      offText = needed.follow(handle.crdt)
+      const defaultPlugins = needed.defaultPlugins
       view = new DocumentView({
         path: handle.path,
         container,
@@ -151,6 +158,7 @@ function ShareDocumentEditor({ handle, loadPlugins, mode, registry, onOpen }: { 
     void start().catch(console.error)
     return () => {
       cancelled = true
+      offText?.()
       view?.destroy()
       if (loader) void loader.unloadAll()
     }

@@ -11,3 +11,7 @@ export class DocumentView {
   destroy(): void {}
   get controller() { return null }
 }
+
+export class EditorCore {
+  static refreshAll(): void {}
+}

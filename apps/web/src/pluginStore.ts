@@ -19,6 +19,7 @@
 // copie reste fidele. Un plugin preinstalle est charge au demarrage ; le store
 // lit son manifeste directement.
 import { sandboxFrameUrl } from './tauriRuntime'
+import { selectNeededEntries } from './pluginNeeds'
 import type { PluginManifest, VaultPlugin } from '@savoire/plugin-api'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
 import type { GraphIndexContributor } from '@savoire/plugin-graph'
@@ -41,6 +42,13 @@ export interface StoreEntry {
   manifest?: PluginManifest
   /** Extensions de fichier que le plugin ouvre : pour proposer de l'installer. */
   extensions?: string[]
+  /**
+   * Traces qu'il laisse dans le texte d'une note (```mermaid, > [!note]...) :
+   * une note partagee ou integree ne charge que les plugins dont elle porte
+   * une trace. Sinon : CONTENT_PATTERNS (pluginNeeds.ts), puis
+   * manifest.contentPatterns (paquets du store).
+   */
+  contentPatterns?: RegExp[]
   /** Anciens ids (plugin renomme) : leur reglage de vault est repris. */
   formerIds?: string[]
   /** Paquet du Savoire Store (code signe, telecharge), pas livre avec Savoire. */
@@ -514,9 +522,21 @@ export function modulePluginRegistry(): Record<string, () => Promise<VaultPlugin
   return Object.fromEntries(catalogEntries().map(e => [e.id, () => e.load(noContext)]))
 }
 
-/** Charge les plugins d'un module (ceux qui ne demandent aucun contexte du poste de travail). */
-export async function loadModulePlugins(path: string): Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }> {
-  const entries = modulePluginEntries(path)
+/**
+ * Seulement ce dont le document a besoin (note partagee, module) : voir
+ * selectNeededEntries. `editing` : les outils d'edition aussi.
+ */
+export function neededPluginEntries(path: string, text: string, editing = false): StoreEntry[] {
+  return selectNeededEntries(catalogEntries(), path, text, editing)
+}
+
+/**
+ * Charge les plugins d'un module (ceux qui ne demandent aucun contexte du
+ * poste de travail). Avec `text` : seulement ceux dont il a besoin (voir
+ * neededPluginEntries) ; sans : tous les plugins d'edition.
+ */
+export async function loadModulePlugins(path: string, text?: string, editing = false): Promise<{ editor: VaultPlugin[]; fileTypes: VaultPlugin[] }> {
+  const entries = text === undefined ? modulePluginEntries(path) : neededPluginEntries(path, text, editing)
   const loaded = await Promise.all(entries.map(async e => ({ e, plugin: await e.load(noContext).catch(() => null) })))
   const ok = loaded.filter((x): x is { e: StoreEntry; plugin: VaultPlugin } => !!x.plugin)
   return {

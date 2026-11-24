@@ -40,6 +40,12 @@ export interface PluginManifest {
    */
   defaultActive?: boolean
   /**
+   * Traces que le plugin laisse dans le texte d'une note (sources d'expressions
+   * regulieres, drapeau m) : une note partagee ou integree ne charge que les
+   * plugins dont elle porte une trace. Ex. : ["^\\s*```mermaid\\b"].
+   */
+  contentPatterns?: string[]
+  /**
    * Plugin propose et verifie par l'equipe Savoire. Seuls ceux-la tournent
    * sur le serveur (pair indexeur gere par Savoire). Les autres tournent sur
    * le poste de la personne, ou sur un pair indexeur heberge par le client.

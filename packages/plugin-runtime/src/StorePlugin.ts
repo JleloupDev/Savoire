@@ -47,6 +47,7 @@ export function manifestOfPackage(pkg: StorePackage): PluginManifest {
     author: typeof m.author === 'string' ? m.author : undefined,
     permissions: (Array.isArray(m.permissions) ? m.permissions : []).filter((p): p is PluginPermission => typeof p === 'string'),
     defaultActive: m.defaultActive === true,
+    contentPatterns: Array.isArray(m.contentPatterns) ? m.contentPatterns.filter((p): p is string => typeof p === 'string') : undefined,
     scope,
     // Jamais 'official' : ce niveau est celui des plugins livres avec Savoire.
     official: false,

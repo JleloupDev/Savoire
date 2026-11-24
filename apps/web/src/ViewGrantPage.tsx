@@ -6,10 +6,11 @@ import { DocumentView } from '@savoire/editor-core'
 import { PluginAPIImpl, PluginLoader } from '@savoire/plugin-runtime'
 import { YjsCrdtAdapter, SignalRTransport, DocumentRoomClient, LocalKeyProvider, serverUrl } from '@savoire/infrastructure-sync'
 import { CollabOrchestrator } from '@savoire/application'
-import type { VaultAPI, VaultPlugin } from '@savoire/plugin-api'
+import type { VaultAPI } from '@savoire/plugin-api'
 import { createWikilinksPlugin } from '@savoire/plugin-wikilinks'
 import { pluginRegistry } from './pluginRegistry'
 import { loadModulePlugins, modulePluginRegistry } from './pluginStore'
+import { startNeededPlugins } from './neededPlugins'
 import { crdtViewsOf, GUEST_NAME } from './ShareAccessPage'
 
 interface ViewAccessDto {
@@ -71,6 +72,7 @@ export function ViewGrantPage() {
     let orchestrator: CollabOrchestrator | null = null
     let crdt: YjsCrdtAdapter | null = null
     let transport: SignalRTransport | null = null
+    let offText: (() => void) | null = null
 
     const start = async () => {
       setError(null)
@@ -98,13 +100,16 @@ export function ViewGrantPage() {
       const pluginApi = PluginAPIImpl.create(vault, sync)
       // Les icones des plugins (sinon leur nom s'affiche en texte).
       pluginApi.icons = { create: (name, options) => createIconElement(name, options) }
-      loader = new PluginLoader()
-      const plugins = await loadModulePlugins(access.path)
-      const defaultPlugins: VaultPlugin[] = [createWikilinksPlugin(), ...plugins.editor]
-      for (const plugin of plugins.fileTypes) await loader.loadInternal(plugin, pluginApi)
-      for (const plugin of defaultPlugins) await loader.loadInternal(plugin, pluginApi)
-
-      if (cancelled) { await loader.unloadAll(); return }
+      const pluginLoader = new PluginLoader()
+      loader = pluginLoader
+      // Seulement les plugins dont le document a besoin (voir neededPlugins).
+      const needed = await startNeededPlugins({
+        path: access.path, editing: !ro, load: loadModulePlugins, loader: pluginLoader, api: pluginApi,
+        base: [createWikilinksPlugin()], cancelled: () => cancelled,
+      })
+      if (cancelled) { await pluginLoader.unloadAll(); return }
+      offText = needed.follow(crdt)
+      const defaultPlugins = needed.defaultPlugins
 
       view = new DocumentView({
         path: access.path,
@@ -134,6 +139,7 @@ export function ViewGrantPage() {
 
     return () => {
       cancelled = true
+      offText?.()
       view?.destroy()
       orchestrator?.dispose()
       crdt?.dispose()
