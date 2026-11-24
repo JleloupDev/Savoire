@@ -447,7 +447,10 @@ export class NotionImportJob {
     }
     const manifest = baseManifestOf(item.title, schema, views)
     state.warnings.push(...manifest.warnings)
-    this.target.declareProperties(propertyDefs(schema))
+    // Une relation vise la base importee de sa source Notion (son document .base).
+    const baseOf = (notionId: string) => Object.values(state.items)
+      .find(i => i.docId && i.kind === 'base' && (i.id === notionId || i.dataSource === notionId || i.database === notionId))?.docId
+    this.target.declareProperties(propertyDefs(schema, { baseOf }))
     await this.target.writeBase(item.docId!, manifest, stem(item.path))
   }
 }

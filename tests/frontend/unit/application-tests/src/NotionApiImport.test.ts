@@ -114,11 +114,19 @@ describe('Notion -> page', () => {
 describe('Notion -> base', () => {
   const schema = {
     Nom: { id: 'title', name: 'Nom', type: 'title', title: {} },
-    Statut: { id: 'a%3Ab', name: 'Statut', type: 'status', status: { options: [{ name: 'Fait', color: 'green' }, { name: 'À faire', color: 'default' }] } },
-    Prix: { id: 'p1', name: 'Prix', type: 'number', number: {} },
+    Statut: {
+      id: 'a%3Ab', name: 'Statut', type: 'status',
+      status: {
+        options: [{ id: 'o1', name: 'Fait', color: 'green' }, { id: 'o2', name: 'À faire', color: 'default' }],
+        groups: [{ name: 'To-do', option_ids: ['o2'] }, { name: 'In progress', option_ids: [] }, { name: 'Complete', option_ids: ['o1'] }],
+      },
+    },
+    Prix: { id: 'p1', name: 'Prix', type: 'number', number: { format: 'euro' } },
+    Site: { id: 'u1', name: 'Site', type: 'url', url: {} },
+    Num: { id: 'n1', name: 'Num', type: 'unique_id', unique_id: { prefix: 'T' } },
     Tags: { id: 't1', name: 'Tags', type: 'multi_select', multi_select: { options: [{ name: 'web', color: 'pink' }] } },
     Échéance: { id: 'd1', name: 'Échéance', type: 'date', date: {} },
-    Lié: { id: 'r1', name: 'Lié', type: 'relation', relation: {} },
+    Lié: { id: 'r1', name: 'Lié', type: 'relation', relation: { data_source_id: ID(77), dual_property: { synced_property_name: 'Tâches' } } },
   }
 
   it('lit les valeurs des proprietes', () => {
@@ -129,14 +137,19 @@ describe('Notion -> base', () => {
     expect(propertyValueOf({ type: 'checkbox', checkbox: false }, c)).toBe(false)
     expect(propertyValueOf({ type: 'relation', relation: [{ id: ID(500) }, { id: ID(9) }] }, c)).toEqual(['[[Espace/Projet]]'])
     expect(propertyValueOf({ type: 'formula', formula: { type: 'number', number: 42 } }, c)).toBe(42)
-    expect(propertyValueOf({ type: 'unique_id', unique_id: { prefix: 'T', number: 7 } }, c)).toBe('T-7')
+    // Le numero seul : le prefixe est dans le type (PropertyDef.prefix).
+    expect(propertyValueOf({ type: 'unique_id', unique_id: { prefix: 'T', number: 7 } }, c)).toBe(7)
     expect(propertyValueOf({ type: 'rich_text', rich_text: [] }, c)).toBeUndefined()
   })
 
   it('declare les types et les couleurs des choix', () => {
-    const defs = propertyDefs(schema)
-    expect(defs.find(d => d.key === 'Statut')).toEqual({ key: 'Statut', type: 'select', options: [{ value: 'Fait', color: 'green' }, { value: 'À faire' }] })
-    expect(defs.find(d => d.key === 'Tags')).toEqual({ key: 'Tags', type: 'multiselect', options: [{ value: 'web', color: 'purple' }] })
+    const defs = propertyDefs(schema, { baseOf: id => (id === ID(77) ? 'doc-projets' : undefined) })
+    expect(defs.find(d => d.key === 'Statut')).toEqual({ key: 'Statut', type: 'status', options: [{ value: 'Fait', color: 'green', group: 'done' }, { value: 'À faire', group: 'todo' }] })
+    expect(defs.find(d => d.key === 'Tags')).toEqual({ key: 'Tags', type: 'multiselect', options: [{ value: 'web', color: 'pink' }] })
+    expect(defs.find(d => d.key === 'Prix')).toEqual({ key: 'Prix', type: 'number', format: 'euro' })
+    expect(defs.find(d => d.key === 'Site')).toEqual({ key: 'Site', type: 'url' })
+    expect(defs.find(d => d.key === 'Num')).toEqual({ key: 'Num', type: 'id', prefix: 'T' })
+    expect(defs.find(d => d.key === 'Lié')).toEqual({ key: 'Lié', type: 'relation', relation: { base: 'doc-projets', back: 'Tâches' } })
     expect(defs.find(d => d.key === 'Nom')).toBeUndefined()
   })
 
@@ -150,16 +163,29 @@ describe('Notion -> base', () => {
       },
       { id: 'v-2', name: 'Par statut', type: 'board', configuration: { group_by: { property_id: 'a%3Ab' } } },
       { id: 'v-3', name: 'Agenda', type: 'calendar', filter: { or: [{ property: 'Prix', number: { equals: 1 } }, { property: 'Prix', number: { equals: 2 } }] } },
+      {
+        id: 'v-4', name: 'Cette semaine', type: 'gallery',
+        filter: { and: [{ property: 'Échéance', date: { this_week: {} } }, { or: [{ property: 'Tags', multi_select: { contains: 'web' } }, { property: 'Tags', multi_select: { is_empty: true } }] }] },
+      },
+      { id: 'v-5', name: 'Bizarre', type: 'map' },
     ])
-    expect(m.columns.map(c => c.key)).toEqual(['Prix', 'Statut', 'Tags', 'Échéance', 'Lié'])
+    expect(m.columns.map(c => c.key)).toEqual(['Prix', 'Statut', 'Tags', 'Site', 'Num', 'Échéance', 'Lié'])
     expect(m.columns[0].width).toBe(220)
-    const [all, board, agenda] = m.views
+    const [all, board, agenda, week, odd] = m.views
     expect(all.filters).toEqual([{ key: 'Statut', op: 'eq', value: 'Fait' }, { key: 'Prix', op: 'gt', value: 100 }])
     expect(all.sorts).toEqual([{ key: 'Prix', dir: 'desc' }])
     expect(all.hidden).toEqual(['Tags'])
     expect(board).toMatchObject({ type: 'kanban', groupBy: 'Statut', name: 'Par statut' })
-    expect(agenda).toMatchObject({ type: 'table', filters: [] })
-    expect(m.warnings).toHaveLength(2)
+    // Calendrier sur la premiere date, filtre « ou » repris.
+    expect(agenda).toMatchObject({ type: 'calendar', dateBy: 'Échéance', filterMode: 'or', filters: [{ key: 'Prix', op: 'eq', value: 1 }, { key: 'Prix', op: 'eq', value: 2 }] })
+    // Groupe imbrique et date relative.
+    expect(week).toMatchObject({ type: 'gallery', filterMode: 'and', filters: [
+      { key: 'Échéance', op: 'within', value: '@thisWeek' },
+      { mode: 'or', items: [{ key: 'Tags', op: 'contains', value: 'web' }, { key: 'Tags', op: 'empty' }] },
+    ] })
+    // Une disposition inconnue devient un tableau, et le rapport le dit.
+    expect(odd.type).toBe('table')
+    expect(m.warnings).toHaveLength(1)
   })
 })
 
@@ -297,7 +323,7 @@ describe('NotionImportJob', () => {
     const base = t.docs.get('Mon Notion/Accueil/Tâches.base')!.base as { manifest: { views: { type: string; groupBy: string }[] }; folder: string }
     expect(base.folder).toBe('Mon Notion/Accueil/Tâches')
     expect(base.manifest.views[0]).toMatchObject({ type: 'kanban', groupBy: 'Statut' })
-    expect(t.props).toContainEqual({ key: 'Statut', type: 'select', options: [{ value: 'Fait', color: 'green' }] })
+    expect(t.props).toContainEqual({ key: 'Statut', type: 'status', options: [{ value: 'Fait', color: 'green', group: 'todo' }] })
     expect(report).toMatchObject({ pages: 2, bases: 1, rows: 1, files: 1, failed: [] })
     expect([...phases]).toEqual(['plan', 'skeleton', 'fill', 'done'])
     expect(s.get()!.finishedAt).toBeTruthy()

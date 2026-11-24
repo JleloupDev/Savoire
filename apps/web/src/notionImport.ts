@@ -17,8 +17,7 @@ import {
   type NotionImportStore, type NotionImportTarget, type PageNode,
 } from '@savoire/application'
 import type { PluginAPI } from '@savoire/plugin-api'
-import { BASE_LOT_COUNT } from '@savoire/plugin-api'
-import { ManifestStore } from '@savoire/plugin-base'
+import { ManifestStore, defaultManifest, defaultView } from '@savoire/plugin-base'
 import { pageToMarkdown } from '@savoire/plugin-page'
 import { pmToInit } from '@savoire/plugin-page/adapter'
 import { idAfterCreate } from '@savoire/plugin-runtime'
@@ -96,13 +95,11 @@ export function pluginApiTarget(api: PluginAPI, guard: () => void = () => {}): N
     },
     async writeBase(docId, manifest: ImportedBaseManifest, folder) {
       await withTree(docId, tree => {
+        // Les reglages absents de l'import prennent leur valeur par defaut.
         const store = new ManifestStore(tree, () => ({
-          stored: false,
-          source: { folder, filters: [] },
+          ...defaultManifest(folder),
           columns: manifest.columns,
-          views: manifest.views,
-          lotCount: BASE_LOT_COUNT,
-          lots: [],
+          views: manifest.views.map(v => ({ ...defaultView(v.id, v.name, 'table', v.order), ...v })),
         }))
         // La premiere ecriture pose tout le manifeste (colonnes et vues).
         store.setSource({ folder })
