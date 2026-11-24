@@ -205,6 +205,19 @@ pub async fn approvals_for(c: &mut PgConnection, user_id: &str, limit: i64) -> A
     Ok(rows.iter().map(approval_row).collect())
 }
 
+/// L'accord en attente de cet agent pour cet outil (demande de changement de mode), s'il y en a un.
+pub async fn approval_pending(c: &mut PgConnection, user_id: &str, agent_id: &str, tool: &str) -> AppResult<Option<ApprovalRow>> {
+    let r = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT {APPROVAL_COLS} FROM agent_approvals WHERE user_id = $1 AND agent_id = $2 AND tool = $3 AND status = 'pending' ORDER BY created_at DESC LIMIT 1"
+    )))
+    .bind(user_id)
+    .bind(agent_id)
+    .bind(tool)
+    .fetch_optional(&mut *c)
+    .await?;
+    Ok(r.as_ref().map(approval_row))
+}
+
 /// Passe un accord de « pending » a `status`. Faux : il n'etait plus en attente (decide ailleurs).
 pub async fn approval_decide(c: &mut PgConnection, id: &str, status: &str) -> AppResult<bool> {
     let n = sqlx::query("UPDATE agent_approvals SET status = $2, decided_at = $3 WHERE id = $1 AND status = 'pending'")

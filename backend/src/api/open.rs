@@ -180,7 +180,8 @@ Commencez par list_vaults, puis search pour trouver des notes et read_note pour 
 Un vault se designe par son id ou par son nom (parametre vault de chaque outil). \
 Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
 (drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
-Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas.";
+Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas. \
+Pour passer de l'edition (modifications directes) a la revision (propositions dans Revision), ou l'inverse : request_mode, avec l'accord de la personne.";
 pub const MAX_MCP_BYTES: usize = 256 * 1024;
 
 pub fn rpc_error(id: Value, code: i64, message: &str) -> Value {
@@ -308,9 +309,12 @@ async fn catalog_for(st: &AppState, p: &Principal, agent: &AgentRow) -> Vec<Valu
 /// Les outils de l'agent : list_vaults, puis ceux du catalogue qu'il a le droit d'utiliser.
 async fn list_tools(st: &AppState, p: &Principal) -> Value {
     let Ok(agent) = token_agent(st, p).await else { return tools() };
+    let modes = mode_tools(p, &agent);
     let cat = catalog_for(st, p, &agent).await;
     if cat.is_empty() {
-        return tools();
+        let mut out = tools().as_array().cloned().unwrap_or_default();
+        out.extend(modes);
+        return json!(out);
     }
     let mut out = vec![tools()[0].clone()];
     for t in cat {
@@ -337,7 +341,63 @@ async fn list_tools(st: &AppState, p: &Principal) -> Value {
         }
         out.push(entry);
     }
+    out.extend(modes);
     json!(out)
+}
+
+// ── Mode d'ecriture : edition ou revision (request_mode, get_mode) ────────────
+//
+// Outils du serveur, sans le pair. L'IA demande a changer de mode ; la
+// personne accepte ou refuse dans Savoire (voir agents::request_mode).
+
+pub const GET_MODE: &str = "get_mode";
+
+/// get_mode pour tout agent ; request_mode s'il en a le droit (reglage de l'agent).
+fn mode_tools(p: &Principal, agent: &AgentRow) -> Vec<Value> {
+    if p.token_agent.as_deref() != Some(agent.id.as_str()) {
+        return vec![];
+    }
+    let mut out = vec![tool(GET_MODE, "Mode de l'agent", "Dit le mode de l'agent : édition (modifications directes), révision (propositions dans Révision) ou demander avant d'écrire.",
+        json!({ "vault": s("Id ou nom du vault (facultatif) : les modes bornés par les droits de la personne dans ce vault.") }), &[])];
+    if agents::can_request_mode(&agent.definition) {
+        let mut t = tool(agents::REQUEST_MODE, "Changer de mode",
+            "Demande à passer en mode édition (direct : vos modifications s'appliquent) ou révision (propose : elles deviennent des propositions dans Révision). \
+La personne accepte ou refuse dans Savoire ; la demande reste en attente, ne la refaites pas.",
+            json!({ "mode": { "type": "string", "enum": ["direct", "propose"], "description": "direct : édition ; propose : révision." },
+                    "reason": s("Pourquoi changer de mode, en une phrase (montré à la personne).") }),
+            &["mode", "reason"]);
+        t["annotations"] = json!({ "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false });
+        out.push(t);
+    }
+    out
+}
+
+/// L'agent du jeton ; None : jeton sans agent (lecture seule).
+async fn own_agent(st: &AppState, p: &Principal) -> AppResult<Option<AgentRow>> {
+    let a = token_agent(st, p).await?;
+    Ok((p.token_agent.as_deref() == Some(a.id.as_str())).then_some(a))
+}
+
+async fn request_mode_tool(st: &AppState, p: &Principal, args: &Map<String, Value>) -> Result<Value, ToolFailure> {
+    let Some(agent) = own_agent(st, p).await? else { return Ok(tool_error("Ce jeton n'a pas d'agent : il ne fait que lire.")) };
+    let mode = opt_str(args, "mode").ok_or_else(|| ToolFailure::Invalid("Argument manquant : mode (direct ou propose).".into()))?;
+    let r = agents::request_mode(st, &p.sub, &agent, &mode, &opt_str(args, "reason").unwrap_or_default()).await?;
+    Ok(if r.is_error { tool_error(&r.text) } else { tool_text(&r.text) })
+}
+
+async fn get_mode_tool(st: &AppState, p: &Principal, args: &Map<String, Value>) -> Result<Value, ToolFailure> {
+    let Some(agent) = own_agent(st, p).await? else { return Ok(tool_text("Jeton sans agent : lecture seule.")) };
+    let vault = match opt_str(args, "vault") {
+        Some(_) => Some(vault_arg(st, p, args).await?),
+        None => None,
+    };
+    let mut c = st.db.acquire().await.map_err(AppError::from)?;
+    let can_write = match &vault {
+        Some(v) => Some(crate::access::require_write(&mut c, &p.sub, &v.id).await.is_ok()),
+        None => None,
+    };
+    let pending = crate::db::agents::approval_pending(&mut c, &p.sub, &agent.id, agents::REQUEST_MODE).await?;
+    Ok(tool_text(&agents::describe_mode(&agent, can_write, pending.as_ref().map(|a| a.id.as_str()))))
 }
 
 // ── Images (add_image) ───────────────────────────────────────────────────────
@@ -510,6 +570,8 @@ async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Valu
     let args = params.as_ref().and_then(|p| p.get("arguments")).and_then(Value::as_object).cloned().unwrap_or_default();
     let r = match name.as_str() {
         "list_vaults" => list_vaults_tool(st, p).await,
+        GET_MODE => get_mode_tool(st, p, &args).await,
+        agents::REQUEST_MODE => request_mode_tool(st, p, &args).await,
         _ => match agent_tool(st, p, &name, &args).await {
             // Pas de catalogue (pair absent, ancien pair) : les outils de lecture d'avant.
             Ok(None) => match name.as_str() {

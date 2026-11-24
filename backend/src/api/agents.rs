@@ -170,6 +170,10 @@ fn clean_definition(body: &Value) -> AppResult<(String, Option<String>, Value)> 
             def[k] = json!(v);
         }
     }
+    // Changer de mode : permis par defaut ; seul « non » est garde.
+    if o.get("canRequestMode").and_then(Value::as_bool) == Some(false) {
+        def["canRequestMode"] = json!(false);
+    }
     Ok((name, vault_id, def))
 }
 
@@ -321,6 +325,7 @@ pub async fn decide(State(st): State<AppState>, Auth(p): Auth, Path(id): Path<St
     if approve {
         let result = match &agent {
             None => ToolOutcome::error("L'agent a été supprimé."),
+            Some(agent) if a.tool == REQUEST_MODE => apply_mode_request(&st, &p.sub, agent, &a.args).await?,
             Some(agent) => {
                 let display = p.display_name.clone().unwrap_or_else(|| p.sub.clone());
                 let call = ToolCall { user: &p.sub, display_name: &display, agent, vault_id: &a.vault_id, tool: &a.tool, args: &a.args };
@@ -516,6 +521,153 @@ pub fn summarize(tool: &str, args: &Value) -> String {
         }
     }
     if parts.is_empty() { tool.to_string() } else { format!("{tool} : {}", parts.join(", ")) }
+}
+
+// ── Changer de mode : edition ou revision (MCP request_mode) ─────────────────
+//
+// L'IA demande, la personne accepte ou refuse dans Savoire : un accord comme
+// les autres (outil « request_mode »). Accepte : les modes « modifier » et
+// « creer » changent dans la definition de l'agent. Une action interdite le
+// reste : changer de mode ne donne aucun droit nouveau. Les droits de la
+// personne bornent toujours le resultat (plan, effective_mode).
+
+pub const REQUEST_MODE: &str = "request_mode";
+const MAX_REASON_CHARS: usize = 500;
+
+/// L'agent peut-il demander a changer de mode ? Oui, sauf si la personne l'a coupe.
+pub fn can_request_mode(definition: &Value) -> bool {
+    definition.get("canRequestMode").and_then(Value::as_bool) != Some(false)
+}
+
+/// Les droits apres le changement : edition ('direct') ou revision ('propose').
+/// Creer n'a pas de mode proposition : en revision, il demande avant.
+pub fn switch_mode(definition: &Value, mode: &str) -> Value {
+    let (edit, create) = if mode == "direct" { ("direct", "direct") } else { ("propose", "ask") };
+    let mut d = definition.clone();
+    for (action, m) in [("edit", edit), ("create", create)] {
+        if mode_for(&d, action) != "deny" {
+            d["permissions"][action] = json!(m);
+        }
+    }
+    d
+}
+
+fn mode_title(mode: &str) -> &'static str {
+    if mode == "direct" { "édition (modifications directes)" } else { "révision (modifications proposées dans Révision)" }
+}
+
+fn action_label(action: &str) -> &'static str {
+    match action {
+        "read" => "Lire et chercher",
+        "comment" => "Commenter",
+        "edit" => "Modifier les notes",
+        "create" => "Créer des notes et des dossiers",
+        "organize" => "Déplacer et renommer",
+        "delete" => "Mettre à la corbeille",
+        "plugin" => "Actions des plugins",
+        _ => "Déléguer à un sous-agent",
+    }
+}
+
+fn mode_label(mode: &str) -> &'static str {
+    match mode {
+        "direct" => "oui",
+        "ask" => "demander l'autorisation avant d'écrire",
+        "propose" => "proposer (Révision)",
+        _ => "non",
+    }
+}
+
+/// Les modes de l'agent, en francais court (outil get_mode).
+/// `can_write` : la personne peut-elle ecrire dans le vault demande ? None : pas de vault.
+pub fn describe_mode(agent: &AgentRow, can_write: Option<bool>, pending: Option<&str>) -> String {
+    let def = &agent.definition;
+    let w = can_write.unwrap_or(true);
+    let head = match effective_mode(def, "edit", w) {
+        "direct" => "est en mode édition : ses modifications s'appliquent directement.",
+        "propose" => "est en mode révision : ses modifications deviennent des propositions dans Révision.",
+        "ask" => "demande l'autorisation avant d'écrire : chaque modification attend l'accord de la personne.",
+        _ => "ne modifie pas les notes.",
+    };
+    let mut out = format!("« {} » {head}\n", agent.name);
+    for a in ACTIONS {
+        let m = effective_mode(def, a, w);
+        if m != "deny" || a == "edit" || a == "create" {
+            out.push_str(&format!("- {} : {}\n", action_label(a), mode_label(m)));
+        }
+    }
+    match can_write {
+        Some(false) => out.push_str("Dans ce vault, la personne ne peut que lire : l'agent n'y écrit pas.\n"),
+        Some(true) => {}
+        None => out.push_str("Ces modes restent bornés par les droits de la personne dans chaque vault.\n"),
+    }
+    if let Some(id) = pending {
+        out.push_str(&format!("Une demande de changement de mode attend l'accord de la personne (accord {id}).\n"));
+    } else if can_request_mode(def) {
+        out.push_str("Pour changer : request_mode, avec l'accord de la personne.\n");
+    } else {
+        out.push_str("Cet agent ne peut pas demander à changer de mode.\n");
+    }
+    out
+}
+
+/// Demande de passer en edition ('direct') ou en revision ('propose') : mise en attente de l'accord.
+pub async fn request_mode(st: &AppState, user: &str, agent: &AgentRow, mode: &str, reason: &str) -> AppResult<ToolOutcome> {
+    let def = &agent.definition;
+    if !can_request_mode(def) {
+        return Ok(ToolOutcome::error(&format!("« {} » ne peut pas demander à changer de mode (réglage de l'agent dans Savoire).", agent.name)));
+    }
+    if mode != "direct" && mode != "propose" {
+        return Ok(ToolOutcome::error("mode : direct (édition) ou propose (révision)."));
+    }
+    if mode_for(def, "edit") == "deny" && mode_for(def, "create") == "deny" {
+        return Ok(ToolOutcome::error(&format!("« {} » ne modifie ni ne crée de notes : il n'a pas de mode à changer.", agent.name)));
+    }
+    if switch_mode(def, mode) == *def {
+        return Ok(ToolOutcome { text: format!("« {} » est déjà en mode {}.", agent.name, mode_title(mode)), is_error: false });
+    }
+    let mut c = st.db.acquire().await?;
+    // Accepter changera l'agent : il faut que la personne puisse le modifier.
+    if !can_edit(&mut c, user, agent).await? {
+        return Ok(ToolOutcome::error("Seul un administrateur du vault peut changer le mode de cet agent."));
+    }
+    if let Some(p) = db::approval_pending(&mut c, user, &agent.id, REQUEST_MODE).await? {
+        return Ok(ToolOutcome { text: format!("Une demande de changement de mode attend déjà l'accord de la personne (accord {}). Ne la refaites pas.", p.id), is_error: false });
+    }
+    let reason: String = reason.trim().chars().take(MAX_REASON_CHARS).collect();
+    let summary = if reason.is_empty() { format!("Passer en mode {}", mode_title(mode)) } else { format!("Passer en mode {} : {reason}", mode_title(mode)) };
+    let vault_id = agent.vault_id.clone().unwrap_or_default();
+    let a = ApprovalRow {
+        id: new_id_n(), agent_id: agent.id.clone(), user_id: user.into(), vault_id: vault_id.clone(), tool: REQUEST_MODE.into(),
+        args: json!({ "mode": mode, "reason": reason }), summary: summary.clone(), status: "pending".into(), result: None,
+        created_at: now(), decided_at: None,
+    };
+    db::approval_add(&mut c, &a).await?;
+    db::action_add(&mut c, &db::ActionRow { agent_id: &agent.id, user_id: user, vault_id: &vault_id, tool: REQUEST_MODE, action: "mode", mode: "ask", status: "pending", summary: &summary }).await?;
+    Ok(ToolOutcome {
+        text: format!(
+            "Demande en attente de validation dans Savoire (accord {}) : passer en mode {}. Le mode ne change que si la personne l'accepte, dans le panneau Agents > Activité. Ne la refaites pas.",
+            a.id, mode_title(mode)
+        ),
+        is_error: false,
+    })
+}
+
+/// Accord donne : les modes changent, avec les droits d'AUJOURD'HUI sur l'agent.
+async fn apply_mode_request(st: &AppState, user: &str, agent: &AgentRow, args: &Value) -> AppResult<ToolOutcome> {
+    let mode = args.get("mode").and_then(Value::as_str).unwrap_or("");
+    if mode != "direct" && mode != "propose" {
+        return Ok(ToolOutcome::error("Demande de mode illisible."));
+    }
+    let mut c = st.db.acquire().await?;
+    if !can_edit(&mut c, user, agent).await? {
+        return Ok(ToolOutcome::error("Vous ne pouvez pas modifier cet agent."));
+    }
+    let mut row = agent.clone();
+    row.definition = switch_mode(&agent.definition, mode);
+    row.updated_at = now();
+    db::update(&mut c, &row).await?;
+    Ok(ToolOutcome { text: format!("« {} » est maintenant en mode {}.", agent.name, mode_title(mode)), is_error: false })
 }
 
 // ── API interne : ecritures du pair ──────────────────────────────────────────
@@ -732,6 +884,49 @@ mod tests {
         assert_eq!(def["permissions"]["edit"], "deny");
         assert!(def.get("extra").is_none());
         assert!(clean_definition(&json!({ "name": "" })).is_err());
+    }
+
+    // Memes cas que tests/frontend/unit/agent-core-tests (switchMode).
+    #[test]
+    fn mode_switch() {
+        let d = json!({ "permissions": { "read": "direct", "edit": "propose", "create": "ask", "delete": "ask" } });
+        let e = switch_mode(&d, "direct");
+        assert_eq!((mode_for(&e, "edit"), mode_for(&e, "create")), ("direct", "direct"));
+        // Les autres actions ne bougent pas.
+        assert_eq!(mode_for(&e, "delete"), "ask");
+        let r = switch_mode(&e, "propose");
+        assert_eq!((mode_for(&r, "edit"), mode_for(&r, "create")), ("propose", "ask"));
+        // Une action interdite le reste.
+        let only_edit = json!({ "permissions": { "edit": "ask" } });
+        assert_eq!(mode_for(&switch_mode(&only_edit, "direct"), "create"), "deny");
+        assert_eq!(mode_for(&switch_mode(&only_edit, "direct"), "edit"), "direct");
+        // La personne borne toujours : un lecteur ne fait pas ecrire l'agent.
+        assert_eq!(effective_mode(&e, "edit", false), "deny");
+    }
+
+    #[test]
+    fn mode_request_option() {
+        assert!(can_request_mode(&json!({})));
+        assert!(!can_request_mode(&json!({ "canRequestMode": false })));
+        let (_, _, def) = clean_definition(&json!({ "name": "A", "canRequestMode": false })).unwrap();
+        assert_eq!(def["canRequestMode"], false);
+        let (_, _, def) = clean_definition(&json!({ "name": "A", "canRequestMode": true })).unwrap();
+        assert!(def.get("canRequestMode").is_none());
+    }
+
+    #[test]
+    fn mode_text() {
+        let at = now();
+        let mut a = AgentRow { id: "a".into(), owner_id: "u".into(), vault_id: None, name: "Secrétaire".into(),
+            definition: json!({ "permissions": { "read": "direct", "edit": "propose", "create": "ask" } }), created_at: at, updated_at: at };
+        let t = describe_mode(&a, None, None);
+        assert!(t.starts_with("« Secrétaire » est en mode révision"), "{t}");
+        assert!(t.contains("- Créer des notes et des dossiers : demander l'autorisation avant d'écrire"), "{t}");
+        assert!(t.contains("request_mode"));
+        assert!(describe_mode(&a, None, Some("x1")).contains("accord x1"));
+        assert!(describe_mode(&a, Some(false), None).contains("ne peut que lire"));
+        a.definition["canRequestMode"] = json!(false);
+        assert!(describe_mode(&a, None, None).contains("ne peut pas demander"));
     }
 
     #[test]

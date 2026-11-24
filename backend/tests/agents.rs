@@ -136,7 +136,7 @@ async fn chatgpt_acts_through_the_peer_with_the_agent_rights() {
     // Le catalogue : ce que l'agent a le droit de faire, avec le parametre vault.
     let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["list_vaults", "search", "append", "move_note"]);
+    assert_eq!(names, vec!["list_vaults", "search", "append", "move_note", "get_mode", "request_mode"]);
     let append = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "append").unwrap().clone();
     assert_eq!(append["inputSchema"]["required"][0], "vault");
     assert_eq!(append["annotations"]["readOnlyHint"], false);
@@ -248,7 +248,7 @@ async fn oauth_token_carries_the_chosen_agent() {
     // Les droits et le nom de l'agent choisi a l'ecran d'accord.
     let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["list_vaults", "search", "append"]);
+    assert_eq!(names, vec!["list_vaults", "search", "append", "get_mode", "request_mode"]);
     let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "append", "arguments": { "vault": "Journal", "id": doc, "text": "x" } })).await;
     assert_eq!(r["result"]["isError"], false, "{r}");
     let author: Value = sqlx::query_scalar("SELECT author FROM operations_log WHERE resource_id = $1").bind(&doc).fetch_one(&app.state.db).await.unwrap();
@@ -285,4 +285,126 @@ async fn add_image_takes_a_chatgpt_file_and_never_fetches_a_private_address() {
         assert_eq!(r["result"]["isError"], true, "{r}");
     }
     assert!(!peer.calls.lock().unwrap().iter().any(|c| c["params"]["name"] == "add_image"));
+}
+
+fn text(r: &Value) -> String {
+    r["result"]["content"][0]["text"].as_str().unwrap_or("").to_string()
+}
+
+fn names(tools: &Value) -> Vec<String> {
+    tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
+}
+
+#[tokio::test]
+async fn request_mode_switches_between_edit_and_review_only_with_the_person_approval() {
+    let (url, peer) = fake_peer().await;
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let doc = app.document(&ta, &v).await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Correcteur", "permissions": { "read": "direct", "edit": "propose", "create": "ask", "delete": "ask" } })).await;
+    let agent_id = agent.1["id"].as_str().unwrap().to_string();
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "c", "agentId": agent_id })).await.1["token"].as_str().unwrap().to_string();
+    let agent_perms = || async { app.get(&ta, "/api/v1/agents").await.1["agents"].as_array().unwrap().iter().find(|a| a["id"] == agent_id).unwrap()["permissions"].clone() };
+    let approvals = || async { app.get(&ta, "/api/v1/agents/approvals").await.1["approvals"].as_array().unwrap().clone() };
+
+    // Les deux outils du serveur, par defaut.
+    let n = names(&mcp(&app, &token, 1, "tools/list", json!({})).await);
+    assert!(n.contains(&"get_mode".into()) && n.contains(&"request_mode".into()), "{n:?}");
+    let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "get_mode", "arguments": {} })).await;
+    assert!(text(&r).contains("mode révision"), "{r}");
+
+    // La demande : un accord en attente, rien ne change encore.
+    let r = mcp(&app, &token, 3, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "Corriger vite les fautes." } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    assert!(text(&r).contains("en attente") && text(&r).contains("Ne la refaites pas"), "{r}");
+    assert_eq!(agent_perms().await["edit"], "propose");
+    let list = approvals().await;
+    assert_eq!(list.len(), 1);
+    assert_eq!((list[0]["tool"].as_str(), list[0]["status"].as_str()), (Some("request_mode"), Some("pending")));
+    assert!(list[0]["summary"].as_str().unwrap().contains("Corriger vite les fautes."));
+    let first = list[0]["id"].as_str().unwrap().to_string();
+    // Pas de doublon tant qu'elle attend ; get_mode le dit.
+    let again = mcp(&app, &token, 4, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "Encore." } })).await;
+    assert!(text(&again).contains("attend déjà"), "{again}");
+    assert_eq!(approvals().await.len(), 1);
+    assert!(text(&mcp(&app, &token, 5, "tools/call", json!({ "name": "get_mode", "arguments": {} })).await).contains(&first));
+
+    // L'agent ne s'accorde jamais sa demande : son jeton n'ouvre pas les routes de l'appli.
+    assert_eq!(app.post(&token, &format!("/api/v1/agents/approvals/{first}/decide"), json!({ "approve": true })).await.0, 401);
+    assert_eq!(approvals().await[0]["status"], "pending");
+
+    // Refusee : rien ne change.
+    let refused = app.post(&ta, &format!("/api/v1/agents/approvals/{first}/decide"), json!({ "approve": false })).await;
+    assert_eq!((refused.0, refused.1["status"].as_str()), (200, Some("refused")), "{}", refused.1);
+    let p = agent_perms().await;
+    assert_eq!((p["edit"].as_str(), p["create"].as_str()), (Some("propose"), Some("ask")));
+
+    // Acceptee : edition, l'agent modifie la note directement.
+    mcp(&app, &token, 6, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "Corriger." } })).await;
+    let id = approvals().await.iter().find(|a| a["status"] == "pending").unwrap()["id"].as_str().unwrap().to_string();
+    let done = app.post(&ta, &format!("/api/v1/agents/approvals/{id}/decide"), json!({ "approve": true })).await;
+    assert_eq!((done.0, done.1["status"].as_str()), (200, Some("done")), "{}", done.1);
+    let p = agent_perms().await;
+    assert_eq!((p["edit"].as_str(), p["create"].as_str(), p["delete"].as_str()), (Some("direct"), Some("direct"), Some("ask")));
+    let w = mcp(&app, &token, 7, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "id": doc, "text": "x" } })).await;
+    assert_eq!(text(&w), "append fait (direct)", "{w}");
+    let same = mcp(&app, &token, 8, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "x" } })).await;
+    assert!(text(&same).contains("déjà en mode édition"), "{same}");
+
+    // Retour en revision : modifier propose, creer demande avant.
+    mcp(&app, &token, 9, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "propose", "reason": "Relecture." } })).await;
+    let id = approvals().await.iter().find(|a| a["status"] == "pending").unwrap()["id"].as_str().unwrap().to_string();
+    assert_eq!(app.post(&ta, &format!("/api/v1/agents/approvals/{id}/decide"), json!({ "approve": true })).await.1["status"], "done");
+    let p = agent_perms().await;
+    assert_eq!((p["edit"].as_str(), p["create"].as_str()), (Some("propose"), Some("ask")));
+
+    // Option coupee : l'outil n'est plus propose, et refuse s'il est appele.
+    let mut def = app.get(&ta, "/api/v1/agents").await.1["agents"][0].clone();
+    def["canRequestMode"] = json!(false);
+    let put = app.put(&ta, &format!("/api/v1/agents/{agent_id}"), def).await;
+    assert_eq!((put.0, &put.1["canRequestMode"]), (200, &json!(false)), "{}", put.1);
+    let n = names(&mcp(&app, &token, 10, "tools/list", json!({})).await);
+    assert!(n.contains(&"get_mode".into()) && !n.contains(&"request_mode".into()), "{n:?}");
+    let before = approvals().await.len();
+    let off = mcp(&app, &token, 11, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "x" } })).await;
+    assert_eq!(off["result"]["isError"], true, "{off}");
+    assert_eq!(approvals().await.len(), before);
+
+    // Un jeton sans agent n'a ni l'un ni l'autre.
+    let plain = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "lecture" })).await.1["token"].as_str().unwrap().to_string();
+    assert!(!names(&mcp(&app, &plain, 12, "tools/list", json!({})).await).iter().any(|n| n.ends_with("_mode")));
+    let r = mcp(&app, &plain, 13, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "x" } })).await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
+}
+
+#[tokio::test]
+async fn request_mode_never_exceeds_the_person_rights() {
+    let (url, peer) = fake_peer().await;
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let (bob, tb) = app.user("bob").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let add = app.post(&ta, &format!("/api/v1/vaults/{v}/members"), json!({ "userId": bob, "role": "editor" })).await;
+    assert!(add.0 < 300, "{}", add.1);
+    // Un agent du vault : seul un administrateur le modifie, donc change son mode.
+    let shared = app.post(&ta, "/api/v1/agents", json!({ "name": "Jardinier", "vaultId": v, "permissions": { "read": "direct", "edit": "propose" } })).await;
+    let token = app.post(&tb, "/api/v1/me/access-tokens", json!({ "name": "b", "agentId": shared.1["id"] })).await;
+    assert_eq!(token.0, 200, "{}", token.1);
+    let token = token.1["token"].as_str().unwrap().to_string();
+    let r = mcp(&app, &token, 1, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "x" } })).await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
+    assert!(text(&r).contains("administrateur"), "{r}");
+    assert_eq!(app.get(&tb, "/api/v1/agents/approvals").await.1["approvals"], json!([]));
+
+    // Une lectrice : son agent en edition n'ecrit pas pour autant (get_mode le dit).
+    let (carol, tc) = app.user("carol").await;
+    let add = app.post(&ta, &format!("/api/v1/vaults/{v}/members"), json!({ "userId": carol, "role": "viewer" })).await;
+    assert!(add.0 < 300, "{}", add.1);
+    let own = app.post(&tc, "/api/v1/agents", json!({ "name": "Plume", "permissions": { "read": "direct", "edit": "direct" } })).await;
+    let token = app.post(&tc, "/api/v1/me/access-tokens", json!({ "name": "c", "agentId": own.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+    let t = text(&mcp(&app, &token, 2, "tools/call", json!({ "name": "get_mode", "arguments": { "vault": v } })).await);
+    assert!(t.contains("ne modifie pas") && t.contains("ne peut que lire"), "{t}");
 }
