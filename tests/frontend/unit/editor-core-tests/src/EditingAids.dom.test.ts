@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { EditorView, runScopeHandlers } from '@codemirror/view'
 import { EditorState, EditorSelection, type Extension } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { brackets, highlightSelectionMatches, lineTextStart, listHome, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
+import { brackets, dedentListItem, enterBeforeHeading, highlightSelectionMatches, indentListItem, lineTextStart, listHome, multipleCursors, renumberOrderedLists, selectNextOccurrence, setMultipleCursors, spellcheck } from '../../../../../packages/editor-core/src/EditingAids'
 import { findMatches, findNext, findReplace, openFind, replaceAll } from '../../../../../packages/editor-core/src/FindReplace'
 import { htmlToMarkdown, smartPaste } from '../../../../../packages/editor-core/src/SmartPaste'
 import { countWords, textStats } from '../../../../../packages/editor-core/src/TextStats'
@@ -285,5 +285,61 @@ describe('Triple clic : la ligne, son texte seulement', () => {
     expect(at('du texte')).toBe('du texte')
     // Une marque seule : toute la ligne.
     expect(at('- ')).toBe('- ')
+  })
+})
+
+describe('hierarchie des listes', () => {
+  const at = (doc: string, needle: string) => doc.indexOf(needle) + needle.length
+
+  it('Tab range un element numerote sous le precedent, numerote a partir de 1', () => {
+    const doc = '1. Un\n2. Deux\n3. Trois\n4. Quatre'
+    const view = setup(doc, at(doc, 'Trois'))
+    expect(indentListItem(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('1. Un\n2. Deux\n   1. Trois\n3. Quatre')
+    expect(view.state.selection.main.head).toBe(view.state.doc.toString().indexOf('Trois') + 5)
+  })
+
+  it('Maj+Tab le remonte et la liste se renumerote', () => {
+    const doc = '1. Un\n2. Deux\n   1. Trois\n   2. Bis\n3. Quatre'
+    const view = setup(doc, at(doc, 'Trois'))
+    expect(dedentListItem(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('1. Un\n2. Deux\n3. Trois\n   1. Bis\n4. Quatre')
+  })
+
+  it('le retrait suit la largeur du numero, les enfants suivent', () => {
+    const doc = '9. A\n10. B\n11. C\n    - enfant\n12. D'
+    const view = setup(doc, at(doc, 'C'))
+    indentListItem(view)
+    expect(view.state.doc.toString()).toBe('9. A\n10. B\n    1. C\n        - enfant\n11. D')
+  })
+
+  it('une puce descend de deux espaces ; le premier element ne bouge pas', () => {
+    const view = setup('- a\n- b', 7)
+    indentListItem(view)
+    expect(view.state.doc.toString()).toBe('- a\n  - b')
+    const first = setup('- a\n- b', 3)
+    expect(indentListItem(first)).toBe(true)
+    expect(first.state.doc.toString()).toBe('- a\n- b')
+  })
+
+  it('hors d\'une liste, Tab n\'est pas pris', () => {
+    expect(indentListItem(setup('texte', 2))).toBe(false)
+  })
+})
+
+describe('Entree au debut d\'un titre', () => {
+  const enter = (view: EditorView) => runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'Enter' }), 'editor')
+
+  it('ouvre une ligne au-dessus, le titre reste un titre', () => {
+    const view = setup('## Titre\n\nsuite', 3, [enterBeforeHeading])
+    expect(enter(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('\n## Titre\n\nsuite')
+    expect(view.state.selection.main.head).toBe(4)
+  })
+
+  it('ailleurs dans le titre, Entree reste celle de l\'editeur', () => {
+    expect(enter(setup('## Titre', 5, [enterBeforeHeading]))).toBe(false)
+    expect(enter(setup('## Titre', 8, [enterBeforeHeading]))).toBe(false)
+    expect(enter(setup('## ', 3, [enterBeforeHeading]))).toBe(false)
   })
 })

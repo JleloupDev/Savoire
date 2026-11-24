@@ -332,8 +332,11 @@ export function renumberChanges(tr: Transaction): ChangeSpec[] {
     // Le numero de depart : celui que la liste avait avant (on efface le 1 : la liste commence toujours a 1).
     const before = inverse.mapPos(doc.line(run[0].line).from, -1)
     if (inCodeAt(tr.startState, Math.min(before, tr.startState.doc.length))) continue
-    const old = listRun(tr.startState.doc, tr.startState.doc.lineAt(before).number)
-    const start = old.length ? old[0].num : run[0].num
+    const oldLine = tr.startState.doc.lineAt(before).number
+    const was = orderedItem(tr.startState.doc, oldLine)
+    // Un element passe a un autre niveau ouvre une sous-liste : elle part de 1.
+    const old = was && was.indent !== run[0].indent ? null : listRun(tr.startState.doc, oldLine)
+    const start = old === null ? 1 : old.length ? old[0].num : run[0].num
     run.forEach((it, i) => {
       const want = String(start + i)
       if (String(it.num) !== want) changes.push({ from: it.numFrom, to: it.numTo, insert: want })
@@ -353,6 +356,104 @@ export const renumberOrderedLists: Extension = EditorState.transactionFilter.of(
   return [tr, { changes, sequential: true } as TransactionSpec]
 })
 
+
+// ── Hierarchie des listes (Tab, Maj+Tab) ────────────────────────────────────
+
+const LIST_ITEM_RE = /^(\s*)([-*+]|\d+[.)])(\s+)/
+
+/**
+ * L'element de liste au-dessus de la ligne `n` dont le retrait verifie
+ * `wanted`, en passant les lignes vides et les suites d'elements (plus en
+ * retrait). Null si la liste s'arrete avant.
+ */
+function itemAbove(doc: Text, n: number, wanted: (indent: number) => boolean): RegExpExecArray | null {
+  for (let k = n - 1; k >= 1; k--) {
+    const text = doc.line(k).text
+    if (!text.trim()) continue
+    const m = LIST_ITEM_RE.exec(text)
+    if (m && wanted(m[1].length)) return m
+    if (!m && indentOf(text) === 0) return null
+  }
+  return null
+}
+
+/** La ligne `n` et ses enfants : les lignes qui suivent, vides ou plus en retrait. */
+function itemLines(doc: Text, n: number, indent: number): number[] {
+  const lines = [n]
+  for (let k = n + 1; k <= doc.lines; k++) {
+    const text = doc.line(k).text
+    if (text.trim() && indentOf(text) <= indent) break
+    lines.push(k)
+  }
+  while (lines.length > 1 && !doc.line(lines[lines.length - 1]).text.trim()) lines.pop()
+  return lines
+}
+
+/**
+ * Changements pour passer l'element de la ligne `n` au niveau en dessous
+ * (`dir` 1, Tab) ou au-dessus (-1, Maj+Tab), avec ses enfants. Le retrait
+ * suit le Markdown : un enfant s'aligne sur le texte de l'element parent,
+ * soit 2 espaces sous `- ` et 3 sous `1. `. Null si ce n'est pas une liste.
+ */
+export function listIndentChanges(doc: Text, n: number, dir: 1 | -1): ChangeSpec[] | null {
+  const m = LIST_ITEM_RE.exec(doc.line(n).text)
+  if (!m) return null
+  const indent = m[1].length
+  let target: number
+  if (dir === 1) {
+    // Sous le frere precedent ; le premier element n'a pas de parent ou descendre.
+    const sibling = itemAbove(doc, n, i => i <= indent)
+    if (!sibling || sibling[1].length !== indent) return []
+    target = sibling[0].length
+  } else {
+    if (indent === 0) return []
+    target = itemAbove(doc, n, i => i < indent)?.[1].length ?? 0
+  }
+  const delta = target - indent
+  const changes: ChangeSpec[] = []
+  for (const k of itemLines(doc, n, indent)) {
+    const line = doc.line(k)
+    if (!line.text.trim()) continue
+    if (delta > 0) changes.push({ from: line.from, insert: ' '.repeat(delta) })
+    else changes.push({ from: line.from, to: line.from + Math.min(-delta, indentOf(line.text)) })
+  }
+  return changes
+}
+
+function moveListItem(view: EditorView, dir: 1 | -1): boolean {
+  const { state } = view
+  const changes = listIndentChanges(state.doc, state.doc.lineAt(state.selection.main.head).number, dir)
+  if (changes === null) return false
+  // Une liste garde la touche, meme sans rien changer : le focus ne part pas.
+  if (changes.length) view.dispatch({ changes, userEvent: dir === 1 ? 'input.indent' : 'delete.dedent' })
+  return true
+}
+
+/** Tab : l'element de liste descend d'un niveau (une liste numerotee repart de 1). */
+export const indentListItem = (view: EditorView): boolean => moveListItem(view, 1)
+/** Maj+Tab : l'element remonte d'un niveau. */
+export const dedentListItem = (view: EditorView): boolean => moveListItem(view, -1)
+
+// ── Entree au debut d'un titre ──────────────────────────────────────────────
+
+/**
+ * Entree au debut du texte d'un titre (curseur apres `## `) : une ligne vide
+ * s'ouvre au-dessus et le titre reste un titre. Sans cela, `## ` restait seul
+ * sur sa ligne et s'effacait : le texte perdait son niveau de titre.
+ */
+export const enterBeforeHeading: Extension = Prec.highest(keymap.of([{
+  key: 'Enter',
+  run(view) {
+    const { state } = view
+    const sel = state.selection.main
+    if (!sel.empty || state.readOnly) return false
+    const line = state.doc.lineAt(sel.head)
+    const mark = /^ {0,3}#{1,6}[ \t]+(?=\S)/.exec(line.text)
+    if (!mark || sel.head === line.from || sel.head > line.from + mark[0].length) return false
+    view.dispatch({ changes: { from: line.from, insert: '\n' }, scrollIntoView: true, userEvent: 'input' })
+    return true
+  },
+}]))
 
 // ── Touche Debut sur une liste ou une citation ──────────────────────────────
 

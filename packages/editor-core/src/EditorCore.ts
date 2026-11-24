@@ -28,14 +28,11 @@ import { foldAllHeadings, foldStorage, toggleFoldAtCursor, unfoldAll } from './F
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
 import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
 import type { PropertiesHost } from './PropertiesPanel'
-import { brackets, highlightSelectionMatches, listHome, tripleClickLine, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
+import { brackets, dedentListItem, enterBeforeHeading, highlightSelectionMatches, indentListItem, listHome, tripleClickLine, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
 import { findReplace, openFind } from './FindReplace'
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
 import { focusedSubEditor, hostOf, subEditorExtensions } from './SubEditor'
-
-// Detects a list item line: optional leading whitespace + bullet or ordered marker
-const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.) /
 
 const LONE_SYMBOL_RE = /^(#{1,6}|[-*+]|>)\s*$/
 
@@ -47,25 +44,6 @@ function viewOf(ctx: unknown): EditorView | undefined {
   const v = c?.view ?? c?.editorView
   // Une case de tableau ouverte : c'est elle qu'on met en forme.
   return v instanceof EditorView ? (focusedSubEditor(v) ?? v) : undefined
-}
-
-function indentListLine(view: EditorView): boolean {
-  const { state } = view
-  const line = state.doc.lineAt(state.selection.main.head)
-  if (!LIST_LINE_RE.test(line.text)) return false
-  const anchor = state.selection.main.anchor + 2
-  view.dispatch(state.update({ changes: { from: line.from, insert: '  ' }, selection: { anchor } }))
-  return true
-}
-
-function dedentListLine(view: EditorView): boolean {
-  const { state } = view
-  const line = state.doc.lineAt(state.selection.main.head)
-  const match = line.text.match(/^(\s+)([-*+]|\d+\.) /)
-  if (!match || match[1].length < 2) return false
-  const newAnchor = Math.max(line.from, state.selection.main.anchor - 2)
-  view.dispatch(state.update({ changes: { from: line.from, to: line.from + 2, insert: '' }, selection: { anchor: newAnchor } }))
-  return true
 }
 
 
@@ -136,8 +114,8 @@ export function plumeCommands(): PluginCommand[] {
     // CodeMirror : la liste des raccourcis dit ainsi ce qui marche vraiment.
     { id: 'editor:toggle-checklist-status', label: 'Cocher / décocher la case', hotkeys: mod('Enter'), run: on(toggleChecklistStatus) },
     { id: 'editor:clear-formatting',      label: 'Effacer la mise en forme',                           run: on(clearInlineFormatting) },
-    { id: 'editor:indent-list',           label: 'Indenter l\'élément de liste',                       run: on(v => { indentListLine(v) }) },
-    { id: 'editor:unindent-list',         label: 'Désindenter l\'élément de liste',                    run: on(v => { dedentListLine(v) }) },
+    { id: 'editor:indent-list',           label: 'Indenter l\'élément de liste',                       run: on(v => { indentListItem(v) }) },
+    { id: 'editor:unindent-list',         label: 'Désindenter l\'élément de liste',                    run: on(v => { dedentListItem(v) }) },
     { id: 'editor:swap-line-up',          label: 'Monter la ligne',          hotkeys: [{ modifiers: ['Alt'], key: 'ArrowUp' }], run: on(v => { moveLineUp(v) }) },
     { id: 'editor:swap-line-down',        label: 'Descendre la ligne',       hotkeys: [{ modifiers: ['Alt'], key: 'ArrowDown' }], run: on(v => { moveLineDown(v) }) },
     { id: 'editor:duplicate-line',        label: 'Dupliquer la ligne',       hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'ArrowDown' }], run: on(v => { copyLineDown(v) }) },
@@ -406,8 +384,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
                 EditorView.lineWrapping,
               ]),
               keymap.of([
-                { key: 'Tab', run: indentListLine },
-                { key: 'Shift-Tab', run: dedentListLine, preventDefault: true },
+                { key: 'Tab', run: indentListItem },
+                { key: 'Shift-Tab', run: dedentListItem, preventDefault: true },
                 ...defaultKeymap,
                 ...(crdtUndo
                   ? [
@@ -425,6 +403,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         spellcheck,
         listHome,
         tripleClickLine,
+        enterBeforeHeading,
         highlightSelectionMatches,
         multipleCursors,
         findReplace,
