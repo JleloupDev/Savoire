@@ -258,8 +258,13 @@ export class AppToolHost implements AgentToolHost {
    * `typing`, la suite d'un long texte arrive morceau par morceau : chaque
    * morceau se place apres le precedent par une position relative, meme si
    * quelqu'un ecrit ailleurs pendant ce temps.
+   *
+   * L'ecriture devient un point d'historique de la note (modifications de
+   * l'IA, annulables une par une) : qui, pour qui, quoi (`what`) et pourquoi
+   * (`why`). Seules les modifications de l'agent sont comptees, pas ce que
+   * la personne tape pendant l'effet de frappe.
    */
-  async applyChanges(docId: string, changes: readonly TextChange[], _actor?: ToolActor, opts: { typing?: boolean; expect?: string } = {}): Promise<void> {
+  async applyChanges(docId: string, changes: readonly TextChange[], actor?: ToolActor, opts: { typing?: boolean; expect?: string; what?: string; why?: string } = {}): Promise<void> {
     if (!changes.length) return
     const { session } = this.d
     const crdt = session.openDocument(docId) as ICRDT
@@ -273,11 +278,22 @@ export class AppToolHost implements AgentToolHost {
         throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
       }
       const plan = opts.typing ? planTyping(changes, TYPING) : { first: [...changes], tails: [], delayMs: 0 }
-      await typeInto({
-        applyDelta: delta => shared.applyDelta(delta),
-        createRelPos: (index, assoc) => collab.createRelPos(index, assoc),
-        resolveRelPos: rp => collab.resolveRelPos(rp),
-      }, plan, sleep)
+      const rec = actor ? crdt.beginAiChange?.({
+        agent: { id: actor.agentId, name: actor.agentName, color: this.d.presence?.id === actor.agentId ? this.d.presence.color : agentColor({ id: actor.agentId }) },
+        forUser: { id: actor.onBehalfOf.userId, name: actor.onBehalfOf.displayName },
+        ...(opts.what ? { summary: opts.what } : {}),
+        ...(opts.why ? { reason: opts.why } : {}),
+      }) : undefined
+      try {
+        await typeInto({
+          applyDelta: delta => rec ? rec.capture(() => shared.applyDelta(delta)) : shared.applyDelta(delta),
+          createRelPos: (index, assoc) => collab.createRelPos(index, assoc),
+          resolveRelPos: rp => collab.resolveRelPos(rp),
+        }, plan, sleep)
+      } finally {
+        // Meme si la frappe s'arrete en route : ce qui est ecrit reste annulable.
+        try { rec?.commit() } catch { /* le point ne fait jamais echouer l'ecriture */ }
+      }
     } finally {
       setTimeout(() => session.closeDocument(docId), CLOSE_DELAY_MS)
     }
