@@ -5,7 +5,8 @@
 // (ChatGPT par le serveur, ou un agent de l'appli), elle est un pair de plus
 // dans la note :
 //  - elle ecrit : une etiquette a son nom, la ou elle ecrit (le curseur et le
-//    passage colore sont dessines par yCollab, comme pour une personne) ;
+//    passage colore sont dessines par yCollab, comme pour une personne), et
+//    un trait dans la marge, le long de ce qu'elle vient d'ecrire ;
 //  - elle lit : un trait leger dans la marge, le long du passage lu ;
 //  - en bas a droite, le robot dit « Archiviste lit… » ou « ecrit… », avec un
 //    bouton « Suivre » : la vue suit alors l'endroit ou l'agent travaille.
@@ -13,9 +14,10 @@
 // Rien ne s'affiche quand aucun agent ne travaille. La source (le CRDT du
 // document) dit qui est la ; elle retire elle-meme un agent qui se tait.
 //
-// Le trait et le robot reprennent BlockMarks et AgentPresence : la marge a
-// une case par widget, la ou une decoration de ligne disparaitrait (modes
-// « power » et « classique »).
+// Le trait et le robot reprennent BlockMarks et AgentPresence. La marge a une
+// case par widget : en modes « power » et « classique », un paragraphe rendu
+// cache le curseur et l'etiquette, comme ceux d'une personne ; le trait, lui,
+// reste et dit ou l'agent travaille.
 
 import { StateEffect, type Extension } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
@@ -135,8 +137,10 @@ export function agentCursorsExtension(source: AgentCursorSource, follow: AgentFo
             onClick: () => { follow.set(!follow.get()); this.followed = ''; this.schedule() },
           },
         })
-        applyBlockMarks(view, owner, p.state === 'reading' && p.from !== undefined && p.to !== undefined
-          ? [{ from: p.from, to: p.to, className: 'cm-block-agent-reading', title: `${p.name} lit ce passage…` }]
+        applyBlockMarks(view, owner, p.from !== undefined && p.to !== undefined
+          ? [p.state === 'reading'
+              ? { from: p.from, to: p.to, className: 'cm-block-agent-reading', title: `${p.name} lit ce passage…`, color: p.color }
+              : { from: p.from, to: p.to, className: 'cm-block-agent-writing', title: `${p.name} écrit ici…`, color: p.color }]
           : [])
       }
       for (const owner of this.shown) {

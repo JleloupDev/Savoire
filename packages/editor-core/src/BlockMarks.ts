@@ -31,6 +31,8 @@ export interface BlockMark {
   className: string
   /** Infobulle du trait. */
   title?: string
+  /** Couleur du trait (« #rrggbb »), a la place de celle de la classe : un agent a la sienne. */
+  color?: string
   /** Pastille au debut du bloc : un texte court, ouvert au clic. */
   badge?: {
     /** Libelle de la pastille (une icone, un mot). */
@@ -102,7 +104,7 @@ function badgeDOM(badge: NonNullable<BlockMark['badge']>): HTMLElement {
 /** La case de gouttiere d'une ligne (ou d'un widget) : ses traits, et les pastilles des blocs qui y commencent. */
 class MarksMarker extends GutterMarker {
   constructor(
-    private readonly bars: readonly { className: string; title?: string }[],
+    private readonly bars: readonly { className: string; title?: string; color?: string }[],
     private readonly badges: readonly NonNullable<BlockMark['badge']>[],
   ) { super() }
 
@@ -121,6 +123,7 @@ class MarksMarker extends GutterMarker {
       const el = document.createElement('span')
       el.className = `cm-block-mark-bar ${bar.className}`
       if (bar.title) el.title = bar.title
+      if (bar.color) el.style.backgroundColor = bar.color
       box.appendChild(el)
     }
     for (const badge of this.badges) box.appendChild(badgeDOM(badge))
@@ -130,12 +133,12 @@ class MarksMarker extends GutterMarker {
 
 /** Ce qu'il faut dessiner pour le passage [from, to] (une ligne, ou les lignes d'un widget). */
 function markerFor(view: EditorView, from: number, to: number): MarksMarker | null {
-  const bars: { className: string; title?: string }[] = []
+  const bars: { className: string; title?: string; color?: string }[] = []
   const badges: NonNullable<BlockMark['badge']>[] = []
   for (const marks of view.state.field(field).values()) {
     for (const m of marks) {
       if (m.to < from || m.from > to) continue
-      if (!bars.some(b => b.className === m.className)) bars.push({ className: m.className, ...(m.title ? { title: m.title } : {}) })
+      if (!bars.some(b => b.className === m.className && b.color === m.color)) bars.push({ className: m.className, ...(m.title ? { title: m.title } : {}), ...(m.color ? { color: m.color } : {}) })
       // La pastille va sur la case ou le bloc commence.
       if (m.badge && m.from >= from && m.from <= to) badges.push(m.badge)
     }

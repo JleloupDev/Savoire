@@ -807,9 +807,11 @@ html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-
   position: absolute; left: -1px; bottom: 100%; z-index: 102; white-space: nowrap; pointer-events: none; user-select: none;
   padding: 0 5px; border-radius: 4px 4px 4px 0; color: #fff; font: 600 10.5px/1.5 var(--font-ui, sans-serif);
 }
-.cm-block-mark-bar.cm-block-agent-reading { background: rgba(124, 58, 237, 0.45); width: 2px; animation: cm-block-reading 1.4s ease-in-out infinite; }
+.cm-block-mark-bar.cm-block-agent-reading { background: #7c3aed; width: 2px; animation: cm-block-agent-reading 1.6s ease-in-out infinite; }
+.cm-block-mark-bar.cm-block-agent-writing { background: #7c3aed; }
+@keyframes cm-block-agent-reading { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) {
-  .cm-block-mark-bar.cm-block-agent-reading { animation: none; }
+  .cm-block-mark-bar.cm-block-agent-reading { animation: none; opacity: 0.45; }
 }
 .agent-watch-dot { width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; opacity: 0.55; display: inline-block; flex: none; }
 .agent-watch-dot.is-busy { opacity: 1; animation: agent-watch-pulse 1.2s ease-in-out infinite; }

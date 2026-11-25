@@ -3,7 +3,7 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
 // Un agent IA dans la note, en direct : etiquette la ou il ecrit, trait dans
-// la marge du passage qu'il lit, robot « lit… / ecrit… », bouton « Suivre ».
+// la marge du passage qu'il lit ou ecrit, robot « lit… / ecrit… », bouton « Suivre ».
 // Rien quand personne ne travaille.
 import { describe, it, expect, afterEach } from 'vitest'
 import { EditorState } from '@codemirror/state'
@@ -83,8 +83,8 @@ describe('un agent IA dans la note, en direct', () => {
     expect(e.tags()[0]!.style.backgroundColor).toBe('#00aa77')
     // L'etiquette est a la fin de ce qu'il vient d'ecrire.
     expect(e.view.posAtDOM(e.tags()[0]!.parentElement!)).toBe(29)
-    // Pas de trait de lecture quand il ecrit.
-    expect(e.marks()).toHaveLength(0)
+    // Un trait dans la marge, visible meme quand le paragraphe est rendu (modes power et classique).
+    expect(e.marks()).toEqual([{ from: 7, to: 29, className: 'cm-block-agent-writing', title: 'Archiviste écrit ici…', color: '#00aa77' }])
   })
 
   it('il lit : un trait le long du passage, robot « lit… », pas d etiquette', async () => {
@@ -92,7 +92,7 @@ describe('un agent IA dans la note, en direct', () => {
     const e = open(source)
     await source.set([reading])
     expect(e.chip()!.textContent).toContain('Archiviste lit…')
-    expect(e.marks()).toEqual([{ from: 7, to: 29, className: 'cm-block-agent-reading', title: 'Archiviste lit ce passage…' }])
+    expect(e.marks()).toEqual([{ from: 7, to: 29, className: 'cm-block-agent-reading', title: 'Archiviste lit ce passage…', color: '#00aa77' }])
     expect(e.tags()).toHaveLength(0)
   })
 
@@ -101,7 +101,7 @@ describe('un agent IA dans la note, en direct', () => {
     const e = open(source)
     await source.set([reading])
     await source.set([writing])
-    expect(e.marks()).toHaveLength(0)
+    expect(e.marks().map(m => m.className)).toEqual(['cm-block-agent-writing'])
     expect(e.tags()).toHaveLength(1)
     await source.set([])
     expect(e.box.hidden).toBe(true)
