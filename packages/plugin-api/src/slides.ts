@@ -20,7 +20,8 @@
 //    `format` (16:9, 4:3), `numéros` (oui / non), `pied` (texte en bas).
 import { findFrontmatter, parseFrontmatter } from './properties'
 
-export const SLIDE_THEMES = ['clair', 'sombre', 'bleu', 'sépia'] as const
+// « éditeur » (par defaut) : les couleurs de l'editeur, celles du theme de l'appli.
+export const SLIDE_THEMES = ['éditeur', 'clair', 'sombre', 'bleu', 'sépia'] as const
 export type SlideTheme = typeof SLIDE_THEMES[number]
 
 export type SlideRatio = '16:9' | '4:3'
@@ -175,12 +176,13 @@ function yes(v: unknown, fallback: boolean): boolean {
 function themeOf(v: unknown): SlideTheme {
   const s = typeof v === 'string' ? fold(v) : ''
   const aliases: Record<string, SlideTheme> = {
+    editeur: 'éditeur', editor: 'éditeur', app: 'éditeur', appli: 'éditeur', auto: 'éditeur',
     clair: 'clair', light: 'clair', blanc: 'clair',
     sombre: 'sombre', dark: 'sombre', noir: 'sombre',
     bleu: 'bleu', blue: 'bleu', nuit: 'bleu',
     sepia: 'sépia', papier: 'sépia', paper: 'sépia',
   }
-  return aliases[s] ?? 'clair'
+  return aliases[s] ?? 'éditeur'
 }
 
 /** La presentation : ses diapositives et ses reglages. */

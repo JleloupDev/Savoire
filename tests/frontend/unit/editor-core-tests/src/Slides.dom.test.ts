@@ -10,7 +10,7 @@ import { insertIntoSlide, isSlidesNote, readZip, slideDeck, slideIndexAt } from 
 import { renderSlide } from '../../../../../packages/editor-core/src/Slides'
 import { startSlideShow } from '../../../../../packages/editor-core/src/SlideShow'
 import { buildPptx, pptxEntries, readSlideBody, xmlText, type PptxDeck } from '../../../../../packages/editor-core/src/SlidesPptx'
-import { SLIDE_COLORS } from '../../../../../packages/editor-core/src/Slides'
+import { SLIDE_COLORS, editorSlideColors } from '../../../../../packages/editor-core/src/Slides'
 
 const DECK = `---
 type: slides
@@ -110,6 +110,25 @@ describe('renderSlide', () => {
     expect(el.querySelectorAll('li')).toHaveLength(2)
     expect(el.querySelector('.plume-slide-foot')?.textContent).toContain('2 / 3')
     expect(el.textContent).not.toContain('sourire')
+  })
+
+  it('suit les couleurs de l editeur par defaut : titres, italique, code', () => {
+    const root = document.documentElement
+    const vars = { '--bg-base': '#fdf6e3', '--text': '#586e75', '--heading-color': '#cb4b16', '--accent': '#2aa198', '--color-info': 'rgb(38, 139, 210)', '--color-code': '#859900' }
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+    try {
+      const deck = slideDeck('---\ntype: slides\n---\n## Titre\n\n*mot*\n')
+      expect(deck.theme).toBe('éditeur')
+      expect(slideDeck('---\ntype: slides\nthème: editeur\n---\nx').theme).toBe('éditeur')
+      const c = editorSlideColors()
+      expect(c).toMatchObject({ bg: '#fdf6e3', text: '#586e75', heading: '#cb4b16', accent: '#2aa198', em: '#268bd2', code: '#859900', strong: '#586e75' })
+      const el = renderSlide(deck, deck.slides[0]!)
+      expect(el.dataset.theme).toBe('éditeur')
+      expect(el.style.getPropertyValue('--slide-heading')).toBe('#cb4b16')
+      expect(el.style.getPropertyValue('--slide-em')).toBe('#268bd2')
+    } finally {
+      for (const k of Object.keys(vars)) root.style.removeProperty(k)
+    }
   })
 })
 

@@ -5,7 +5,7 @@
 // d'impression, comme l'export PDF d'une note) et PowerPoint (.pptx).
 import { slideDeck, type SlideDeck } from '@savoire/plugin-api'
 import { settle } from './PdfExport'
-import { SLIDE_COLORS, SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, type SlideRenderOptions } from './Slides'
+import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, slideColors, type SlideRenderOptions } from './Slides'
 import { buildPptx, pictureOf, readSlideBody, type PptxSlide } from './SlidesPptx'
 
 export interface SlidesExportOptions extends SlideRenderOptions {
@@ -104,7 +104,7 @@ export async function slidesToPptx(text: string, opts: SlidesExportOptions = {})
       const slide = deck.slides[i]!
       out.push({ title: read.title, paragraphs: read.paragraphs, pictures, notes: slide.notes, cover: slide.cover })
     }
-    return buildPptx({ title: opts.title ?? '', ratio: deck.ratio, colors: SLIDE_COLORS[deck.theme], slides: out })
+    return buildPptx({ title: opts.title ?? '', ratio: deck.ratio, colors: slideColors(deck.theme), slides: out })
   } finally {
     releaseSlide(host)
     host.remove()
