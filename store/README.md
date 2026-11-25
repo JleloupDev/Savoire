@@ -1,10 +1,15 @@
 # Savoire Store
 
 Le catalogue des **plugins**, **modèles de notes**, **modules** et **paquets de notes** de
-[Savoire](../Savoire). Un petit site (rendu serveur, sans script,
-référençable) et une API.
+[Savoire](../Savoire). Un site (rendu serveur, sans script, référençable) et
+une API.
 
-- Comptes : ceux de Savoire (Zitadel). Tout compte peut laisser un avis.
+- Le site : accueil (recherche, sélections, catégories), catalogue avec
+  filtres (sorte, catégorie, prix, note, tri), pages des catégories, fiche de
+  chaque élément (captures d'écran, description en Markdown, droits,
+  versions, avis), page « Publier », `sitemap.xml`.
+- Comptes : ceux de Savoire (Zitadel). Tout compte peut laisser un avis,
+  depuis l'application ou depuis le site (connexion OIDC, cookie du site).
 - Publication comme Obsidian : une release GitHub du dépôt de l'éditeur
   (voir [docs/publier.md](docs/publier.md)).
 - Contrôles automatiques à chaque version ; relecture humaine de la première
@@ -26,6 +31,14 @@ ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://127.0.0.1:5100 Auth__A
 
 - Site : http://127.0.0.1:5100/
 - Les migrations s'appliquent au démarrage.
+- Un catalogue de démonstration (18 éléments fictifs, avec des avis et les
+  captures de `docs/captures`) : ajouter
+  `Store__DemoSeed=true Store__DemoImages=$PWD/../docs/captures/captures`.
+  Développement seulement ; une base à part est plus propre
+  (`ConnectionStrings__Store=...Database=savoire_store_demo...`).
+- Connexion au site : `Auth__ClientId` (l'appli web de Savoire, `WebClientId`
+  du même fichier) ; l'adresse de retour `http://127.0.0.1:5100/auth/callback`
+  est déclarée par `zitadel-bootstrap` (`STORE_ORIGINS`).
 - En développement, une clé de signature est créée dans `src/SavoireStore.Api/.local/`.
 - Administrateurs : `Store:AdminEmails` (adresse vérifiée) ou `Store:AdminSubjects`.
 
@@ -38,6 +51,8 @@ Tests : `dotnet test` (une base PostgreSQL neuve par classe ;
 |---|---|
 | `ConnectionStrings:Store` | Base PostgreSQL. |
 | `Auth:Authority`, `Auth:Audience` | Zitadel de Savoire, et l'id du projet Savoire. |
+| `Auth:ClientId` | Facultatif : l'appli web de Savoire, pour se connecter au site. Sans elle, les avis se donnent depuis l'application. |
+| `Store:AppUrl` | Facultatif : l'adresse de l'application (bouton « Ouvrir Savoire » des fiches). |
 | `Store:SigningKeyFile` | Clé privée de signature (PEM). Obligatoire hors développement : la perdre invalide toutes les signatures. |
 | `Store:AdminEmails`, `Store:AdminSubjects` | Qui relit les publications. |
 | `Store:GitHubToken` | Facultatif : jeton GitHub, pour une limite d'appels plus haute. |
@@ -46,11 +61,14 @@ Tests : `dotnet test` (une base PostgreSQL neuve par classe ;
 
 | Route | Rôle |
 |---|---|
-| `GET /api/v1/items?q&kind&category&sort&page&pageSize` | Catalogue (`sort` : popular, recent, rating, name). |
-| `GET /api/v1/items/{id}` | Un élément, ses droits, ses versions. |
+| `GET /api/v1/items?q&kind&category&price&minRating&sort&page&pageSize` | Catalogue (`sort` : popular, recent, rating, name ; `price` : free, paid). |
+| `GET /api/v1/facets?q&kind&category&price&minRating` | Comptes par sorte, catégorie et prix (filtres). |
+| `GET /api/v1/categories` | Les catégories, avec leur nom et leur nombre d'éléments. |
+| `GET /api/v1/items/{id}` | Un élément, ses droits, ses versions, ses captures (`screenshots`). |
+| `GET /media/{id}` | Une image (icône `iconId`, capture), en cache pour toujours. |
 | `GET /api/v1/items/{id}/download?version=` | Le paquet (JSON, gzip si demandé), signature dans `X-Savoire-Signature`. |
 | `GET /api/v1/signing-key` | Clé publique du store (SPKI, base64). |
-| `GET/POST /api/v1/items/{id}/reviews` | Avis (POST : compte, `{ rating, text }`). |
+| `GET/POST /api/v1/items/{id}/reviews` | Avis et répartition des notes (POST : compte, `{ rating, text }`). |
 | `DELETE /api/v1/items/{id}/reviews/{rid}`, `POST …/{rid}/reply` | Retirer son avis ; réponse de l'éditeur. |
 | `POST /api/v1/publish` | `{ repo }` : publier la dernière release GitHub. |
 | `GET /api/v1/me/items` | Mes éléments, versions et contrôles. |

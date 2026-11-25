@@ -59,6 +59,8 @@ public class Item
     public int? PriceCents { get; set; }
     public string? Currency { get; set; }
     public long Downloads { get; set; }
+    /// <summary>L'icone de la derniere version (ItemMedia), pour les listes.</summary>
+    public Guid? IconId { get; set; }
     public int RatingSum { get; set; }
     public int RatingCount { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -105,11 +107,47 @@ public class Review
     public DateTime UpdatedAt { get; set; }
 }
 
+public static class MediaRoles
+{
+    public const string Icon = "icon";
+    public const string Screenshot = "screenshot";
+}
+
+/// <summary>
+/// Une image de presentation d'une version (icone, capture d'ecran), prise
+/// dans les pieces jointes de la release. Hors du paquet signe : elle ne
+/// sert qu'au site et a la fiche dans l'application.
+/// </summary>
+public class ItemMedia
+{
+    public Guid Id { get; set; }
+    public string ItemId { get; set; } = null!;
+    public Guid VersionId { get; set; }
+    public string Role { get; set; } = MediaRoles.Screenshot;
+    public int Position { get; set; }
+    public string? Caption { get; set; }
+    public string ContentType { get; set; } = null!;
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public byte[] Bytes { get; set; } = null!;
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>Cles de protection des donnees (cookie de connexion du site), gardees en base.</summary>
+public class DataProtectionKeyRow
+{
+    public int Id { get; set; }
+    public string? FriendlyName { get; set; }
+    public string Xml { get; set; } = null!;
+}
+
 public class StoreDb(DbContextOptions<StoreDb> options) : DbContext(options)
 {
     public DbSet<Item> Items => Set<Item>();
     public DbSet<ItemVersion> Versions => Set<ItemVersion>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ItemMedia> Media => Set<ItemMedia>();
+    public DbSet<DataProtectionKeyRow> DataProtectionKeys => Set<DataProtectionKeyRow>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -151,6 +189,22 @@ public class StoreDb(DbContextOptions<StoreDb> options) : DbContext(options)
             e.Property(x => x.Reply).HasMaxLength(4000);
             e.HasIndex(x => new { x.ItemId, x.UserId, x.MajorVersion }).IsUnique();
             e.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<ItemMedia>(e =>
+        {
+            e.ToTable("item_media");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Role).HasMaxLength(16);
+            e.Property(x => x.Caption).HasMaxLength(200);
+            e.Property(x => x.ContentType).HasMaxLength(32);
+            e.HasIndex(x => new { x.VersionId, x.Role, x.Position });
+            e.HasOne<ItemVersion>().WithMany().HasForeignKey(x => x.VersionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.NoAction);
+        });
+        b.Entity<DataProtectionKeyRow>(e =>
+        {
+            e.ToTable("data_protection_keys");
+            e.HasKey(x => x.Id);
         });
     }
 }

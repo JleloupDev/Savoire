@@ -59,6 +59,7 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
 
         List<Check> checks = PackageChecks.Run(manifest, kind, release.Tag, files, hasLicense);
         checks.AddRange(archiveErrors.Select(e => new Check(Check.Error, e)));
+        List<(ReleaseMedia.Ref Ref, ReleaseMedia.Image Image, byte[] Bytes)> media = await DownloadMediaAsync(manifest, release, checks, ct);
         string? id = PackageChecks.Str(manifest, "id");
         string? version = PackageChecks.Str(manifest, "version");
         if (checks.Any(c => c.Level == Check.Error) || id is null || version is null)
@@ -98,11 +99,23 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
             Status = VersionStatus.Pending, CreatedAt = now,
         };
         db.Versions.Add(v);
-        if (item.Status == ItemStatus.Listed && checks.Count == 0) Publish(item, v, manifest, publisherName, now);
+        Guid? iconId = null;
+        foreach ((ReleaseMedia.Ref r, ReleaseMedia.Image image, byte[] bytes) in media)
+        {
+            var m = new ItemMedia
+            {
+                Id = Guid.NewGuid(), ItemId = id, VersionId = v.Id, Role = r.Role, Position = r.Position, Caption = r.Caption,
+                ContentType = image.ContentType, Width = image.Width, Height = image.Height, Bytes = bytes, CreatedAt = now,
+            };
+            if (r.Role == MediaRoles.Icon) iconId = m.Id;
+            db.Media.Add(m);
+        }
+        if (item.Status == ItemStatus.Listed && checks.Count == 0) Publish(item, v, manifest, publisherName, now, iconId);
         else if (item.Status != ItemStatus.Listed)
         {
             // Pas encore au catalogue : ses textes suivent la derniere version envoyee.
             ApplyManifest(item, manifest, publisherName);
+            item.IconId = iconId;
             item.Status = ItemStatus.Pending;
             item.UpdatedAt = now;
         }
@@ -119,7 +132,8 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
         Item item = await db.Items.FirstAsync(i => i.Id == v.ItemId, ct);
         if (item.Status == ItemStatus.Removed) throw new PublishException(409, "removed", "Element retire du store.");
         v.ReviewNote = note;
-        Publish(item, v, JsonNode.Parse(v.Manifest)!.AsObject(), item.Author, DateTime.UtcNow);
+        Guid? iconId = await db.Media.Where(m => m.VersionId == v.Id && m.Role == MediaRoles.Icon).Select(m => (Guid?)m.Id).FirstOrDefaultAsync(ct);
+        Publish(item, v, JsonNode.Parse(v.Manifest)!.AsObject(), item.Author, DateTime.UtcNow, iconId);
         await db.SaveChangesAsync(ct);
     }
 
@@ -139,7 +153,33 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
         await db.SaveChangesAsync(ct);
     }
 
-    private void Publish(Item item, ItemVersion v, JsonObject manifest, string publisherName, DateTime now)
+    /// <summary>
+    /// Icone et captures de la release, controlees : une image manquante, trop
+    /// lourde ou d'un format non admis est une erreur (la version est refusee).
+    /// </summary>
+    private async Task<List<(ReleaseMedia.Ref, ReleaseMedia.Image, byte[])>> DownloadMediaAsync(JsonObject manifest, Release release, List<Check> checks, CancellationToken ct)
+    {
+        var result = new List<(ReleaseMedia.Ref, ReleaseMedia.Image, byte[])>();
+        foreach (ReleaseMedia.Ref r in ReleaseMedia.Refs(manifest, checks))
+        {
+            ReleaseAsset? asset = release.Assets.FirstOrDefault(a => a.Name == r.File);
+            if (asset is null) { checks.Add(new Check(Check.Error, $"Image manquante dans la release : {r.File}.")); continue; }
+            long max = ReleaseMedia.MaxBytes(r.Role);
+            if (asset.Size > max) { checks.Add(new Check(Check.Error, $"{r.File} depasse {max / 1024} Kio.")); continue; }
+            byte[] bytes;
+            try { bytes = await github.DownloadBytesAsync(asset, max, ct); }
+            catch (PublishException ex) when (ex.Code == "asset_too_large") { checks.Add(new Check(Check.Error, $"{r.File} depasse {max / 1024} Kio.")); continue; }
+            if (ReleaseMedia.Inspect(bytes) is not { } image)
+            {
+                checks.Add(new Check(Check.Error, $"{r.File} : image PNG, JPEG ou WebP attendue (16 a 8192 pixels de cote)."));
+                continue;
+            }
+            result.Add((r, image, bytes));
+        }
+        return result;
+    }
+
+    private void Publish(Item item, ItemVersion v, JsonObject manifest, string publisherName, DateTime now, Guid? iconId)
     {
         v.Signature = signer.Sign(v.Package);
         v.Status = VersionStatus.Published;
@@ -148,6 +188,7 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
         {
             item.LatestVersion = v.Version;
             ApplyManifest(item, manifest, publisherName);
+            item.IconId = iconId;
         }
         item.Status = ItemStatus.Listed;
         item.UpdatedAt = now;
@@ -161,7 +202,7 @@ public sealed class PublishService(StoreDb db, GitHubReleases github, PackageSig
         item.Author = PackageChecks.Str(manifest, "author") ?? publisherName;
         item.License = PackageChecks.Str(manifest, "license");
         item.Homepage = PackageChecks.Str(manifest, "homepage");
-        item.Categories = PackageChecks.StrList(manifest, "categories").Take(5).Select(c => c.ToLowerInvariant()).ToList();
+        item.Categories = PackageChecks.StrList(manifest, "categories").Select(Categories.Slug).Where(c => c.Length > 0).Distinct().Take(5).ToList();
     }
 
     /// <summary>Le paquet tel qu'il est signe et servi : JSON, cles dans un ordre fixe.</summary>

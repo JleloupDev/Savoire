@@ -23,6 +23,26 @@ namespace SavoireStore.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SavoireStore.Data.DataProtectionKeyRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Xml")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("data_protection_keys", (string)null);
+                });
+
             modelBuilder.Entity("SavoireStore.Data.Item", b =>
                 {
                     b.Property<string>("Id")
@@ -54,6 +74,9 @@ namespace SavoireStore.Data.Migrations
 
                     b.Property<string>("Homepage")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("IconId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -113,6 +136,58 @@ namespace SavoireStore.Data.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("items", (string)null);
+                });
+
+            modelBuilder.Entity("SavoireStore.Data.ItemMedia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ItemId")
+                        .IsRequired()
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("VersionId", "Role", "Position");
+
+                    b.ToTable("item_media", (string)null);
                 });
 
             modelBuilder.Entity("SavoireStore.Data.ItemVersion", b =>
@@ -231,6 +306,21 @@ namespace SavoireStore.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("reviews", (string)null);
+                });
+
+            modelBuilder.Entity("SavoireStore.Data.ItemMedia", b =>
+                {
+                    b.HasOne("SavoireStore.Data.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("SavoireStore.Data.ItemVersion", null)
+                        .WithMany()
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SavoireStore.Data.ItemVersion", b =>

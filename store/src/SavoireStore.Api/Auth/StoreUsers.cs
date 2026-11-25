@@ -36,9 +36,9 @@ public sealed class StoreUsers(
         string id = p.FindFirstValue("sub") ?? throw new UnauthorizedAccessException();
         string? name = p.FindFirstValue("name") ?? p.FindFirstValue("preferred_username");
         string? email = p.FindFirstValue("email_verified") == "true" ? p.FindFirstValue("email") : null;
-        if (name is null || email is null)
+        if ((name is null || email is null) && ctx.Request.Headers.Authorization.ToString() is { Length: > 0 } header)
         {
-            (string? Name, string? Email) info = await UserInfoAsync(id, ctx, ct);
+            (string? Name, string? Email) info = await UserInfoAsync(id, header, ct);
             name ??= info.Name;
             email ??= info.Email;
         }
@@ -53,17 +53,25 @@ public sealed class StoreUsers(
             || (email is not null && emails.Any(e => string.Equals(e.Trim(), email, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private async Task<(string? Name, string? Email)> UserInfoAsync(string id, HttpContext ctx, CancellationToken ct)
+    /// <summary>Le compte d'une personne connectee au site (cookie), d'apres ses claims.</summary>
+    public StoreUser FromClaims(ClaimsPrincipal p)
+    {
+        string id = p.FindFirstValue("sub") ?? throw new UnauthorizedAccessException();
+        string? email = p.FindFirstValue("email_verified") == "true" ? p.FindFirstValue("email") : null;
+        return new StoreUser(id, Clean(p.FindFirstValue("name")) ?? "Compte Savoire", email, IsAdmin(id, email));
+    }
+
+    /// <summary>Nom et adresse verifiee d'un compte, par l'endpoint userinfo de l'IdP (en-tete « Bearer ... »).</summary>
+    public async Task<(string? Name, string? Email)> UserInfoAsync(string id, string header, CancellationToken ct)
     {
         string key = "userinfo:" + id;
         if (cache.TryGetValue(key, out (string?, string?) cached)) return cached;
         (string? Name, string? Email) result = (null, null);
         try
         {
-            string? header = ctx.Request.Headers.Authorization;
             JwtBearerOptions o = jwt.Get(JwtBearerDefaults.AuthenticationScheme);
             OpenIdConnectConfiguration? oidc = o.ConfigurationManager is { } m ? await m.GetConfigurationAsync(ct) : o.Configuration;
-            if (header is not null && oidc?.UserInfoEndpoint is { Length: > 0 } endpoint)
+            if (oidc?.UserInfoEndpoint is { Length: > 0 } endpoint)
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, endpoint);
                 req.Headers.Authorization = AuthenticationHeaderValue.Parse(header);

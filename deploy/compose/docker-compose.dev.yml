@@ -143,6 +143,8 @@ services:
       ZITADEL_ISSUER: http://localhost:8090
       ZITADEL_PAT_FILE: /zitadel/bootstrap/admin.pat
       WEB_ORIGINS: http://localhost:3002,http://127.0.0.1:3002
+      # Le store en developpement (store/README.md).
+      STORE_ORIGINS: http://127.0.0.1:5100
       DEV_MODE: "true"
       DEFAULT_LANGUAGE: fr
       OUT_DIR: /out

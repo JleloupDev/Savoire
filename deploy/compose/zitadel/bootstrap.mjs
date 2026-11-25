@@ -22,6 +22,9 @@
 //   ZITADEL_ISSUER  emetteur public (ex. https://auth.exemple.fr)
 //   ZITADEL_PAT_FILE jeton du compte machine de la premiere instance
 //   WEB_ORIGINS     origines de l'appli web, separees par des virgules
+//   STORE_ORIGINS   adresses du site du Savoire Store, separees par des
+//                   virgules (connexion au site par l'appli web, retour sur
+//                   <adresse>/auth/callback). Defaut : <origine web>/store.
 //   DEV_MODE        "true" : adresses http admises (dev seulement)
 //   DEFAULT_LANGUAGE langue des pages de connexion et des courriels (ex. fr)
 //   OUT_DIR         dossier de sortie
@@ -58,6 +61,8 @@ const ZITADEL_HOST = env('ZITADEL_HOST')
 const ISSUER = env('ZITADEL_ISSUER').replace(/\/+$/, '')
 const PAT_FILE = env('ZITADEL_PAT_FILE')
 const WEB_ORIGINS = env('WEB_ORIGINS').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
+const STORE_ORIGINS = env('STORE_ORIGINS', WEB_ORIGINS.map(o => `${o}/store`).join(','))
+  .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
 const DEV_MODE = env('DEV_MODE', 'false') === 'true'
 const OUT_DIR = env('OUT_DIR')
 
@@ -482,7 +487,8 @@ try {
 const webClientId = await ensureOidcApp(projectId, WEB_APP, {
   ...common,
   appType: 'OIDC_APP_TYPE_USER_AGENT',
-  redirectUris: WEB_ORIGINS.map(o => `${o}/auth/callback`),
+  // L'appli, puis le site du store (avis donnes depuis le navigateur).
+  redirectUris: [...WEB_ORIGINS, ...STORE_ORIGINS].map(o => `${o}/auth/callback`),
   postLogoutRedirectUris: WEB_ORIGINS.map(o => `${o}/`),
   devMode: DEV_MODE,
 })

@@ -52,6 +52,8 @@ services:
       Store__OidcConfigFile: /run/savoire/savoire-oidc.json
       Store__SigningKeyPem: ${STORE_SIGNING_KEY:?}
       Store__AdminEmails__0: ${ADMIN_EMAIL:?}
+      # Le bouton « Ouvrir Savoire » des fiches : l'application, a la racine du domaine.
+      Store__AppUrl: /
       # Facultatif : sans jeton, GitHub limite a 60 appels par heure.
       Store__GitHubToken: ${STORE_GITHUB_TOKEN:-}
       ForwardedHeaders__Enabled: "true"

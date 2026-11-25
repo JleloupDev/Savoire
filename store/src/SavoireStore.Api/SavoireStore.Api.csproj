@@ -15,4 +15,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
+  <ItemGroup>
+    <!-- La page « Publier » du site. docs/ n'est pas versionne (.gitignore) : sans lui, la page renvoie a l'API. -->
+    <EmbeddedResource Include="..\..\docs\publier.md" LogicalName="publier.md" Condition="Exists('..\..\docs\publier.md')" />
+  </ItemGroup>
 </Project>

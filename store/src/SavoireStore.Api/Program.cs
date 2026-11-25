@@ -29,6 +29,8 @@ if (builder.Configuration["Store:OidcConfigFile"] is { Length: > 0 } oidcFile &&
         var values = new Dictionary<string, string?>();
         if (o.TryGetProperty("Authority", out var a)) values["Auth:Authority"] = a.GetString();
         if (o.TryGetProperty("Audience", out var aud)) values["Auth:Audience"] = aud.GetString();
+        // Connexion au site : l'appli web de Savoire (code + PKCE).
+        if (o.TryGetProperty("WebClientId", out var client)) values["Auth:ClientId"] = client.GetString();
         if (o.TryGetProperty("RequireHttpsMetadata", out var https)) values["Auth:RequireHttpsMetadata"] = https.ToString().ToLowerInvariant();
         builder.Configuration.AddInMemoryCollection(values);
     }
@@ -37,8 +39,9 @@ if (builder.Configuration["Store:OidcConfigFile"] is { Length: > 0 } oidcFile &&
 builder.Services.AddDbContext<StoreDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Store")
     ?? throw new InvalidOperationException("ConnectionStrings:Store manquant.")));
 
-// Comptes Savoire : jetons d'acces de Zitadel, pour le projet Savoire.
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+// Comptes Savoire : jetons d'acces de Zitadel, pour le projet Savoire (API) ;
+// cookie apres une connexion OIDC (site, voir SiteAuth).
+SiteAuth.Add(builder);
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme).Configure<IConfiguration>((o, config) =>
 {
     o.MapInboundClaims = false;
@@ -108,6 +111,9 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     await scope.ServiceProvider.GetRequiredService<StoreDb>().Database.MigrateAsync();
     _ = scope.ServiceProvider.GetRequiredService<PackageSigner>(); // une cle absente arrete le demarrage
+    // Developpement seulement : un catalogue de demonstration (Store:DemoSeed).
+    if (app.Environment.IsDevelopment() && app.Configuration.GetValue("Store:DemoSeed", false))
+        await DemoSeed.RunAsync(scope.ServiceProvider, app.Configuration["Store:DemoImages"]);
 }
 
 if (app.Configuration.GetValue("ForwardedHeaders:Enabled", false)) app.UseForwardedHeaders();
@@ -143,30 +149,10 @@ ReviewEndpoints.Map(app);
 PublishEndpoints.Map(app);
 
 // Le site.
-app.MapGet("/", async (StoreDb db, HttpResponse response, string? q, string? kind, string? sort, int? page, CancellationToken ct) =>
-{
-    ItemPageDto result = await CatalogEndpoints.SearchAsync(db, q, kind, null, sort, page ?? 1, 24, ct);
-    return Html(response, SitePages.Catalog(result, q, kind, sort), 200);
-});
-app.MapGet("/items/{id}", async (StoreDb db, HttpRequest request, HttpResponse response, string id, CancellationToken ct) =>
-{
-    ItemDetailDto? d = await CatalogEndpoints.DetailAsync(db, id, ct);
-    if (d is null) return Html(response, SitePages.NotFound(), 404);
-    List<ReviewDto> reviews = await ReviewEndpoints.ListAsync(db, id, null, 1, ct);
-    string canonical = $"{request.Scheme}://{request.Host}{request.PathBase}/items/{Uri.EscapeDataString(id)}";
-    return Html(response, SitePages.Item(d, reviews, canonical), 200);
-});
+SiteAuth.Map(app);
+SiteRoutes.Map(app);
 
 app.Run();
-
-static IResult Html(HttpResponse response, string html, int status)
-{
-    response.Headers["Content-Security-Policy"] = SitePages.Csp;
-    response.Headers["X-Content-Type-Options"] = "nosniff";
-    response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    response.Headers.CacheControl = status == 200 ? "public, max-age=60" : "no-store";
-    return Results.Content(html, "text/html; charset=utf-8", statusCode: status);
-}
 
 public partial class Program
 {
