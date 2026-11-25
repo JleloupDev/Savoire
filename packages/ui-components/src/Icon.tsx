@@ -31,7 +31,7 @@ import {
   Share2, Globe, Cloud, CloudOff, WifiOff, CircleAlert, CircleX, Maximize2,
   Minimize2, GripVertical, Move, Filter, SlidersHorizontal, Type, Quote,
   Square, Zap, NotebookText, LayoutDashboard, FileCode, MessagesSquare, FileInput, CircleCheckBig, BookOpenText, ImagePlus,
-  Clapperboard, Play, Pause, GalleryHorizontalEnd,
+  Clapperboard, Play, Pause, GalleryHorizontalEnd, Smartphone,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -129,6 +129,7 @@ export const ICONS: Readonly<Record<string, LucideIcon>> = {
   'sticky-note': StickyNote,
   'presentation': Presentation,
   'clapperboard': Clapperboard,
+  'smartphone': Smartphone,
   'play': Play,
   'pause': Pause,
   'gallery-horizontal-end': GalleryHorizontalEnd,

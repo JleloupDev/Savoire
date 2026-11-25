@@ -123,7 +123,7 @@ export function LoginPage() {
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-base)', fontFamily: 'var(--font-ui)', overflow: 'hidden' }}>
 
       {/* ── Left panel — brand ── */}
-      <div style={{ flex: 1, background: 'var(--accent)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '48px 56px', position: 'relative', overflow: 'hidden' }}>
+      <div className="login-hero" style={{ flex: 1, background: 'var(--accent)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '48px 56px', position: 'relative', overflow: 'hidden' }}>
 
         {/* Subtle grid texture */}
         <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.06 }} xmlns="http://www.w3.org/2000/svg">
@@ -171,7 +171,7 @@ export function LoginPage() {
       </div>
 
       {/* ── Right panel — form ── */}
-      <div style={{ width: 420, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px 52px', background: 'var(--bg-surface)', borderLeft: '1px solid var(--border)', position: 'relative' }}>
+      <div className="login-panel" style={{ width: 420, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px 52px', background: 'var(--bg-surface)', borderLeft: '1px solid var(--border)', position: 'relative' }}>
 
         {/* Heading avec logo brackets colorés */}
         <div style={{ marginBottom: 36 }}>

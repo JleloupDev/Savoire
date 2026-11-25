@@ -6,6 +6,7 @@ import './app.css'
 import { App } from './App'
 import { initProfile } from './profile'
 import { startErrorReporting } from './errorReporting'
+import { readSlideRemote } from './slideRemote'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
@@ -22,6 +23,9 @@ if (!root) throw new Error('Root element not found')
 // ?profile=edgesync pour le profil P2P, sinon profil serveur Savoire.
 // Suivi des erreurs : seulement si le serveur le demande (voir errorReporting.ts).
 void startErrorReporting()
+// Telephone en telecommande (code QR) : l'adresse est gardee avant la
+// connexion, dont le retour revient sur « / » (slideRemote.ts).
+readSlideRemote()
 void initProfile().then(profile => {
   if (profile.error) console.warn('[profile]', profile.error)
   createRoot(root).render(<App />)

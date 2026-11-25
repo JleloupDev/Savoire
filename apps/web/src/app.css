@@ -859,3 +859,10 @@ html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-
 .ai-pin-prompt-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
 /* Le panneau d'une pastille deborde de la gouttiere, par-dessus le texte : sans cela il est coupe a sa largeur. */
 .cm-gutter.cm-block-marks { overflow: visible; }
+
+/* Connexion sur un telephone (telecommande d'une presentation, appli mobile) :
+   le formulaire seul, sur toute la largeur. */
+@media (max-width: 760px) {
+  .login-hero { display: none !important; }
+  .login-panel { width: 100% !important; border-left: 0 !important; padding: 32px 24px !important; }
+}

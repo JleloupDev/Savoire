@@ -15,6 +15,7 @@ import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLi
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { printNote } from './PdfExport'
 import { startSlideShow, type SlideShowHandle } from './SlideShow'
+import { slideRemoteFactory } from './SlideRemote'
 import { downloadSlidesPptx, printSlides } from './SlidesExport'
 import { slideMarksExtension } from './SlideMarks'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
@@ -883,6 +884,7 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     const here = (view: EditorView) => slideIndexAt(slideDeck(view.state.doc.toString()), view.state.selection.main.head)
     const slideCommands: { id: string; label: string; icon: string; menu: 'insert' | 'more'; hotkeys?: Hotkey[]; deckOnly?: boolean; run(view: EditorView): void }[] = [
       { id: 'editor:present', label: 'Présenter (diapositives)', icon: 'presentation', menu: 'more', hotkeys: [{ modifiers: [], key: 'F5' }], deckOnly: true, run: v => this.presentSlides(v, 0) },
+      { id: 'editor:present-phone', label: 'Présenter avec le téléphone', icon: 'smartphone', menu: 'more', deckOnly: true, run: v => this.presentSlides(v, 0, true) },
       { id: 'editor:present-here', label: 'Présenter à partir de cette diapositive', icon: 'presentation', menu: 'more', hotkeys: [{ modifiers: ['Shift'], key: 'F5' }], deckOnly: true, run: v => this.presentSlides(v, here(v)) },
       { id: 'editor:export-slides-pdf', label: 'Exporter les diapositives en PDF', icon: 'file-down', menu: 'more', run: v => this.exportSlides(v, 'pdf') },
       { id: 'editor:export-slides-pptx', label: 'Exporter en PowerPoint (.pptx)', icon: 'file-down', menu: 'more', run: v => this.exportSlides(v, 'pptx') },
@@ -909,13 +911,17 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   }
 
   /** Presente la note en diapositives, a partir de `start` (rang). */
-  presentSlides(view: EditorView | null | undefined, start = 0): void {
+  presentSlides(view: EditorView | null | undefined, start = 0, withPhone = false): void {
     const v = view ?? this.view
     if (!v) return
     this.slideShow?.close()
+    const factory = slideRemoteFactory()
+    const docId = this.options.docId
     this.slideShow = startSlideShow(v.state.doc.toString(), {
       title: this.noteTitle(),
       start,
+      remote: factory && docId ? { factory, docId } : undefined,
+      remoteOnStart: withPhone,
       registry: this.pluginAPI.blocks,
       hooks: this.pluginAPI.hooks,
       activeIds: new Set(this.activationMap.keys()),

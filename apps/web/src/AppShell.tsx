@@ -8,7 +8,7 @@ import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
 import { sharePagesOf, type SharePages } from './shareScope'
 import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/platform'
-import { YMapVaultDirectory, serverUrl } from '@savoire/infrastructure-sync'
+import { YMapVaultDirectory, getServerBaseUrl, serverUrl } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
@@ -81,6 +81,10 @@ import { MISSING_VAULT_ROLE } from './desktopAccount'
 import type { OpenedVaultFolder } from '@savoire/desktop'
 import { BuildInfo } from './BuildInfo'
 import { UpdateBanner } from './UpdateBanner'
+import { setSlideRemoteFactory } from '@savoire/editor-core'
+import { isLocalOrigin, newRemoteSession, remoteUrl } from '@savoire/plugin-api'
+import { openRemoteLink, readSlideRemote, remoteOrigin } from './slideRemote'
+import { SlideRemotePage } from './SlideRemotePage'
 
 initTheme()
 applyTypography()
@@ -384,6 +388,8 @@ export function AppShell() {
   const [vaults, setVaults] = useState<VaultSummary[]>([])
   // Fenetre d'une seule note (« Nouvelle fenetre », « Epingler ») : voir noteWindow.ts.
   const noteWindow = useMemo(() => readNoteWindow(), [])
+  // Telephone en telecommande d'une presentation (code QR) : voir slideRemote.ts.
+  const slideRemote = useMemo(() => noteWindow ? null : readSlideRemote(), [noteWindow])
   // Telephone, tablette sans pave tactile : l'interface mobile (layoutMode.ts).
   const mobile = useMemo(() => !noteWindow && layoutMode() === 'mobile', [noteWindow])
   // Sur la page entiere : les boutons flottants (hors de l'AppShell) s'y reperent.
@@ -429,7 +435,7 @@ export function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Accueil de la premiere visite (pas dans la fenetre d'une note), montre
   // une fois l'espace de travail pret : ses reponses reglent les volets.
-  const [onboardingOpen, setOnboardingOpen] = useState(() => !noteWindow && needsOnboarding())
+  const [onboardingOpen, setOnboardingOpen] = useState(() => !noteWindow && !slideRemote && needsOnboarding())
   // Import Notion par la connexion (ADR-035) : version bureau seulement.
   const [notionDialogOpen, setNotionDialogOpen] = useState(false)
   const [workspaceReady, setWorkspaceReady] = useState(false)
@@ -1023,12 +1029,12 @@ export function AppShell() {
         if (desktopAutoOpenedRef.current || selectedVaultRef.current) autoVault = undefined
         desktopAutoOpenedRef.current = true
       }
-      if (autoVault && opts.autoOpen !== false && !noteWindow) void switchToVault(autoVault, token)
+      if (autoVault && opts.autoOpen !== false && !noteWindow && !slideRemote) void switchToVault(autoVault, token)
     } catch (err) {
       console.error(err)
     }
   // serverKey : la liste du bureau change quand on se connecte ou se deconnecte.
-  }, [token, activeAccount, accounts, application.vaults, switchToVault, activeProfile.desktop, serverKey, noteWindow])
+  }, [token, activeAccount, accounts, application.vaults, switchToVault, activeProfile.desktop, serverKey, noteWindow, slideRemote])
 
   closeGoneVaultRef.current = async (vault: VaultSummary) => {
     // Seulement si c'est encore le vault actif : entre-temps, la personne a
@@ -1250,6 +1256,43 @@ export function AppShell() {
     })
     return () => indexerServices.setGlobalHost(null)
   }, [indexerServices, switchToVault])
+
+  // Telecommande d'une presentation : le transport (la room de la note sur
+  // le hub), pour la presentation lancee sur cet ordinateur.
+  useEffect(() => {
+    setSlideRemoteFactory(docId => {
+      const vault = selectedVaultRef.current
+      const userId = activeAccountRef.current?.userId
+      if (!vault || !userId) return { reason: 'Aucun vault ouvert.' }
+      const onServer = activeProfile.desktop ? vault.source === 'server' : activeProfile.name === 'server'
+      if (!onServer) return { reason: 'La télécommande passe par le serveur Savoire : elle marche pour les vaults du serveur.' }
+      const origin = remoteOrigin(getServerBaseUrl())
+      const session = newRemoteSession()
+      return openRemoteLink({
+        sync: pluginSyncRef.current, vaultId: vault.id, docId, userId, session,
+        url: remoteUrl(origin, vault.id, docId, session), local: isLocalOrigin(origin),
+      })
+    })
+    return () => setSlideRemoteFactory(null)
+  }, [activeProfile.desktop, activeProfile.name])
+
+  // Telephone en telecommande : le vault de la presentation, des que la liste est la.
+  const slideRemoteOpenedRef = useRef(false)
+  const [slideRemoteReady, setSlideRemoteReady] = useState(false)
+  const [slideRemoteError, setSlideRemoteError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!slideRemote || slideRemoteOpenedRef.current) return
+    const tok = tokenRef.current
+    if (!tok || !vaults.length) return
+    const vault = vaults.find(v => v.id === slideRemote.vaultId)
+    if (!vault) {
+      setSlideRemoteError('Cette présentation est dans un vault de ce compte qui n’est pas ici : connectez-vous au même compte que l’ordinateur.')
+      return
+    }
+    slideRemoteOpenedRef.current = true
+    setSlideRemoteError(null)
+    switchToVault(vault, tok).then(() => setSlideRemoteReady(true), err => setSlideRemoteError(String(err?.message ?? err)))
+  }, [slideRemote, vaults, switchToVault])
 
   // Fenetre d'une note : son vault, puis la note, des que la liste est la.
   useEffect(() => {
@@ -1713,6 +1756,16 @@ export function AppShell() {
       data-layout={mobile ? 'mobile' : 'desktop'}
       style={{ display: 'flex', height: mobile ? '100dvh' : '100vh', background: 'var(--bg-base)', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
     >
+
+      {slideRemote && (
+        <SlideRemotePage
+          target={slideRemote}
+          sync={pluginSyncRef.current}
+          userId={activeAccount?.userId ?? null}
+          ready={slideRemoteReady}
+          error={slideRemoteError}
+        />
+      )}
 
       {/* ── Icon rail (pas dans la fenetre d'une note) ── */}
       {!noteWindow && !mobile && <IconRail

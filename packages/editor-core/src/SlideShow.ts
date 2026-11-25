@@ -14,6 +14,8 @@
 //  S                                     notes dans une autre fenetre (deux ecrans)
 //  F                                     plein ecran
 //  B  ou  .                              ecran noir
+//  T                                     telecommande : le telephone fait
+//                                        defiler et montre les notes (code QR)
 //  Echap                                 quitter
 //
 // Deux ecrans : la fenetre de Savoire va sur le projecteur (plein ecran) ;
@@ -26,6 +28,9 @@
 // sauf si le systeme demande moins d'animations.
 import { slideDeck, type SlideDeck, type SlideTransition } from '@savoire/plugin-api'
 import { markdownBlock } from './NoteFragment'
+import { qrSvg } from './QrCode'
+import { REMOTE_NOTES_MAX, isRemoteMessage, type SlideRemoteLink } from '@savoire/plugin-api'
+import type { SlideRemoteFactory } from './SlideRemote'
 import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, setSlideStep, slideSettings, slideStepCount, type SlideRenderOptions } from './Slides'
 
 export interface SlideShowOptions extends SlideRenderOptions {
@@ -35,6 +40,10 @@ export interface SlideShowOptions extends SlideRenderOptions {
   start?: number
   /** Appele a la sortie (rendre le focus a l'editeur). */
   onExit?(): void
+  /** Telecommande par telephone : le transport de l'appli, et la note. */
+  remote?: { factory: SlideRemoteFactory; docId: string }
+  /** Montrer le code QR de la telecommande des le debut. */
+  remoteOnStart?: boolean
 }
 
 export interface SlideShowHandle {
@@ -82,6 +91,19 @@ const SHOW_CSS = `
 .plume-show-thumb .plume-slide { pointer-events: none; }
 .plume-show-goto { position: absolute; right: 18px; top: 14px; z-index: 5; font-size: 22px; background: rgba(20,20,24,.9); padding: 4px 12px; border-radius: 6px; display: none; }
 .plume-show-goto-on { display: block; }
+.plume-show-remote { position: absolute; right: 24px; top: 24px; z-index: 6; width: 300px; padding: 16px; border-radius: 10px; background: rgba(20,20,24,.94); color: #e6e6e6; font-size: 14px; line-height: 1.4; box-shadow: 0 10px 40px rgba(0,0,0,.5); display: none; user-select: text; }
+.plume-show-remote-on .plume-show-remote { display: block; }
+.plume-show-remote h3 { margin: 0 0 8px; font-size: 15px; }
+.plume-show-remote-qr { background: #fff; border-radius: 6px; padding: 6px; }
+.plume-show-remote-qr svg { display: block; width: 100%; height: auto; }
+.plume-show-remote-url { margin-top: 8px; font-size: 11px; color: #9aa0a6; word-break: break-all; }
+.plume-show-remote-warn { margin-top: 8px; font-size: 12px; color: #f5c26b; }
+.plume-show-remote-status { margin-top: 10px; font-size: 13px; }
+.plume-show-remote-status[data-state="connected"] { color: #7ee2a8; }
+.plume-show-remote-close { all: unset; cursor: pointer; position: absolute; right: 10px; top: 8px; padding: 2px 6px; border-radius: 4px; color: #b5b5b5; }
+.plume-show-remote-close:hover { background: rgba(255,255,255,.12); }
+.plume-show-phone { font-size: 13px; padding: 0 6px; color: #7ee2a8; display: none; }
+.plume-show-phone-on .plume-show-phone { display: inline; }
 .plume-speaker { margin: 0; height: 100vh; display: flex; flex-direction: column; gap: 10px; padding: 12px; box-sizing: border-box; background: #111; color: #e6e6e6; font-family: system-ui, sans-serif; }
 .plume-speaker-top { display: flex; gap: 12px; flex: none; height: 42%; }
 .plume-speaker-top > div { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -181,19 +203,30 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   const countEl = document.createElement('span')
   countEl.className = 'plume-show-count'
   countEl.dataset.testid = 'slide-show-count'
+  const phoneEl = document.createElement('span')
+  phoneEl.className = 'plume-show-phone'
+  phoneEl.textContent = '📱'
+  phoneEl.title = 'Téléphone connecté'
   const bar = document.createElement('div')
   bar.className = 'plume-show-bar'
   bar.append(
     button(document, '‹', 'Précédente (←)', () => previous(), 'slide-show-prev'),
     countEl,
+    phoneEl,
     button(document, '›', 'Suivante (→)', () => next(), 'slide-show-next'),
     button(document, '▦', 'Vue d’ensemble (O)', () => toggleOverview()),
     button(document, '🗒', 'Vue présentateur (P)', () => togglePresenter(), 'slide-show-presenter'),
     button(document, '⧉', 'Notes dans une autre fenêtre (S)', () => openSpeakerWindow()),
+    ...(opts.remote ? [button(document, '📱', 'Télécommande sur le téléphone (T)', () => toggleRemote(), 'slide-show-remote')] : []),
     button(document, '⛶', 'Plein écran (F)', () => toggleFullscreen()),
     button(document, '✕', 'Quitter (Échap)', () => close(), 'slide-show-close'),
   )
-  root.append(main, bar, black, overview, goto)
+  // Telecommande : le code QR a scanner, et l'etat du telephone.
+  const remoteBox = document.createElement('div')
+  remoteBox.className = 'plume-show-remote'
+  remoteBox.dataset.testid = 'slide-show-remote-panel'
+  remoteBox.addEventListener('click', e => e.stopPropagation())
+  root.append(main, bar, black, overview, goto, remoteBox)
 
   // ── Vue presentateur : ici (P) ou dans une autre fenetre (S) ──
   interface Speaker { next: HTMLElement; notes: HTMLElement; timer: HTMLElement; now: HTMLElement; current?: HTMLElement; doc: Document }
@@ -311,6 +344,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     root.dataset.step = String(step)
     root.dataset.steps = String(steps)
     for (const s of speakers) fillSpeaker(s)
+    announce()
   }
   /** Affiche la diapositive `index`, a l'etape `at` (-1 : toutes), venant de `from`. */
   const show = (from: number | null = null, at = 0) => {
@@ -369,6 +403,92 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   const previous = () => {
     if (step > 0 && shown) { step--; setSlideStep(shown, step); sync() }
     else go(index - 1, true)
+  }
+
+  // ── Telecommande (telephone) ──
+  let link: SlideRemoteLink | null = null
+  let lastSeq = -1
+  let phone = false
+  const screenState = () => {
+    const s = deck.slides[index]!
+    return {
+      role: 'screen' as const, session: '', index, count, step, steps,
+      title: s.title, notes: s.notes.slice(0, REMOTE_NOTES_MAX), nextTitle: deck.slides[index + 1]?.title ?? '',
+    }
+  }
+  const announce = () => { if (link && phone) link.send({ ...screenState(), session: sessionOf(link) }) }
+  const sessionOf = (l: SlideRemoteLink) => new URL(l.url).searchParams.get('session') ?? ''
+  const setPhone = (on: boolean) => {
+    phone = on
+    root.classList.toggle('plume-show-phone-on', on)
+    root.dataset.phone = on ? 'connected' : ''
+    const status = remoteBox.querySelector<HTMLElement>('.plume-show-remote-status')
+    if (status) {
+      status.dataset.state = on ? 'connected' : 'waiting'
+      status.textContent = on ? '📱 Téléphone connecté : il fait défiler, ses notes suivent.' : 'En attente du téléphone…'
+    }
+  }
+  const openRemote = (): SlideRemoteLink | null => {
+    if (link || !opts.remote) return link
+    const made = opts.remote.factory(opts.remote.docId)
+    const close = document.createElement('button')
+    close.className = 'plume-show-remote-close'
+    close.textContent = '✕'
+    close.title = 'Masquer (T)'
+    close.addEventListener('click', () => toggleRemote(false))
+    const head = document.createElement('h3')
+    head.textContent = 'Présenter avec le téléphone'
+    if ('reason' in made) {
+      const why = document.createElement('div')
+      why.className = 'plume-show-remote-warn'
+      why.textContent = made.reason
+      remoteBox.replaceChildren(close, head, why)
+      return null
+    }
+    link = made
+    const session = sessionOf(made)
+    const help = document.createElement('div')
+    help.textContent = 'Scannez ce code avec un téléphone connecté au même compte : il fera défiler les diapositives et montrera vos notes.'
+    const qr = document.createElement('div')
+    qr.className = 'plume-show-remote-qr'
+    qr.dataset.testid = 'slide-show-remote-qr'
+    qr.innerHTML = qrSvg(made.url)
+    const url = document.createElement('div')
+    url.className = 'plume-show-remote-url'
+    url.dataset.testid = 'slide-show-remote-url'
+    url.textContent = made.url
+    const status = document.createElement('div')
+    status.className = 'plume-show-remote-status'
+    status.dataset.testid = 'slide-show-remote-status'
+    remoteBox.replaceChildren(close, head, help, qr, url, ...(made.local ? [Object.assign(document.createElement('div'), {
+      className: 'plume-show-remote-warn',
+      textContent: 'Cette adresse ne mène qu’à cet ordinateur : un téléphone ne la joindra pas. Ouvrez Savoire par son adresse publique.',
+    })] : []), status)
+    setPhone(false)
+    made.onMessage(m => {
+      if (closed || !isRemoteMessage(m, session) || m.role !== 'remote') return
+      if (m.cmd === 'hello') {
+        lastSeq = m.seq
+        setPhone(true)
+        announce()
+        // Le telephone est la : le code peut partir.
+        setTimeout(() => { if (phone) toggleRemote(false) }, 1500)
+        return
+      }
+      if (m.cmd === 'bye') { setPhone(false); return }
+      if (m.seq <= lastSeq) return
+      lastSeq = m.seq
+      if (!phone) setPhone(true)
+      if (m.cmd === 'next') next()
+      else if (m.cmd === 'previous') previous()
+      else if (m.cmd === 'goto' && typeof m.index === 'number') go(m.index)
+      announce()
+    })
+    return made
+  }
+  const toggleRemote = (on = !root.classList.contains('plume-show-remote-on')) => {
+    if (on) openRemote()
+    root.classList.toggle('plume-show-remote-on', on)
   }
 
   const toggleOverview = (on = !root.classList.contains('plume-show-overview-on')) => {
@@ -458,6 +578,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     else if (k === 's' || k === 'S') openSpeakerWindow()
     else if (k === 'f' || k === 'F') toggleFullscreen()
     else if (k === 'b' || k === 'B' || k === '.') root.classList.toggle('plume-show-blacked')
+    else if ((k === 't' || k === 'T') && opts.remote) toggleRemote()
     else handled = false
     if (handled) { e.preventDefault(); e.stopPropagation() }
   }
@@ -480,6 +601,11 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     clearInterval(timerId)
     observer?.disconnect()
     settle()
+    if (link) {
+      if (phone) link.send({ ...screenState(), session: sessionOf(link), ended: true })
+      link.close()
+      link = null
+    }
     window.removeEventListener('keydown', onWindowKey, true)
     releaseSlide(root)
     if (popup && !popup.closed) popup.close()
@@ -490,6 +616,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
 
   document.body.appendChild(root)
   show()
+  if (opts.remoteOnStart && opts.remote) toggleRemote(true)
   root.focus()
   void root.requestFullscreen?.().catch(() => {})
   // Plein ecran quitte par le navigateur (Echap) : la presentation reste, a sa taille.
