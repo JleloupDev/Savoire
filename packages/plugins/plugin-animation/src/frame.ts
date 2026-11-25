@@ -32,7 +32,7 @@ export const MAX_MESSAGE = 16 * 1024
 export const FRAME_READY = 'savoire-board-ready'
 export const FRAME_BOOT = 'savoire-board-boot'
 
-const THEME_VARS = ['--text', '--text-muted', '--bg-base', '--bg-surface', '--bg-elevated', '--border', '--accent', '--accent-text', '--font-ui', '--font-mono', '--red', '--green']
+const THEME_VARS = ['--text', '--text-muted', '--heading-color', '--color-info', '--color-code', '--bg-base', '--bg-surface', '--bg-elevated', '--border', '--accent', '--accent-text', '--font-ui', '--font-mono', '--red', '--green']
 
 /** Couleurs et police de l'appli, en variables CSS (lues la ou l'animation s'affiche). */
 export function themeCss(root: Element | null = typeof document !== 'undefined' ? document.documentElement : null): string {

@@ -45,8 +45,10 @@ const CSS = `
 .anim-comment-text { white-space: pre-wrap; word-break: break-word; }
 .anim-card { border: 1px solid var(--border); border-radius: 6px; padding: 6px; background: var(--bg-elevated); }
 .anim-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
-.anim-embed { margin: 4px 0; }
-.anim-embed .anim-frame { border: 0; border-radius: 4px; height: 160px; }
+.anim-embed { margin: 4px 0; display: flex; flex-direction: column; }
+.anim-embed-stage { position: relative; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.anim-embed .anim-frame { position: absolute; left: 0; top: 0; width: 100%; border: 0; border-radius: 4px; height: 160px; transform-origin: 50% 0; }
+.anim-embed .anim-transport, .anim-embed-foot { flex: none; }
 .anim-embed-foot { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); padding-top: 2px; }
 .anim-embed-foot a { color: var(--text-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .anim-embed-foot a:hover { color: var(--accent); }

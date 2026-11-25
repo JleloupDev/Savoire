@@ -6,6 +6,11 @@
 // qu'elle est visible (une diapositive qui s'affiche la lance), sauf
 // ![[Intro.anim|pause]] ; ![[Intro.anim|boucle]] la rejoue sans fin ;
 // ![[Intro.anim|sans-barre]] cache la barre de lecture.
+//
+// Taille : l'animation garde sa hauteur dans une note. La ou la place est
+// comptee (une diapositive), le lieu peut la faire retrecir (data-fit) : la
+// scene est alors reduite a l'echelle, entiere et centree, au lieu d'etre
+// coupee ou de deborder.
 import { BLOCK_DESTROY_EVENT, createIcon, type PluginAPI } from '@savoire/plugin-api'
 import type { AnimEmbed } from './format'
 import { AnimationPlayer } from './player'
@@ -14,6 +19,8 @@ import { Transport } from './transport'
 
 export const EMBED_MIN_HEIGHT = 40
 export const EMBED_MAX_HEIGHT = 1400
+/** Plus petite hauteur d'une animation reduite pour tenir (une diapositive). */
+export const EMBED_FIT_MIN = 120
 
 /** L'animation : chemin exact, sinon par son nom (comme un lien [[...]]). */
 export async function resolveAnimation(api: PluginAPI, name: string): Promise<{ id: string; path: string } | null> {
@@ -35,6 +42,8 @@ export function renderAnimationEmbed(embed: AnimEmbed, api: PluginAPI | undefine
   el.dataset.testid = 'anim-embed'
   // Export (PowerPoint...) : une ligne qui la nomme, pas sa barre de lecture.
   el.dataset.exportLabel = `Animation : ${embed.name}`
+  // Peut retrecir pour tenir dans la place qu'on lui laisse.
+  el.dataset.fit = 'contain'
   // Un bouton de la barre ne fait pas entrer l'editeur dans le bloc.
   el.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest?.('a, button, .anim-track')) e.stopPropagation() })
   const fail = (msg: string) => {
@@ -47,21 +56,50 @@ export function renderAnimationEmbed(embed: AnimEmbed, api: PluginAPI | undefine
   if (!api) { fail('Aucun vault ouvert.'); return el }
   let player: AnimationPlayer | null = null
   let observer: IntersectionObserver | null = null
+  let sizer: ResizeObserver | null = null
   let dead = false
-  el.addEventListener(BLOCK_DESTROY_EVENT, () => { dead = true; observer?.disconnect(); player?.dispose(); player = null }, { once: true })
+  el.addEventListener(BLOCK_DESTROY_EVENT, () => { dead = true; observer?.disconnect(); sizer?.disconnect(); player?.dispose(); player = null }, { once: true })
 
   void resolveAnimation(api, embed.name).then(async anim => {
     if (dead) return
     if (!anim) { fail(`Animation introuvable : « ${embed.name} »`); return }
     const status = document.createElement('span')
     status.dataset.testid = 'anim-embed-status'
+    // La scene a sa hauteur naturelle ; la boite peut etre plus basse (le
+    // lieu la fait retrecir) : la scene est alors reduite pour y tenir.
+    const stage = document.createElement('div')
+    stage.className = 'anim-embed-stage'
+    stage.dataset.testid = 'anim-embed-stage'
+    let natural = 160
+    const fit = () => {
+      const box = stage.clientHeight
+      const scale = box > 0 && box < natural ? box / natural : 1
+      p.frame.style.transform = scale < 1 ? `scale(${scale.toFixed(4)})` : ''
+      el.dataset.scale = scale.toFixed(3)
+    }
     const p = new AnimationPlayer(anim.path, {
       onReady: () => transport.update(),
       onTime: () => transport.update(),
       onEnd: () => transport.update(),
-      onSize: h => { p.frame.style.height = `${Math.max(EMBED_MIN_HEIGHT, Math.min(EMBED_MAX_HEIGHT, h))}px` },
+      onSize: h => {
+        const next = Math.max(EMBED_MIN_HEIGHT, Math.min(EMBED_MAX_HEIGHT, h))
+        if (next === natural) return
+        natural = next
+        p.frame.style.height = `${natural}px`
+        stage.style.height = `${natural}px`
+        stage.style.minHeight = `${Math.min(natural, EMBED_FIT_MIN)}px`
+        fit()
+      },
       onError: msg => { status.textContent = `⚠ ${msg}` },
     })
+    p.frame.style.height = `${natural}px`
+    stage.style.height = `${natural}px`
+    stage.style.minHeight = `${Math.min(natural, EMBED_FIT_MIN)}px`
+    stage.appendChild(p.frame)
+    if (typeof ResizeObserver !== 'undefined') {
+      sizer = new ResizeObserver(fit)
+      sizer.observe(stage)
+    }
     player = p
     p.setLoop(embed.loop)
     const transport = new Transport(p, { icons: api.icons, compact: true })
@@ -73,7 +111,7 @@ export function renderAnimationEmbed(embed: AnimEmbed, api: PluginAPI | undefine
     const foot = document.createElement('div')
     foot.className = 'anim-embed-foot'
     foot.append(open, status)
-    el.replaceChildren(p.frame, ...(embed.controls ? [transport.el] : []), ...(embed.controls ? [foot] : []))
+    el.replaceChildren(stage, ...(embed.controls ? [transport.el] : []), ...(embed.controls ? [foot] : []))
     const source = await api.vault.read(anim.id)
     if (dead) return
     await p.load(source, { play: false })

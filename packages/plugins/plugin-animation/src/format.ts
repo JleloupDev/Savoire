@@ -111,7 +111,7 @@ export function checkKeyframes(k: unknown): string | null {
 export const ANIM_TEMPLATE = composeAnimation({
   css: `.scene { position: relative; height: 220px; overflow: hidden; font-family: var(--font-ui, system-ui, sans-serif); }
 .balle { position: absolute; left: 24px; top: 24px; width: 48px; height: 48px; border-radius: 50%; background: var(--accent, #7c3aed); }
-.titre { position: absolute; left: 24px; bottom: 24px; font-size: 28px; font-weight: 700; color: var(--text, #1e1e2e); opacity: 0; }`,
+.titre { position: absolute; left: 24px; bottom: 24px; font-size: 28px; font-weight: 700; color: var(--heading-color, var(--text, #1e1e2e)); opacity: 0; }`,
   html: `<div class="scene">
   <div class="balle"></div>
   <div class="titre">Bonjour !</div>

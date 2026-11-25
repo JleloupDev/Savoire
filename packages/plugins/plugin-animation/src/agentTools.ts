@@ -74,7 +74,7 @@ async function idAfterCreate(api: PluginAPI, path: string, timeoutMs = 5000): Pr
 
 const PATH: ToolParamSchema = { type: 'string', description: 'Animation : son chemin .anim (l’extension peut manquer).' }
 const HTML: ToolParamSchema = { type: 'string', description: 'La scène : HTML et SVG (sans <html> ni <body>). Ex. <div class="balle"></div>.' }
-const CSS: ToolParamSchema = { type: 'string', description: 'Les styles de la scène (CSS, sans <style>). Donnez une hauteur à la scène.' }
+const CSS: ToolParamSchema = { type: 'string', description: 'Les styles de la scène (CSS, sans <style>). Donnez une hauteur à la scène. Couleurs du lieu (note, diapositive) : var(--text), var(--heading-color), var(--accent), var(--bg-base).' }
 const SCRIPT: ToolParamSchema = {
   type: 'string',
   description: 'Le code JavaScript (sans <script>), avec anime.js v4 : « anime » contient animate, createTimeline, stagger, svg, utils… '
