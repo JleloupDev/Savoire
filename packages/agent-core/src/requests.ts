@@ -148,7 +148,7 @@ export function confineHost(host: AgentToolHost, scope: RequestScope): AgentTool
       wrote(p, [{ from, to, text }])
     },
     ...(applyChanges ? {
-      async applyChanges(docId: string, changes: readonly TextChange[], actor: ToolActor, opts?: { typing?: boolean; expect?: string }) {
+      async applyChanges(docId: string, changes: readonly TextChange[], actor: ToolActor, opts?: { typing?: boolean; expect?: string; what?: string; why?: string }) {
         const p = await within(docId, changes)
         await applyChanges(docId, changes, actor, opts)
         wrote(p, changes)

@@ -135,9 +135,13 @@ export interface AgentToolHost {
    *  - `typing` : un long texte est deroule par morceaux, en ecritures
    *    successives (effet de frappe, typing.ts) ;
    *  - `expect` : empreinte (textFingerprint) du texte sur lequel les plages
-   *    ont ete calculees ; s'il a change, l'hote refuse (HostError 'conflict').
+   *    ont ete calculees ; s'il a change, l'hote refuse (HostError 'conflict') ;
+   *  - `what` : ce que l'agent fait (« passage remplacé »), et `why` : sa
+   *    raison (le champ `why` des outils). L'hote les range avec le point
+   *    d'historique de cette ecriture (modifications de l'IA, annulables une
+   *    par une). Absents : le point est range sans resume ni raison.
    */
-  applyChanges?(docId: string, changes: readonly TextChange[], actor: ToolActor, opts?: { typing?: boolean; expect?: string }): Promise<void>
+  applyChanges?(docId: string, changes: readonly TextChange[], actor: ToolActor, opts?: { typing?: boolean; expect?: string; what?: string; why?: string }): Promise<void>
   /**
    * Resout les deux positions relatives Yjs d'une ancre (base64, anchor.ts)
    * dans le texte d'aujourd'hui. Null : l'une des deux ne se resout plus.

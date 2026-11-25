@@ -176,11 +176,13 @@ const PROPOSE_PARAM: ToolParamSchema = {
  * Ecrit des changements dans la note (mode direct) : une seule ecriture, sauf
  * un long texte, deroule par l'hote (effet de frappe). `expect` : l'hote
  * refuse si le texte n'est plus celui sur lequel les plages ont ete calculees.
+ * `what` et `why` : ce que l'agent fait et pourquoi, ranges par l'hote avec
+ * le point d'historique de l'ecriture (modifications de l'IA).
  */
-async function writeChanges(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[], expect?: string): Promise<{ snapshot: NoteSnapshot; touched: RefBlock[] }> {
+async function writeChanges(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[], about: { what: string; why?: string }, expect?: string): Promise<{ snapshot: NoteSnapshot; touched: RefBlock[] }> {
   await notWhereTyping(ctx, note, changes)
   if (ctx.host.applyChanges) {
-    await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}) })
+    await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}), what: about.what, ...(about.why ? { why: about.why } : {}) })
   } else {
     // De la fin vers le debut : les positions d'avant restent justes.
     for (let i = changes.length - 1; i >= 0; i--) await ctx.host.replaceText(note.id, changes[i]!.from, changes[i]!.to, changes[i]!.text, ctx.actor)
@@ -199,7 +201,7 @@ async function change(ctx: CoreToolContext, note: HostNote, from: number, to: nu
     return ok(`Proposition déposée dans la Révision de ${note.path} (${what}). Rien ne change tant que la personne ne l'accepte pas.`,
       { data: { suggestionId: id }, sources: [source(note)] })
   }
-  await writeChanges(ctx, note, [{ from, to, text }])
+  await writeChanges(ctx, note, [{ from, to, text }], { what, why })
   await ctx.host.recordEdit(note.id, why ? `${what} : ${why}` : what, ctx.actor)
   return ok(`${note.path} modifiée (${what}).`, { sources: [source(note)] })
 }
@@ -817,7 +819,7 @@ const patchNote: CoreTool = {
       }
 
       try {
-        const done = await writeChanges(ctx, current, changes, current.truncated ? undefined : textFingerprint(current.content))
+        const done = await writeChanges(ctx, current, changes, { what, why }, current.truncated ? undefined : textFingerprint(current.content))
         await ctx.host.recordEdit(current.id, why ? `${what} : ${why}` : what, ctx.actor)
         const written = done.touched.slice(0, 20).map(b => `${showRef(b.ref)} ${linesOf([b], 0, 0)}`)
         return ok(`${current.path} modifiée (${what}). Version : ${done.snapshot.token}.${written.length ? `\nBlocs écrits :\n${written.join('\n')}` : ''}`,
@@ -961,8 +963,8 @@ const addImage: CoreTool = {
     const fresh = await ctx.host.readNote({ id: note.id }) ?? note
     const sep = fresh.content === '' || fresh.content.endsWith('\n\n') ? '' : fresh.content.endsWith('\n') ? '\n' : '\n\n'
     const end = fresh.content.length
-    await writeChanges(ctx, fresh, [{ from: end, to: end, text: `${sep}![[${file.path}]]\n` }])
     const why = optString(args, 'why', 500)
+    await writeChanges(ctx, fresh, [{ from: end, to: end, text: `${sep}![[${file.path}]]\n` }], { what: `image ajoutée (${name})`, ...(why ? { why } : {}) })
     await ctx.host.recordEdit(fresh.id, why ? `image ajoutée (${name}) : ${why}` : `image ajoutée (${name})`, ctx.actor)
     return ok(`Image ajoutée : ${file.path}, avec son lien à la fin de ${note.path}.`, { data: file, sources: [source(note)] })
   },
