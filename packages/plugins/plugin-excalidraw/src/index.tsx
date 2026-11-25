@@ -397,7 +397,7 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
           let initialData: unknown = EMPTY_SCENE
           try {
             const raw = vault ? await vault.readDocumentByPath(path) : ''
-            if (raw.trim()) initialData = JSON.parse(raw)
+            if (raw.trim()) initialData = { ...JSON.parse(raw), scrollToContent: true }
           } catch {
             console.error('[plugin-excalidraw] erreur de chargement')
           }
@@ -406,11 +406,20 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
         return
       }
 
+      // A l'ouverture, le dessin entier se voit (un schema pose par une IA
+      // peut etre loin de l'origine, ou plus grand que la fenetre).
+      let fitted = false
       binding = new SceneBinding({
         tree,
         getElements: sceneElements,
         getBusyIds: busyIds,
-        applyElements: els => excalidrawAPI?.updateScene({ elements: els as unknown as Elements }),
+        applyElements: els => {
+          excalidrawAPI?.updateScene({ elements: els as unknown as Elements })
+          if (fitted || !excalidrawAPI || !els.some(e => !(e as { isDeleted?: boolean }).isDeleted)) return
+          fitted = true
+          const api = excalidrawAPI
+          requestAnimationFrame(() => api.scrollToContent(undefined, { fitToContent: true, animate: false }))
+        },
         hasFile: id => !!excalidrawAPI?.getFiles()[id],
         addFiles: files => excalidrawAPI?.addFiles(files as never),
         storeFile,
@@ -547,7 +556,7 @@ const plugin: VaultPlugin = {
         } else if (ctx.vault) {
           try {
             const raw = await ctx.vault.readDocumentByPath(path)
-            if (raw.trim()) initialData = JSON.parse(raw)
+            if (raw.trim()) initialData = { ...JSON.parse(raw), scrollToContent: true }
           } catch { /* POC: ignoré */ }
         }
 
