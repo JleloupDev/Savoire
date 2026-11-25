@@ -23,6 +23,7 @@ export { loadDoc, withDoc, fromBase64 } from './crdt/yjs'
 export type { YjsUpdate } from './crdt/yjs'
 export {
   NOTE_TEXT, noteText, replaceTextUpdate, newNoteUpdate, treeSetUpdate, treeFoldersUpdate, parentFolders, textAnchor, mapEntryUpdate, mapEntries, editDoc,
+  relativeRange, resolveRelativeIn, resolveRelativeRange,
 } from './crdt/write'
 export type { TreeEntry, DocEdit } from './crdt/write'
 export { readVaultTree, vaultTreeFromUpdates, diffTree, VAULT_MAP, FOLDERS_MAP } from './crdt/tree'

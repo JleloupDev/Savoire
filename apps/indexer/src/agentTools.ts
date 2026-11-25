@@ -14,13 +14,13 @@
 // au-dessus d'un hote qui lit les journaux Yjs et renvoie au serveur ce qu'il
 // ecrit (POST /internal/indexer/vaults/{id}/write). Le serveur reverifie tout.
 import {
-  HostError, ToolBox, coreCatalog, minimalChange, titleOf,
-  type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry,
+  HostError, ToolBox, coreCatalog, minimalChange, planTyping, titleOf,
+  type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange,
 } from '@savoire/agent-core'
 import {
-  vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, textAnchor, treeFoldersUpdate, treeSetUpdate,
+  NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
-import { MAX_PROPOSAL_BYTES, relinkAfterMoves, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
+import { MAX_PROPOSAL_BYTES, relinkAfterMoves, textFingerprint, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
 import { baseOfQuery, canRead, filterResult, parseAccess, type AccessRules } from './access'
 import type { UpdatesLog, WriteBody } from './backend'
 import { HttpError } from './errors'
@@ -30,6 +30,12 @@ export const TOOLS_CAPABILITY = 'tools'
 const REVIEW_NS = 'map/review'
 const TRASH_DIR = '.trash/'
 const MAX_READ = 512 * 1024
+/**
+ * Effet de frappe : un long texte part en quelques ecritures, sur 1,5 s au
+ * plus. Un appel d'outil doit finir bien avant le delai du pair (4 s par defaut).
+ */
+const TYPING = { budgetMs: 1500, maxWrites: 12, maxDelayMs: 140 }
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
 /** Ce que le magasin du vault donne a l'hote (store.ts). */
 export interface PeerVaultFacade {
@@ -190,6 +196,75 @@ export class PeerToolHost implements AgentToolHost {
     const log = await this.noteLog(docId)
     if (to > noteText(log.updates).length) throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
     await this.write({ ops: [{ target: 'document', docId, update: b64(replaceTextUpdate(log.updates, from, to, text)) }] })
+  }
+
+  /**
+   * Plusieurs remplacements en une ecriture. Avec `typing`, la suite d'un long
+   * texte part morceau par morceau : autant d'ecritures, avec le meme ticket.
+   * Le document rejoue reste ouvert le temps de l'appel ; chaque morceau est
+   * la difference depuis le precedent.
+   */
+  async applyChanges(docId: string, changes: readonly TextChange[], _actor?: ToolActor, opts: { typing?: boolean; expect?: string } = {}): Promise<void> {
+    if (!changes.length) return
+    const log = await this.noteLog(docId)
+    const edit = editDoc(log.updates)
+    try {
+      const text = edit.doc.getText(NOTE_TEXT)
+      const before = text.toString()
+      if (changes[changes.length - 1]!.to > before.length || (opts.expect !== undefined && textFingerprint(before) !== opts.expect)) {
+        throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
+      }
+      const plan = opts.typing ? planTyping(changes, TYPING) : { first: changes, tails: [], delayMs: 0 }
+      const send = async (): Promise<void> => {
+        const update = edit.changes()
+        if (!update) return
+        await this.write({ ops: [{ target: 'document', docId, update: b64(update) }] })
+        edit.sent()
+      }
+      // De la fin vers le debut : les positions d'avant restent justes.
+      edit.doc.transact(() => {
+        for (let i = plan.first.length - 1; i >= 0; i--) {
+          const c = plan.first[i]!
+          if (c.to > c.from) text.delete(c.from, c.to - c.from)
+          if (c.text) text.insert(c.from, c.text)
+        }
+      })
+      await send()
+      // La suite des longs textes : chaque morceau a sa place, apres ceux deja ecrits.
+      const steps: { at: number; chunk: string }[] = []
+      let typed = 0
+      for (const tail of plan.tails) {
+        let at = tail.at + typed
+        for (const chunk of tail.chunks) {
+          steps.push({ at, chunk })
+          at += chunk.length
+          typed += chunk.length
+        }
+      }
+      for (let i = 0; i < steps.length; i++) {
+        await sleep(plan.delayMs)
+        text.insert(steps[i]!.at, steps[i]!.chunk)
+        try {
+          await send()
+        } catch {
+          // Une ecriture echoue en route : le reste part d'un coup, pour ne pas laisser un texte coupe.
+          for (const s of steps.slice(i + 1)) text.insert(s.at, s.chunk)
+          try {
+            await send()
+          } catch {
+            throw new HostError('Écriture interrompue : seul le début du texte est dans la note. Relisez-la avant de reprendre.', 'unavailable')
+          }
+          return
+        }
+      }
+    } finally {
+      edit.doc.destroy()
+    }
+  }
+
+  /** Les positions relatives d'une ancre, resolues dans le journal de la note. */
+  async resolveRelative(docId: string, start: string, end: string): Promise<{ from: number; to: number } | null> {
+    return resolveRelativeRange((await this.noteLog(docId)).updates, start, end)
   }
 
   async createNote(path: string, content: string): Promise<HostNoteRef> {

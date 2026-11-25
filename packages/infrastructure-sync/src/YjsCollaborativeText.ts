@@ -39,3 +39,29 @@ export class YjsCollaborativeText implements ICollaborativeText {
     return this.ytext.toString().slice(start, end)
   }
 }
+
+// ── Ancres des agents (agent-core/anchor.ts) ────────────────────────────────
+//
+// start et end d'une ancre : une position relative Yjs, encodee
+// (Y.encodeRelativePosition) puis mise en base64. ICollaborativeText parle en
+// JSON (RelPosJSON) : ces deux fonctions font le passage.
+
+/** Une position relative (JSON) en base64, pour une ancre. */
+export function relPosToBase64(rp: RelPosJSON): string {
+  const bytes = Y_.encodeRelativePosition(Y_.createRelativePositionFromJSON(rp)) as Uint8Array
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+  return btoa(bin)
+}
+
+/** La position relative (JSON) d'une ancre. Null : illisible. */
+export function relPosFromBase64(b64: string): RelPosJSON | null {
+  try {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return Y_.relativePositionToJSON(Y_.decodeRelativePosition(bytes)) as RelPosJSON
+  } catch {
+    return null
+  }
+}

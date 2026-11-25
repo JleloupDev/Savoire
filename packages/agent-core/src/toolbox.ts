@@ -22,6 +22,7 @@ import {
   ACTION_LABELS, GET_MODE_TOOL, REQUEST_MODE_TOOL, canRequestMode, effectiveMode, modeLabel, normalizePermissions, switchMode, writingModeLabel,
   type PersonRights, type WritingMode,
 } from './policy'
+import type { ReadMemory } from './readMemory'
 
 export interface ApprovalRequest {
   tool: ToolSpec
@@ -56,6 +57,8 @@ export interface ToolBoxOptions {
    * l'agent le permet). Jamais pour un sous-agent (ses droits sont reduits).
    */
   saveAgent?: (agent: AgentDefinition) => Promise<unknown>
+  /** Ce que les agents ont deja lu (read_note since). Absent : la memoire du processus. */
+  memory?: ReadMemory
 }
 
 export interface ToolCallOutcome {
@@ -78,7 +81,7 @@ export class ToolBox {
     this.agent = o.agent
     if (o.host) {
       const host = o.host
-      for (const t of CORE_TOOLS) this.add(t.spec, (args, mode) => t.run(args, { mode, actor: o.actor, host, scope: o.agent.scope }))
+      for (const t of CORE_TOOLS) this.add(t.spec, (args, mode) => t.run(args, { mode, actor: o.actor, host, scope: o.agent.scope, ...(o.memory ? { memory: o.memory } : {}) }))
     }
     if (o.saveAgent && o.runtime === 'app' && !o.imposedMode) {
       const never = async (): Promise<ToolResult> => ({ text: '', isError: true })

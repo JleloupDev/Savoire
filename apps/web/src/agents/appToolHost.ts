@@ -9,15 +9,19 @@
 // pour commenter et proposer. Le serveur verifie donc les memes droits (ACL)
 // que pour elle. L'auteur des commentaires et propositions est l'agent :
 // « Archiviste (IA), pour Jean ».
-import { HostError, notePath, titleOf, type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry } from '@savoire/agent-core'
+import { HostError, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
 import { describeActor, ReviewService, type AgentActor, type IVaultSyncSession } from '@savoire/application'
+import { relPosFromBase64 } from '@savoire/infrastructure-sync'
 import type { VaultClient } from '@savoire/platform'
-import type { ICRDT, PluginAPI, ToolActor } from '@savoire/plugin-api'
+import { textFingerprint, type ICRDT, type PluginAPI, type ToolActor } from '@savoire/plugin-api'
 import { reviewFor } from '../reviewProposals'
 
 /** Un document ouvert pour ecrire reste ouvert un moment : ses operations partent avant la fermeture. */
 const CLOSE_DELAY_MS = 3000
 const MAX_READ = 512 * 1024
+/** Effet de frappe : un long texte s'ecrit par morceaux de quelques mots, sur 3 s au plus. */
+const TYPING = { budgetMs: 3000, maxWrites: 30, maxDelayMs: 120 }
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
 export interface AppToolHostDeps {
   client: VaultClient
@@ -55,7 +59,7 @@ export class AppToolHost implements AgentToolHost {
   }
 
   /** Le texte collaboratif d'une note, a jour, le temps de `use`. */
-  private async withText<T>(docId: string, use: (t: { content: string; replace(from: number, to: number, text: string): void; anchor(from: number, to: number): ReturnType<typeof ReviewService.anchor> }) => T): Promise<T> {
+  private async withText<T>(docId: string, use: (t: { content: string; replace(from: number, to: number, text: string): void; anchor(from: number, to: number): ReturnType<typeof ReviewService.anchor>; resolve(rp: Record<string, unknown>): number | null }) => T): Promise<T> {
     const { session } = this.d
     const crdt = session.openDocument(docId) as ICRDT
     try {
@@ -71,6 +75,7 @@ export class AppToolHost implements AgentToolHost {
           ...(text ? [{ insert: text }] : []),
         ]),
         anchor: (from, to) => ReviewService.anchor(collab, from, to),
+        resolve: rp => collab.resolveRelPos(rp),
       })
     } finally {
       setTimeout(() => session.closeDocument(docId), CLOSE_DELAY_MS)
@@ -142,6 +147,48 @@ export class AppToolHost implements AgentToolHost {
     await this.withText(docId, t => {
       if (to > t.content.length) throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
       t.replace(from, to, text)
+    })
+  }
+
+  /**
+   * Plusieurs remplacements en une modification du texte partage. Avec
+   * `typing`, la suite d'un long texte arrive morceau par morceau : chaque
+   * morceau se place apres le precedent par une position relative, meme si
+   * quelqu'un ecrit ailleurs pendant ce temps.
+   */
+  async applyChanges(docId: string, changes: readonly TextChange[], _actor?: ToolActor, opts: { typing?: boolean; expect?: string } = {}): Promise<void> {
+    if (!changes.length) return
+    const { session } = this.d
+    const crdt = session.openDocument(docId) as ICRDT
+    try {
+      await session.documentLoaded?.(docId)
+      const collab = crdt.collaborativeText?.()
+      const shared = crdt.sharedText?.()
+      if (!collab || !shared) throw new HostError('Cette note n’est pas un texte modifiable.', 'invalid')
+      const before = collab.toString()
+      if (changes[changes.length - 1]!.to > before.length || (opts.expect !== undefined && textFingerprint(before) !== opts.expect)) {
+        throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
+      }
+      const plan = opts.typing ? planTyping(changes, TYPING) : { first: [...changes], tails: [], delayMs: 0 }
+      await typeInto({
+        applyDelta: delta => shared.applyDelta(delta),
+        createRelPos: (index, assoc) => collab.createRelPos(index, assoc),
+        resolveRelPos: rp => collab.resolveRelPos(rp),
+      }, plan, sleep)
+    } finally {
+      setTimeout(() => session.closeDocument(docId), CLOSE_DELAY_MS)
+    }
+  }
+
+  /** Les positions relatives d'une ancre, resolues dans le texte partage de la note. */
+  async resolveRelative(docId: string, start: string, end: string): Promise<{ from: number; to: number } | null> {
+    const a = relPosFromBase64(start)
+    const b = end === start ? a : relPosFromBase64(end)
+    if (!a || !b) return null
+    return this.withText(docId, t => {
+      const from = t.resolve(a)
+      const to = t.resolve(b)
+      return from === null || to === null || to < from ? null : { from, to }
     })
   }
 

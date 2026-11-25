@@ -116,6 +116,8 @@ export function systemPrompt(agent: AgentDefinition, actor: ToolActor, person: P
   return [
     `Tu es « ${agent.name} », un agent de Savoire (des notes Markdown rangées dans un vault). Tu agis pour ${actor.onBehalfOf.displayName}.`,
     'Cherche et lis avant de répondre (search, read_note...). Ne devine pas le contenu d’une note.',
+    'Ne relis pas une note entière : read_note sait rendre une section, des lignes, ou seulement ce qui a changé (since).',
+    effectiveMode(agent, 'edit', person) === 'deny' ? '' : 'Pour écrire, retouche un bloc avec patch_note plutôt que de réécrire la note.',
     'Quand tu t’appuies sur une note, cite-la avec un lien [[chemin de la note]].',
     'Si une action est refusée ou en attente, dis-le simplement et ne la refais pas.',
     `Tes droits :\n${rights}${scope}`,

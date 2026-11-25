@@ -7,10 +7,17 @@
 // Chaque outil ne fait que son travail. Les droits de l'agent (mode, portee)
 // sont verifies par la ToolBox AVANT ; il recoit le mode a appliquer
 // ('direct' ou 'propose') et une portee a respecter pour chaque note.
-import type { AgentScope, ToolActor, ToolInputSchema, ToolParamSchema, ToolResult, ToolSource, ToolSpec } from '@savoire/plugin-api'
+import { textFingerprint, type AgentScope, type ToolActor, type ToolInputSchema, type ToolParamSchema, type ToolResult, type ToolSource, type ToolSpec } from '@savoire/plugin-api'
+import { ANCHOR_LOST, resolveAnchor } from './anchor'
 import { HostError, type AgentToolHost, type HostNote, type HostNoteRef } from './host'
+import {
+  alignBlocks, diffBlocks, findBlock, findSections, mergeSnapshot, noteSections, parseLines, refBlocks, renderBlocks, renderChanges, showRef, snapshotOf, stripRefLines,
+  type NoteSection, type NoteSnapshot, type RefBlock,
+} from './noteRefs'
+import { MAX_PATCH_OPS, PATCH_OPS, applyTextChanges, blockChange, orderChanges, parsePatchOps, rangeChange, type PatchOp } from './patch'
 import { pathInScope } from './policy'
-import { countOccurrences, findOccurrence, folderOf, notePath, setPropertyChange, titleOf } from './text'
+import { sharedReadMemory, type ReadMemory } from './readMemory'
+import { countOccurrences, findOccurrence, folderOf, notePath, setPropertyChange, titleOf, type TextChange } from './text'
 import { alreadyReviewed, type WatchReview } from './watch'
 
 export interface CoreToolContext {
@@ -18,6 +25,8 @@ export interface CoreToolContext {
   actor: ToolActor
   host: AgentToolHost
   scope?: AgentScope
+  /** Ce que les agents ont deja lu (versions, memoire). Absent : la memoire du processus. */
+  memory?: ReadMemory
 }
 
 export interface CoreTool {
@@ -89,14 +98,84 @@ async function noteArg(args: Record<string, unknown>, ctx: CoreToolContext): Pro
 
 const ok = (text: string, extra: Partial<ToolResult> = {}): ToolResult => ({ text, ...extra })
 
+const memoryOf = (ctx: CoreToolContext): ReadMemory => ctx.memory ?? sharedReadMemory
+
+/** Dit ce que fait l'agent sur la note (presence). Ne fait jamais echouer l'outil. */
+function signal(ctx: CoreToolContext, docId: string, state: 'reading' | 'writing' | 'idle', range?: { from: number; to: number }): void {
+  try {
+    ctx.host.signal?.({ docId, state, ...(range ? { from: range.from, to: range.to } : {}) })
+  } catch { /* la presence est un plus */ }
+}
+
+/** La plage que couvrent des changements, dans le texte d'apres. */
+function writtenRange(changes: readonly TextChange[]): { from: number; to: number } {
+  const last = changes[changes.length - 1]!
+  const before = changes.slice(0, -1).reduce((n, c) => n + c.text.length - (c.to - c.from), 0)
+  return { from: changes[0]!.from, to: last.from + before + last.text.length }
+}
+
+/**
+ * L'agent vient d'ecrire : la version d'apres est gardee, et sa memoire sait
+ * qu'il connait les blocs qu'il a ecrits (on ne les lui signalera pas comme
+ * des changements). Rend les blocs d'apres, et ceux qu'il a touches.
+ */
+function wrote(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[]): { snapshot: NoteSnapshot; touched: RefBlock[] } {
+  const memory = memoryOf(ctx)
+  const after = applyTextChanges(note.content, changes)
+  const blocks = refBlocks(after)
+  const snapshot = snapshotOf(note.id, after, blocks)
+  memory.remember(snapshot)
+  let view = memory.view(ctx.actor, note.id)?.snapshot
+  const touched = new Set<RefBlock>()
+  let shift = 0
+  for (const c of changes) {
+    const from = c.from + shift
+    const to = from + c.text.length
+    shift += c.text.length - (c.to - c.from)
+    let first = blocks.findIndex(b => b.end > from)
+    if (first < 0) first = blocks.length
+    let last = first - 1
+    while (last + 1 < blocks.length && blocks[last + 1]!.from < to) last++
+    for (let i = first; i <= last; i++) touched.add(blocks[i]!)
+    if (view) view = mergeSnapshot(view, snapshot, first, last)
+  }
+  if (view) memory.setView(ctx.actor, view, true)
+  return { snapshot, touched: [...touched] }
+}
+
+/**
+ * Ecrit des changements dans la note (mode direct) : une seule ecriture, sauf
+ * un long texte, deroule par l'hote (effet de frappe). `expect` : l'hote
+ * refuse si le texte n'est plus celui sur lequel les plages ont ete calculees.
+ */
+async function writeChanges(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[], expect?: string): Promise<{ snapshot: NoteSnapshot; touched: RefBlock[] }> {
+  signal(ctx, note.id, 'writing', writtenRange(changes))
+  try {
+    if (ctx.host.applyChanges) {
+      await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}) })
+    } else {
+      // De la fin vers le debut : les positions d'avant restent justes.
+      for (let i = changes.length - 1; i >= 0; i--) await ctx.host.replaceText(note.id, changes[i]!.from, changes[i]!.to, changes[i]!.text, ctx.actor)
+    }
+  } finally {
+    signal(ctx, note.id, 'idle')
+  }
+  return wrote(ctx, note, changes)
+}
+
 /** Remplace une plage : directement (avec la trace), ou en suggestion. */
 async function change(ctx: CoreToolContext, note: HostNote, from: number, to: number, text: string, what: string, why: string): Promise<ToolResult> {
   if (ctx.mode === 'propose') {
-    const id = await ctx.host.suggest(note.id, from, to, text, ctx.actor, why || what)
-    return ok(`Proposition déposée dans la Révision de ${note.path} (${what}). Rien ne change tant que la personne ne l'accepte pas.`,
-      { data: { suggestionId: id }, sources: [source(note)] })
+    signal(ctx, note.id, 'writing', { from, to })
+    try {
+      const id = await ctx.host.suggest(note.id, from, to, text, ctx.actor, why || what)
+      return ok(`Proposition déposée dans la Révision de ${note.path} (${what}). Rien ne change tant que la personne ne l'accepte pas.`,
+        { data: { suggestionId: id }, sources: [source(note)] })
+    } finally {
+      signal(ctx, note.id, 'idle')
+    }
   }
-  await ctx.host.replaceText(note.id, from, to, text, ctx.actor)
+  await writeChanges(ctx, note, [{ from, to, text }])
   await ctx.host.recordEdit(note.id, why ? `${what} : ${why}` : what, ctx.actor)
   return ok(`${note.path} modifiée (${what}).`, { sources: [source(note)] })
 }
@@ -121,16 +200,140 @@ const search: CoreTool = {
   },
 }
 
+const lineCount = (text: string): number => {
+  let n = 1
+  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) n++
+  return n
+}
+
+const linesOf = (blocks: readonly RefBlock[], first: number, last: number): string => {
+  const a = blocks[first]!.line
+  const b = blocks[last]!.lastLine
+  return a === b ? `ligne ${a}` : `lignes ${a}-${b}`
+}
+
+/** Le plan d'une note : un titre par ligne, avec ses lignes et sa reference. */
+function outlineText(sections: readonly NoteSection[], blocks: readonly RefBlock[], max = 200): string {
+  const base = Math.min(...sections.map(s => s.level))
+  const lines = sections.slice(0, max).map(s => `${'  '.repeat(Math.min(5, s.level - base))}- ${s.title || '(sans titre)'} (${linesOf(blocks, s.first, s.last)}) ${showRef(blocks[s.first]!.ref)}`)
+  if (sections.length > max) lines.push(`… et ${sections.length - max} autre(s) titre(s).`)
+  return lines.join('\n')
+}
+
+const SINCE_LAST = /^(last|dernier|derni[eè]re)$/i
+
 const readNote: CoreTool = {
   spec: {
     name: 'read_note', title: 'Lire une note', action: 'read', runtimes: [...RUNTIMES],
-    description: 'Rend le texte complet d’une note en Markdown (ou le texte d’un fichier), par son chemin ou son id.',
-    inputSchema: schema({ ...NOTE_REF }),
+    description: 'Rend le texte d’une note en Markdown (ou le texte d’un fichier), par son chemin ou son id. Chaque bloc est précédé de sa référence ‹…›, à donner à patch_note pour écrire. Pour ne pas tout relire : section (un titre), lines (des lignes), outline (le plan seul), ou since (seulement ce qui a changé depuis une lecture).',
+    inputSchema: schema({
+      ...NOTE_REF,
+      section: str('Ne lire qu’une section : son titre, ou un chemin « Titre > Sous-titre ».'),
+      lines: str('Ne lire que ces lignes (ex. 10-40).'),
+      since: str('Jeton de version d’une lecture précédente (ligne « Version »), ou « last » pour votre dernière lecture : ne rend que les blocs ajoutés, modifiés ou supprimés depuis.'),
+      outline: { type: 'boolean', description: 'Rendre seulement le plan : titres, lignes et références.' },
+    }),
   },
   async run(args, ctx) {
     const note = await noteArg(args, ctx)
     const tail = note.truncated ? '\n\n[Texte tronqué : note trop longue.]' : ''
-    return ok(`# ${note.path} (id : ${note.id})\n\n${note.content}${tail}`, { data: { id: note.id, path: note.path, length: note.content.length }, sources: [source(note)] })
+    const head = `# ${note.path} (id : ${note.id})`
+    const base = { id: note.id, path: note.path, length: note.content.length }
+    const section = optString(args, 'section', 500)
+    const rawLines = typeof args.lines === 'number' ? String(args.lines) : optString(args, 'lines', 40)
+    const lines = rawLines ? parseLines(rawLines) : null
+    if (rawLines && !lines) throw new HostError('lines : une plage de lignes, par exemple 10-40.')
+    const since = optString(args, 'since', 60)
+    const outline = args.outline === true || args.outline === 'true'
+    const total = lineCount(note.content)
+
+    // Un fichier (PDF, tableur...) : son texte brut, sans blocs ni versions.
+    if (!/\.md$/i.test(note.path)) {
+      if (section || since || outline) throw new HostError('section, since et outline ne valent que pour une note Markdown.')
+      signal(ctx, note.id, 'reading')
+      signal(ctx, note.id, 'idle')
+      if (!lines) return ok(`${head}\n\n${note.content}${tail}`, { data: base, sources: [source(note)] })
+      if (lines.from > total) throw new HostError(`Ce texte a ${total} ligne(s).`)
+      const to = Math.min(total, lines.to)
+      return ok(`${head}\nLignes ${lines.from}-${to} sur ${total}.\n\n${note.content.split('\n').slice(lines.from - 1, to).join('\n')}${to === total ? tail : ''}`, { data: base, sources: [source(note)] })
+    }
+
+    const memory = memoryOf(ctx)
+    const blocks = refBlocks(note.content)
+    const snap = snapshotOf(note.id, note.content, blocks)
+    memory.remember(snap)
+    const data = { ...base, version: snap.token }
+
+    // La partie demandee : une section, des lignes, ou tout.
+    let first = 0
+    let last = blocks.length - 1
+    const about: string[] = []
+    const remarks: string[] = []
+    if (section) {
+      const all = noteSections(blocks)
+      const hits = findSections(all, section)
+      if (!hits.length) {
+        throw new HostError(`Section introuvable : « ${section} ». ${all.length ? `Sections de cette note :\n${outlineText(all, blocks, 60)}` : 'Cette note n’a pas de titre.'}`, 'not_found')
+      }
+      const s = hits[0]!
+      first = s.first
+      last = s.last
+      about.push(`section « ${s.path.join(' > ')} »`)
+      if (hits.length > 1) {
+        remarks.push(`${hits.length} sections portent ce titre ; voici la première. Les autres : ${hits.slice(1, 6).map(h => `« ${h.path.join(' > ')} » (ligne ${blocks[h.first]!.line})`).join(', ')}. Précisez par un chemin, ou par lines.`)
+      }
+    }
+    if (lines) {
+      let a = first
+      while (a <= last && blocks[a]!.lastLine < lines.from) a++
+      let b = last
+      while (b >= a && blocks[b]!.line > lines.to) b--
+      if (a > b) throw new HostError(`Rien sur ces lignes${section ? ' dans cette section' : ''} : la note a ${total} ligne(s).`)
+      first = a
+      last = b
+    }
+    const partial = !!(section || lines)
+    if (partial) about.push(`${linesOf(blocks, first, last)} sur ${total}`)
+    const view = memory.view(ctx.actor, note.id)
+    /** L'agent recoit cette partie : sa memoire la connait. */
+    const seen = (from?: NoteSnapshot): void => {
+      const prior = view?.snapshot ?? from
+      if (!partial || !prior) memory.setView(ctx.actor, snap)
+      else memory.setView(ctx.actor, mergeSnapshot(prior, snap, first, last), true)
+    }
+
+    signal(ctx, note.id, 'reading', partial && blocks.length ? { from: blocks[first]!.from, to: blocks[last]!.end } : undefined)
+    try {
+      if (outline) {
+        const all = noteSections(blocks).filter(s => s.first >= first && s.first <= last)
+        return ok(`${head}\nVersion : ${snap.token} · ${blocks.length} bloc(s), ${total} ligne(s).\n\n${all.length ? `Plan :\n${outlineText(all, blocks)}` : 'Aucun titre.'}`,
+          { data, sources: [source(note)] })
+      }
+      let miss = ''
+      if (since) {
+        const own = SINCE_LAST.test(since)
+        const old = own ? view?.snapshot : memory.version(note.id, since)
+        if (old) {
+          const changes = diffBlocks(old, blocks).filter(c => !partial || (c.index >= first && c.index <= last + (c.kind === 'removed' ? 1 : 0)))
+          seen(old)
+          const from = own ? 'votre dernière lecture' : old.token
+          const scope = about.length ? ` (${about.join(', ')})` : ''
+          if (!changes.length) return ok(`${head}\nVersion : ${snap.token}. Rien n’a changé depuis ${from}${scope}.`, { data: { ...data, changes: 0 }, sources: [source(note)] })
+          const count = (k: string): number => changes.filter(c => c.kind === k).length
+          return ok(`${head}\nVersion : ${snap.token}. Depuis ${from}${scope} : ${count('changed')} bloc(s) modifié(s), ${count('added')} ajouté(s), ${count('removed')} supprimé(s).\n\n${renderChanges(changes, blocks)}`,
+            { data: { ...data, changes: changes.length }, sources: [source(note)] })
+        }
+        miss = own
+          ? 'Aucune lecture précédente en mémoire : voici le texte.'
+          : `Version ${since} oubliée ou inconnue : voici le texte, pas seulement les changements.`
+      }
+      seen()
+      const meta = [`Version : ${snap.token} · ${partial ? about.join(', ') : `${blocks.length} bloc(s), ${total} ligne(s)`}. Référence de chaque bloc entre ‹ ›.`, ...remarks, ...(miss ? [miss] : [])]
+      const body = blocks.length ? renderBlocks(note.content, blocks, first, last) : note.content
+      return ok(`${head}\n${meta.join('\n')}\n\n${body}${!partial || last === blocks.length - 1 ? tail : ''}`, { data, sources: [source(note)] })
+    } finally {
+      signal(ctx, note.id, 'idle')
+    }
   },
 }
 
@@ -339,10 +542,12 @@ const editNote: CoreTool = {
   },
   async run(args, ctx) {
     const note = await noteArg(args, ctx)
-    const find = rawString(args, 'find', 20_000)
+    let find = rawString(args, 'find', 20_000)
     const replacement = rawString(args, 'replace', 200_000)
     if (!find) throw new HostError('find est vide.')
     const occurrence = typeof args.occurrence === 'number' ? Math.max(0, Math.floor(args.occurrence)) : 0
+    // Un passage recopie d'une lecture, avec ses lignes de reference ‹...› : on les retire.
+    if (findOccurrence(note.content, find, occurrence) < 0 && stripRefLines(find).trim()) find = stripRefLines(find)
     const at = findOccurrence(note.content, find, occurrence)
     if (at < 0) throw new HostError('Passage introuvable dans la note : relisez-la (read_note) et recopiez-le à l’identique.')
     if (args.occurrence === undefined && countOccurrences(note.content, find) > 1) {
@@ -392,6 +597,170 @@ const setProperty: CoreTool = {
     const c = setPropertyChange(note.content, name, value)
     if (!c) return ok('Rien à changer.')
     return change(ctx, note, c.from, c.to, c.text, value === null ? `propriété ${name} retirée` : `propriété ${name} = ${JSON.stringify(value)}`, '')
+  },
+}
+
+// ── Retoucher (patch_note) ─────────────────────────────────────────────────
+
+const ANCHOR_SCHEMA: ToolParamSchema = {
+  type: 'object',
+  description: 'Ou : une ancre donnée par l’éditeur (curseur ou sélection de la personne), rendue telle quelle.',
+  properties: { docId: str('Id de la note.'), start: str('Position de début.'), end: str('Position de fin.'), quote: str('Texte sélectionné.'), prefix: str('Texte juste avant.'), suffix: str('Texte juste après.') },
+}
+
+/**
+ * Une reference qui ne mene plus a rien : ou est ce bloc aujourd'hui, d'apres
+ * les versions gardees ? `same` : il est la, inchange (seul son rang a
+ * bouge) ; `now` : les blocs a sa place (aucun : supprime). Null : inconnu.
+ */
+function whereNow(memory: ReadMemory, actor: ToolActor, docId: string, blocks: readonly RefBlock[], ref: string): { same?: RefBlock; now?: RefBlock[] } | null {
+  for (const old of memory.versionsOf(actor, docId)) {
+    const hit = findBlock(old.blocks, ref)
+    if (!hit) continue
+    const at = old.blocks.indexOf(hit.block)
+    let j0 = 0
+    for (const [i1, j1] of alignBlocks(old.blocks, blocks)) {
+      if (at === i1 && blocks[j1]) return { same: blocks[j1] }
+      if (at < i1) {
+        const byId = hit.block.blockId ? blocks.find(b => b.blockId === hit.block.blockId) : undefined
+        return { now: byId ? [byId] : blocks.slice(j0, j1) }
+      }
+      j0 = j1 + 1
+    }
+  }
+  return null
+}
+
+/** Les changements que demandent ces operations sur la note d'aujourd'hui, ou le refus a rendre a l'IA. */
+async function planPatch(ctx: CoreToolContext, note: HostNote, ops: readonly PatchOp[]): Promise<{ changes: TextChange[] } | { refused: string }> {
+  const memory = memoryOf(ctx)
+  const blocks = refBlocks(note.content)
+  const view = memory.view(ctx.actor, note.id)
+  const changes: TextChange[] = []
+  const refused: string[] = []
+  /** On rend a l'agent le texte de ces blocs : il les connait, une reprise par « ^id » passera. */
+  const shown = (list: readonly RefBlock[]): string => {
+    for (const b of list) if (b.blockId) memory.acknowledge(ctx.actor, note.id, b.blockId, b.hash)
+    return list.map(b => `${showRef(b.ref)}\n${b.text}`).join('\n\n')
+  }
+  for (const [i, op] of ops.entries()) {
+    const n = `Opération ${i + 1}`
+    if (op.at) {
+      const relative = ctx.host.resolveRelative && op.at.start
+        ? await ctx.host.resolveRelative(note.id, op.at.start, op.at.end).catch(() => null)
+        : null
+      const range = resolveAnchor(note.content, op.at, relative)
+      if (!range) throw new HostError(`${n} : ${ANCHOR_LOST}. Le passage visé n’est plus dans la note : relisez-la, ou visez un bloc par sa référence.`, 'not_found')
+      changes.push(rangeChange(range, op))
+      continue
+    }
+    let hit = findBlock(blocks, op.ref!)
+    if (!hit) {
+      const where = whereNow(memory, ctx.actor, note.id, blocks, op.ref!)
+      if (where?.same) hit = { block: where.same, byHash: true }
+      else if (where?.now?.length) {
+        const more = where.now.length > 3 ? `\n… et ${where.now.length - 3} autre(s) bloc(s) : relisez la section.` : ''
+        refused.push(`${n} : le bloc ${showRef(op.ref!)} n’existe plus tel quel (modifié ou remplacé). À sa place aujourd’hui :\n${shown(where.now.slice(0, 3))}${more}`)
+      } else if (where) refused.push(`${n} : le bloc ${showRef(op.ref!)} a été supprimé.`)
+      else refused.push(`${n} : bloc ${showRef(op.ref!)} introuvable. Il a changé, ou la référence est fausse : relisez la section (read_note avec section, ou since: "last").`)
+      if (!hit) continue
+    }
+    const block = hit.block
+    // Vise par son « ^id » : a-t-il change depuis que l'agent l'a lu ? (Inserer a cote ne lit pas son texte.)
+    const reads = op.find !== undefined || op.op === 'replace' || op.op === 'delete'
+    if (!hit.byHash && reads && view && block.blockId) {
+      const known = view.known.get(block.blockId) ?? view.snapshot.blocks.find(b => b.blockId === block.blockId)?.hash
+      if (known && known !== block.hash) {
+        refused.push(`${n} : le bloc ${showRef(block.ref)} a changé depuis votre lecture. Son texte aujourd’hui :\n${shown([block])}`)
+        continue
+      }
+    }
+    try {
+      changes.push(blockChange(note.content, blocks, block, op))
+    } catch (err) {
+      // Le message rend le texte du bloc : l'agent le connait maintenant.
+      if (block.blockId) memory.acknowledge(ctx.actor, note.id, block.blockId, block.hash)
+      throw err instanceof HostError ? new HostError(`${n} : ${err.message}`, err.code) : err
+    }
+  }
+  if (refused.length) {
+    return { refused: `Rien n’a été écrit : la note a changé depuis votre lecture.\n\n${refused.join('\n\n')}\n\nRefaites l’appel avec les références et les textes d’aujourd’hui.` }
+  }
+  return { changes: orderChanges(note.content, changes) }
+}
+
+const patchNote: CoreTool = {
+  spec: {
+    name: 'patch_note', title: 'Retoucher une note', action: 'edit', runtimes: [...RUNTIMES],
+    description: 'Modifie une note par retouches, sans la réécrire. Chaque opération vise un bloc par sa référence (ref : le texte entre ‹ › rendu par read_note), un passage dans ce bloc (ref + find), ou une ancre de l’éditeur (at). op : insert_before, insert_after, replace, delete. Si un bloc a changé depuis votre lecture, rien n’est écrit et son texte d’aujourd’hui est rendu : refaites l’appel.',
+    inputSchema: schema({
+      ...NOTE_REF,
+      ops: {
+        type: 'array',
+        description: `Les retouches (1 à ${MAX_PATCH_OPS}), toutes appliquées ensemble.`,
+        items: {
+          type: 'object',
+          properties: {
+            op: { type: 'string', enum: [...PATCH_OPS], description: 'insert_before ou insert_after : ajouter avant ou après ; replace : remplacer ; delete : supprimer.' },
+            ref: str('Référence du bloc visé (ex. a1b2c3d4, ou ^id).'),
+            find: str('Avec ref : un court passage de ce bloc, recopié à l’identique. L’opération porte alors sur ce passage, pas sur le bloc entier. Ex. ajouter une ligne à une liste : find = sa dernière ligne, op = insert_after, text = retour à la ligne puis la nouvelle ligne.'),
+            at: ANCHOR_SCHEMA,
+            text: str('Le texte Markdown à insérer, ou qui remplace. Inutile pour delete.'),
+          },
+        },
+      },
+      why: str('Raison courte, montrée à la personne.'),
+    }, ['ops']),
+  },
+  async run(args, ctx) {
+    const ops = parsePatchOps(args.ops)
+    // La note : par path ou id ; sinon celle de l'ancre.
+    const named = optString(args, 'id', 200) || optString(args, 'path', 1024)
+    const anchored = ops.find(o => o.at)?.at?.docId
+    const note = await noteArg(!named && anchored ? { id: anchored } : args, ctx)
+    if (ops.some(o => o.at && o.at.docId !== note.id)) throw new HostError('at : cette ancre vient d’une autre note.')
+    const why = optString(args, 'why', 500) ?? ''
+    for (let attempt = 0; ; attempt++) {
+      const current = attempt ? await noteArg({ id: note.id }, ctx) : note
+      const plan = await planPatch(ctx, current, ops)
+      if ('refused' in plan) return { text: plan.refused, isError: true, sources: [source(current)] }
+      const { changes } = plan
+      if (!changes.length) return ok('Rien à changer.')
+      const what = changes.length === 1 ? '1 retouche' : `${changes.length} retouches`
+
+      if (ctx.mode === 'propose') {
+        // Comme edit_note : une suggestion par retouche, jamais deux fois la meme.
+        const prior: WatchReview[] = (await ctx.host.listReview(current.id).catch(() => []))
+          .filter(e => e.kind === 'suggestion' && !e.parentId)
+          .map(e => ({ kind: 'suggestion', status: (e.status as WatchReview['status']) ?? 'open', quote: e.quote ?? '', ...(e.replacement !== undefined ? { replacement: e.replacement } : {}) }))
+        const ids: string[] = []
+        signal(ctx, current.id, 'writing', { from: changes[0]!.from, to: changes[changes.length - 1]!.to })
+        try {
+          for (const c of changes) {
+            const quote = current.content.slice(c.from, c.to)
+            if (quote && alreadyReviewed({ find: quote, replace: c.text, why: '' }, prior)) continue
+            ids.push(await ctx.host.suggest(current.id, c.from, c.to, c.text, ctx.actor, why || (!quote ? 'texte ajouté' : c.text ? 'passage remplacé' : 'passage supprimé')))
+          }
+        } finally {
+          signal(ctx, current.id, 'idle')
+        }
+        if (!ids.length) return ok('Ces retouches sont déjà dans la Révision (en attente, acceptées ou refusées) : pas de nouvelle proposition.')
+        return ok(`${ids.length} proposition(s) déposée(s) dans la Révision de ${current.path}. Rien ne change tant que la personne ne les accepte pas.`,
+          { data: { suggestionIds: ids }, sources: [source(current)] })
+      }
+
+      try {
+        const done = await writeChanges(ctx, current, changes, current.truncated ? undefined : textFingerprint(current.content))
+        await ctx.host.recordEdit(current.id, why ? `${what} : ${why}` : what, ctx.actor)
+        const written = done.touched.slice(0, 20).map(b => `${showRef(b.ref)} ${linesOf([b], 0, 0)}`)
+        return ok(`${current.path} modifiée (${what}). Version : ${done.snapshot.token}.${written.length ? `\nBlocs écrits :\n${written.join('\n')}` : ''}`,
+          { data: { version: done.snapshot.token, blocks: done.touched.map(b => b.ref) }, sources: [source(current)] })
+      } catch (err) {
+        // La note a bouge entre la lecture et l'ecriture (rien n'est parti) : on recalcule une fois.
+        if (attempt === 0 && ctx.host.applyChanges && err instanceof HostError && err.code === 'conflict') continue
+        throw err
+      }
+    }
   },
 }
 
@@ -523,7 +892,7 @@ const addImage: CoreTool = {
     const fresh = await ctx.host.readNote({ id: note.id }) ?? note
     const sep = fresh.content === '' || fresh.content.endsWith('\n\n') ? '' : fresh.content.endsWith('\n') ? '\n' : '\n\n'
     const end = fresh.content.length
-    await ctx.host.replaceText(fresh.id, end, end, `${sep}![[${file.path}]]\n`, ctx.actor)
+    await writeChanges(ctx, fresh, [{ from: end, to: end, text: `${sep}![[${file.path}]]\n` }])
     const why = optString(args, 'why', 500)
     await ctx.host.recordEdit(fresh.id, why ? `image ajoutée (${name}) : ${why}` : `image ajoutée (${name})`, ctx.actor)
     return ok(`Image ajoutée : ${file.path}, avec son lien à la fin de ${note.path}.`, { data: file, sources: [source(note)] })
@@ -534,7 +903,7 @@ const addImage: CoreTool = {
 export const CORE_TOOLS: readonly CoreTool[] = [
   search, readNote, listNotes, backlinks, outgoingLinks, brokenLinks, listTags, notesWithTag, queryNotes, listComments,
   comment, reply,
-  editNote, appendNote, setProperty,
+  editNote, patchNote, appendNote, setProperty,
   createNote, createFolder, moveNote,
   trashNote,
   addImage,

@@ -14,7 +14,7 @@
 //  - ancres : positions relatives Yjs en JSON (ReviewService.anchor).
 import * as Y from 'yjs'
 import { FOLDERS_MAP, VAULT_MAP } from './tree'
-import { loadDoc, type YjsUpdate } from './yjs'
+import { fromBase64, loadDoc, type YjsUpdate } from './yjs'
 
 export const NOTE_TEXT = 'codemirror'
 const MAX_QUOTE = 2000
@@ -149,4 +149,47 @@ export function editDoc(updates: readonly YjsUpdate[]): DocEdit {
     changes: () => (pending.length ? Y.mergeUpdates(pending) : null),
     sent: () => { pending = [] },
   }
+}
+
+// ── Ancres des agents (agent-core/anchor.ts) ────────────────────────────────
+//
+// start et end d'une ancre : une position relative Yjs sur le texte de la
+// note, encodee (Y.encodeRelativePosition) puis mise en base64.
+
+function toBase64(u: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < u.length; i++) bin += String.fromCharCode(u[i]!)
+  return btoa(bin)
+}
+
+/** Les deux positions relatives de [from, to) dans le texte de la note, en base64 (curseur : les memes). */
+export function relativeRange(doc: Y.Doc, from: number, to: number): { start: string; end: string } {
+  const text = doc.getText(NOTE_TEXT)
+  const a = Math.max(0, Math.min(from, to, text.length))
+  const b = Math.min(text.length, Math.max(from, to))
+  // Comme les ancres de la Revision : debut colle au caractere qui suit, fin a celui qui precede.
+  const start = toBase64(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, a, 0)))
+  return { start, end: b === a ? start : toBase64(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, b, -1))) }
+}
+
+/** Ou sont ces deux positions relatives dans ce document. Null : illisibles, d'un autre texte, ou perdues. */
+export function resolveRelativeIn(doc: Y.Doc, start: string, end: string): { from: number; to: number } | null {
+  const text = doc.getText(NOTE_TEXT)
+  const at = (b64: string): number | null => {
+    try {
+      const abs = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(fromBase64(b64)), doc)
+      return abs && abs.type === text ? abs.index : null
+    } catch {
+      return null
+    }
+  }
+  const from = at(start)
+  const to = end === start ? from : at(end)
+  return from === null || to === null || to < from ? null : { from, to }
+}
+
+/** La meme chose, depuis le journal d'une note. */
+export function resolveRelativeRange(updates: readonly YjsUpdate[], start: string, end: string): { from: number; to: number } | null {
+  const doc = loadDoc(updates)
+  try { return resolveRelativeIn(doc, start, end) } finally { doc.destroy() }
 }

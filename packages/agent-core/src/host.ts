@@ -9,6 +9,7 @@
 // pas voir n'existe pas pour l'agent, une ecriture refusee leve une erreur.
 // Les droits de l'AGENT (modes, portee) sont verifies avant, par la ToolBox.
 import type { ToolActor } from '@savoire/plugin-api'
+import type { TextChange } from './text'
 
 export interface HostNoteRef {
   id: string
@@ -86,4 +87,30 @@ export interface AgentToolHost {
   suggest(docId: string, from: number, to: number, replacement: string, actor: ToolActor, note: string): Promise<string>
   /** Trace d'une ecriture directe de l'agent, dans la Revision. */
   recordEdit(docId: string, text: string, actor: ToolActor): Promise<void>
+
+  // ── Ecriture fine (patch_note, effet de frappe) ──
+  /**
+   * Applique plusieurs remplacements en UNE ecriture : plages disjointes, dans
+   * l'ordre, positions dans le texte d'avant. Absent : l'outil enchaine des
+   * replaceText.
+   *  - `typing` : un long texte est deroule par morceaux, en ecritures
+   *    successives (effet de frappe, typing.ts) ;
+   *  - `expect` : empreinte (textFingerprint) du texte sur lequel les plages
+   *    ont ete calculees ; s'il a change, l'hote refuse (HostError 'conflict').
+   */
+  applyChanges?(docId: string, changes: readonly TextChange[], actor: ToolActor, opts?: { typing?: boolean; expect?: string }): Promise<void>
+  /**
+   * Resout les deux positions relatives Yjs d'une ancre (base64, anchor.ts)
+   * dans le texte d'aujourd'hui. Null : l'une des deux ne se resout plus.
+   * Absent : l'hote ne tient pas le Y.Doc ; l'ancre se resout par sa citation.
+   */
+  resolveRelative?(docId: string, start: string, end: string): Promise<{ from: number; to: number } | null>
+
+  // ── Presence ──
+  /**
+   * Ce que l'agent fait sur une note, pour le montrer aux personnes qui l'ont
+   * ouverte : il lit, il ecrit (from, to : positions dans le texte de la
+   * note), puis plus rien ('idle').
+   */
+  signal?(s: { docId: string; state: 'reading' | 'writing' | 'idle'; from?: number; to?: number }): void
 }

@@ -178,6 +178,9 @@ const PROTOCOLS: [&str; 3] = [LATEST_PROTOCOL, "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS: &str = "Savoire : les notes Markdown de la personne, rangees dans des vaults. \
 Commencez par list_vaults, puis search pour trouver des notes et read_note pour les lire. \
 Un vault se designe par son id ou par son nom (parametre vault de chaque outil). \
+Ne relisez pas une note entiere : read_note sait rendre une section (section), des lignes (lines), \
+ou seulement ce qui a change depuis votre lecture (since). \
+Pour ecrire, ne reecrivez pas la note : patch_note retouche un bloc par sa reference (entre ‹ › dans read_note). \
 Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
 (drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
 Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas. \

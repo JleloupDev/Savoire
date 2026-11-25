@@ -187,6 +187,39 @@ Noms stables. Les paramètres et résultats sont en JSON. Un pouvoir valide lui-
 | `tools` | `list` | `{}` → `{ tools: ToolSpec[] }` : le catalogue des outils du socle (`@savoire/agent-core`, `coreCatalog('server')`), puis ceux des plugins permis sur ce pair qui déclarent `runtimes: ['app', 'server']` (voir « Outils des plugins sur le pair »). Le serveur le lit pour le MCP. |
 | `tools` | `call` | `{ name, args, mode: 'direct' \| 'propose', agent, actor, ticket }` (+ `access` ajouté par le pair) → `{ text, isError, sources? }`. Exécute un outil pour une IA externe (ADR-033) ; ses écritures partent au backend par `…/write` avec le ticket. **Jamais en cache. Appelé par le backend seul** : la route publique `/index/{capacité}/{méthode}` refuse `tools` (404). |
 
+### Outils du socle
+
+Code : `packages/agent-core` (les mêmes outils dans l'appli et sur le pair). Liste (`coreCatalog('server')`) :
+
+- **Lire** : `search`, `read_note`, `list_notes`, `backlinks`, `outgoing_links`, `broken_links`, `list_tags`, `notes_with_tag`, `query`, `list_comments`.
+- **Commenter** : `comment`, `reply`.
+- **Modifier** : `edit_note`, `patch_note`, `append`, `set_property`, `add_image` (pair seulement).
+- **Créer, ranger, supprimer** : `create_note`, `create_folder`, `move_note`, `trash_note`.
+
+**Lecture fine (`read_note`)**. Une IA ne relit pas une note entière.
+
+- Chaque bloc rendu est précédé de sa **référence**, seule sur sa ligne : `‹^id›` si le bloc a un `^id`, sinon `‹a1b2c3d4›`, le début de son empreinte (`noteBlocks.ts`) ; `‹a1b2c3d4~2›` pour le deuxième bloc de même empreinte. Sans ces lignes, le texte rendu est celui de la note.
+- `section` : un titre, ou un chemin `MCP > Bases` (casse et mise en forme ignorées) ; la section est rendue avec ses sous-sections. `lines` : `10-40`, les blocs qui touchent ces lignes. `outline: true` : le plan seul (titres, lignes, références).
+- Chaque lecture rend un **jeton de version** (`Version : v3f9a1c20b4`, calculé du texte). `since: <jeton>` ne rend que les blocs ajoutés, modifiés ou supprimés depuis, comparés par empreinte. `since: "last"` : depuis la dernière lecture de CET agent.
+- Le pair garde en mémoire les versions (jeton → empreintes des blocs) et, par (agent, personne, note), ce que l'agent connaît. Aucun texte n'y est gardé. Mémoire du processus, bornée (600 entrées, 200 000 empreintes, la moins récemment servie part la première) : perdue au redémarrage. Jeton inconnu ou oublié : l'outil le dit et rend le texte.
+- Une lecture partielle ne met à jour que la partie lue : ce qui a changé ailleurs reste à signaler. Ce que l'agent écrit lui-même ne lui est pas signalé.
+- Un fichier qui n'est pas une note `.md` : texte brut, `lines` seulement.
+
+**Écriture fine (`patch_note`)**. `{ path | id, ops: [{ op, ref?, find?, at?, text? }], why? }`, 20 opérations au plus, toutes appliquées en UNE écriture (`ops: [{ target: 'document' }]`), puis la trace dans la Révision.
+
+- `op` : `insert_before`, `insert_after`, `replace`, `delete`.
+- `ref` : le bloc visé. Seul : le bloc entier (un bloc inséré est séparé par une ligne vide ; un bloc remplacé garde son `^id`). Avec `find` (un court passage du bloc, unique) : l'opération porte sur ce passage.
+- `at` : une ancre de l'éditeur, à la place de `ref` (ci-dessous).
+- **Bloc changé depuis la lecture** : une référence par empreinte ne mène plus à rien ; un bloc visé par `^id` est comparé à ce que l'agent a lu. Dans les deux cas rien n'est écrit, et la réponse (`isError`) rend le texte d'aujourd'hui du bloc avec sa référence : l'IA refait l'appel.
+- Mode `propose` : une suggestion par opération dans `map/review`, comme `edit_note` ; la note ne change pas.
+- La réponse rend le nouveau jeton de version et la référence des blocs écrits.
+
+**Ancre** (curseur ou sélection donnés par l'éditeur, type `NoteAnchor` de `agent-core/anchor.ts`) : `{ docId, start, end, quote, prefix, suffix }`. `start` et `end` : une position relative Yjs (`Y.encodeRelativePosition`, puis base64) sur le `Y.Text` `codemirror` de la note ; curseur : `end = start`. `quote` : le texte entre les deux ; `prefix`, `suffix` : 32 caractères au plus avant et après. Résolution : le pair rejoue le journal et résout `start` et `end` ; en cas d'échec, ou si le texte entre les deux n'est plus `quote`, il cherche `quote` dans la note, `prefix` et `suffix` choisissent l'occurrence. Sinon : « ancre perdue ».
+
+**Effet de frappe**. En mode direct, un texte inséré de plus de 80 caractères (`patch_note`, `append`, `edit_note`) part en plusieurs écritures `…/write` successives, avec le **même ticket** : la première fait tout le reste de l'appel et le début du texte, les suivantes ajoutent quelques mots chacune. 12 écritures et 1,5 s au plus sur le pair (un appel finit avant `SAVOIRE_INDEXER_CALL_TIMEOUT_MS`), 3 s dans l'appli. La trace dans la Révision est écrite une fois.
+
+**Présence**. Les outils appellent `AgentToolHost.signal?({ docId, state: 'reading' | 'writing' | 'idle', from?, to? })` : lecture (la partie lue), écriture (la plage écrite), puis `idle`. `from` et `to` sont des positions dans le texte de la note.
+
 ### Outils des plugins sur le pair
 
 Les outils d'agent des plugins (`api.agents.registerTool`) tournent aussi sur le pair, pour les IA externes, quand leur fiche déclare `runtimes: ['app', 'server']`. Code : `apps/indexer/src/serverPlugins.ts` et `pluginApi.ts`.
