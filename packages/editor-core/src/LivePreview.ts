@@ -1796,6 +1796,9 @@ export function createLivePreviewExtension(
       '.vault-h4-live': { lineHeight: '1.3' },
       '.vault-h5-live': { lineHeight: '1.3' },
       '.vault-h6-live': { lineHeight: '1.3' },
+      // Le soulignement des titres vient de la coloration du code : sous le
+      // curseur, le titre garde l'allure qu'il a une fois rendu.
+      '.vault-h1-live span, .vault-h2-live span, .vault-h3-live span, .vault-h4-live span, .vault-h5-live span, .vault-h6-live span': { textDecoration: 'none' },
       // Titres rendus : memes taille et interligne que la ligne brute du titre.
       '.vault-rendered-block h1, .vault-rendered-block h2, .vault-rendered-block h3, .vault-rendered-block h4, .vault-rendered-block h5, .vault-rendered-block h6': {
         margin: '0',

@@ -97,7 +97,10 @@ export function propertiesDecorations(state: EditorState, fmEnd: number): Range<
   }
   const text = state.doc.sliceString(0, fmEnd)
   const widget = new PropertiesWidget(host, text, adding, refresh)
-  if (fmEnd > 0) return [Decoration.replace({ widget, block: true }).range(0, fmEnd)]
+  // Le panneau s'arrete a la fin de la ligne `---`, pas apres son retour a la
+  // ligne : sinon il avale le debut de la ligne suivante, et un titre juste
+  // dessous perd sa mise en forme quand le curseur y est.
+  if (fmEnd > 0) return [Decoration.replace({ widget, block: true }).range(0, state.doc.lineAt(fmEnd - 1).to)]
   if (adding) return [Decoration.widget({ widget, block: true, side: -1 }).range(0)]
   return []
 }
