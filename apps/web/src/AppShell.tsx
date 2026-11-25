@@ -48,6 +48,7 @@ import { NotionImportDialog } from './NotionImportDialog'
 import { NotionImportService } from './notionImport'
 import { desktopNotion } from './notionConnection'
 import { needsOnboarding } from './onboardingPreferences'
+import { lastVault, rememberLastVault } from './openTabs'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
 import { visitorEntryPath } from './visitorEntry'
@@ -908,6 +909,8 @@ export function AppShell() {
         },
       })
       vaultAPIRef.current = active.client
+      // Rouvert au prochain chargement de la page, avec ses onglets.
+      rememberLastVault(activeAccountRef.current?.userId ?? '', vault.id)
       // Ouvertures de documents comptees : un editeur, une base qui ecrit une
       // note, l'index qui lit un lot partagent le meme document sans se le fermer.
       vaultSessionRef.current = active.session ? withDocumentRefCount(active.session) : undefined
@@ -1026,9 +1029,12 @@ export function AppShell() {
       managerRef.current?.notifyVaultChange()
       // Bureau : on rouvre le dernier vault, comme Obsidian (la liste vient
       // triee, les plus recents d'abord). Ailleurs : seulement s'il est seul.
+      // Web : le vault ouvert en dernier sur ce poste (openTabs.ts), s'il y en a un.
+      const remembered = lastVault(account.userId)
       let autoVault = activeProfile.desktop
         ? withLocked.find(v => v.source === 'local' && v.role !== MISSING_VAULT_ROLE)
-        : list.length === 1 ? withLocked[0] : undefined
+        : list.length === 1 ? withLocked[0] : withLocked.find(v => v.id === remembered && v.role !== MISSING_VAULT_ROLE)
+      if (!activeProfile.desktop && selectedVaultRef.current) autoVault = undefined
       if (activeProfile.desktop) {
         if (desktopAutoOpenedRef.current || selectedVaultRef.current) autoVault = undefined
         desktopAutoOpenedRef.current = true

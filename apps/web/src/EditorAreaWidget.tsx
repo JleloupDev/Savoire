@@ -21,6 +21,8 @@ import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
 import { bubbles } from './bubbles'
 import { showAiChange } from './aiChangeHistory'
+import { loadTabs, saveTabs } from './openTabs'
+import { readNoteWindow } from './noteWindow'
 
 /** Document ouvert par un chemin ou un lien (nom seul, .md facultatif), comme Obsidian. */
 function findByLink<T extends { path: string }>(docs: readonly T[], target: string): T | undefined {
@@ -494,6 +496,59 @@ function EditorAreaPanel({
   // vault » fermait tous les editeurs ouverts a chaque nouvelle note.
   // On compare donc l'id du vault, et on ne vide que s'il a reellement change.
   const lastVaultIdRef = useRef<string | null>(refs.selectedVault.current?.id ?? null)
+
+  // ── Onglets retenus (openTabs.ts) ─────────────────────────────────────────
+  // Par vault : ceux qu'on a laisses se rouvrent quand on revient au vault,
+  // ou quand la page se recharge. Pas dans la fenetre d'une seule note.
+  const remember = useRef(!readNoteWindow()).current
+  /** Vault dont il faut rouvrir les onglets, des que ses documents sont la. */
+  const restoreForRef = useRef<string | null>(remember ? refs.selectedVault.current?.id ?? null : null)
+  const restoringRef = useRef(false)
+  /** Vault de la zone d'onglets montee (elle est remontee a chaque vault, voir sa key). */
+  const dockviewOwnerRef = useRef<string | undefined>(undefined)
+
+  /** Retient les onglets de `api`, la zone du vault `owner`. */
+  function saveOpenTabs(api: DockviewApi, owner: string | undefined) {
+    const userId = refs.activeAccount.current?.userId
+    // Rien pendant qu'on rouvre, ni tant que les onglets retenus ne sont pas
+    // rouverts (on effacerait la liste), ni une fois parti du vault (la
+    // zone qui se vide en changeant de vault ne doit rien effacer).
+    if (!remember || !owner || !userId || restoringRef.current || restoreForRef.current === owner) return
+    if (refs.selectedVault.current?.id !== owner) return
+    const ids = api.panels.filter(p => p.id.startsWith('doc-')).map(p => p.id.slice(4))
+    const active = api.activePanel?.id.startsWith('doc-') ? api.activePanel.id.slice(4) : undefined
+    saveTabs(userId, owner, { ids, active })
+  }
+
+  /** Rouvre les onglets retenus du vault, une fois ses documents connus. */
+  async function restoreOpenTabs() {
+    const vaultId = restoreForRef.current
+    const api = dockviewRef.current
+    const client = refs.vaultAPI.current
+    const userId = refs.activeAccount.current?.userId
+    if (!vaultId || !api || !client || !userId || dockviewOwnerRef.current !== vaultId) return
+    if (client.getVaultId() !== vaultId || refs.selectedVault.current?.id !== vaultId || client.documents.length === 0) return
+    restoreForRef.current = null
+    const saved = loadTabs(userId, vaultId)
+    if (saved.ids.length === 0) return
+    restoringRef.current = true
+    try {
+      for (const id of saved.ids) {
+        // Un document supprime ou mis a la corbeille entre-temps ne revient pas.
+        const meta = client.documents.find(d => d.id === id)
+        if (!meta || client.isTrashed(id)) continue
+        if (refs.selectedVault.current?.id !== vaultId) return
+        await openPathInCenter(meta.path)
+      }
+      if (saved.active) api.getPanel(`doc-${saved.active}`)?.api.setActive()
+    } catch (err) {
+      console.warn('[onglets] reouverture incomplete', err)
+    } finally {
+      restoringRef.current = false
+      if (dockviewRef.current === api) saveOpenTabs(api, vaultId)
+    }
+  }
+
   useEffect(() => {
     return manager.subscribeVaultChange?.(() => {
       bumpVaultTick(v => v + 1)
@@ -517,15 +572,19 @@ function EditorAreaPanel({
             if (panel.api.isActive) manager.notifyActiveDocument(path)
           }
         }
+        void restoreOpenTabs()
         return
       }
       lastVaultIdRef.current = currentId
       pendingOpenPathsRef.current = []
+      restoreForRef.current = remember ? currentId : null
       const api = dockviewRef.current
       if (!api) return
       for (const panel of [...api.panels]) {
         api.removePanel(panel)
       }
+      // La zone d'onglets du nouveau vault se monte ensuite : c'est elle qui
+      // rouvre ses onglets (onReady), pas l'ancienne.
     })
   }, [manager, refs])
 
@@ -652,6 +711,11 @@ function EditorAreaPanel({
         }}
         onReady={(event: DockviewReadyEvent) => {
           dockviewRef.current = event.api
+          // Les onglets de ce vault sont retenus a chaque changement.
+          const owner = refs.selectedVault.current?.id
+          dockviewOwnerRef.current = owner
+          event.api.onDidLayoutChange(() => saveOpenTabs(event.api, owner))
+          event.api.onDidActivePanelChange(() => saveOpenTabs(event.api, owner))
           event.api.onUnhandledDragOverEvent((e) => {
             if (e.nativeEvent.dataTransfer?.types.includes('text/x-poc-file-path')) {
               e.accept()
@@ -665,6 +729,7 @@ function EditorAreaPanel({
           const queued = [...pendingOpenPathsRef.current]
           pendingOpenPathsRef.current = []
           void Promise.all(queued.map((path) => openPathInCenter(path)))
+          void restoreOpenTabs()
         }}
       />
     </div>
