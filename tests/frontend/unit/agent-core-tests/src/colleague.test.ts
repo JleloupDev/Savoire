@@ -69,8 +69,8 @@ class Host extends MemoryHost {
     return this.tag(await super.reply(rootId, text, who), who)
   }
 
-  async listRequests(agentId: string): Promise<HostRequest[]> {
-    return this.requests.filter(r => r.agentId === agentId && r.state === 'open').map(({ agentId: _a, state: _s, ...r }) => r)
+  async listRequests(who: ToolActor): Promise<HostRequest[]> {
+    return this.requests.filter(r => r.agentId === who.agentId && r.state === 'open').map(({ agentId: _a, state: _s, ...r }) => r)
   }
 
   async closeRequest(rootId: string, who: ToolActor): Promise<boolean> {

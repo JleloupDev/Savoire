@@ -148,7 +148,7 @@ export async function runRequest(session: IVaultSyncSession, rootId: string): Pr
     // Sa reponse est un commentaire : il lui faut ce droit.
     if (effectiveMode(agent, 'comment', person) === 'deny') throw new Error(`« ${agent.name} » n’a pas le droit de commenter : il ne peut pas répondre ici`)
     const { root, replies } = thread
-    const ask = replies.find(e => e.id === request.entryId) ?? root
+    const ask = ReviewService.askOf(thread)
     const earlier = ask === root ? [] : [root, ...replies.slice(0, replies.indexOf(ask))]
     const narrowed = requestAgent(agent)
     const mode = effectiveMode(narrowed, 'edit', person)

@@ -80,10 +80,12 @@ export interface AgentToolHost {
   power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null>
   listReview(docId: string): Promise<HostReviewEntry[]>
   /**
-   * Les demandes ouvertes adressees a cet agent, dans les notes que la
-   * personne peut lire. Absent : l'hote ne connait pas les demandes.
+   * Les demandes ouvertes que la personne (actor.onBehalfOf) a adressees a
+   * cet agent, dans les notes qu'elle peut lire. Celles d'un autre membre du
+   * vault n'en sont pas : son IA a lui les prendra. Absent : l'hote ne
+   * connait pas les demandes.
    */
-  listRequests?(agentId: string): Promise<HostRequest[]>
+  listRequests?(actor: ToolActor): Promise<HostRequest[]>
 
   // ── Contexte de l'editeur (editorContext.ts) : l'appli seule a un editeur ──
   /**
@@ -119,9 +121,9 @@ export interface AgentToolHost {
   /** Trace d'une ecriture directe de l'agent, dans la Revision. */
   recordEdit(docId: string, text: string, actor: ToolActor): Promise<void>
   /**
-   * L'agent a repondu dans le fil `rootId` : si c'est une demande ouverte qui
-   * lui est adressee, elle est close (jamais traitee deux fois). Rend true si
-   * elle l'etait.
+   * L'agent a repondu dans le fil `rootId` : si c'est une demande ouverte que
+   * la personne lui a adressee, elle est close (jamais traitee deux fois).
+   * Rend true si elle l'etait.
    */
   closeRequest?(rootId: string, actor: ToolActor): Promise<boolean>
 

@@ -149,6 +149,8 @@ describe('demandes adressees a l agent', () => {
     ask('q4', 'a', 'déjà répondue', '', { agentId: 'ag', state: 'done' })
     ask('q5', 'b', 'dans une note interdite', '', { agentId: 'ag', state: 'open' })
     ask('q6', 'a', 'fil résolu', '', { agentId: 'ag', state: 'open' }, { status: 'resolved' })
+    // Un autre membre du vault : son IA a lui la prendra, pas celle de Jean.
+    ask('q7', 'a', 'demande de Marie', '', { agentId: 'ag', state: 'open' }, { author: { kind: 'user', userId: 'u2', displayName: 'Marie' } })
     const p = await ready()
     const tools = await p.call<{ tools: { name: string; action: string }[] }>('v1', 'tools', 'list')
     expect(tools.body.result.tools.find(t => t.name === 'list_requests')).toMatchObject({ action: 'read' })
@@ -161,7 +163,10 @@ describe('demandes adressees a l agent', () => {
     expect(text).toContain('[q1] Public/Plan.md')
     expect(text).toContain('de Jean : @Secrétaire reformule plus court')
     expect(text).toContain('« Celui qu’elle écrit. »')
-    for (const hidden of ['q2', 'q3', 'q4', 'q5', 'q6']) expect(text).not.toContain(`[${hidden}]`)
+    for (const hidden of ['q2', 'q3', 'q4', 'q5', 'q6', 'q7']) expect(text).not.toContain(`[${hidden}]`)
+    // Repondre dans le fil de Marie ne clot pas sa demande.
+    expect((await call(p, 'reply', { thread: 'q7', text: 'Vu.' }, { access })).body.result.text).toBe('Réponse ajoutée.')
+    expect(backend.reviewEntries('v1').find(e => e.id === 'q7')).toMatchObject({ request: { state: 'open' } })
     // Sans regle d'acces (proprietaire) : la note privee compte aussi.
     expect((await call(p, 'list_requests', {})).body.result.text).toContain('2 demande(s) pour vous')
   })

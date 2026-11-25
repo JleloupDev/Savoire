@@ -82,7 +82,7 @@ interface ReviewValue {
   docId: string
   kind: HostReviewEntry['kind']
   text: string
-  author: { kind: 'user'; displayName: string } | { kind: 'agent'; agentId?: string; agentName: string; onBehalfOf: { displayName: string } }
+  author: { kind: 'user'; userId?: string; displayName: string } | { kind: 'agent'; agentId?: string; agentName: string; onBehalfOf: { displayName: string } }
   createdAt: string
   parentId?: string
   status?: string
@@ -304,17 +304,30 @@ export class PeerToolHost implements AgentToolHost {
     }))
   }
 
-  /** Les demandes ouvertes adressees a cet agent, dans les notes que la personne lit (requests.ts). */
-  async listRequests(agentId: string): Promise<HostRequest[]> {
+  /** Ce qui porte la demande d'un fil : la racine, ou la reponse de la personne qui l'a relance. */
+  private askOf(all: readonly ReviewValue[], root: ReviewValue): ReviewValue {
+    const id = root.request?.entryId
+    return (id ? all.find(x => x.id === id && x.parentId === root.id) : undefined) ?? root
+  }
+
+  /** La demande ouverte de ce fil est-elle adressee a cet agent, par la personne pour qui il agit ? */
+  private asked(all: readonly ReviewValue[], root: ReviewValue, actor: ToolActor): boolean {
+    const r = root.request
+    if (root.parentId || root.kind !== 'comment' || !r || r.agentId !== actor.agentId || r.state !== 'open') return false
+    const author = this.askOf(all, root).author
+    return author?.kind === 'user' && author.userId === actor.onBehalfOf.userId
+  }
+
+  /** Les demandes ouvertes que la personne a adressees a cet agent, dans les notes qu'elle lit (requests.ts). */
+  async listRequests(actor: ToolActor): Promise<HostRequest[]> {
     const all = await this.reviewValues()
     const paths = await this.paths()
     return all.flatMap(e => {
       const r = e.request
-      if (e.parentId || e.kind !== 'comment' || !r || r.agentId !== agentId || r.state !== 'open' || (e.status ?? 'open') !== 'open') return []
+      if (!r || !this.asked(all, e, actor) || (e.status ?? 'open') !== 'open') return []
       const path = paths.get(e.docId)
       if (!path || !this.visible(e.docId, path)) return []
-      // Une relance : la demande est la reponse de la personne, pas la racine.
-      const ask = (r.entryId ? all.find(x => x.id === r.entryId && x.parentId === e.id) : undefined) ?? e
+      const ask = this.askOf(all, e)
       return [{ id: e.id, docId: e.docId, path, text: ask.text, quote: e.anchor?.quote ?? '', author: describe(ask.author), createdAt: r.askedAt ?? ask.createdAt }]
     }).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
@@ -325,7 +338,7 @@ export class PeerToolHost implements AgentToolHost {
     let root = all.find(e => e.id === rootId)
     while (root?.parentId) root = all.find(e => e.id === root!.parentId)
     const r = root?.request
-    if (!root || !r || r.agentId !== actor.agentId || r.state !== 'open') return false
+    if (!root || !r || !this.asked(all, root, actor)) return false
     const log = await this.f.reviewLog()
     const next = { ...root, request: { ...r, state: 'done', doneAt: this.now().toISOString() } }
     await this.write({ ops: [{ target: 'index', ns: REVIEW_NS, update: b64(mapEntryUpdate(log?.updates ?? [], root.id, next)) }] })

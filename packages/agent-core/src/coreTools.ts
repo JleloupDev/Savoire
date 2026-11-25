@@ -589,7 +589,7 @@ const listRequests: CoreTool = {
   },
   async run(_args, ctx) {
     if (!ctx.host.listRequests) throw new HostError('Les demandes sont indisponibles ici.', 'unavailable')
-    const list = (await ctx.host.listRequests(ctx.actor.agentId)).filter(r => pathInScope(ctx.scope, r.path))
+    const list = (await ctx.host.listRequests(ctx.actor)).filter(r => pathInScope(ctx.scope, r.path))
     if (!list.length) return ok('Aucune demande en attente pour vous.', { data: { requests: [] } })
     const lines = list.flatMap(r => [
       `- [${r.id}] ${r.path} (id : ${r.docId}), de ${r.author} : ${r.text}`,

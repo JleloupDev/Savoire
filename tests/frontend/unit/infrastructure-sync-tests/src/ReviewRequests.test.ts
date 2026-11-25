@@ -33,7 +33,7 @@ describe('ReviewService : demandes a un agent', () => {
   it('un commentaire sans agent reste un simple commentaire', async () => {
     const { a } = await setup()
     expect(a.comment('d1', 'À revoir', alice).request).toBeUndefined()
-    expect(a.openRequests('a1')).toEqual([])
+    expect(a.openRequests('a1', 'alice')).toEqual([])
   })
 
   it('pour un agent de l appli, la demande est prise des qu elle est posee : jamais « ouverte »', async () => {
@@ -42,8 +42,8 @@ describe('ReviewService : demandes a un agent', () => {
     expect(root.request).toMatchObject({ agentId: 'a1', agentName: 'Relecteur', via: 'app', state: 'running' })
     await settle()
     // Ni cette appli ni une autre ne la voient « a prendre » (IA externe comprise).
-    expect(a.openRequests('a1')).toEqual([])
-    expect(b.openRequests('a1')).toEqual([])
+    expect(a.openRequests('a1', 'alice')).toEqual([])
+    expect(b.openRequests('a1', 'alice')).toEqual([])
     // L'agent repond, la demande est close.
     const askedAt = root.request!.askedAt
     expect(a.isRunning(root.id, askedAt)).toBe(true)
@@ -60,18 +60,21 @@ describe('ReviewService : demandes a un agent', () => {
     const root = a.comment('d1', 'reformule', alice, undefined, undefined, external)
     expect(root.request).toMatchObject({ via: 'external', state: 'open' })
     await settle()
-    expect(b.openRequests('a1').map(t => t.root.id)).toEqual([root.id])
-    expect(b.openRequests('autre')).toEqual([])
-    expect(b.closeRequest(root.id, 'autre')).toBe(false)
-    expect(b.closeRequest(root.id, 'a1')).toBe(true)
-    expect(b.closeRequest(root.id, 'a1')).toBe(false)
+    expect(b.openRequests('a1', 'alice').map(t => t.root.id)).toEqual([root.id])
+    expect(b.openRequests('autre', 'alice')).toEqual([])
+    // L'IA d'un autre membre ne prend pas la demande d'Alice, et ne la clot pas en repondant.
+    expect(b.openRequests('a1', 'bob')).toEqual([])
+    expect(b.closeRequest(root.id, 'a1', 'bob')).toBe(false)
+    expect(b.closeRequest(root.id, 'autre', 'alice')).toBe(false)
+    expect(b.closeRequest(root.id, 'a1', 'alice')).toBe(true)
+    expect(b.closeRequest(root.id, 'a1', 'alice')).toBe(false)
     await settle()
-    expect(a.openRequests('a1')).toEqual([])
+    expect(a.openRequests('a1', 'alice')).toEqual([])
     expect(a.thread(root.id)!.root.request).toMatchObject({ state: 'done' })
     // Un fil resolu n'est plus une demande a prendre.
     const other = a.comment('d1', 'autre demande', alice, undefined, undefined, external)
     a.setStatus(other.id, 'resolved', alice)
-    expect(a.openRequests('a1')).toEqual([])
+    expect(a.openRequests('a1', 'alice')).toEqual([])
   })
 
   it('un echec se dit, et la demande se relance ; la reponse d une execution depassee est jetee', async () => {
@@ -102,13 +105,13 @@ describe('ReviewService : demandes a un agent', () => {
   it('une reponse de la personne peut relancer le fil : la demande porte cette reponse, et rouvre le fil', async () => {
     const { a } = await setup()
     const root = a.comment('d1', 'reformule', alice, undefined, undefined, external)
-    a.closeRequest(root.id, 'a1')
+    a.closeRequest(root.id, 'a1', 'alice')
     a.setStatus(root.id, 'resolved', alice)
     const reply = a.reply(root.id, '@Relecteur plus formel', alice)
     const next = a.ask(root.id, external, reply.id)
     expect(next.request).toMatchObject({ state: 'open', entryId: reply.id })
     expect(next.status).toBe('open')
-    expect(a.openRequests('a1').map(t => t.root.id)).toEqual([root.id])
+    expect(a.openRequests('a1', 'alice').map(t => t.root.id)).toEqual([root.id])
     // Une demande ne se pose que sur un commentaire.
     const edit = a.recordEdit('d1', 'trace', relecteur)
     expect(() => a.ask(edit.id, external)).toThrow('une demande se pose sur un commentaire')

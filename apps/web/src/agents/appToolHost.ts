@@ -203,20 +203,21 @@ export class AppToolHost implements AgentToolHost {
     }))
   }
 
-  /** Les demandes ouvertes adressees a cet agent, dans les notes du vault (requests.ts). */
-  async listRequests(agentId: string): Promise<HostRequest[]> {
-    return this.review.openRequests(agentId).flatMap(({ root, replies }) => {
+  /** Les demandes ouvertes que la personne a adressees a cet agent, dans les notes du vault (requests.ts). */
+  async listRequests(actor: ToolActor): Promise<HostRequest[]> {
+    return this.review.openRequests(actor.agentId, actor.onBehalfOf.userId).flatMap(thread => {
+      const { root } = thread
       const note = this.find({ id: root.docId })
       if (!note) return []
       // Une relance : la demande est la reponse de la personne, pas la racine.
-      const ask = replies.find(r => r.id === root.request?.entryId) ?? root
+      const ask = ReviewService.askOf(thread)
       return [{ id: root.id, docId: root.docId, path: note.path, text: ask.text, quote: root.anchor?.quote ?? '', author: describeActor(ask.author), createdAt: root.request?.askedAt ?? ask.createdAt }]
     })
   }
 
   /** L'agent a repondu : sa demande ouverte sur ce fil est close. */
   async closeRequest(rootId: string, actor: ToolActor): Promise<boolean> {
-    return this.review.closeRequest(rootId, actor.agentId)
+    return this.review.closeRequest(rootId, actor.agentId, actor.onBehalfOf.userId)
   }
 
   // ── Contexte de l'editeur (get_context, list_pins) ───────────────────────

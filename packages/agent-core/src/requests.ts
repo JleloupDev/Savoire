@@ -12,6 +12,8 @@
 //    (reply) : la demande est alors close.
 // Une demande n'est jamais traitee deux fois : seules les demandes ouvertes
 // sont listees, et celle qu'un agent de l'appli prend ne l'est jamais.
+// L'IA de quelqu'un ne prend que SES demandes : celle d'un autre membre du
+// vault attend l'IA de ce membre (personne ne fait agir l'IA d'un autre).
 //
 // Rien ne part tout seul : seule la demande explicite lance un agent.
 //

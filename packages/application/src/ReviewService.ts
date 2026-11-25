@@ -237,14 +237,29 @@ export class ReviewService {
   }
 
   /**
-   * L'agent `agentId` a repondu dans ce fil (outil reply) : si une demande
-   * ouverte lui est adressee, elle est close. Rend true si elle l'etait.
+   * L'agent `agentId` a repondu dans ce fil (outil reply), pour `userId` : si
+   * une demande ouverte lui est adressee par cette personne, elle est close.
+   * Rend true si elle l'etait.
    */
-  closeRequest(rootId: string, agentId: string): boolean {
-    const root = this.thread(rootId)?.root
-    if (!root?.request || root.request.agentId !== agentId || root.request.state !== 'open') return false
-    this.setRequest(root, 'done')
+  closeRequest(rootId: string, agentId: string, userId: string): boolean {
+    const thread = this.thread(rootId)
+    if (!thread || !this.askedBy(thread, agentId, userId)) return false
+    this.setRequest(thread.root, 'done')
     return true
+  }
+
+  /** Ce qui porte la demande d'un fil : la racine, ou la reponse de la personne qui l'a relance. */
+  static askOf(thread: ReviewThread): ReviewEntry {
+    const id = thread.root.request?.entryId
+    return (id ? thread.replies.find(r => r.id === id) : undefined) ?? thread.root
+  }
+
+  /** La demande ouverte de ce fil est-elle adressee a cet agent, par cette personne ? */
+  private askedBy(thread: ReviewThread, agentId: string, userId: string): boolean {
+    const r = thread.root.request
+    if (thread.root.kind !== 'comment' || !r || r.agentId !== agentId || r.state !== 'open') return false
+    const author = ReviewService.askOf(thread).author
+    return author.kind === 'user' && author.userId === userId
   }
 
   private setRequest(root: ReviewEntry, state: 'done' | 'failed', error?: string): ReviewEntry {
@@ -255,13 +270,18 @@ export class ReviewService {
     return next
   }
 
-  /** Les demandes ouvertes adressees a cet agent (IA externe, ou assistant qui les liste). */
-  openRequests(agentId: string): ReviewThread[] {
+  /**
+   * Les demandes ouvertes que `userId` a adressees a cet agent (IA externe, ou
+   * assistant qui les liste). Celles d'un autre membre n'en sont pas :
+   * personne ne fait agir l'IA d'un autre.
+   */
+  openRequests(agentId: string, userId: string): ReviewThread[] {
     const all = this.entries()
     return all
-      .filter(e => !e.parentId && e.kind === 'comment' && e.request?.agentId === agentId && e.request.state === 'open' && (e.status ?? 'open') === 'open')
+      .filter(e => !e.parentId && e.request?.agentId === agentId && (e.status ?? 'open') === 'open')
       .sort(byDate)
       .map(root => ({ root, replies: all.filter(e => e.parentId === root.id).sort(byDate) }))
+      .filter(t => this.askedBy(t, agentId, userId))
   }
 
   /**
