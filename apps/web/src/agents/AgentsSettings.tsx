@@ -6,7 +6,7 @@
 // faire action par action, ou, et avec quel budget. Il se cree a la main ou a
 // partir d'un modele apporte par un plugin du store.
 import { useEffect, useState } from 'react'
-import { ACTION_LABELS, AGENT_COLORS, MODE_LABELS, agentColor, canRequestMode, modeLabel, normalizePermissions, writingModeLabel } from '@savoire/agent-core'
+import { ACTION_LABELS, AGENT_COLORS, agentColor, canRequestMode, modeLabel, normalizePermissions, writingModeLabel } from '@savoire/agent-core'
 import { AGENT_ACTION_MODES, AGENT_ACTIONS, type AgentActionMode, type AgentDefinition, type AgentPreset } from '@savoire/plugin-api'
 import type { AIConnectionInfo } from '@savoire/plugin-api'
 import { isAndroidRuntime, isTauriRuntime } from '../tauriRuntime'
