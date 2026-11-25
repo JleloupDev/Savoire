@@ -10,7 +10,7 @@
 // Les agents (ADR-033) ont leur propre panneau (AssistantWidget) ; ce qu'ils
 // proposent arrive ici, sous leur nom : « Archiviste (IA), pour Jean ».
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Widget } from '@savoire/plugin-api'
+import { describePdfTarget, isPdfTarget, type Widget } from '@savoire/plugin-api'
 import type { EditorController } from '@savoire/editor-core'
 import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import {
@@ -141,7 +141,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   }
 
   const me: UserActor = { kind: 'user', userId: account.userId, displayName: account.displayName }
-  const threads = review.threads(docId)
+  // Une marque retiree (surlignage, ancre d'un PDF) ne se montre plus ; la trace reste dans la carte.
+  const threads = review.threads(docId).filter(t => !(t.root.mark && t.root.status === 'rejected'))
   const openProposals = threads.filter(t => (t.root.kind === 'suggestion' || t.root.kind === 'proposal') && (t.root.status ?? 'open') === 'open').length
 
   function act(action: () => void) {
@@ -174,6 +175,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
   /** Montre le passage d'un fil dans l'editeur. */
   function reveal(entry: ReviewEntry) {
+    // Un passage d'un PDF : la vue du PDF y va (suite de lien « ^ref »).
+    if (isPdfTarget(entry.target)) { if (path) void manager.openFile(path, { subpath: `^${entry.target.ref}` }); return }
     if (!entry.anchor) return
     const at = withReviewText(session!, docId!, text => ReviewService.locate(entry.anchor!, text))
     if (!at) { setError('Ce passage n’existe plus dans la note.'); return }
@@ -496,6 +499,13 @@ function Quote({ text, strike, onClick }: { text: string; strike?: boolean; onCl
 }
 
 /** Le passage vise par un commentaire de plugin (TextCommentTarget, cellule...), s'il le dit. */
+/** « Surlignage jaune », « Ancre « Tableau » », « Commentaire du PDF ». */
+function pdfMarkLabel(t: { mark?: string; color?: string; label?: string }): string {
+  if (t.mark === 'highlight') return `Surlignage${t.color ? ` ${t.color}` : ''}`
+  if (t.mark === 'anchor') return `Ancre${t.label ? ` « ${t.label} »` : ''}`
+  return 'Commentaire du PDF'
+}
+
 function targetQuote(target: unknown): string | null {
   const q = (target as { quote?: unknown } | null)?.quote
   return typeof q === 'string' && q ? q : null
@@ -518,7 +528,13 @@ function Entry({ entry, onReveal }: { entry: ReviewEntry; onReveal?: () => void 
       {entry.anchor && (
         <div style={{ marginTop: 4 }}><Quote text={entry.anchor.quote} strike={entry.kind === 'suggestion'} onClick={onReveal} /></div>
       )}
-      {!entry.anchor && targetQuote(entry.target) && (
+      {!entry.anchor && isPdfTarget(entry.target) && (
+        <div data-testid="review-pdf-target" style={{ marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{pdfMarkLabel(entry.target)}</div>
+          <Quote text={describePdfTarget(entry.target)} onClick={onReveal} />
+        </div>
+      )}
+      {!entry.anchor && !isPdfTarget(entry.target) && targetQuote(entry.target) && (
         <div style={{ marginTop: 4 }}><Quote text={targetQuote(entry.target)!} /></div>
       )}
       {entry.kind === 'suggestion' && (

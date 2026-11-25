@@ -30,6 +30,17 @@ export interface ExtractedContent {
   props?: Record<string, PropertyValue>
 }
 
+/** Ce que l'extracteur sait du fichier lu. */
+export interface ExtractInfo {
+  path: string
+  /**
+   * La racine d'une annexe du fichier (document CRDT rattache, voir
+   * ExtractorSpec.annexes), cle -> valeur ; null : pas d'annexe. Absent : la
+   * ou l'on ne sait pas les lire.
+   */
+  annex?(name: string): Promise<Record<string, unknown> | null>
+}
+
 export interface ExtractorSpec {
   id: string
   /** Nom affiche (« Documents Word »). */
@@ -45,7 +56,12 @@ export interface ExtractorSpec {
    * « texte »), pour que le serveur le trouve aussi.
    */
   official?: boolean
-  extract(bytes: Uint8Array, info: { path: string }): Promise<ExtractedContent>
+  extract(bytes: Uint8Array, info: ExtractInfo): Promise<ExtractedContent>
+  /**
+   * Annexes du fichier que l'extracteur lit (le texte reconnu d'un PDF,
+   * « ocr ») : quand l'une change, le fichier est relu. Voir ExtractInfo.annex.
+   */
+  annexes?: string[]
   /** Apercu en lecture seule. Absent : l'apercu generique (texte des sections). */
   preview?(bytes: Uint8Array, info: { path: string }): Promise<HTMLElement> | HTMLElement
 }

@@ -25,6 +25,28 @@ export interface EditorAnchor {
   quote: string
   prefix: string
   suffix: string
+  /**
+   * Un passage d'un PDF (pas de positions relatives : start = end = '') : sa
+   * page et sa place, et, si c'est une marque de la Revision, son nom court
+   * (lien [[Rapport.pdf#^ref]]).
+   */
+  pdf?: PdfAnchorInfo
+}
+
+/** Ou, dans un PDF (voir plugin-api/pdf.ts). */
+export interface PdfAnchorInfo {
+  page: number
+  pages: number
+  /** Rectangles de la page (fractions, x, y, largeur, hauteur) ; vide : la page. */
+  rects: [number, number, number, number][]
+  ref?: string
+  mark?: 'highlight' | 'anchor'
+  color?: string
+  label?: string
+  /** Le commentaire du fil de la marque. */
+  comment?: string
+  /** Texte reconnu par l'OCR (page scannee). */
+  ocr?: boolean
 }
 
 export interface EditorContextEntry {
@@ -197,12 +219,65 @@ export function buildEditorContext(p: EditorContextInput): EditorContextEntry {
   }
 }
 
+/** Ce qu'une vue de document (un PDF) dit regarder : voir DocumentContextReport de plugin-api. */
+export interface DocumentContextInput {
+  vaultId: string
+  docId: string
+  path: string
+  selection: string
+  before: string
+  after: string
+  pdf?: PdfAnchorInfo
+  tabId: string
+  at: number
+}
+
+/**
+ * L'entree de contexte d'un passage d'un PDF (ou d'une page seule). Pas de
+ * positions relatives : l'ancre porte la page et la place (anchor.pdf), et
+ * le texte cite pour le retrouver.
+ */
+export function buildDocumentContext(p: DocumentContextInput): EditorContextEntry {
+  const quote = p.selection.slice(0, MAX_CONTEXT_SELECTION)
+  const pdf = p.pdf ? { ...p.pdf, rects: p.pdf.rects.slice(0, 64) } : undefined
+  return {
+    vaultId: p.vaultId,
+    docId: p.docId,
+    path: p.path,
+    selection: quote,
+    ...(p.selection.length > MAX_CONTEXT_SELECTION ? { selectionTruncated: true } : {}),
+    anchor: {
+      docId: p.docId, start: '', end: '', quote,
+      prefix: p.before.slice(-ANCHOR_SIDE_CHARS), suffix: p.after.slice(0, ANCHOR_SIDE_CHARS),
+      ...(pdf ? { pdf } : {}),
+    },
+    before: p.before.slice(-300),
+    after: p.after.slice(0, 300),
+    headingPath: pdf ? [`Page ${pdf.page}`] : [],
+    blockHash: '',
+    at: p.at,
+    tabId: p.tabId,
+  }
+}
+
+/** La ligne qui dit ou l'on est dans un PDF (get_context) : « PDF, page 3 sur 12, surlignage jaune ... ». */
+export function describePdfContext(pdf: PdfAnchorInfo, linkTarget: string): string {
+  const parts = [`PDF, page ${pdf.page} sur ${pdf.pages}`]
+  if (pdf.ocr) parts.push('texte reconnu par OCR (page scannée)')
+  if (pdf.mark === 'highlight') parts.push(`surlignage${pdf.color ? ` ${pdf.color}` : ''}`)
+  if (pdf.mark === 'anchor') parts.push(`ancre${pdf.label ? ` « ${pdf.label} »` : ''}`)
+  if (pdf.ref) parts.push(`lien : [[${linkTarget}#^${pdf.ref}]]`)
+  else parts.push(`lien de la page : [[${linkTarget}#page=${pdf.page}]]`)
+  return parts.join(', ')
+}
+
 /** Deux entrees disent-elles la meme chose ? (meme note, meme passage, meme texte autour) */
 export function sameEditorContext(a: EditorContextEntry | null, b: EditorContextEntry | null): boolean {
   if (!a || !b) return a === b
   return a.vaultId === b.vaultId && a.docId === b.docId && a.path === b.path
     && a.anchor.start === b.anchor.start && a.anchor.end === b.anchor.end
     && a.selection === b.selection && a.before === b.before && a.after === b.after
+    && JSON.stringify(a.anchor.pdf ?? null) === JSON.stringify(b.anchor.pdf ?? null)
 }
 
 /**

@@ -6,12 +6,14 @@
 // Le code d'un plugin tiers ne tourne jamais ici : il tourne sur le poste de
 // la personne (appli de bureau), ou sur un pair indexeur heberge par le
 // client lui-meme.
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { extensionOfPath, type ExtractorSpec, type VaultPlugin } from '@savoire/plugin-api'
 import word, { EXTRACTOR as WORD } from '@savoire/plugin-word'
 import powerpoint, { EXTRACTOR as POWERPOINT } from '@savoire/plugin-powerpoint'
 import excel, { EXTRACTOR as EXCEL } from '@savoire/plugin-excel'
 import opendocument, { EXTRACTOR as OPENDOCUMENT } from '@savoire/plugin-opendocument'
-import pdf, { EXTRACTOR as PDF } from '@savoire/plugin-pdf'
+import pdf, { EXTRACTOR as PDF, configurePdf } from '@savoire/plugin-pdf'
 import images, { EXTRACTOR as IMAGES, configureOcr } from '@savoire/plugin-images'
 import webpage, { EXTRACTOR as WEBPAGE } from '@savoire/plugin-webpage'
 import csv, { EXTRACTOR as CSV } from '@savoire/plugin-csv'
@@ -22,15 +24,24 @@ const OFFICIAL: [VaultPlugin, ExtractorSpec][] = [
 ]
 
 export interface ExtractorOptions {
-  /** OCR des images (lent : quelques secondes par image). */
+  /** OCR des images et des pages scannees des PDF (lent : quelques secondes par image). */
   ocr: boolean
   /** Dossier du cache de l'OCR (langues telechargees une fois). */
   cacheDir: string
+  /** Dossier des fichiers de pdf.js (wasm/, standard_fonts/, cmaps/). Defaut : dist/pdfjs, copie par build.mjs. */
+  pdfAssetsDir?: string
+}
+
+/** dist/pdfjs, a cote du paquet construit (dist/indexer.mjs). */
+function defaultPdfAssets(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), 'pdfjs')
 }
 
 /** Les extracteurs officiels, par extension. Un plugin non verifie est refuse. */
 export function officialExtractors(opts: ExtractorOptions): (path: string) => ExtractorSpec | undefined {
   configureOcr({ enabled: opts.ocr, cachePath: opts.cacheDir })
+  const assets = opts.pdfAssetsDir ?? defaultPdfAssets()
+  configurePdf({ wasmUrl: `${assets}/wasm/`, standardFontDataUrl: `${assets}/standard_fonts/`, cMapUrl: `${assets}/cmaps/` })
   const byExt = new Map<string, ExtractorSpec>()
   for (const [plugin, spec] of OFFICIAL) {
     if (!plugin.manifest.official) throw new Error(`plugin non verifie refuse sur le serveur : ${plugin.manifest.id}`)

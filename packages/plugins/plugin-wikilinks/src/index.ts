@@ -326,9 +326,10 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
       // Ouvrir la note visee par un lien, ou la creer si elle n'existe pas
       // encore (comme Obsidian) : rangee sous la note courante, dans son
       // dossier (`A/Note.md` -> `A/Note/Nom.md`), comme ses images.
-      const openOrCreate = async (page: string): Promise<void> => {
+      const openOrCreate = async (page: string, subpath = ''): Promise<void> => {
         const found = resolveLinkPath(page, notePaths)
-        if (found) { await api.workspace?.openFile(found); return }
+        // La suite du lien (« page=3 », « ^ancre ») : la vue du fichier y va, si elle sait.
+        if (found) { await (subpath ? api.workspace?.openFile(found, { subpath }) : api.workspace?.openFile(found)); return }
         const path = pagePathFor(page, api.workspace?.getActiveDocument?.()?.path ?? null, notePaths)
         if (!path || typeof api.vault?.createFile !== 'function') return
         try {
@@ -347,25 +348,26 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
       // d'ecriture ([[Nom]] en texte brut) fait de meme. Avant l'editeur, qui
       // passerait la ligne en edition.
       if (typeof document !== 'undefined') {
-        const linkAt = (e: MouseEvent): string | null => {
+        const linkAt = (e: MouseEvent): { page: string; subpath: string } | null => {
           if (e.button !== 0) return null
           const target = e.target as Element | null
           const a = target?.closest?.('a[href^="#"]')
           if (a && (a.closest('.cm-editor') || a.closest('.link-preview'))) {
-            const page = linkPageOf(a.getAttribute('href') ?? '')
+            const { page, subpath } = linkTargetOf(a.getAttribute('href') ?? '')
             // Une note absente ne se cree qu'au Ctrl+clic : pas par megarde.
             if (!page || (!resolveLinkPath(page, notePaths) && !(e.ctrlKey || e.metaKey))) return null
-            return page
+            return { page, subpath }
           }
           if (!(e.ctrlKey || e.metaKey) || !target?.closest?.('.cm-editor')) return null
-          return rawLinkAt(e.clientX, e.clientY)
+          const page = rawLinkAt(e.clientX, e.clientY)
+          return page ? { page, subpath: '' } : null
         }
         const onDown = (e: MouseEvent) => {
-          const page = linkAt(e)
-          if (!page) return
+          const link = linkAt(e)
+          if (!link) return
           e.preventDefault()
           e.stopPropagation()
-          void openOrCreate(page)
+          void openOrCreate(link.page, link.subpath)
         }
         const onClick = (e: MouseEvent) => { if (linkAt(e)) e.preventDefault() }
         document.addEventListener('mousedown', onDown, true)

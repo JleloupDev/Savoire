@@ -6,8 +6,8 @@
 // get_context / list_pins de l'assistant de l'appli.
 import { describe, it, expect } from 'vitest'
 import {
-  EditorContextRing, MAX_CONTEXT_SELECTION, ToolBox, buildAnchor, buildEditorContext, coreCatalog, headingPathAt, locateByQuote,
-  sameEditorContext, wordsAfter, wordsBefore,
+  EditorContextRing, MAX_CONTEXT_SELECTION, ToolBox, buildAnchor, buildDocumentContext, buildEditorContext, coreCatalog, describePdfContext,
+  headingPathAt, locateByQuote, sameEditorContext, wordsAfter, wordsBefore,
   type AiMark, type EditorContextEntry,
 } from '@savoire/agent-core'
 import { splitNoteBlocks, type AgentDefinition, type ToolActor } from '@savoire/plugin-api'
@@ -278,5 +278,43 @@ describe('outils get_context et list_pins (appli)', () => {
     const bare = box(new MemoryHost(), agent())
     expect((await bare.call('get_context', {})).result.isError).toBe(true)
     expect((await bare.call('list_pins', {})).result.isError).toBe(true)
+  })
+})
+
+describe('contexte dans un PDF', () => {
+  const pdfEntry = (over: Partial<Parameters<typeof buildDocumentContext>[0]> = {}) => buildDocumentContext({
+    vaultId: 'v', docId: 'p1', path: 'Docs/Rapport.pdf', selection: 'le coût total', before: 'Introduction : ' + 'mot '.repeat(20), after: 'est élevé.',
+    pdf: { page: 3, pages: 12, rects: [[0.1, 0.2, 0.3, 0.02]], ref: 'k3x9qa', mark: 'highlight', color: 'jaune', comment: 'À vérifier' },
+    tabId: 't', at: 1000, ...over,
+  })
+
+  it('une entree sans positions relatives : la page et la place dans l ancre', () => {
+    const e = pdfEntry()
+    expect(e.anchor).toMatchObject({ docId: 'p1', start: '', end: '', quote: 'le coût total', suffix: 'est élevé.', pdf: { page: 3, ref: 'k3x9qa' } })
+    expect(e.anchor.prefix.length).toBeLessThanOrEqual(32)
+    expect(e.headingPath).toEqual(['Page 3'])
+    // Une autre page, c'est un autre contexte ; la meme, non.
+    expect(sameEditorContext(e, pdfEntry())).toBe(true)
+    expect(sameEditorContext(e, pdfEntry({ pdf: { page: 4, pages: 12, rects: [] } }))).toBe(false)
+  })
+
+  it('se decrit avec son lien', () => {
+    expect(describePdfContext({ page: 3, pages: 12, rects: [], ref: 'k3x9qa', mark: 'anchor', label: 'Coûts' }, 'Rapport.pdf'))
+      .toBe('PDF, page 3 sur 12, ancre « Coûts », lien : [[Rapport.pdf#^k3x9qa]]')
+    expect(describePdfContext({ page: 2, pages: 2, rects: [], ocr: true }, 'Scan.pdf'))
+      .toBe('PDF, page 2 sur 2, texte reconnu par OCR (page scannée), lien de la page : [[Scan.pdf#page=2]]')
+  })
+
+  it('get_context rend la page, le surlignage, son commentaire et la selection', async () => {
+    const host = new EditorHost()
+    host.context = { entry: pdfEntry(), ageSeconds: 4 }
+    const r = await box(host, agent()).call('get_context', {})
+    expect(r.result.text).toContain('Document : Docs/Rapport.pdf')
+    expect(r.result.text).toContain('PDF, page 3 sur 12, surlignage jaune, lien : [[Rapport.pdf#^k3x9qa]]')
+    expect(r.result.text).toContain('Commentaire de la marque : « À vérifier »')
+    expect(r.result.text).toContain('le coût total')
+    const page = new EditorHost()
+    page.context = { entry: pdfEntry({ selection: '', before: '', after: '', pdf: { page: 5, pages: 12, rects: [] } }), ageSeconds: 1 }
+    expect((await box(page, agent()).call('get_context', {})).result.text).toContain('la personne regarde cette page')
   })
 })

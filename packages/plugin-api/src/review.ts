@@ -75,6 +75,16 @@ export interface TextCommentTarget {
   quote: string
 }
 
+/** Options d'un commentaire (ReviewAPI.comment). */
+export interface ReviewCommentOptions {
+  /**
+   * Une marque posee sur le document (un surlignage, une ancre nommee) : un
+   * fil comme un autre, mais son texte peut etre vide. Elle reste visible une
+   * fois resolue ; on la retire par removeMark.
+   */
+  mark?: boolean
+}
+
 /** Options de la carte standard (renderAnnotation). */
 export interface AnnotationCardOptions {
   /** Appele quand le fil est traite (accepte, refuse, resolu) : fermer la carte. */
@@ -170,7 +180,13 @@ export interface ReviewAPI {
    * (une cellule, une forme, TextCommentTarget pour un texte) ; absent : le
    * document entier. Rend l'identifiant du fil.
    */
-  comment(docId: string, text: string, target?: unknown): Promise<string>
+  comment(docId: string, text: string, target?: unknown, options?: ReviewCommentOptions): Promise<string>
+  /**
+   * Retire une marque (surlignage, ancre : options.mark) : son fil passe a
+   * « rejete ». Il n'est plus montre, mais la Revision garde qui l'a pose,
+   * qui l'a retire, et quand.
+   */
+  removeMark?(id: string): Promise<void>
   /** Repond dans un fil. */
   reply(id: string, text: string): Promise<void>
   /** Accepte une suggestion ou une proposition : le document change. Rejette si le passage a change. */

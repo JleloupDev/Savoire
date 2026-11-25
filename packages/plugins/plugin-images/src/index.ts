@@ -115,7 +115,13 @@ function browserAssets(): Record<string, unknown> {
   return { workerPath: `${base}worker.min.js`, corePath: base, workerBlobURL: false }
 }
 
-type TesseractWorker = { recognize(image: unknown): Promise<{ data: { text: string } }>; terminate(): Promise<unknown> }
+type TesseractBbox = { x0: number; y0: number; x1: number; y1: number }
+type TesseractWord = { text: string; confidence: number; bbox: TesseractBbox }
+type TesseractBlock = { paragraphs: { lines: { words: TesseractWord[] }[] }[] }
+type TesseractWorker = {
+  recognize(image: unknown, options?: object, output?: { text?: boolean; blocks?: boolean }): Promise<{ data: { text: string; blocks?: TesseractBlock[] | null } }>
+  terminate(): Promise<unknown>
+}
 let worker: Promise<TesseractWorker> | null = null
 
 /**
@@ -147,11 +153,56 @@ async function startTesseract(): Promise<TesseractWorker> {
 export const tesseractOcr: Ocr = async bytes => {
   worker ??= startTesseract()
   const w = await worker
-  // Navigateur : un Blob ; Node (pair indexeur) : un Buffer.
-  const NodeBuffer = (globalThis as { Buffer?: { from(b: Uint8Array): unknown } }).Buffer
-  const input = typeof window === 'undefined' && NodeBuffer ? NodeBuffer.from(bytes) : new Blob([bytes as BlobPart])
-  const { data } = await w.recognize(input)
+  const { data } = await w.recognize(ocrInput(bytes))
   return data.text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** Navigateur : un Blob ; Node (pair indexeur) : un Buffer. */
+function ocrInput(bytes: Uint8Array): unknown {
+  const NodeBuffer = (globalThis as { Buffer?: { from(b: Uint8Array): unknown } }).Buffer
+  return typeof window === 'undefined' && NodeBuffer ? NodeBuffer.from(bytes) : new Blob([bytes as BlobPart])
+}
+
+/** Un mot reconnu : son texte, son cadre en pixels de l'image, la confiance (0 a 100). */
+export interface OcrWord {
+  text: string
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  confidence: number
+}
+
+/** L'OCR mot a mot : les lignes de l'image, chacune avec ses mots et leur place. */
+export type OcrWords = (bytes: Uint8Array) => Promise<OcrWord[][]>
+
+/** L'OCR est-il permis ici (le pair indexeur peut le couper) ? */
+export function ocrEnabled(): boolean {
+  return ocrSettings.enabled
+}
+
+/**
+ * L'OCR par Tesseract, mot a mot (le meme moteur que tesseractOcr) : les
+ * lignes dans l'ordre de lecture, chacune avec ses mots. Sert aux pages
+ * scannees des PDF (plugin-pdf), pour surligner le texte reconnu.
+ */
+export const tesseractWords: OcrWords = async bytes => {
+  if (!ocrSettings.enabled) throw new Error('OCR coupé.')
+  worker ??= startTesseract()
+  const w = await worker
+  const { data } = await w.recognize(ocrInput(bytes), {}, { blocks: true, text: false })
+  const lines: OcrWord[][] = []
+  for (const block of data.blocks ?? []) {
+    for (const para of block.paragraphs ?? []) {
+      for (const line of para.lines ?? []) {
+        const words = (line.words ?? [])
+          .filter(word => word.text.trim() !== '')
+          .map(word => ({ text: word.text.trim(), confidence: Math.round(word.confidence), ...word.bbox }))
+        if (words.length) lines.push(words)
+      }
+    }
+  }
+  return lines
 }
 
 export async function extractImage(bytes: Uint8Array, ocr: Ocr | null = tesseractOcr): Promise<ExtractedContent> {

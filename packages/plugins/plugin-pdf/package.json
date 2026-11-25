@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-images": "workspace:*",
     "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
-import type { NotificationType, WorkspaceAPI, ViewDocument, ViewSpec, ViewContext, MobilePlacement } from '@savoire/plugin-api'
+import type { DocumentContextReport, NotificationType, OpenFileOptions, WorkspaceAPI, ViewDocument, ViewSpec, ViewContext, MobilePlacement } from '@savoire/plugin-api'
 import type { WorkspacePaneState, WorkspacePort, WorkspaceLayout, PanelLocation } from './types'
 import { ViewRegistryImpl } from './ViewRegistryImpl'
 
@@ -72,10 +72,43 @@ export class WorkspaceManagerImpl implements WorkspaceAPI {
     })
   }
 
-  async openFile(path: string): Promise<void> {
+  async openFile(path: string, options?: OpenFileOptions): Promise<void> {
+    const subpath = options?.subpath?.trim()
+    // Posee avant l'ouverture : une vue qui se monte la lit (takeReveal).
+    if (subpath) this.pendingReveal = { path, subpath }
     this.activeDocument = { path, content: '' }
     this.port.openPanel('editor-area', { title: path })
     for (const cb of this.openFileCallbacks) cb(path)
+    // Deja ouverte : elle y va tout de suite.
+    if (subpath) for (const cb of [...this.revealCallbacks]) cb(path, subpath)
+  }
+
+  // ── Aller a un endroit d'un document (suite d'un lien) ────────────────────
+  private pendingReveal: { path: string; subpath: string } | null = null
+  private revealCallbacks: ((path: string, subpath: string) => void)[] = []
+
+  takeReveal(path: string): string | undefined {
+    const p = this.pendingReveal
+    if (!p || p.path !== path) return undefined
+    this.pendingReveal = null
+    return p.subpath
+  }
+
+  subscribeReveal(cb: (path: string, subpath: string) => void): () => void {
+    this.revealCallbacks.push(cb)
+    return () => { this.revealCallbacks = this.revealCallbacks.filter(x => x !== cb) }
+  }
+
+  // ── Ce que la personne regarde dans une vue de document, pour l'IA ────────
+  private contextSink: ((report: DocumentContextReport | null) => void) | null = null
+
+  /** L'application branche ici le contexte de l'IA (aiContext). */
+  setContextSink(sink: ((report: DocumentContextReport | null) => void) | null): void {
+    this.contextSink = sink
+  }
+
+  reportContext(report: DocumentContextReport | null): void {
+    this.contextSink?.(report)
   }
 
   /**

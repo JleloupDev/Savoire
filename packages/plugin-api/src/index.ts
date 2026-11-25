@@ -45,6 +45,8 @@ export type {
   VaultAPI,
   ViewDocument,
   WorkspaceAPI,
+  OpenFileOptions,
+  DocumentContextReport,
   NotificationType,
   BlockTrigger,
   SlashCommandItem,
@@ -161,3 +163,8 @@ export type { SlideScreenState, SlideRemoteCommand, SlideRemoteOrder, SlideRemot
 export type { Slide, SlideDeck, SlideTheme, SlideRatio, SlideTransition, SlideEffect, SlideDecor, SlideImage, SlideOptions, DeckStyle, SlideStyle } from './slides'
 export type { NoteBlock, NoteBlockKind } from './noteBlocks'
 export { splitNoteBlocks, blockFingerprint, textFingerprint, blockAt, newBlockId, blockIdInsertion, PROSE_BLOCK_KINDS } from './noteBlocks'
+export {
+  PDF_COLORS, MAX_PDF_RECTS, MAX_PDF_QUOTE, PDF_SIDE_CHARS, PDF_OCR_ANNEX, isPdfTarget, newPdfRef, normalizePdfRects, pdfRectsBounds,
+  pdfRectsOverlap, parsePdfSubpath, pdfSubpath, pdfWikiLink, describePdfTarget, locatePdfQuote, pdfOcrKey, isPdfOcrPage, parsePdfOcrPage, pdfOcrText,
+} from './pdf'
+export type { PdfRect, PdfColor, PdfTarget, PdfOcrWord, PdfOcrPage } from './pdf'

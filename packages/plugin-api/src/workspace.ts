@@ -11,8 +11,53 @@ export interface WorkspacePaneState {
   collapsed: boolean
 }
 
+/** Ou aller dans le document ouvert : la suite d'un lien (« Titre », « ^bloc », « page=3 »). */
+export interface OpenFileOptions {
+  subpath?: string
+}
+
+/**
+ * Ce que la personne regarde dans une vue de document qui n'est pas une note
+ * (un passage d'un PDF) : l'IA le lit par get_context, comme la selection
+ * d'une note. `pdf` : ou, dans le PDF.
+ */
+export interface DocumentContextReport {
+  vaultId: string
+  docId: string
+  path: string
+  /** Le texte selectionne ('' : rien, seulement une page). */
+  selection: string
+  /** Un peu du texte juste avant et juste apres. */
+  before: string
+  after: string
+  pdf?: {
+    page: number
+    pages: number
+    rects: import('./pdf').PdfRect[]
+    /** Un surlignage ou une ancre de la Revision, s'il s'agit de l'un d'eux. */
+    ref?: string
+    mark?: 'highlight' | 'anchor'
+    color?: string
+    label?: string
+    /** Le commentaire du fil, s'il y en a un. */
+    comment?: string
+    /** Texte reconnu par l'OCR (page scannee). */
+    ocr?: boolean
+  }
+}
+
 export interface WorkspaceAPI {
-  openFile(path: string): Promise<void>
+  /** Ouvre un fichier ; `subpath` : y aller (vue qui sait le faire, voir subscribeReveal). */
+  openFile(path: string, options?: OpenFileOptions): Promise<void>
+  /**
+   * La suite de lien en attente pour ce fichier (posee par openFile), une
+   * seule fois : la vue la lit en s'ouvrant.
+   */
+  takeReveal?(path: string): string | undefined
+  /** openFile avec une suite de lien, sur un fichier peut-etre deja ouvert : la vue y va. */
+  subscribeReveal?(cb: (path: string, subpath: string) => void): () => void
+  /** Une vue de document dit ce que la personne y regarde (null : plus rien). Voir DocumentContextReport. */
+  reportContext?(report: DocumentContextReport | null): void
   openPanel(panelId: string): void
   closePanel(panelId: string): void
   collapsePane?(location: 'left' | 'right'): void

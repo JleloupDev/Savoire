@@ -263,7 +263,7 @@ export const STORE_CATALOG: StoreEntry[] = [
       trust: 'verified',
       name: 'PDF',
       version: '0.0.1',
-      description: 'Le texte des PDF dans la recherche, et leur aperçu',
+      description: 'Lire les PDF dans Savoire : surligner, ancrer, commenter ; leur texte dans la recherche, OCR des pages scannées',
       scope: 'vault',
       permissions: ['ui:editor', 'vault:read'],
       defaultActive: true,

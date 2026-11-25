@@ -6,13 +6,20 @@
 // sont inclus ; les modules integres de Node (node:*) restent externes.
 //   node build.mjs            construction
 //   node build.mjs --watch    reconstruction a chaque modification
-import { readFileSync } from 'node:fs'
+import { cpSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as esbuild from 'esbuild'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'))
+
+// Les fichiers que pdf.js lit a la demande (decodeurs WebAssembly des images
+// JBIG2 et JPEG 2000 des PDF scannes, polices standard, tables de caracteres) :
+// copies a cote du paquet, dans dist/pdfjs/ (voir src/extractors.ts).
+const pdfjsRoot = dirname(createRequire(join(here, '../../packages/plugins/plugin-pdf/package.json')).resolve('pdfjs-dist/package.json'))
+for (const dir of ['wasm', 'standard_fonts', 'cmaps']) cpSync(join(pdfjsRoot, dir), join(here, 'dist/pdfjs', dir), { recursive: true })
 
 const options = {
   entryPoints: [join(here, 'src/main.ts')],
@@ -29,7 +36,9 @@ const options = {
   define: { __INDEXER_VERSION__: JSON.stringify(pkg.version) },
   // Tesseract (OCR des images) lance un worker depuis ses propres fichiers :
   // il reste un module installe a cote (voir Dockerfile), pas empaquete.
-  external: ['tesseract.js'],
+  // Le canvas de pdf.js (pages scannees a dessiner pour l'OCR) est un module
+  // natif, que pdf.js charge lui-meme : installe a cote aussi.
+  external: ['tesseract.js', '@napi-rs/canvas'],
   // require() de modules integres dans du code CommonJS empaquete.
   banner: { js: "import { createRequire as __savoireRequire } from 'node:module'; const require = __savoireRequire(import.meta.url);" },
 }

@@ -54,7 +54,7 @@ import { setSharedPassagesEnabled, sharedPassagesEnabled, startSharedPassages } 
 import { copyBlockLink } from './blockLinks'
 import { agentWatch, startAgentWatch, watchMarksEnabled } from './agents/agentWatch'
 import { startAgentRequests } from './agents/agentRequests'
-import { setAiEditor } from './aiContext'
+import { reportDocumentContext, setAiEditor } from './aiContext'
 import { clearAiMarks, highlightForAi, pinForAi, startAiMarks } from './aiMarks'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
@@ -427,6 +427,8 @@ export function usePluginBootstrap({
       pluginApi.network = desktopNetwork()
       // Extracteurs (Word, HTML, images...) : index et apercus.
       pluginApi.extractors = extractorRegistry
+      // Ce que la personne regarde dans un PDF (ou une autre vue de document) : le contexte de l'IA.
+      manager.setContextSink(reportDocumentContext)
       // Revision : propositions de modification des plugins, mode suggestion.
       pluginApi.review = createReviewAPI({
         session: () => vaultSessionRef.current,

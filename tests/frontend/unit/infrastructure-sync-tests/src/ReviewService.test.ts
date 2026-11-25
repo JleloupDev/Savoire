@@ -84,3 +84,29 @@ describe('ReviewService : fils et statuts', () => {
     expect(a.threads('d1').map(t => t.root.text)).toEqual(['Sur d1'])
   })
 })
+
+describe('ReviewService : marques (surlignages, ancres)', () => {
+  const sessions: IVaultSyncSession[] = []
+  afterEach(async () => { for (const s of sessions.splice(0)) await s.dispose() })
+
+  async function service() {
+    const factory = new LocalPeerVaultSessionFactory(new InProcessPeerBus(), { settleMs: SETTLE_MS })
+    const s = await factory.open({ vaultId: 'v1', token: '', userId: 'alice', onChanged: () => {} })
+    sessions.push(s)
+    return new ReviewService(s)
+  }
+
+  it('une marque peut etre sans texte ; un commentaire, non', async () => {
+    const review = await service()
+    const target = { kind: 'pdf', page: 2, rects: [[0.1, 0.1, 0.2, 0.02]], quote: 'passage', ref: 'abc123', mark: 'highlight' }
+    const mark = review.comment('d1', '', alice, undefined, target, undefined, { mark: true })
+    expect(mark).toMatchObject({ mark: true, text: '', status: 'open', target })
+    expect(() => review.comment('d1', '  ', alice)).toThrow(/vide/)
+    // Sans cible, ce n'est pas une marque.
+    expect(() => review.comment('d1', '', alice, undefined, undefined, undefined, { mark: true })).toThrow(/vide/)
+    // Retiree : rejetee, la trace reste.
+    review.setStatus(mark.id, 'rejected', alice)
+    expect(review.thread(mark.id)?.root).toMatchObject({ status: 'rejected', statusBy: alice })
+  })
+})
+

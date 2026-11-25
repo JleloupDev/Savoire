@@ -74,13 +74,43 @@ function tesseractAssets(): Plugin {
   }
 }
 
+// Les fichiers de pdf.js (plugin-pdf) que la bibliotheque charge a la demande :
+// decodeurs WebAssembly des images (JBIG2, JPEG 2000 : les PDF scannes),
+// polices standard, tables de caracteres (CJK). Servis par l'app, comme
+// Tesseract : l'appli de bureau marche hors ligne. Voir plugin-pdf, pdfjs.ts.
+function pdfjsAssets(): Plugin {
+  const req = createRequire(resolve(__dirname, '../../packages/plugins/plugin-pdf/package.json'))
+  const root = resolve(req.resolve('pdfjs-dist/package.json'), '..')
+  const dirs = ['wasm', 'standard_fonts', 'cmaps']
+  const types: Record<string, string> = { wasm: 'application/wasm', js: 'text/javascript', ttf: 'font/ttf', pfb: 'application/octet-stream', bcmap: 'application/octet-stream' }
+  let outDir = 'dist'
+  return {
+    name: 'savoire-pdfjs-assets',
+    configResolved(config) { outDir = resolve(config.root, config.build.outDir) },
+    configureServer(server) {
+      server.middlewares.use('/vendor/pdfjs', (req, res, next) => {
+        const rel = decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\/+/, '')
+        const [dir, name, ...rest] = rel.split('/')
+        if (!dir || !dirs.includes(dir) || !name || rest.length || name.includes('..')) return next()
+        const file = join(root, dir, name)
+        if (!existsSync(file) || !statSync(file).isFile()) return next()
+        res.setHeader('Content-Type', types[name.split('.').pop() ?? ''] ?? 'application/octet-stream')
+        createReadStream(file).pipe(res)
+      })
+    },
+    closeBundle() {
+      for (const dir of dirs) cpSync(join(root, dir), join(outDir, 'vendor', 'pdfjs', dir), { recursive: true })
+    },
+  }
+}
+
 // Dossier du paquet SQLite WebAssembly (index local) : son .wasm est servi en
 // dev depuis node_modules (hors des dossiers que Vite sert par defaut).
 const sqliteWasmDir = realpathSync(resolve(
   createRequire(resolve(__dirname, '../../packages/indexer-core/package.json')).resolve('@sqlite.org/sqlite-wasm/package.json'), '..'))
 
 export default defineConfig({
-  plugins: [react(), excalidrawAssets(), tesseractAssets()],
+  plugins: [react(), excalidrawAssets(), tesseractAssets(), pdfjsAssets()],
   build: {
     rollupOptions: {
       input: {

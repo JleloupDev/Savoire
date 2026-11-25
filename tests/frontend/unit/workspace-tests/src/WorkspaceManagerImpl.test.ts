@@ -142,3 +142,29 @@ describe('WorkspaceManagerImpl', () => {
     })
   })
 })
+
+describe('WorkspaceManagerImpl : aller a un endroit, contexte', () => {
+  it('openFile avec une suite de lien : la vue qui s ouvre la lit une fois, celle deja ouverte y va', async () => {
+    const manager = new WorkspaceManagerImpl(makeMockPort())
+    const seen: string[] = []
+    const off = manager.subscribeReveal((path, sub) => seen.push(`${path}#${sub}`))
+    await manager.openFile('Docs/Rapport.pdf', { subpath: 'page=3' })
+    expect(seen).toEqual(['Docs/Rapport.pdf#page=3'])
+    expect(manager.takeReveal('Autre.pdf')).toBeUndefined()
+    expect(manager.takeReveal('Docs/Rapport.pdf')).toBe('page=3')
+    expect(manager.takeReveal('Docs/Rapport.pdf')).toBeUndefined()
+    off()
+    await manager.openFile('Docs/Rapport.pdf')
+    expect(seen).toHaveLength(1)
+  })
+
+  it('le contexte d une vue de document part a l application', () => {
+    const manager = new WorkspaceManagerImpl(makeMockPort())
+    const got: unknown[] = []
+    manager.reportContext({ vaultId: 'v', docId: 'd', path: 'a.pdf', selection: '', before: '', after: '' })
+    manager.setContextSink(r => got.push(r))
+    manager.reportContext(null)
+    expect(got).toEqual([null])
+  })
+})
+

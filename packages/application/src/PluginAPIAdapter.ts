@@ -4,6 +4,7 @@ import type {
   BlockRegistry,
   CommandRegistry,
   DocMetadata,
+  DocumentContextReport,
   EditorPositionAPI,
   FileTreeEntry,
   FileTypeRegistry,
@@ -22,6 +23,7 @@ import type {
   IPropertyTypes,
   IQueryEngine,
   NotificationType,
+  OpenFileOptions,
   SlashRegistry,
   ToolbarCommandRegistry,
   TrashEntry,
@@ -81,7 +83,10 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
 export class PluginWorkspaceAPIAdapter implements IPluginWorkspaceAPI {
   constructor(private readonly inner: WorkspaceAPI) {}
 
-  openFile(path: string): Promise<void> { return this.inner.openFile(path) }
+  openFile(path: string, options?: OpenFileOptions): Promise<void> { return options ? this.inner.openFile(path, options) : this.inner.openFile(path) }
+  takeReveal(path: string): string | undefined { return this.inner.takeReveal?.(path) }
+  subscribeReveal(cb: (path: string, subpath: string) => void): () => void { return this.inner.subscribeReveal?.(cb) ?? (() => {}) }
+  reportContext(report: DocumentContextReport | null): void { this.inner.reportContext?.(report) }
   openPanel(panelId: string): void { this.inner.openPanel(panelId) }
   closePanel(panelId: string): void { this.inner.closePanel(panelId) }
   getActiveDocument() { return this.inner.getActiveDocument() }

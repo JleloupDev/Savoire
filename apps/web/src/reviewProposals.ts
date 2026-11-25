@@ -426,9 +426,14 @@ export function createReviewAPI(deps: {
       if (!session) return []
       return reviewFor(session).threads(docId).filter(t => t.root.kind !== 'edit').map(toAnnotation)
     },
-    async comment(docId, text, target) {
+    async comment(docId, text, target, options) {
       const { review, me } = acting()
-      return review.comment(docId, text, me, undefined, target).id
+      return review.comment(docId, text, me, undefined, target, undefined, options?.mark ? { mark: true } : undefined).id
+    },
+    async removeMark(id) {
+      const { review, me, root } = acting(id)
+      if (!root!.mark) throw new Error('ce fil n\'est pas une marque')
+      review.setStatus(root!.id, 'rejected', me)
     },
     async reply(id, text) {
       const { review, me } = acting(id)

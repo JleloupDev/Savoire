@@ -136,6 +136,11 @@ export interface ReviewEntry {
   partial?: boolean
   /** Demande adressee a un agent (racine d'un fil de commentaire seulement). */
   request?: ReviewRequest
+  /**
+   * Une marque posee sur le document (surlignage, ancre d'un PDF) : son texte
+   * peut etre vide ; retiree, elle passe a « rejete » (la trace reste).
+   */
+  mark?: boolean
 }
 
 export interface ReviewThread {
@@ -183,12 +188,14 @@ export class ReviewService {
    * vise le commentaire dans un document de plugin (JSON). `ask` : le
    * commentaire est une demande a cet agent.
    */
-  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor, target?: unknown, ask?: ReviewRequestTarget): ReviewEntry {
+  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor, target?: unknown, ask?: ReviewRequestTarget, options?: { mark?: boolean }): ReviewEntry {
     const aim = target === undefined ? undefined : asJson(target, MAX_TARGET_BYTES, 'cible')
+    // Une marque (surlignage, ancre) vise forcement quelque chose ; son texte peut etre vide.
+    const mark = !!options?.mark && aim !== undefined && !ask
     return this.add({
       docId, kind: 'comment', text, author, status: 'open', ...(anchor ? { anchor } : {}), ...(aim !== undefined ? { target: aim } : {}),
-      ...(ask ? { request: this.newRequest(ask) } : {}),
-    })
+      ...(ask ? { request: this.newRequest(ask) } : {}), ...(mark ? { mark: true } : {}),
+    }, { allowEmpty: mark })
   }
 
   // ── Demandes a un agent ──────────────────────────────────────────────────

@@ -91,7 +91,7 @@ Variables d'environnement, vérifiées au démarrage (toutes les erreurs d'un co
 | `SAVOIRE_INDEXER_STATS_INTERVAL_MS` | `30000` | Rafraichissement des tailles et nombres de notes par vault (metriques). |
 | `SAVOIRE_INDEXER_EXTRACT_FILES` | `on` | Lire le texte des fichiers (PDF, Word, Excel, PowerPoint, LibreOffice, pages web, CSV, images) par les extracteurs des plugins officiels. |
 | `SAVOIRE_INDEXER_QUARANTINE_AFTER` | `3` | Un fichier pendant la lecture duquel le fil d'indexation tombe ce nombre de fois de suite est mis de cote : indexe par son nom seulement, avec un rapport d'erreur (journal `error`, GlitchTip). Relu s'il change ou apres une nouvelle version du pair. |
-| `SAVOIRE_INDEXER_OCR` | `on` | Lire le texte dans les images (OCR, quelques secondes par image ; langues gardees dans `{dataDir}/ocr`). |
+| `SAVOIRE_INDEXER_OCR` | `on` | Lire le texte dans les images et les pages scannées des PDF (OCR, quelques secondes par image ; langues gardees dans `{dataDir}/ocr`). |
 | `SAVOIRE_INDEXER_PLUGIN_TRUST` | `verified` | Plugins dont le pair execute les outils d'agent (IA externes, ADR-033) : `official` (livres avec Savoire), `verified` (plus ceux relus par l'equipe Savoire) ou `all` (tout plugin, maison compris : pair d'organisation sur une VM dediee seulement). |
 | `SAVOIRE_INDEXER_PLUGIN_DIR` | `` | Dossier de plugins en plus (un module ESM `.mjs` par plugin, `export default` un VaultPlugin), filtres par `pluginTrust`. Vide : les plugins livres avec Savoire seulement. |
 | `SAVOIRE_INDEXER_METRICS_AUTH` | `token` | `/metrics` demande le jeton de service (`token`) ou non (`none`, reseau prive seulement). |

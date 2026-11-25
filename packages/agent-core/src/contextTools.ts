@@ -7,7 +7,7 @@
 // Pour les IA externes, le serveur sert les memes outils (api/open.rs).
 import type { ToolResult } from '@savoire/plugin-api'
 import type { CoreTool, CoreToolContext } from './coreTools'
-import { CONTEXT_STALE_SECONDS, type AiMark } from './editorContext'
+import { CONTEXT_STALE_SECONDS, describePdfContext, type AiMark } from './editorContext'
 import { HostError } from './host'
 import { pathInScope } from './policy'
 import { TYPING_GUARD_MS } from './typingGuard'
@@ -21,7 +21,7 @@ function visible(ctx: CoreToolContext, marks: AiMark[]): AiMark[] {
 const getContext: CoreTool = {
   spec: {
     name: 'get_context', title: 'Où travaille la personne', action: 'read', runtimes: ['app'],
-    description: 'Ce que la personne a sous les yeux dans Savoire : la note ouverte, le texte qu’elle a sélectionné (ou l’endroit du curseur), '
+    description: 'Ce que la personne a sous les yeux dans Savoire : la note ouverte (ou le PDF : sa page, le passage sélectionné ou le surlignage montré), le texte qu’elle a sélectionné (ou l’endroit du curseur), '
       + 'la section, et les passages qu’elle a surlignés pour vous. Appelez-le de vous-même, avant de répondre ou d’agir, dès qu’elle dit '
       + '« ici », « ce passage », « ça », « cette phrase », « la sélection », ou qu’elle demande de reformuler, corriger ou compléter sans dire '
       + 'de quelle note elle parle. La sélection éclaire la demande ; ce n’est pas une vérité absolue : si elle ne colle pas, posez la question.',
@@ -50,9 +50,12 @@ const getContext: CoreTool = {
       const hint = stale
         ? 'Ce contexte date de plus de 2 minutes : demandez à la personne de confirmer que c’est bien ce passage avant d’agir.'
         : 'Contexte récent. La sélection éclaire la demande, sans être une vérité absolue : en cas de doute, demandez.'
-      lines.push(`Contexte de l’éditeur, il y a ${ageSeconds} s.`, `Note : ${e.path} (id : ${e.docId})`)
-      if (e.headingPath.length) lines.push(`Section : ${e.headingPath.join(' > ')}`)
-      if (e.selection === '') lines.push(`Pas de sélection : le curseur est entre ${quoted(e.before)} et ${quoted(e.after)}.`)
+      const pdf = e.anchor.pdf
+      lines.push(`Contexte de l’éditeur, il y a ${ageSeconds} s.`, `${pdf ? 'Document' : 'Note'} : ${e.path} (id : ${e.docId})`)
+      if (pdf) lines.push(describePdfContext(pdf, e.path.split('/').pop() ?? e.path))
+      else if (e.headingPath.length) lines.push(`Section : ${e.headingPath.join(' > ')}`)
+      if (pdf?.comment) lines.push(`Commentaire de la marque : ${quoted(pdf.comment)}`)
+      if (e.selection === '') lines.push(pdf ? 'Pas de sélection : la personne regarde cette page.' : `Pas de sélection : le curseur est entre ${quoted(e.before)} et ${quoted(e.after)}.`)
       else {
         lines.push(`Sélection (${e.selection.length} caractères${e.selectionTruncated ? ', tronquée' : ''}) :`, e.selection,
           `Juste avant : ${quoted(e.before)}`, `Juste après : ${quoted(e.after)}`)

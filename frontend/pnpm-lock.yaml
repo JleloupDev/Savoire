@@ -1144,6 +1144,9 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../plugin-api
+      '@savoire/plugin-images':
+        specifier: workspace:*
+        version: link:../plugin-images
       pdfjs-dist:
         specifier: 6.4.299
         version: 6.4.299

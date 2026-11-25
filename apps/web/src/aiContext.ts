@@ -20,14 +20,14 @@
 //    recent. Une frappe ne declenche rien d'autre : elle note l'heure, et
 //    l'entree part au plus une fois toutes les 2 s (la premiere tout de suite).
 import {
-  EditorContextRing, TYPING_GUARD_MS, buildAnchor, buildEditorContext, locateByQuote, sameEditorContext,
+  EditorContextRing, TYPING_GUARD_MS, buildAnchor, buildDocumentContext, buildEditorContext, locateByQuote, sameEditorContext,
   type EditorAnchor, type EditorContextEntry, type TypingSpot,
 } from '@savoire/agent-core'
 import type { IVaultSyncSession } from '@savoire/application'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { EditorController } from '@savoire/editor-core'
 import { decodeRelPos, encodeRelPos } from '@savoire/infrastructure-sync'
-import type { ICRDT } from '@savoire/plugin-api'
+import type { DocumentContextReport, ICRDT } from '@savoire/plugin-api'
 
 export interface AiEditor {
   editor: EditorController | null
@@ -193,7 +193,12 @@ async function send(): Promise<void> {
 
 if (typeof window !== 'undefined') {
   // Retour sur cette fenetre : c'est de nouveau ici que la personne travaille.
-  window.addEventListener('focus', () => capture(true))
+  window.addEventListener('focus', () => {
+    // Elle lisait un PDF : c'est lui qu'on renvoie, pas la derniere note ouverte.
+    const last = ring.last()
+    if (last?.anchor.pdf) { ring.push({ ...last, at: Date.now() }); lastSent = null; queueSend(); return }
+    capture(true)
+  })
 }
 
 /** Le serveur a qui envoyer le contexte (profil serveur), ou null (autres profils, deconnexion). */
@@ -204,6 +209,20 @@ export function setAiServer(s: AiServer | null): void {
 
 export function aiServer(): AiServer | null {
   return server
+}
+
+/**
+ * Une vue de document qui n'est pas une note (un PDF) dit ce que la personne
+ * y regarde : une selection, une marque, ou seulement la page. Comme une
+ * selection dans une note : gardee ici, et envoyee au serveur pour les IA
+ * externes. null : rien (la derniere entree reste la bonne).
+ */
+export function reportDocumentContext(report: DocumentContextReport | null): void {
+  if (!report) return
+  const entry = buildDocumentContext({ ...report, tabId: tabId(), at: Date.now() })
+  if (sameEditorContext(entry, ring.last())) return
+  ring.push(entry)
+  queueSend()
 }
 
 /** L'editeur de notes actif (appele a chaque changement d'editeur). */

@@ -187,23 +187,99 @@ fn text_of(o: &Map<String, Value>, key: &str) -> String {
 static POSITION_SHAPE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9+/=_-]+$").unwrap());
 
 /// Une ancre propre : les champs connus, bornes. Le document est celui de la requete.
+/// Un passage d'un PDF n'a pas de positions relatives : il porte `pdf` (page, place) a la place.
 fn clean_anchor(v: Option<&Value>, doc_id: &str) -> AppResult<Value> {
     let Some(o) = v.and_then(Value::as_object) else { return Err(AppError::validation("Ancre manquante (anchor).")) };
+    let pdf = match o.get("pdf") {
+        None | Some(Value::Null) => None,
+        Some(p) => Some(clean_pdf(p)?),
+    };
     let position = |key: &str| -> AppResult<String> {
         let p = text_of(o, key);
+        if pdf.is_some() && p.is_empty() {
+            return Ok(String::new());
+        }
         if p.is_empty() || p.len() > MAX_POSITION_CHARS || !POSITION_SHAPE.is_match(&p) {
             return Err(AppError::validation(format!("Ancre invalide ({key}).")));
         }
         Ok(p)
     };
-    Ok(json!({
+    let mut anchor = json!({
         "docId": doc_id,
         "start": position("start")?,
         "end": position("end")?,
         "quote": cut(&text_of(o, "quote"), MAX_SELECTION_CHARS).0,
         "prefix": cut_start(&text_of(o, "prefix"), MAX_ANCHOR_SIDE_CHARS),
         "suffix": cut(&text_of(o, "suffix"), MAX_ANCHOR_SIDE_CHARS).0,
-    }))
+    });
+    if let Some(pdf) = pdf {
+        anchor["pdf"] = pdf;
+    }
+    Ok(anchor)
+}
+
+const MAX_PDF_PAGES: u64 = 100_000;
+const MAX_PDF_RECTS: usize = 64;
+
+/// L'endroit d'un PDF : la page, le nombre de pages, des rectangles (fractions de la page),
+/// et pour une marque de la Revision son nom court, sa couleur, son nom, son commentaire.
+fn clean_pdf(v: &Value) -> AppResult<Value> {
+    let Some(o) = v.as_object() else { return Err(AppError::validation("Ancre de PDF invalide (pdf).")) };
+    let count = |key: &str| o.get(key).and_then(Value::as_u64).filter(|n| (1..=MAX_PDF_PAGES).contains(n));
+    let Some(page) = count("page") else { return Err(AppError::validation("Ancre de PDF invalide (page).")) };
+    let pages = count("pages").unwrap_or(page).max(page);
+    let mut rects = Vec::new();
+    for r in o.get("rects").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default().iter().take(MAX_PDF_RECTS) {
+        let nums: Vec<f64> = r.as_array().map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
+        if nums.len() != 4 || nums.iter().any(|n| !n.is_finite() || *n < -0.01 || *n > 1.01) {
+            return Err(AppError::validation("Ancre de PDF invalide (rects)."));
+        }
+        let round = |n: f64| (n.clamp(0.0, 1.0) * 10_000.0).round() / 10_000.0;
+        rects.push(json!([round(nums[0]), round(nums[1]), round(nums[2]), round(nums[3])]));
+    }
+    let mut out = json!({ "page": page, "pages": pages, "rects": rects });
+    let r#ref = text_of(o, "ref");
+    if !r#ref.is_empty() {
+        if r#ref.len() > 16 || !r#ref.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) {
+            return Err(AppError::validation("Ancre de PDF invalide (ref)."));
+        }
+        out["ref"] = json!(r#ref);
+    }
+    match text_of(o, "mark").as_str() {
+        "" => {}
+        m @ ("highlight" | "anchor") => out["mark"] = json!(m),
+        _ => return Err(AppError::validation("Ancre de PDF invalide (mark).")),
+    }
+    for (key, max) in [("color", 20), ("label", 200), ("comment", 1000)] {
+        let t = text_of(o, key);
+        if !t.trim().is_empty() {
+            out[key] = json!(cut(t.trim(), max).0);
+        }
+    }
+    if o.get("ocr").and_then(Value::as_bool) == Some(true) {
+        out["ocr"] = json!(true);
+    }
+    Ok(out)
+}
+
+/// La ligne de get_context pour un PDF : page, OCR, marque, et le lien qui y ramene.
+fn describe_pdf(pdf: &Value, path: &str) -> String {
+    let page = pdf["page"].as_u64().unwrap_or(1);
+    let mut parts = vec![format!("PDF, page {page} sur {}", pdf["pages"].as_u64().unwrap_or(page))];
+    if pdf["ocr"].as_bool() == Some(true) {
+        parts.push("texte reconnu par OCR (page scannée)".into());
+    }
+    match pdf["mark"].as_str() {
+        Some("highlight") => parts.push(match pdf["color"].as_str() { Some(c) => format!("surlignage {c}"), None => "surlignage".into() }),
+        Some("anchor") => parts.push(match pdf["label"].as_str() { Some(l) => format!("ancre {}", quoted(l)), None => "ancre".into() }),
+        _ => {}
+    }
+    let name = path.rsplit('/').next().unwrap_or(path);
+    match pdf["ref"].as_str() {
+        Some(r) => parts.push(format!("lien : [[{name}#^{r}]]")),
+        None => parts.push(format!("lien de la page : [[{name}#page={page}]]")),
+    }
+    parts.join(", ")
 }
 
 fn require_account(caller: &str) -> AppResult<()> {
@@ -413,7 +489,7 @@ pub fn mcp_tools() -> Vec<Value> {
         entry(
             GET_CONTEXT,
             "Où travaille la personne",
-            "Ce que la personne a sous les yeux dans Savoire : la note ouverte, le texte qu'elle a sélectionné (ou l'endroit du curseur), \
+            "Ce que la personne a sous les yeux dans Savoire : la note ouverte (ou le PDF : sa page, le passage sélectionné ou le surlignage montré), le texte qu'elle a sélectionné (ou l'endroit du curseur), \
              la section, et les passages qu'elle a surlignés pour vous. Appelez-le de vous-même, avant de répondre ou d'agir, dès qu'elle dit \
              « ici », « ce passage », « ça », « cette phrase », « la sélection », « là où je suis », ou qu'elle demande de reformuler, \
              corriger ou compléter sans dire de quelle note elle parle. La sélection éclaire la demande ; ce n'est pas une vérité absolue : \
@@ -576,12 +652,21 @@ pub async fn tool(st: &AppState, user: &str, agent: &AgentRow, vaults: &[(String
                     } else {
                         "Contexte récent. La sélection éclaire la demande, sans être une vérité absolue : en cas de doute, demandez."
                     };
+                    let pdf = e.anchor.get("pdf").filter(|p| p.is_object());
                     text.push_str(&format!("Contexte de l'éditeur de Savoire, il y a {age} s.\n"));
-                    text.push_str(&format!("Note : {} (vault : {vault}, id du vault : {}, id de la note : {})\n", e.path, e.vault_id, e.doc_id));
-                    if !e.heading_path.is_empty() {
+                    let (what, id) = if pdf.is_some() { ("Document", "id du document") } else { ("Note", "id de la note") };
+                    text.push_str(&format!("{what} : {} (vault : {vault}, id du vault : {}, {id} : {})\n", e.path, e.vault_id, e.doc_id));
+                    if let Some(pdf) = pdf {
+                        text.push_str(&format!("{}\n", describe_pdf(pdf, &e.path)));
+                        if let Some(c) = pdf["comment"].as_str() {
+                            text.push_str(&format!("Commentaire de la marque : {}\n", quoted(c)));
+                        }
+                    } else if !e.heading_path.is_empty() {
                         text.push_str(&format!("Section : {}\n", e.heading_path.join(" > ")));
                     }
-                    if e.selection.is_empty() {
+                    if e.selection.is_empty() && pdf.is_some() {
+                        text.push_str("Pas de sélection : la personne regarde cette page.\n");
+                    } else if e.selection.is_empty() {
                         text.push_str(&format!("Pas de sélection : le curseur est entre {} et {}.\n", quoted(&e.before), quoted(&e.after)));
                     } else {
                         text.push_str(&format!(
@@ -732,6 +817,28 @@ mod tests {
         assert!(clean_anchor(Some(&json!({ "start": "", "end": "AAEC" })), "doc").is_err());
         assert!(clean_anchor(Some(&json!({ "start": "pas du base64 !", "end": "AAEC" })), "doc").is_err());
         assert!(clean_anchor(None, "doc").is_err());
+    }
+
+    #[test]
+    fn a_pdf_anchor_has_a_page_instead_of_positions() {
+        let a = clean_anchor(Some(&json!({
+            "start": "", "end": "", "quote": "le passage",
+            "pdf": { "page": 3, "pages": 12, "rects": [[0.1, 0.2, 0.3, 0.04], [0.12345678, 0.25, 0.2, 0.04]], "ref": "k3x9qa", "mark": "highlight", "color": "jaune", "extra": 1 },
+        })), "doc").unwrap();
+        assert_eq!(a["start"], "");
+        assert_eq!(a["pdf"]["page"], 3);
+        assert_eq!(a["pdf"]["rects"][1][0], 0.1235);
+        assert!(a["pdf"].get("extra").is_none());
+        assert_eq!(describe_pdf(&a["pdf"], "Docs/Rapport.pdf"), "PDF, page 3 sur 12, surlignage jaune, lien : [[Rapport.pdf#^k3x9qa]]");
+        let page = clean_anchor(Some(&json!({ "pdf": { "page": 2, "rects": [] } })), "doc").unwrap();
+        assert_eq!(describe_pdf(&page["pdf"], "a.pdf"), "PDF, page 2 sur 2, lien de la page : [[a.pdf#page=2]]");
+        // Une page, des rectangles et un nom court valides, sinon rien.
+        assert!(clean_anchor(Some(&json!({ "pdf": { "page": 0 } })), "doc").is_err());
+        assert!(clean_anchor(Some(&json!({ "pdf": { "page": 1, "rects": [[0, 0, 2, 1]] } })), "doc").is_err());
+        assert!(clean_anchor(Some(&json!({ "pdf": { "page": 1, "ref": "../x" } })), "doc").is_err());
+        assert!(clean_anchor(Some(&json!({ "pdf": { "page": 1, "mark": "autre" } })), "doc").is_err());
+        // Sans pdf, les positions restent obligatoires.
+        assert!(clean_anchor(Some(&json!({ "start": "", "end": "", "quote": "x" })), "doc").is_err());
     }
 
     #[test]

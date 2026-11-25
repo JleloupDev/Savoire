@@ -37,7 +37,7 @@ import {
   lotDocId, lotRowsFromUpdates, noteInputFromUpdates, parseLotDocId, propertySchemaFromUpdates, propertySchemaKey,
   vaultTreeFromUpdates, withDoc,
 } from '@savoire/indexer-core'
-import { EXTRACTED_TEXT_ANNEX, MAX_EXTRACT_BYTES, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
+import { EXTRACTED_TEXT_ANNEX, MAX_EXTRACT_BYTES, PDF_OCR_ANNEX, extractedToMarkdown, type ExtractorSpec } from '@savoire/plugin-api'
 import type { BaseManifest, IndexInspection, IndexPower, IndexStatus, NoteInput, NoteRecord } from '@savoire/indexer-core'
 import { NodeSqliteDriver } from '@savoire/indexer-core/node'
 import { BASE_LOT_COUNT, baseLotOf } from '@savoire/plugin-api'
@@ -215,10 +215,16 @@ function isOtherFile(path: string): boolean {
   return !isTrashPath(path) && !isNotePath(path) && !isBasePath(path) && /\.[a-z0-9]{1,8}$/i.test(path)
 }
 
-/** Annexe « texte » d'un fichier : son id -> l'id du fichier. */
+/** Annexes d'un fichier qui changent son texte : « texte » (publie par un membre), « ocr » (pages scannees d'un PDF). */
+const TEXT_ANNEXES = [EXTRACTED_TEXT_ANNEX, PDF_OCR_ANNEX]
+
+/** Annexe de texte d'un fichier : son id -> l'id du fichier. */
 function fileOfTextAnnex(id: string): string | undefined {
-  const suffix = `~${EXTRACTED_TEXT_ANNEX}`
-  return id.endsWith(suffix) ? id.slice(0, -suffix.length) : undefined
+  for (const name of TEXT_ANNEXES) {
+    const suffix = `~${name}`
+    if (id.endsWith(suffix)) return id.slice(0, -suffix.length)
+  }
+  return undefined
 }
 
 function isNotePath(path: string): boolean {
@@ -1051,7 +1057,9 @@ export class VaultStore {
       return { id, path, content: '', frontmatter: false }
     }
     try {
-      const content = await spec.extract(bytes, { path })
+      // Ce que l'extracteur lit a cote du fichier (le texte reconnu d'un PDF) : ses annexes declarees.
+      const annex = async (name: string) => (spec.annexes?.includes(name) ? this.annexRoot(v, id, name, signal) : null)
+      const content = await spec.extract(bytes, { path, annex })
       return { id, path, content: extractedToMarkdown(content), frontmatter: true }
     } catch (err) {
       this.m.skipped.inc({ reason: 'extract' })
@@ -1135,6 +1143,18 @@ export class VaultStore {
   }
 
   /** Journal d'un document ; null s'il est parti ; undefined s'il est illisible (trop gros...). */
+  /** La racine d'une annexe d'un fichier (cle -> valeur) ; null : pas d'annexe, ou illisible. */
+  private async annexRoot(v: Vault, id: string, name: string, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
+    const log = await this.fetch(() => this.readDoc(v, `${id}~${name}`, signal))
+    if (!log || log.format !== 'yjs') return null
+    try {
+      return withDoc(bytesOf(log), doc => doc.getMap('tree').toJSON() as Record<string, unknown>)
+    } catch (err) {
+      this.log.warn('annexe illisible', { vault: v.id, doc: id, annex: name, err })
+      return null
+    }
+  }
+
   private async readDoc(v: Vault, docId: string, signal?: AbortSignal): Promise<UpdatesLog | null | undefined> {
     try {
       return await this.backend.document(v.id, docId, signal)
