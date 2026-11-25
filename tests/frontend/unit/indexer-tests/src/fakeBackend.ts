@@ -76,6 +76,8 @@ export class FakeBackend {
   down = false
   /** Latence ajoutee a chaque lecture de document (ms). */
   docLatencyMs = 0
+  /** Le flux ne rend plus rien (l'index prend du retard), le reste repond. */
+  feedPaused = false
   /** Compteurs de requetes par route. */
   readonly hits = { vaults: 0, changes: 0, tree: 0, document: 0 }
   /** Documents lus, par id. */
@@ -125,6 +127,7 @@ export class FakeBackend {
         const since = Number(url.searchParams.get('since') ?? 0)
         const limit = Math.min(2000, Math.max(1, Number(url.searchParams.get('limit') ?? 500)))
         if (since < 0) return send(400, { error: { code: 'invalid_cursor', message: '' } })
+        if (this.feedPaused) return send(200, { changes: [], last: since, epoch: this.epoch })
         const sorted = [...this.rows.values()].filter(r => r.seq > since).sort((a, b) => a.seq - b.seq)
         const out: Row[] = []
         let last = since
@@ -225,6 +228,8 @@ export class FakeBackend {
       // La Revision toujours ; les types des proprietes en direct seulement.
       if (op.target === 'index' && op.ns !== 'map/review' && !(op.ns === 'settings/properties' && mode === 'direct')) return 403
     }
+    // Un document inscrit existe, meme sans operation : le serveur rend alors un journal vide.
+    for (const id of body.register ?? []) this.docOf(v, id)
     for (const op of body.ops ?? []) {
       const u = Buffer.from(op.update, 'base64')
       if (op.target === 'document') { Y.applyUpdate(this.docOf(v, op.docId!).doc, u); this.touch(vaultId, 'document', op.docId) }

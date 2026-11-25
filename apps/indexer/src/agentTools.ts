@@ -31,7 +31,6 @@ const REVIEW_NS = 'map/review'
 const TYPES_NS = 'settings/properties'
 /** Operations au plus dans une ecriture (MAX_WRITE_OPS du serveur). */
 const MAX_WRITE_OPS = 32
-const BASE_PATH = /\.base$/i
 const TRASH_DIR = '.trash/'
 const MAX_READ = 512 * 1024
 /**
@@ -105,13 +104,48 @@ export class PeerToolHost implements AgentToolHost {
   /** Ce que cet appel a deja cree ou deplace : l'index le saura un peu plus tard. */
   private readonly moved = new Map<string, string>()
 
+  /** Trouves dans l'arborescence, pas encore dans l'index (crees juste avant, par un autre appel). */
+  private readonly late = new Map<string, string>()
+
   private async paths(): Promise<Map<string, string>> {
     if (!this.pathCache) {
       const fetched = await this.f.paths()
+      for (const [id, p] of this.late) fetched.set(id, p)
       for (const [id, p] of this.moved) fetched.set(id, p)
       this.pathCache = fetched
     }
     return this.pathCache
+  }
+
+  private treeCache: Map<string, string> | null = null
+
+  /**
+   * Les documents de l'arborescence du vault (id -> chemin), lue une fois par
+   * appel. Elle est a jour quand l'index a du retard (une ou deux secondes
+   * apres une creation) ; elle porte aussi les bases, dont l'index ne garde
+   * que les lignes.
+   */
+  private async treeDocs(): Promise<Map<string, string>> {
+    if (!this.treeCache) {
+      const tree = await this.f.treeLog()
+      this.treeCache = new Map(tree ? vaultTreeFromUpdates(tree.updates).docs : [])
+      for (const [id, p] of this.moved) this.treeCache.set(id, p)
+    }
+    return this.treeCache
+  }
+
+  /** Le chemin d'un document : l'index, sinon l'arborescence. */
+  private async pathOf(id: string): Promise<string | undefined> {
+    return (await this.paths()).get(id) ?? this.remember(id, (await this.treeDocs()).get(id))
+  }
+
+  /** Un document que l'index ne connait pas encore : la suite de cet appel le trouve aussi. */
+  private remember(id: string, path: string | undefined): string | undefined {
+    if (path !== undefined) {
+      this.late.set(id, path)
+      this.pathCache?.set(id, path)
+    }
+    return path
   }
 
   private visible(id: string, path: string): boolean {
@@ -119,7 +153,15 @@ export class PeerToolHost implements AgentToolHost {
   }
 
   private async find(ref: { id?: string; path?: string }): Promise<HostNoteRef | undefined> {
-    const paths = await this.paths()
+    const hit = this.findIn(await this.paths(), ref)
+    if (hit) return hit
+    // Absent de l'index : peut-etre cree a l'instant (l'index suit avec un peu de retard).
+    const late = this.findIn(await this.treeDocs(), ref)
+    if (late) this.remember(late.id, late.path)
+    return late
+  }
+
+  private findIn(paths: ReadonlyMap<string, string>, ref: { id?: string; path?: string }): HostNoteRef | undefined {
     if (ref.id) {
       const p = paths.get(ref.id)
       return p && this.visible(ref.id, p) ? { id: ref.id, path: p } : undefined
@@ -144,6 +186,7 @@ export class PeerToolHost implements AgentToolHost {
   private async write(body: Omit<WriteBody, 'ticket'>): Promise<void> {
     await this.f.write({ ticket: this.ticket, ...body })
     this.pathCache = null
+    this.treeCache = null
   }
 
   // ── Presence (ADR-033) ───────────────────────────────────────────────────
@@ -441,33 +484,21 @@ export class PeerToolHost implements AgentToolHost {
 
   // ── Pour la PluginAPI sans ecran (pluginApi.ts) ──────────────────────────
 
-  /** Les notes et les bases visibles par la personne : id -> chemin (hors corbeille, ACL). */
+  /**
+   * Les notes et les bases visibles par la personne : id -> chemin (hors
+   * corbeille, ACL). L'index, complete par l'arborescence : les bases (l'index
+   * ne garde que leurs lignes) et ce qui vient d'etre cree.
+   */
   async visiblePaths(): Promise<Map<string, string>> {
     const out = new Map<string, string>()
     for (const [id, p] of await this.paths()) if (this.visible(id, p)) out.set(id, p)
-    for (const [id, p] of await this.bases()) if (!out.has(id) && this.visible(id, p)) out.set(id, p)
+    for (const [id, p] of await this.treeDocs()) if (!out.has(id) && this.visible(id, p)) out.set(id, p)
     return out
-  }
-
-  private baseCache: Map<string, string> | null = null
-
-  /**
-   * Les bases (.base) : l'index ne garde que leurs lignes, pas le fichier. Leur
-   * chemin est lu dans l'arborescence du vault (une fois par appel).
-   */
-  private async bases(): Promise<Map<string, string>> {
-    if (!this.baseCache) {
-      const tree = await this.f.treeLog()
-      this.baseCache = new Map(tree ? [...vaultTreeFromUpdates(tree.updates).docs].filter(([, p]) => BASE_PATH.test(p)) : [])
-    }
-    // Ce que cet appel a cree ou deplace l'emporte.
-    for (const [id, p] of this.moved) if (BASE_PATH.test(p) || this.baseCache.has(id)) this.baseCache.set(id, p)
-    return this.baseCache
   }
 
   /** Le texte d'une note, relu dans son journal Yjs (sinon le texte extrait). */
   async noteText(docId: string): Promise<string> {
-    const path = (await this.paths()).get(docId)
+    const path = await this.pathOf(docId)
     if (!path || !this.visible(docId, path)) throw new HostError('Note introuvable.', 'not_found')
     const log = await this.f.docLog(docId)
     if (log && log.format === 'yjs') return noteText(log.updates)
@@ -485,7 +516,7 @@ export class PeerToolHost implements AgentToolHost {
     // Un annexe (« id~lot-003 » : un lot de lignes d'une base) suit son document, et peut ne pas exister encore.
     const cut = docId.indexOf('~')
     const owner = cut < 0 ? docId : docId.slice(0, cut)
-    const path = (await this.paths()).get(owner) ?? (await this.bases()).get(owner)
+    const path = await this.pathOf(owner)
     if (!path || !this.visible(owner, path)) throw new HostError('Document introuvable.', 'not_found')
     const log = await this.f.docLog(docId)
     if (!log) {

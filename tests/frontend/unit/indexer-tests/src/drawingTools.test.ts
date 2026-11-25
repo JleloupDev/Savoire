@@ -94,6 +94,20 @@ describe('outils des dessins sur le pair', () => {
     expect(backend.drawing('v1', id).map(e => e.type).sort()).toEqual(['ellipse', 'text'])
   })
 
+  it('un dessin tout juste cree se dessine aussitot, avant que l index le connaisse', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    const p = await ready()
+    // L'IA enchaine drawing_create et drawing_diagram : l'index a une ou deux secondes de retard.
+    backend.feedPaused = true
+    expect(await call(p, 'drawing_create', { path: 'Schémas/Processus' })).toMatchObject({ isError: false, text: 'Dessin créé : Schémas/Processus.excalidraw.' })
+    const id = backend.writes.find(w => w.body.register?.length)!.body.register![0]!
+    const r = await call(p, 'drawing_diagram', { path: 'Schémas/Processus', nodes: [{ key: 'a', text: 'Idée' }, { key: 'b', text: 'Prototype' }], edges: [{ from: 'a', to: 'b' }] })
+    expect(r).toMatchObject({ isError: false })
+    expect(r.text).toContain('Schéma dessiné (2 nœud(s), 1 flèche(s)) dans Schémas/Processus.excalidraw.')
+    expect(backend.drawing('v1', id).filter(e => e.type === 'arrow')).toHaveLength(1)
+    expect((await call(p, 'drawing_read', { path: 'Schémas/Processus' })).text).toContain('Idée')
+  })
+
   it('mode proposition : une proposition « excalidraw.scene », le dessin ne change pas', async () => {
     backend.writeDrawing('v1', 'd', 'Plan.excalidraw', [box])
     const p = await ready()

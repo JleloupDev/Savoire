@@ -106,6 +106,18 @@ describe('tools', () => {
     expect(backend.pathOf('v1', 'a')).toBe('Archives/A.md')
   })
 
+  it('une note tout juste creee se lit et s ecrit aussitot, avant que l index la connaisse', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    const p = await ready()
+    backend.feedPaused = true
+    expect((await call(p, 'create_note', { path: 'Neuve', content: 'Bonjour.' })).body.result.isError).toBe(false)
+    const id = backend.writes.at(-1)!.body.register![0]!
+    const r = await call(p, 'append', { path: 'Neuve.md', text: 'Suite.' })
+    expect(r.body.result).toMatchObject({ isError: false })
+    expect(backend.text('v1', id)).toContain('Suite.')
+    expect((await call(p, 'read_note', { id })).body.result.text).toContain('Bonjour.')
+  })
+
   it('deplacer une note fait suivre les liens des notes qui la citent (meme canal que l appli)', async () => {
     backend.writeNote('v1', 'a', 'Inbox/Idee.md', 'une idee')
     backend.writeNote('v1', 'c', 'Journal.md', 'Voir [[Idee]] et [[Autre]].')
