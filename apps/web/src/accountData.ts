@@ -14,7 +14,19 @@ import { safeFileName, zipEntriesOf } from './vaultTransfer'
 
 export interface ExportableVault { id: string; name: string; role: string; source?: string }
 
-export interface AccountProfile { id: string; displayName: string; email: string; isAdmin: boolean; signupClosed: boolean }
+export interface AccountProfile {
+  id: string; displayName: string; email: string; isAdmin: boolean; signupClosed: boolean
+  /** Page du fournisseur d'identite pour ajouter une cle d'acces ; absente si le serveur n'en a pas. */
+  passkeyUrl?: string
+}
+
+/** L'adresse de la page d'ajout de cle d'acces, pour ce compte. */
+export function passkeyPageUrl(profile: Pick<AccountProfile, 'email' | 'passkeyUrl'>): string | null {
+  if (!profile.passkeyUrl || !profile.email) return null
+  const url = new URL(profile.passkeyUrl)
+  url.searchParams.set('loginName', profile.email)
+  return url.toString()
+}
 
 export interface AccountExportDeps {
   profile: Pick<AccountProfile, 'id' | 'displayName' | 'email'>
@@ -108,6 +120,7 @@ export async function fetchAccountProfile(call: ApiCall): Promise<AccountProfile
   return {
     id: String(j.id ?? ''), displayName: String(j.displayName ?? ''), email: String(j.email ?? ''),
     isAdmin: j.isAdmin === true, signupClosed: j.signupClosed === true,
+    passkeyUrl: typeof j.passkeyUrl === 'string' && /^https?:\/\//.test(j.passkeyUrl) ? j.passkeyUrl : undefined,
   }
 }
 

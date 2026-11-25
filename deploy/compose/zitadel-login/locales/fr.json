@@ -10,14 +10,42 @@
     "errors": {
       "noEmail": "Ce compte n'a pas d'adresse mail.",
       "couldNotSendLink": "Impossible d'envoyer le lien de connexion."
+    },
+    "passkeyPrompt": {
+      "title": "Simplifier la prochaine connexion ?",
+      "description": "Voulez-vous simplifier la prochaine connexion avec une clé d'accès ? Vous entrerez avec votre empreinte, votre visage ou le code de votre appareil, sans attendre de mail.",
+      "stopAsking": "Ne plus demander"
+    },
+    "passkeyAdd": {
+      "title": "Ajouter une clé d'accès",
+      "description": "Vous entrerez dans Savoire avec votre empreinte, votre visage ou le code de cet appareil, sans attendre de mail.",
+      "descriptionMore": "Vous avez déjà une clé d'accès. Ajoutez-en une pour cet appareil, ou pour un autre gestionnaire de clés.",
+      "confirmFirst": "Confirmez d'abord que c'est vous : nous vous envoyons un lien par mail.",
+      "sendLink": "Recevoir un lien par mail",
+      "codeSent": "Le lien du mail affiche un code : saisissez-le ici.",
+      "codeLabel": "Code",
+      "checkCode": "Continuer",
+      "resend": "Renvoyer le lien",
+      "done": "Clé d'accès ajoutée. Vous pouvez fermer cet onglet et revenir dans Savoire.",
+      "errors": {
+        "unknownAccount": "Compte introuvable. Rouvrez cette page depuis Savoire (Paramètres, Compte).",
+        "organization": "Votre organisation gère vos connexions : demandez à son administrateur.",
+        "notAllowed": "Les clés d'accès ne sont pas permises pour ce compte.",
+        "wrongCode": "Ce code ne marche pas. Vérifiez-le, ou demandez un nouveau lien.",
+        "generic": "Une erreur est survenue. Réessayez."
+      }
     }
   },
   "loginname": {
     "title": "Se connecter",
     "description": "Entrez votre adresse mail. Vous recevrez un lien, ou votre clé d'accès vous sera demandée.",
     "register": "Créer un compte",
-    "labels": { "loginname": "Adresse mail" },
-    "errors": { "userNotFound": "Aucun compte avec cette adresse. Choisissez « Créer un compte »." }
+    "labels": {
+      "loginname": "Adresse mail"
+    },
+    "errors": {
+      "userNotFound": "Aucun compte avec cette adresse. Choisissez « Créer un compte »."
+    }
   },
   "otp": {
     "verify": {

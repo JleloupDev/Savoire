@@ -52,3 +52,9 @@ Avec le compose de dev lancé, tout se lit dans Mailpit (`http://localhost:8025`
 2. Ouvrir le lien du mail, recopier le code dans la première fenêtre.
 3. « Plus tard » ou « Continuer » (clé d'accès) : retour dans l'appli.
 4. Se reconnecter avec la même adresse : lien par mail, ou clé d'accès.
+5. Sans clé d'accès, une connexion par lien propose d'en ajouter une
+   (« Plus tard », ou « Ne plus demander » : un cookie d'un an).
+6. Dans l'appli, Paramètres → Compte → « Ajouter une clé d'accès » ouvre
+   `/passkey/add?loginName=<adresse>` dans un onglet. Sans session valide
+   dans ce navigateur, la page envoie d'abord un lien par mail.
+   L'adresse de cette page vient de `zitadel-bootstrap` (`Auth:Oidc:PasskeyUrl`).

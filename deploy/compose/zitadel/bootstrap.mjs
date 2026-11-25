@@ -525,6 +525,9 @@ writeJson(apiFile, {
       WebClientId: webClientId,
       DesktopClientId: desktopClientId,
       RequireHttpsMetadata: !DEV_MODE,
+      // La page de connexion (savoire-login) ou l'on ajoute une cle d'acces,
+      // ouverte depuis Parametres -> Compte.
+      PasskeyUrl: `${ISSUER}/ui/v2/login/passkey/add`,
     },
   },
   Indexer: {

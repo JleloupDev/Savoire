@@ -85,6 +85,97 @@ index 1cf4960..c4161e9 100644
              ></SignInWithIdp>
            </div>
          )}
+diff --git a/apps/login/src/app/(login)/passkey/add/page.tsx b/apps/login/src/app/(login)/passkey/add/page.tsx
+new file mode 100644
+index 0000000..edd6766
+--- /dev/null
++++ b/apps/login/src/app/(login)/passkey/add/page.tsx
+@@ -0,0 +1,85 @@
++// Savoire : ajouter une cle d'acces depuis l'appli (Parametres -> Compte).
++// L'appli ouvre cette page dans un onglet, avec l'adresse du compte. Une
++// session valide dans ce navigateur suffit ; sinon, le lien par mail la
++// refait (organisation par defaut seulement). Rien ne redirige ensuite :
++// la personne ferme l'onglet.
++import { AddPasskey } from "@/components/savoire-add-passkey";
++import { Alert } from "@/components/alert";
++import { DynamicTheme } from "@/components/dynamic-theme";
++import { Translated } from "@/components/translated";
++import { UserAvatar } from "@/components/user-avatar";
++import { findUserForPasskeyAdd } from "@/lib/savoire-passkey";
++import { getServiceConfig } from "@/lib/service-url";
++import { isSessionValid, loadMostRecentSession } from "@/lib/session";
++import { getBrandingSettings, getLoginSettings, listAuthenticationMethodTypes } from "@/lib/zitadel";
++import { PasskeysType } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
++import { AuthenticationMethodType } from "@zitadel/proto/zitadel/user/v2/user_service_pb";
++import { Session } from "@zitadel/proto/zitadel/session/v2/session_pb";
++import { Metadata } from "next";
++import { getTranslations } from "next-intl/server";
++import { headers } from "next/headers";
++
++export async function generateMetadata(): Promise<Metadata> {
++  const t = await getTranslations("savoire");
++  return { title: t("passkeyAdd.title") };
++}
++
++export default async function Page(props: { searchParams: Promise<Record<string | number | symbol, string | undefined>> }) {
++  const searchParams = await props.searchParams;
++  const loginName = (searchParams.loginName ?? "").trim();
++
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++
++  const user = loginName ? await findUserForPasskeyAdd(loginName) : undefined;
++  const organization = user?.organizationId;
++  const branding = await getBrandingSettings({ serviceConfig, organization });
++  const loginSettings = user ? await getLoginSettings({ serviceConfig, organization }) : undefined;
++  const allowed = loginSettings?.passkeysType === PasskeysType.ALLOWED;
++
++  // La session de ce navigateur pour ce compte, si elle vaut encore.
++  let session: Session | undefined;
++  if (user && allowed) {
++    for (const name of [user.loginName, loginName]) {
++      const found = await loadMostRecentSession({ serviceConfig, sessionParams: { loginName: name } }).catch(() => undefined);
++      if (found?.factors?.user?.id === user.userId && (await isSessionValid({ serviceConfig, session: found }))) {
++        session = found;
++        break;
++      }
++    }
++  }
++
++  const hasPasskey = user
++    ? (await listAuthenticationMethodTypes({ serviceConfig, userId: user.userId }).catch(() => undefined))?.authMethodTypes?.includes(
++        AuthenticationMethodType.PASSKEY,
++      ) ?? false
++    : false;
++
++  return (
++    <DynamicTheme branding={branding}>
++      <div className="flex flex-col space-y-4">
++        <h1>
++          <Translated i18nKey="passkeyAdd.title" namespace="savoire" />
++        </h1>
++        <p className="ztdl-p mb-6 block">
++          <Translated i18nKey={hasPasskey ? "passkeyAdd.descriptionMore" : "passkeyAdd.description"} namespace="savoire" />
++        </p>
++        {user && <UserAvatar loginName={user.loginName} displayName={session?.factors?.user?.displayName} showDropdown={false} />}
++      </div>
++
++      <div className="w-full">
++        {!user ? (
++          <Alert>
++            <Translated i18nKey="passkeyAdd.errors.unknownAccount" namespace="savoire" />
++          </Alert>
++        ) : !allowed ? (
++          <Alert>
++            <Translated i18nKey="passkeyAdd.errors.notAllowed" namespace="savoire" />
++          </Alert>
++        ) : (
++          <AddPasskey loginName={user.loginName} sessionId={session?.id} />
++        )}
++      </div>
++    </DynamicTheme>
++  );
++}
 diff --git a/apps/login/src/app/(login)/passkey/page.tsx b/apps/login/src/app/(login)/passkey/page.tsx
 index c236d62..d870515 100644
 --- a/apps/login/src/app/(login)/passkey/page.tsx
@@ -106,6 +197,51 @@ index c236d62..d870515 100644
              organization={organization}
            />
          )}
+diff --git a/apps/login/src/app/(login)/passkey/set/page.tsx b/apps/login/src/app/(login)/passkey/set/page.tsx
+index 0fc5e11..679595d 100644
+--- a/apps/login/src/app/(login)/passkey/set/page.tsx
++++ b/apps/login/src/app/(login)/passkey/set/page.tsx
+@@ -20,7 +20,9 @@ export async function generateMetadata(): Promise<Metadata> {
+ export default async function Page(props: { searchParams: Promise<Record<string | number | symbol, string | undefined>> }) {
+   const searchParams = await props.searchParams;
+ 
+-  const { userId, loginName, prompt, organization, requestId, code, codeId } = searchParams;
++  const { userId, loginName, prompt, organization, requestId, code, codeId, after } = searchParams;
++  // Savoire : proposee apres une connexion par le lien du mail.
++  const afterEmail = !!prompt && after === "email";
+ 
+   const _headers = await headers();
+   const { serviceConfig } = getServiceConfig(_headers);
+@@ -54,11 +56,19 @@ export default async function Page(props: { searchParams: Promise<Record<string
+     <DynamicTheme branding={branding}>
+       <div className="flex flex-col space-y-4">
+         <h1>
+-          <Translated i18nKey="set.title" namespace="passkey" />
++          {afterEmail ? (
++            <Translated i18nKey="passkeyPrompt.title" namespace="savoire" />
++          ) : (
++            <Translated i18nKey="set.title" namespace="passkey" />
++          )}
+         </h1>
+ 
+         <p className="ztdl-p mb-6 block">
+-          <Translated i18nKey="set.description" namespace="passkey" />
++          {afterEmail ? (
++            <Translated i18nKey="passkeyPrompt.description" namespace="savoire" />
++          ) : (
++            <Translated i18nKey="set.description" namespace="passkey" />
++          )}
+         </p>
+ 
+         {session ? (
+@@ -105,6 +115,7 @@ export default async function Page(props: { searchParams: Promise<Record<string
+             sessionId={session?.id}
+             userId={userId}
+             isPrompt={!!prompt}
++            canStopAsking={afterEmail}
+             organization={organization}
+             requestId={requestId}
+             code={code}
 diff --git a/apps/login/src/app/(login)/register/page.tsx b/apps/login/src/app/(login)/register/page.tsx
 index ce799e3..07122b8 100644
 --- a/apps/login/src/app/(login)/register/page.tsx
@@ -125,10 +261,18 @@ index ce799e3..07122b8 100644
              idpCount={!loginSettings?.allowExternalIdp ? 0 : identityProviders.length}
              legal={legal}
 diff --git a/apps/login/src/components/login-otp.tsx b/apps/login/src/components/login-otp.tsx
-index c6cb500..3d1ad08 100644
+index c6cb500..9f6425f 100644
 --- a/apps/login/src/components/login-otp.tsx
 +++ b/apps/login/src/components/login-otp.tsx
-@@ -69,8 +69,8 @@ export function LoginOTP({ host, loginName, sessionId, requestId, organization,
+@@ -8,6 +8,7 @@ import { RequestChallengesSchema } from "@zitadel/proto/zitadel/session/v2/chall
+ import { ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
+ import { LoginSettings } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
+ import { useTranslations } from "next-intl";
++import { passkeyPromptAfterEmailLogin } from "@/lib/server/savoire";
+ import { useRouter } from "next/navigation";
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import { useForm } from "react-hook-form";
+@@ -69,8 +70,8 @@ export function LoginOTP({ host, loginName, sessionId, requestId, organization,
              value: host
                ? {
                    urlTemplate:
@@ -139,6 +283,25 @@ index c6cb500..3d1ad08 100644
                  }
                : {},
            },
+@@ -181,6 +182,18 @@ export function LoginOTP({ host, loginName, sessionId, requestId, organization,
+     return submitCode(values, organization).then(async (response) => {
+       if (response && "sessionId" in response) {
+         setLoading(true);
++        // Savoire : apres le lien par mail, proposer une cle d'acces.
++        if (method === "email" && response.sessionId) {
++          const prompt = await passkeyPromptAfterEmailLogin({
++            sessionId: response.sessionId,
++            requestId,
++            organization: response.factors?.user?.organizationId ?? organization,
++          }).catch(() => null);
++          if (prompt) {
++            router.push(prompt.redirect);
++            return;
++          }
++        }
+         // Wait for 2 seconds to avoid eventual consistency issues with an OTP code being verified in the /login endpoint
+         await new Promise((resolve) => setTimeout(resolve, 2000));
+ 
 diff --git a/apps/login/src/components/login-passkey.tsx b/apps/login/src/components/login-passkey.tsx
 index 18a884e..ee1f5f9 100644
 --- a/apps/login/src/components/login-passkey.tsx
@@ -200,7 +363,7 @@ index 18a884e..ee1f5f9 100644
              type="button"
              variant={ButtonVariants.Secondary}
 diff --git a/apps/login/src/components/register-passkey.tsx b/apps/login/src/components/register-passkey.tsx
-index c2e6145..86ef43c 100644
+index c2e6145..165aeb3 100644
 --- a/apps/login/src/components/register-passkey.tsx
 +++ b/apps/login/src/components/register-passkey.tsx
 @@ -1,11 +1,14 @@
@@ -209,7 +372,7 @@ index c2e6145..86ef43c 100644
  import { coerceToArrayBuffer, coerceToBase64Url } from "@/helpers/base64";
 +import { handleServerActionResponse } from "@/lib/client-utils";
  import { registerPasskeyLink, verifyPasskeyRegistration } from "@/lib/server/passkeys";
-+import { continueWithSessionId } from "@/lib/server/savoire";
++import { continueWithSessionId, stopPasskeyPrompt } from "@/lib/server/savoire";
  import { useRouter } from "next/navigation";
  import { useCallback, useEffect, useState } from "react";
  import { useForm } from "react-hook-form";
@@ -218,7 +381,27 @@ index c2e6145..86ef43c 100644
  import { BackButton } from "./back-button";
  import { Button, ButtonVariants } from "./button";
  import { Spinner } from "./spinner";
-@@ -44,8 +47,21 @@ export function RegisterPasskey({
+@@ -22,6 +25,10 @@ type Props = {
+   code?: string;
+   codeId?: string;
+   loginName?: string;
++  /** Savoire : propose aussi « Ne plus demander » (apres le lien par mail). */
++  canStopAsking?: boolean;
++  /** Savoire : ajout depuis l'appli (/passkey/add) ; rien a continuer ensuite. */
++  onRegistered?: () => void;
+ };
+ 
+ export function RegisterPasskey({
+@@ -33,6 +40,8 @@ export function RegisterPasskey({
+   code,
+   codeId,
+   loginName: initialLoginName,
++  canStopAsking,
++  onRegistered,
+ }: Props) {
+   const { handleSubmit, formState } = useForm<Inputs>({
+     mode: "onChange",
+@@ -44,8 +53,21 @@ export function RegisterPasskey({
  
    const router = useRouter();
  
@@ -241,7 +424,7 @@ index c2e6145..86ef43c 100644
        const params = new URLSearchParams();
  
        if (organization) {
-@@ -70,7 +86,7 @@ export function RegisterPasskey({
+@@ -70,7 +92,7 @@ export function RegisterPasskey({
  
        router.push("/passkey?" + params);
      },
@@ -250,7 +433,21 @@ index c2e6145..86ef43c 100644
    );
  
    async function submitVerify(
-@@ -206,6 +222,7 @@ export function RegisterPasskey({
+@@ -194,8 +216,12 @@ export function RegisterPasskey({
+       return;
+     }
+ 
++    if (onRegistered) {
++      onRegistered();
++      return;
++    }
+     continueAndLogin(verificationResponse.loginName);
+-  }, [sessionId, userId, code, codeId, continueAndLogin]);
++  }, [sessionId, userId, code, codeId, continueAndLogin, onRegistered]);
+ 
+   // Auto-submit when code is provided (similar to VerifyForm)
+   useEffect(() => {
+@@ -206,6 +232,7 @@ export function RegisterPasskey({
  
    return (
      <form className="w-full">
@@ -258,6 +455,139 @@ index c2e6145..86ef43c 100644
        {error && (
          <div className="py-4">
            <Alert>{error}</Alert>
+@@ -223,9 +250,24 @@ export function RegisterPasskey({
+           >
+             <Translated i18nKey="set.skip" namespace="passkey" />
+           </Button>
+-        ) : (
++        ) : onRegistered ? null : (
+           <BackButton />
+         )}
++        {isPrompt && canStopAsking && (
++          <Button
++            type="button"
++            className="ml-2"
++            variant={ButtonVariants.Secondary}
++            disabled={loading}
++            onClick={async () => {
++              await stopPasskeyPrompt().catch(() => undefined);
++              continueAndLogin();
++            }}
++            data-testid="passkey-stop-asking"
++          >
++            <Translated i18nKey="passkeyPrompt.stopAsking" namespace="savoire" />
++          </Button>
++        )}
+ 
+         <span className="flex-grow"></span>
+         <Button
+diff --git a/apps/login/src/components/savoire-add-passkey.tsx b/apps/login/src/components/savoire-add-passkey.tsx
+new file mode 100644
+index 0000000..634f061
+--- /dev/null
++++ b/apps/login/src/components/savoire-add-passkey.tsx
+@@ -0,0 +1,101 @@
++"use client";
++
++// Savoire : /passkey/add. Avec une session valide, la cle s'ajoute tout de
++// suite ; sans, on envoie d'abord le lien par mail et on attend son code.
++import { checkPasskeyAddCode, startPasskeyAddByEmail } from "@/lib/server/savoire";
++import { useTranslations } from "next-intl";
++import { useState } from "react";
++import { Alert, AlertType } from "./alert";
++import { Button, ButtonVariants } from "./button";
++import { TextInput } from "./input";
++import { RegisterPasskey } from "./register-passkey";
++import { Spinner } from "./spinner";
++import { Translated } from "./translated";
++
++type Props = { loginName: string; sessionId?: string };
++
++type Step = { kind: "email" } | { kind: "code"; sessionId: string } | { kind: "register"; sessionId: string } | { kind: "done" };
++
++export function AddPasskey({ loginName, sessionId }: Props) {
++  const [step, setStep] = useState<Step>(sessionId ? { kind: "register", sessionId } : { kind: "email" });
++  const [code, setCode] = useState("");
++  const [error, setError] = useState("");
++  const [loading, setLoading] = useState(false);
++  const t = useTranslations("savoire");
++
++  async function sendLink() {
++    setLoading(true);
++    setError("");
++    const res = await startPasskeyAddByEmail({ loginName }).catch(() => undefined);
++    setLoading(false);
++    if (!res) return setError(t("passkeyAdd.errors.generic"));
++    if ("error" in res) return setError(res.error);
++    setStep({ kind: "code", sessionId: res.sessionId });
++  }
++
++  async function checkCode(current: string) {
++    setLoading(true);
++    setError("");
++    const res = await checkPasskeyAddCode({ sessionId: current, code }).catch(() => undefined);
++    setLoading(false);
++    if (!res || "error" in res) return setError(res && "error" in res ? res.error : t("passkeyAdd.errors.generic"));
++    setStep({ kind: "register", sessionId: current });
++  }
++
++  if (step.kind === "done") {
++    return (
++      <div data-testid="passkey-added">
++        <Alert type={AlertType.INFO}>
++          <Translated i18nKey="passkeyAdd.done" namespace="savoire" />
++        </Alert>
++      </div>
++    );
++  }
++
++  if (step.kind === "register") {
++    return <RegisterPasskey sessionId={step.sessionId} isPrompt={false} loginName={loginName} onRegistered={() => setStep({ kind: "done" })} />;
++  }
++
++  return (
++    <form
++      className="w-full"
++      onSubmit={(e) => {
++        e.preventDefault();
++        if (step.kind === "email") void sendLink();
++        else void checkCode(step.sessionId);
++      }}
++    >
++      <p className="ztdl-p mb-4">
++        <Translated i18nKey={step.kind === "email" ? "passkeyAdd.confirmFirst" : "passkeyAdd.codeSent"} namespace="savoire" />
++      </p>
++      {step.kind === "code" && (
++        <TextInput
++          type="text"
++          autoFocus
++          value={code}
++          onChange={(e) => setCode(e.target.value)}
++          label={t("passkeyAdd.codeLabel")}
++          autoComplete="one-time-code"
++          data-testid="code-text-input"
++        />
++      )}
++      {error && (
++        <div className="py-4" data-testid="error">
++          <Alert>{error}</Alert>
++        </div>
++      )}
++      <div className="mt-8 flex w-full flex-row items-center">
++        {step.kind === "code" && (
++          <Button type="button" variant={ButtonVariants.Secondary} disabled={loading} onClick={() => void sendLink()}>
++            <Translated i18nKey="passkeyAdd.resend" namespace="savoire" />
++          </Button>
++        )}
++        <span className="flex-grow"></span>
++        <Button type="submit" variant={ButtonVariants.Primary} disabled={loading || (step.kind === "code" && !code.trim())} data-testid="submit-button">
++          {loading && <Spinner className="mr-2 h-5 w-5" />}
++          <Translated i18nKey={step.kind === "email" ? "passkeyAdd.sendLink" : "passkeyAdd.checkCode"} namespace="savoire" />
++        </Button>
++      </div>
++    </form>
++  );
++}
 diff --git a/apps/login/src/lib/mfa-helper.ts b/apps/login/src/lib/mfa-helper.ts
 index 89124be..3dc794a 100644
 --- a/apps/login/src/lib/mfa-helper.ts
@@ -289,6 +619,38 @@ index 89124be..3dc794a 100644
        m === AuthenticationMethodType.U2F,
    );
  
+diff --git a/apps/login/src/lib/savoire-passkey.ts b/apps/login/src/lib/savoire-passkey.ts
+new file mode 100644
+index 0000000..f70f427
+--- /dev/null
++++ b/apps/login/src/lib/savoire-passkey.ts
+@@ -0,0 +1,26 @@
++// Savoire : chercher le compte pour /passkey/add. Pas une action serveur
++// ("use server") : appelee seulement depuis le serveur, elle ne doit pas
++// devenir un point d'entree qui revele les comptes.
++import { headers } from "next/headers";
++import { getServiceConfig } from "./service-url";
++import { getLoginSettings, searchUsers } from "./zitadel";
++
++/** Le compte designe par son adresse, s'il est unique. */
++export async function findUserForPasskeyAdd(
++  loginName: string,
++): Promise<{ userId: string; loginName: string; organizationId: string } | undefined> {
++  const _headers = await headers();
++  const { serviceConfig } = getServiceConfig(_headers);
++  const loginSettings = await getLoginSettings({ serviceConfig });
++  if (!loginSettings) return undefined;
++  const found = await searchUsers({ serviceConfig, searchValue: loginName, loginSettings }).catch(() => undefined);
++  const users = found && "result" in found ? (found.result ?? []) : [];
++  if (users.length !== 1) return undefined;
++  const user = users[0];
++  if (!user.userId || !user.details?.resourceOwner) return undefined;
++  return {
++    userId: user.userId,
++    loginName: user.preferredLoginName || loginName,
++    organizationId: user.details.resourceOwner,
++  };
++}
 diff --git a/apps/login/src/lib/server/loginname.ts b/apps/login/src/lib/server/loginname.ts
 index 622c633..12b0c09 100644
 --- a/apps/login/src/lib/server/loginname.ts
@@ -421,10 +783,10 @@ index 9b927c0..e0d8ba3 100644
        logger.error("Failed to get user after session creation", { error });
 diff --git a/apps/login/src/lib/server/savoire.ts b/apps/login/src/lib/server/savoire.ts
 new file mode 100644
-index 0000000..2e79b94
+index 0000000..39d4319
 --- /dev/null
 +++ b/apps/login/src/lib/server/savoire.ts
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,321 @@
 +"use server";
 +
 +// Savoire : connexion sans mot de passe.
@@ -442,9 +804,10 @@ index 0000000..2e79b94
 +import { create } from "@zitadel/client";
 +import { RequestChallengesSchema } from "@zitadel/proto/zitadel/session/v2/challenge_pb";
 +import { ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
++import { PasskeysType } from "@zitadel/proto/zitadel/settings/v2/login_settings_pb";
 +import { AuthenticationMethodType } from "@zitadel/proto/zitadel/user/v2/user_service_pb";
 +import { getTranslations } from "next-intl/server";
-+import { headers } from "next/headers";
++import { cookies, headers } from "next/headers";
 +import { completeFlowOrGetUrl } from "../client";
 +import { getSessionCookieById, getSessionCookieByLoginName } from "../cookies";
 +import { createLogger } from "../logger";
@@ -457,6 +820,9 @@ index 0000000..2e79b94
 +  getUserByID,
 +  listAuthenticationMethodTypes,
 +} from "../zitadel";
++import { findUserForPasskeyAdd } from "../savoire-passkey";
++import { createSessionAndUpdateCookie } from "./cookie";
++import { getPublicHostWithProtocol } from "./host";
 +import { trySendVerification } from "./verify";
 +import { updateOrCreateSession } from "./session";
 +
@@ -617,6 +983,130 @@ index 0000000..2e79b94
 +      : { loginName: session.factors.user.loginName, organization: session.factors.user.organizationId },
 +    loginSettings?.defaultRedirectUri,
 +  );
++}
++
++// --- Clé d'accès proposée après le lien par mail -------------------------
++
++/** « Ne plus demander » : ce navigateur ne propose plus la clé d'accès. */
++const NO_PASSKEY_PROMPT_COOKIE = "savoire_no_passkey_prompt";
++
++/**
++ * Juste après une connexion par le lien du mail : faut-il proposer une clé
++ * d'accès ? Oui pour un compte de l'organisation par défaut qui n'en a pas,
++ * si les clés sont permises et si ce navigateur n'a pas dit « Ne plus
++ * demander ». Rend l'adresse de la proposition, ou null pour continuer.
++ */
++export async function passkeyPromptAfterEmailLogin({
++  sessionId,
++  requestId,
++  organization,
++}: {
++  sessionId: string;
++  requestId?: string;
++  organization?: string;
++}): Promise<{ redirect: string } | null> {
++  try {
++    const cookiesList = await cookies();
++    if (cookiesList.get(NO_PASSKEY_PROMPT_COOKIE)?.value === "1") return null;
++
++    const _headers = await headers();
++    const { serviceConfig } = getServiceConfig(_headers);
++    const cookie = await getSessionCookieById({ sessionId, organization });
++    if (!cookie) return null;
++    const response = await getSession({ serviceConfig, sessionId: cookie.id, sessionToken: cookie.token });
++    const user = response?.session?.factors?.user;
++    if (!user?.id || !(await isDefaultOrgUser(user.organizationId))) return null;
++
++    const methods = await listAuthenticationMethodTypes({ serviceConfig, userId: user.id });
++    if (methods.authMethodTypes?.includes(AuthenticationMethodType.PASSKEY)) return null;
++    const loginSettings = await getLoginSettings({ serviceConfig, organization: user.organizationId });
++    if (loginSettings?.passkeysType !== PasskeysType.ALLOWED) return null;
++
++    const params = new URLSearchParams({ loginName: user.loginName, prompt: "true", after: "email" });
++    if (organization) params.set("organization", organization);
++    if (requestId) params.set("requestId", requestId);
++    return { redirect: "/passkey/set?" + params };
++  } catch (error) {
++    // La proposition est un plus : en cas d'erreur, la connexion continue.
++    logger.error("Could not check passkey prompt", { error });
++    return null;
++  }
++}
++
++/** « Ne plus demander », pour un an, dans ce navigateur. */
++export async function stopPasskeyPrompt(): Promise<void> {
++  const cookiesList = await cookies();
++  cookiesList.set({
++    name: NO_PASSKEY_PROMPT_COOKIE,
++    value: "1",
++    httpOnly: true,
++    path: "/",
++    sameSite: "lax",
++    secure: process.env.NODE_ENV === "production",
++    maxAge: 365 * 24 * 60 * 60,
++  });
++}
++
++// --- Ajouter une clé d'accès depuis Savoire (/passkey/add) ----------------
++
++/**
++ * Pas de session valide dans ce navigateur : on la refait par le lien du
++ * mail (organisation par défaut seulement), puis la clé s'ajoute.
++ * Rend la nouvelle session, dont le code reste à vérifier.
++ */
++export async function startPasskeyAddByEmail({
++  loginName,
++}: {
++  loginName: string;
++}): Promise<{ sessionId: string } | { error: string }> {
++  const t = await getTranslations("savoire");
++  const user = await findUserForPasskeyAdd(loginName);
++  if (!user) return { error: t("passkeyAdd.errors.unknownAccount") };
++  if (!(await isDefaultOrgUser(user.organizationId))) return { error: t("passkeyAdd.errors.organization") };
++
++  try {
++    await ensureOtpEmail(user.userId);
++    const created = await createSessionAndUpdateCookie({
++      checks: create(ChecksSchema, { user: { search: { case: "userId", value: user.userId } } }),
++      requestId: undefined,
++    });
++    const _headers = await headers();
++    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
++    const challenge = await updateOrCreateSession({
++      sessionId: created.session.id,
++      challenges: create(RequestChallengesSchema, {
++        otpEmail: {
++          deliveryType: {
++            case: "sendCode",
++            // Comme pour la connexion : le lien montre le code, il ne connecte pas.
++            value: { urlTemplate: `${getPublicHostWithProtocol(_headers)}${basePath}/code?code={{.Code}}` },
++          },
++        },
++      }),
++    });
++    if (!challenge || "error" in challenge) throw new Error("Could not send email code");
++    return { sessionId: created.session.id };
++  } catch (error) {
++    logger.error("Could not start passkey add by email", { error });
++    return { error: t("errors.couldNotSendLink") };
++  }
++}
++
++/** Le code du mail, tapé sur /passkey/add : la session devient valide. */
++export async function checkPasskeyAddCode({
++  sessionId,
++  code,
++}: {
++  sessionId: string;
++  code: string;
++}): Promise<{ ok: true } | { error: string }> {
++  const t = await getTranslations("savoire");
++  const checked = await updateOrCreateSession({
++    sessionId,
++    checks: create(ChecksSchema, { otpEmail: { code: code.trim() } }),
++  }).catch(() => undefined);
++  if (!checked || "error" in checked) return { error: t("passkeyAdd.errors.wrongCode") };
++  return { ok: true };
 +}
 diff --git a/apps/login/src/lib/server/verify.ts b/apps/login/src/lib/server/verify.ts
 index ec39235..8cae0f3 100644

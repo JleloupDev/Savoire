@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Parametres → Compte : exporter ses donnees (.zip), supprimer son compte,
-// voir si l'inscription est ouverte. L'inscription se ferme sur le serveur
+// Parametres → Compte : ajouter une cle d'acces, exporter ses donnees (.zip),
+// supprimer son compte, voir si l'inscription est ouverte. La cle d'acces
+// s'ajoute sur la page du fournisseur d'identite (savoire-login), ouverte
+// dans un onglet : la cle y est liee a son domaine, pas a celui de l'appli. L'inscription se ferme sur le serveur
 // (SIGNUP_CLOSED, zitadel-bootstrap) : ici on ne fait que la montrer.
 import { useEffect, useState } from 'react'
-import { DELETE_CONFIRMATION, type AccountProfile } from './accountData'
+import { DELETE_CONFIRMATION, passkeyPageUrl, type AccountProfile } from './accountData'
+import { isTauriRuntime } from './tauriRuntime'
 
 export interface AccountSettingsProps {
   /** Le compte connecte (GET /api/v1/auth/me). */
@@ -14,6 +17,17 @@ export interface AccountSettingsProps {
   exportData(): Promise<string>
   /** Supprime le compte, puis ferme la session. */
   deleteAccount(): Promise<void>
+  /** Ouvre une page web hors de l'appli. Par defaut : le navigateur du systeme (bureau), sinon un onglet. */
+  openExternal?(url: string): Promise<void>
+}
+
+async function openExternalDefault(url: string): Promise<void> {
+  if (isTauriRuntime()) {
+    const internals = (globalThis as { __TAURI_INTERNALS__?: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> } }).__TAURI_INTERNALS__
+    await internals?.invoke('open_external', { url })
+    return
+  }
+  window.open(url, '_blank', 'noopener')
 }
 
 const BTN: React.CSSProperties = {
@@ -23,7 +37,7 @@ const BTN: React.CSSProperties = {
 const SECTION: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 0', borderBottom: '1px solid var(--border)' }
 const TITLE: React.CSSProperties = { margin: 0, fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }
 
-export function AccountSettings({ loadProfile, exportData, deleteAccount }: AccountSettingsProps) {
+export function AccountSettings({ loadProfile, exportData, deleteAccount, openExternal = openExternalDefault }: AccountSettingsProps) {
   const [profile, setProfile] = useState<AccountProfile | null>(null)
   const [busy, setBusy] = useState<'export' | 'delete' | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -39,12 +53,33 @@ export function AccountSettings({ loadProfile, exportData, deleteAccount }: Acco
     finally { setBusy(null) }
   }
 
+  const passkeyUrl = profile ? passkeyPageUrl(profile) : null
+  const addPasskey = async (url: string) => {
+    setError(null); setMessage(null)
+    try {
+      await openExternal(url)
+      setMessage('La page d\'ajout s\'est ouverte dans votre navigateur. Suivez-la, puis revenez ici.')
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+  }
+
   return (
     <div data-testid="account-settings" style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text)' }}>
       {profile && (
         <div style={SECTION}>
           <h3 style={TITLE}>Compte</h3>
           <div>{profile.displayName}{profile.email ? ` · ${profile.email}` : ''}</div>
+        </div>
+      )}
+
+      {passkeyUrl && (
+        <div style={SECTION}>
+          <h3 style={TITLE}>Clé d'accès</h3>
+          <div style={{ color: 'var(--text-muted)' }}>
+            Entrez dans Savoire avec votre empreinte, votre visage ou le code de votre appareil, sans attendre de mail.
+          </div>
+          <div><button data-testid="account-passkey" style={BTN} onClick={() => void addPasskey(passkeyUrl)}>
+            Ajouter une clé d'accès
+          </button></div>
         </div>
       )}
 

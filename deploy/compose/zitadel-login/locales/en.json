@@ -10,14 +10,42 @@
     "errors": {
       "noEmail": "This account has no email address.",
       "couldNotSendLink": "Could not send the sign-in link."
+    },
+    "passkeyPrompt": {
+      "title": "Make your next sign-in simpler?",
+      "description": "Do you want to make your next sign-in simpler with a passkey? You will sign in with your fingerprint, face or device code, without waiting for an email.",
+      "stopAsking": "Don't ask again"
+    },
+    "passkeyAdd": {
+      "title": "Add a passkey",
+      "description": "You will sign in to Savoire with your fingerprint, face or this device's code, without waiting for an email.",
+      "descriptionMore": "You already have a passkey. Add one for this device, or for another passkey manager.",
+      "confirmFirst": "First confirm it's you: we will send you a link by email.",
+      "sendLink": "Get a link by email",
+      "codeSent": "The link in the email shows a code: enter it here.",
+      "codeLabel": "Code",
+      "checkCode": "Continue",
+      "resend": "Send the link again",
+      "done": "Passkey added. You can close this tab and go back to Savoire.",
+      "errors": {
+        "unknownAccount": "Account not found. Open this page again from Savoire (Settings, Account).",
+        "organization": "Your organization manages your sign-ins: ask its administrator.",
+        "notAllowed": "Passkeys are not allowed for this account.",
+        "wrongCode": "This code does not work. Check it, or ask for a new link.",
+        "generic": "Something went wrong. Try again."
+      }
     }
   },
   "loginname": {
     "title": "Sign in",
     "description": "Enter your email address. You will get a link, or be asked for your passkey.",
     "register": "Create an account",
-    "labels": { "loginname": "Email address" },
-    "errors": { "userNotFound": "No account with this address. Choose \"Create an account\"." }
+    "labels": {
+      "loginname": "Email address"
+    },
+    "errors": {
+      "userNotFound": "No account with this address. Choose \"Create an account\"."
+    }
   },
   "otp": {
     "verify": {

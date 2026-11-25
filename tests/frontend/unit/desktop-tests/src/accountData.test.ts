@@ -2,14 +2,15 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
 // Parametres → Compte : l'export des donnees (vaults du serveur ET vaults du
-// poste, lus sur le disque en version bureau) et la suppression du compte.
+// poste, lus sur le disque en version bureau), la suppression du compte et
+// la page d'ajout d'une cle d'acces.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readZip } from '@savoire/application'
 import { InMemoryVaultFileSystem } from '@savoire/platform'
 import { TauriVaultFileSystem } from '@savoire/desktop'
 import { FakeBridge } from './fakeBridge'
 import { zipEntriesOf } from '../../../../../apps/web/src/vaultTransfer'
-import { apiCaller, buildAccountExport, deleteAccount, ownedVaults, type ExportableVault } from '../../../../../apps/web/src/accountData'
+import { apiCaller, buildAccountExport, deleteAccount, fetchAccountProfile, ownedVaults, passkeyPageUrl, type ExportableVault } from '../../../../../apps/web/src/accountData'
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b)
 const mem = (name: string) => new InMemoryVaultFileSystem({ rootLabel: name, watch: false })
@@ -123,5 +124,23 @@ describe('suppression du compte', () => {
   it('un refus du serveur remonte son message', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Le fournisseur refuse.' }), { status: 502 })))
     await expect(deleteAccount(apiCaller(() => 'jwt', p => `http://s${p}`))).rejects.toThrow('Le fournisseur refuse.')
+  })
+})
+
+describe('cle d\'acces', () => {
+  const profile = (body: unknown) => fetchAccountProfile(async () => new Response(JSON.stringify(body), { status: 200 }))
+
+  it('la page d\'ajout recoit l\'adresse du compte', async () => {
+    const p = await profile({ id: 'u1', email: 'ana+x@test.fr', passkeyUrl: 'https://auth.test/ui/v2/login/passkey/add' })
+    expect(passkeyPageUrl(p)).toBe('https://auth.test/ui/v2/login/passkey/add?loginName=ana%2Bx%40test.fr')
+  })
+
+  it('sans page declaree par le serveur, ou sans adresse, pas de bouton', async () => {
+    expect(passkeyPageUrl(await profile({ id: 'u1', email: 'ana@test.fr', passkeyUrl: null }))).toBeNull()
+    expect(passkeyPageUrl(await profile({ id: 'u1', email: '', passkeyUrl: 'https://auth.test/p' }))).toBeNull()
+  })
+
+  it('refuse une adresse qui n\'est pas du web', async () => {
+    expect((await profile({ id: 'u1', email: 'a@t.fr', passkeyUrl: 'javascript:alert(1)' })).passkeyUrl).toBeUndefined()
   })
 })

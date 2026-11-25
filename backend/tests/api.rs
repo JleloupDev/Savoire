@@ -26,7 +26,16 @@ async fn first_request_creates_the_account() {
     let t = app.token("alice-sub", Some("alice@test.local"), Some("Alice"));
     let r = app.get(&t, "/api/v1/auth/me").await;
     assert_eq!(r.0, 200, "{}", r.1);
-    assert_eq!(r.1, json!({ "id": "alice-sub", "displayName": "Alice", "email": "alice@test.local", "isAdmin": false, "signupClosed": false }));
+    assert_eq!(r.1, json!({ "id": "alice-sub", "displayName": "Alice", "email": "alice@test.local", "isAdmin": false, "signupClosed": false, "passkeyUrl": null }));
+}
+
+#[tokio::test]
+async fn me_gives_the_passkey_page_when_configured() {
+    let app = app!(json!({ "Auth": { "Oidc": { "PasskeyUrl": "https://auth.test/ui/v2/login/passkey/add" } } }));
+    let t = app.token("alice-sub", Some("alice@test.local"), Some("Alice"));
+    let r = app.get(&t, "/api/v1/auth/me").await;
+    assert_eq!(r.0, 200, "{}", r.1);
+    assert_eq!(r.1["passkeyUrl"], "https://auth.test/ui/v2/login/passkey/add");
 }
 
 #[tokio::test]

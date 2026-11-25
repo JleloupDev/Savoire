@@ -48,6 +48,8 @@ pub async fn me(State(st): State<AppState>, Auth(p): Auth) -> AppResult<Response
             "id": u.id, "displayName": u.display_name, "email": u.email.unwrap_or_default(), "isAdmin": u.is_admin,
             // Reglage de l'instance (applique par zitadel-bootstrap), montre dans les Parametres.
             "signupClosed": st.settings().bool_or("Auth:SignupClosed", false),
+            // Page du fournisseur d'identite pour ajouter une cle d'acces (ecrite par zitadel-bootstrap).
+            "passkeyUrl": st.settings().str("Auth:Oidc:PasskeyUrl").filter(|u| !u.trim().is_empty()),
         })),
         None => super::status(401),
     })
