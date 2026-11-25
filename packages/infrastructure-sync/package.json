@@ -12,6 +12,11 @@
       "source": "./src/YjsSharedTree.ts",
       "import": "./dist/YjsSharedTree.js",
       "types": "./dist/YjsSharedTree.d.ts"
+    },
+    "./ai-changes": {
+      "source": "./src/AiChanges.ts",
+      "import": "./dist/AiChanges.js",
+      "types": "./dist/AiChanges.d.ts"
     }
   },
   "main": "./dist/index.js",

@@ -10,11 +10,12 @@ import {
 } from 'y-protocols/awareness'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import type { Extension } from '@codemirror/state'
-import type { AgentPeer, AgentPresenceInput, ICRDT } from '@savoire/plugin-api'
+import type { AgentPeer, AgentPresenceInput, AiChangeInfo, AiChangeMetaInput, AiChangeRanges, AiChangeRecording, AiChangeWho, ICRDT } from '@savoire/plugin-api'
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 import { YjsCollaborativeText } from './YjsCollaborativeText'
 import { YjsSharedText } from './YjsSharedText'
 import { YjsSharedTree } from './YjsSharedTree'
+import { AiChangeTracker, aiChangeRanges, aiChangesMap, displayAiChanges, recordAiChange, undoAiChanges } from './AiChanges'
 
 
 // Les commandes d'annulation de y-codemirror (seul son clavier est exporte).
@@ -322,6 +323,43 @@ export class YjsCrdtAdapter implements ICRDT {
 
   redo(view: EditorView): boolean {
     return Y_REDO(view)
+  }
+
+  // ── Modifications de l'IA (AiChanges.ts) ─────────────────────────────────
+
+  aiChanges(): AiChangeInfo[] {
+    return displayAiChanges(this.ydoc)
+  }
+
+  onAiChangesChange(cb: (added: string[]) => void): () => void {
+    const map = aiChangesMap(this.ydoc)
+    const handler = (event: { keysChanged: Set<string>; changes: { keys: Map<string, { action: string }> } }): void => {
+      const added = [...event.changes.keys].filter(([, c]) => c.action === 'add').map(([k]) => k)
+      cb(added)
+    }
+    map.observe(handler as never)
+    return () => map.unobserve(handler as never)
+  }
+
+  aiChangeRanges(parts: readonly string[]): AiChangeRanges {
+    return aiChangeRanges(this.ydoc, this.ytext, parts)
+  }
+
+  undoAiChange(parts: readonly string[], by: AiChangeWho): { ok: boolean; partial: boolean } {
+    return undoAiChanges(this.ydoc, this.ytext, parts, by)
+  }
+
+  beginAiChange(meta: AiChangeMetaInput): AiChangeRecording {
+    const tracker = new AiChangeTracker(this.ytext)
+    let done = false
+    return {
+      capture: fn => tracker.capture(fn),
+      commit: () => {
+        if (done) return null
+        done = true
+        return recordAiChange(this.ydoc, tracker.ops, meta)
+      },
+    }
   }
 
   dispose(): void {
