@@ -5,6 +5,8 @@ import { createWebServices } from './createWebAppRoot'
 import { AuthProvider } from './AuthContext'
 import { VaultKeyProvider } from './VaultKeyContext'
 import { LoginPage } from './LoginPage'
+import { LandingPage } from './LandingPage'
+import { LANDING_PATH } from './visitorEntry'
 import { AppShell } from './AppShell'
 import { AdminPage } from './AdminPage'
 import { ShareAccessPage } from './ShareAccessPage'
@@ -40,6 +42,8 @@ export function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              {/* Page vitrine des visiteurs non connectes. */}
+              <Route path={LANDING_PATH} element={<LandingPage />} />
               {/* Retour du fournisseur d'identite : AuthProvider le traite. */}
               <Route path={CALLBACK_PATH} element={<LoginPage />} />
               <Route path="/admin" element={<AdminPage adminApi={adminApi} />} />

@@ -50,6 +50,7 @@ import { desktopNotion } from './notionConnection'
 import { needsOnboarding } from './onboardingPreferences'
 import { canPinNote, desktopWindows, noteTitle, openNoteWindow, pinNote, readNoteWindow, setDesktopPinned as setDesktopPinnedNative } from './noteWindow'
 import { isTauriRuntime } from './tauriRuntime'
+import { visitorEntryPath } from './visitorEntry'
 import { PluginLoader } from '@savoire/plugin-runtime'
 import type { EditorAreaRefs } from './EditorAreaWidget'
 import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './types'
@@ -452,7 +453,10 @@ export function AppShell() {
 
   useEffect(() => subscribeLocale(setLocaleState), [])
 
-  useEffect(() => { if (isReady && !token) navigate('/login') }, [isReady, token, navigate])
+  // Pas connecte : la vitrine pour une premiere visite, sinon la connexion.
+  useEffect(() => {
+    if (isReady && !token) navigate(visitorEntryPath({ desktop: isTauriRuntime(), savedAccounts: accounts.length }))
+  }, [isReady, token, navigate, accounts.length])
 
   // ── Stable refs ────────────────────────────────────────────────────────────
 
