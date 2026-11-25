@@ -20,6 +20,7 @@ import type { WorkspaceManagerImpl } from '@savoire/workspace'
 import type { VaultClient } from '@savoire/platform'
 import type { DocumentDto, VaultSummary, AccountEntry } from './types'
 import { bubbles } from './bubbles'
+import { showAiChange } from './aiChangeHistory'
 
 /** Document ouvert par un chemin ou un lien (nom seul, .md facultatif), comme Obsidian. */
 function findByLink<T extends { path: string }>(docs: readonly T[], target: string): T | undefined {
@@ -282,7 +283,7 @@ export function DocumentPanelHost({
         const account = refs.activeAccount.current
         return account ? { id: account.userId, name: account.displayName } : null
       },
-      showHistory: (docId, id) => window.dispatchEvent(new CustomEvent('savoire:show-ai-change', { detail: { docId, id } })),
+      showHistory: (docId, id) => showAiChange(docId, id),
     })
     setController(ctrl)
     refs.onControllerReady.current(ctrl)
