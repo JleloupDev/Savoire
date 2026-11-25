@@ -8,6 +8,11 @@
 // Chaque fournisseur porte son protocole (AIProviderSpec.protocol) ; un
 // adaptateur par protocole (aiProtocols.ts) construit la requete et lit la
 // reponse, entiere ou en flux.
+//
+// Un protocole peut aussi etre servi par un programme du poste plutot que
+// par une adresse (AIRunner, ex. « claude-cli » : Claude Code, bureau
+// seulement, claudeCli.ts). L'application l'enregistre (registerRunner) ;
+// un plugin ne fait toujours que decrire le fournisseur.
 import {
   AINotConfiguredError,
   type AIAPI, type AIChatRequest, type AIChatResponse, type AIConnectionInfo, type AIProviderSpec,
@@ -19,10 +24,48 @@ export interface AIConnection {
   id: string
   name: string
   providerId: string
+  /** Vide pour un fournisseur servi par un programme du poste (AIRunner). */
   baseUrl: string
   apiKey: string
   model: string
   isDefault: boolean
+}
+
+/** Le programme du poste d'un fournisseur local : trouve ou non (reglages). */
+export interface AIProgramStatus {
+  found: boolean
+  path?: string | null
+  version?: string | null
+  /** Choisi par la personne (sinon : cherche sur le poste). */
+  chosen: boolean
+  error?: string | null
+}
+
+/** Trouver et choisir le programme (la boite de dialogue est celle du systeme). */
+export interface AIProgram {
+  status(): Promise<AIProgramStatus>
+  choose(): Promise<AIProgramStatus>
+  /** Oublie le programme choisi : retour a la recherche sur le poste. */
+  forget(): Promise<AIProgramStatus>
+}
+
+export interface AIRunnerCall {
+  connection: AIConnection
+  model: string
+  request: AIChatRequest
+}
+
+/**
+ * Un protocole servi par un programme du poste, pas par une adresse. Il
+ * suit le meme contrat que les autres : flux (request.onDelta), appels
+ * d'outils rendus au moteur, arret (request.signal).
+ */
+export interface AIRunner {
+  /** Le protocole servi (AIProviderSpec.protocol). */
+  readonly protocol: string
+  chat(call: AIRunnerCall): Promise<AIProtocolResult>
+  listModels?(): Promise<string[]>
+  program?: AIProgram
 }
 
 /** Ou la personne garde ses connexions (navigateur, appli de bureau). */
@@ -98,6 +141,7 @@ type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export class AIService {
   private readonly providers = new Map<string, AIProviderSpec>()
+  private readonly runners = new Map<string, AIRunner>()
   private readonly listeners = new Set<() => void>()
 
   constructor(
@@ -119,13 +163,28 @@ export class AIService {
 
   registerProvider(spec: AIProviderSpec): () => void {
     if (!spec.id || !spec.name) throw new Error('fournisseur sans id ou sans nom')
-    if (!AI_PROTOCOLS[spec.protocol]) throw new Error(`protocole inconnu : ${spec.protocol}`)
+    if (!AI_PROTOCOLS[spec.protocol] && !this.runners.has(spec.protocol)) throw new Error(`protocole inconnu : ${spec.protocol}`)
     if (spec.baseUrl && !/^https?:\/\//.test(spec.baseUrl)) throw new Error('adresse du fournisseur invalide')
     this.providers.set(spec.id, spec)
     this.emit()
     return () => {
       if (this.providers.get(spec.id) === spec) { this.providers.delete(spec.id); this.emit() }
     }
+  }
+
+  /** Ajoute un protocole servi par un programme du poste (l'application seulement). */
+  registerRunner(runner: AIRunner): () => void {
+    this.runners.set(runner.protocol, runner)
+    this.emit()
+    return () => {
+      if (this.runners.get(runner.protocol) === runner) { this.runners.delete(runner.protocol); this.emit() }
+    }
+  }
+
+  /** Le programme du poste qui sert ce fournisseur ; undefined : un service a une adresse. */
+  runnerFor(providerId: string): AIRunner | undefined {
+    const spec = this.providers.get(providerId)
+    return spec ? this.runners.get(spec.protocol) : undefined
   }
 
   // ── Connexions de la personne ────────────────────────────────────────────
@@ -142,13 +201,15 @@ export class AIService {
   /** Ajoute ou remplace une connexion. La premiere devient celle par defaut. */
   saveConnection(input: Omit<AIConnection, 'id' | 'isDefault'> & { id?: string; isDefault?: boolean }): AIConnection {
     const name = input.name.trim()
-    const baseUrl = input.baseUrl.trim().replace(/\/+$/, '')
+    // Un programme du poste : ni adresse ni cle.
+    const local = !!this.runnerFor(input.providerId)
+    const baseUrl = local ? '' : input.baseUrl.trim().replace(/\/+$/, '')
     if (!name) throw new Error('Donnez un nom à la connexion.')
-    if (!/^https?:\/\/[^\s]+$/.test(baseUrl)) throw new Error('Adresse invalide : elle commence par https:// (ou http:// en local).')
+    if (!local && !/^https?:\/\/[^\s]+$/.test(baseUrl)) throw new Error('Adresse invalide : elle commence par https:// (ou http:// en local).')
     const all = this.connections()
     const id = input.id ?? crypto.randomUUID()
     const isDefault = input.isDefault ?? (all.length === 0 || !!all.find(c => c.id === id)?.isDefault)
-    const next: AIConnection = { id, name, providerId: input.providerId, baseUrl, apiKey: input.apiKey.trim(), model: input.model.trim(), isDefault }
+    const next: AIConnection = { id, name, providerId: input.providerId, baseUrl, apiKey: local ? '' : input.apiKey.trim(), model: input.model.trim(), isDefault }
     const list = all.filter(c => c.id !== id).map(c => (isDefault ? { ...c, isDefault: false } : c))
     this.store.save([...list, next])
     this.emit()
@@ -177,8 +238,17 @@ export class AIService {
   async chat(request: AIChatRequest, connectionId?: string): Promise<AIChatResponse> {
     const conn = connectionId ? this.connections().find(c => c.id === connectionId) : this.defaultConnection()
     if (!conn) throw new AINotConfiguredError()
+    const runner = this.runnerFor(conn.providerId)
+    if (runner) {
+      const model = request.model ?? conn.model
+      return this.response(conn, model, await runner.chat({ connection: conn, model, request }))
+    }
     const model = request.model ?? conn.model
     if (!model) throw new AIRequestError(`Choisissez un modèle pour la connexion « ${conn.name} ».`)
+    // Fournisseur d'un plugin desinstalle, ou programme du poste absent ici (navigateur).
+    if (!conn.baseUrl) throw new AIRequestError(this.providers.has(conn.providerId)
+      ? `« ${conn.name} » ne marche que dans l’application de bureau.`
+      : `« ${conn.name} » : son fournisseur n’est plus installé (Paramètres → Plugins).`)
     const protocol = this.protocolOf(conn)
     let result: AIProtocolResult | null = null
     if (request.onDelta) result = await this.streamed(conn, protocol, model, request)
@@ -190,6 +260,10 @@ export class AIService {
       if (result?.text && request.onDelta) request.onDelta({ text: result.text })
     }
     if (!result) throw new AIRequestError(`Réponse inattendue de « ${conn.name} ».`)
+    return this.response(conn, model, result)
+  }
+
+  private response(conn: AIConnection, model: string, result: AIProtocolResult): AIChatResponse {
     return {
       text: result.text, model: result.model ?? model, connection: conn.name,
       ...(result.usage ? { usage: result.usage } : {}),
@@ -260,6 +334,7 @@ export class AIService {
   async transcribe(audio: Blob, opts: { connectionId?: string; model: string; language?: string; fileName?: string; signal?: AbortSignal }): Promise<string> {
     const conn = opts.connectionId ? this.connections().find(c => c.id === opts.connectionId) : this.defaultConnection()
     if (!conn) throw new AINotConfiguredError()
+    if (this.runnerFor(conn.providerId) || !conn.baseUrl) throw new AIRequestError(`« ${conn.name} » ne fait pas la dictée : choisissez une autre source (Paramètres → IA → Dictée).`)
     if (!opts.model.trim()) throw new AIRequestError('Choisissez un modèle de transcription (Paramètres → IA → Dictée).')
     const form = new FormData()
     form.append('file', audio, opts.fileName ?? 'dictee.webm')
@@ -274,6 +349,8 @@ export class AIService {
 
   /** Modeles proposes par le service (pour les reglages). */
   async listModels(conn: Pick<AIConnection, 'name' | 'baseUrl' | 'apiKey'> & { providerId?: string }): Promise<string[]> {
+    const runner = conn.providerId ? this.runnerFor(conn.providerId) : undefined
+    if (runner) return runner.listModels ? runner.listModels() : this.providers.get(conn.providerId!)?.models ?? []
     const protocol = this.protocolOf(conn)
     const res = await this.call(conn, protocol.modelsPath, { method: 'GET' })
     return protocol.readModels(await res.json().catch(() => null))
