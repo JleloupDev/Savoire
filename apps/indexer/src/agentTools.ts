@@ -24,6 +24,7 @@ import {
 import {
   NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
+import { AiChangeTracker, recordAiChange } from '@savoire/infrastructure-sync/ai-changes'
 import { MAX_PROPOSAL_BYTES, relinkAfterMoves, textFingerprint, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
 import { baseOfQuery, canRead, filterResult, parseAccess, type AccessRules } from './access'
 import type { PresenceBody, UpdatesLog, WriteBody } from './backend'
@@ -41,7 +42,7 @@ const MAX_READ = 512 * 1024
  * Effet de frappe : un long texte part en quelques ecritures, sur 1,5 s au
  * plus. Un appel d'outil doit finir bien avant le delai du pair (4 s par defaut).
  */
-const TYPING = { budgetMs: 1500, maxWrites: 12, maxDelayMs: 140 }
+export const TYPING = { budgetMs: 1500, maxWrites: 12, maxDelayMs: 140 }
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
 /** Ce que le magasin du vault donne a l'hote (store.ts). */
@@ -358,8 +359,13 @@ export class PeerToolHost implements AgentToolHost {
    * texte part morceau par morceau : autant d'ecritures, avec le meme ticket.
    * Le document rejoue reste ouvert le temps de l'appel ; chaque morceau est
    * la difference depuis le precedent.
+   *
+   * L'ecriture devient un point d'historique (modifications de l'IA,
+   * infrastructure-sync/AiChanges.ts), annulable seul : qui, pour qui, quoi
+   * (`what`) et pourquoi (`why`). Il part DANS la derniere mise a jour du
+   * texte, jamais dans une ecriture de plus.
    */
-  async applyChanges(docId: string, changes: readonly TextChange[], _actor?: ToolActor, opts: { typing?: boolean; expect?: string } = {}): Promise<void> {
+  async applyChanges(docId: string, changes: readonly TextChange[], actor?: ToolActor, opts: { typing?: boolean; expect?: string; what?: string; why?: string } = {}): Promise<void> {
     if (!changes.length) return
     const log = await this.noteLog(docId)
     const edit = editDoc(log.updates)
@@ -370,21 +376,25 @@ export class PeerToolHost implements AgentToolHost {
         throw new HostError('La note a changé pendant la modification : relisez-la.', 'conflict')
       }
       const plan = opts.typing ? planTyping(changes, TYPING) : { first: changes, tails: [], delayMs: 0 }
+      // Ce que l'agent change dans le texte, et rien d'autre : le document rejoue n'est qu'a lui.
+      // (AiChanges decrit lui-meme ce qu'il attend de Yjs : les vrais types passent par un cast.)
+      const tracker = new AiChangeTracker(text as never)
+      // Le point rejoint les changements en attente : il part avec le prochain envoi.
+      const point = (): void => {
+        if (!actor) return
+        recordAiChange(edit.doc as never, tracker.ops, {
+          agent: { id: actor.agentId, name: actor.agentName, color: this.presenceColor ?? agentColor({ id: actor.agentId }) },
+          forUser: { id: actor.onBehalfOf.userId, name: actor.onBehalfOf.displayName },
+          ...(opts.what ? { summary: opts.what } : {}),
+          ...(opts.why ? { reason: opts.why } : {}),
+        }, this.now().getTime())
+      }
       const send = async (): Promise<void> => {
         const update = edit.changes()
         if (!update) return
         await this.write({ ops: [{ target: 'document', docId, update: b64(update) }] })
         edit.sent()
       }
-      // De la fin vers le debut : les positions d'avant restent justes.
-      edit.doc.transact(() => {
-        for (let i = plan.first.length - 1; i >= 0; i--) {
-          const c = plan.first[i]!
-          if (c.to > c.from) text.delete(c.from, c.to - c.from)
-          if (c.text) text.insert(c.from, c.text)
-        }
-      })
-      await send()
       // La suite des longs textes : chaque morceau a sa place, apres ceux deja ecrits.
       const steps: { at: number; chunk: string }[] = []
       let typed = 0
@@ -396,14 +406,31 @@ export class PeerToolHost implements AgentToolHost {
           typed += chunk.length
         }
       }
+      // De la fin vers le debut : les positions d'avant restent justes.
+      tracker.capture(() => edit.doc.transact(() => {
+        for (let i = plan.first.length - 1; i >= 0; i--) {
+          const c = plan.first[i]!
+          if (c.to > c.from) text.delete(c.from, c.to - c.from)
+          if (c.text) text.insert(c.from, c.text)
+        }
+      }))
+      // Une seule ecriture : le point part avec elle.
+      if (!steps.length) point()
+      await send()
       for (let i = 0; i < steps.length; i++) {
         await sleep(plan.delayMs)
-        text.insert(steps[i]!.at, steps[i]!.chunk)
+        tracker.capture(() => text.insert(steps[i]!.at, steps[i]!.chunk))
+        // Le dernier morceau emporte le point.
+        if (i === steps.length - 1) point()
         try {
           await send()
         } catch {
           // Une ecriture echoue en route : le reste part d'un coup, pour ne pas laisser un texte coupe.
-          for (const s of steps.slice(i + 1)) text.insert(s.at, s.chunk)
+          // Le point part avec ce reste (s'il n'est pas deja en attente, avec le dernier morceau).
+          if (i < steps.length - 1) {
+            tracker.capture(() => { for (const s of steps.slice(i + 1)) text.insert(s.at, s.chunk) })
+            point()
+          }
           try {
             await send()
           } catch {

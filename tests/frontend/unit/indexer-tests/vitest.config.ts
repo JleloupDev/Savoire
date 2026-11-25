@@ -17,6 +17,8 @@ export const alias = [
   { find: /^@savoire\/plugin-(agenda|hashtags|mermaid|excalidraw|base|animation)\/server$/, replacement: pkg('plugins/plugin-$1/src/server.ts') },
   // L'arbre partage des documents (dessins), le meme adaptateur Yjs que l'appli.
   { find: /^@savoire\/infrastructure-sync\/shared-tree$/, replacement: pkg('infrastructure-sync/src/YjsSharedTree.ts') },
+  // Les modifications de l'IA (un point par ecriture d'agent), le meme module que l'appli.
+  { find: /^@savoire\/infrastructure-sync\/ai-changes$/, replacement: pkg('infrastructure-sync/src/AiChanges.ts') },
   { find: /^@savoire\/plugin-(task-list|templates)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },
 ]
 
