@@ -3,6 +3,27 @@
 
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 
+/** Un agent IA present dans la note : ce qu'il fait, et ou (positions dans le texte du moment). */
+export interface AgentPeer {
+  /** Stable tant qu'il est la (son clientID d'awareness). */
+  key: string
+  name: string
+  /** « #rrggbb ». */
+  color: string
+  state: 'reading' | 'writing'
+  /** Passage lu, ou passage qu'il vient d'ecrire (le curseur est a `to`). Absents : pas de position. */
+  from?: number
+  to?: number
+  /** La personne pour qui il agit. */
+  onBehalfOf?: string
+}
+
+/** L'agent qui se montre, et ce qu'il fait (null : il part). */
+export interface AgentPresenceInput {
+  agent: { id: string; name: string; color: string; onBehalfOf?: string }
+  activity: { state: 'reading' | 'writing'; from?: number; to?: number } | null
+}
+
 export interface ICRDT {
   onLocalOp(cb: (op: Uint8Array) => void): () => void
   applyRemoteOp(op: Uint8Array): void
@@ -25,6 +46,13 @@ export interface ICRDT {
 
   /** Le texte du document, modifiable (contrat ISharedText). */
   sharedText?(): import('./sharedText').ISharedText
+
+  /** Les agents IA presents dans la note (recus des autres, ou poses ici). */
+  agentPeers?(): AgentPeer[]
+  /** Appele quand un agent arrive, bouge ou part. */
+  onAgentPeersChange?(cb: () => void): () => void
+  /** Montre un agent qui tourne ici, chez soi et chez les autres (activity null : il part). */
+  setAgentPresence?(p: AgentPresenceInput): void
 
   dispose(): void
 }

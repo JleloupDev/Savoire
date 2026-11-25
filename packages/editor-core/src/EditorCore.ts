@@ -3,6 +3,7 @@
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
 import { applyBlockMarks, blockMarksExtension, type BlockMark } from './BlockMarks'
 import { agentPresenceExtension, applyAgentPresence, type AgentPresence } from './AgentPresence'
+import { agentCursorsExtension } from './AgentCursors'
 import { aiMarksExtension, applyAiMarks, type AiMarkRange } from './AiMarks'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
@@ -432,6 +433,10 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
         ...(options.crdt?.getExtensions() ?? []),
+        // Un agent IA qui lit ou ecrit dans la note, en direct (AgentCursors.ts).
+        ...(options.crdt?.agentPeers && options.crdt.onAgentPeersChange
+          ? [agentCursorsExtension({ list: () => options.crdt!.agentPeers!(), subscribe: cb => options.crdt!.onAgentPeersChange!(cb) })]
+          : []),
         // Mode « source » : Markdown brut, aucune decoration. Meme document,
         // meme CRDT — seul le rendu change.
         ...(options.editorMode === 'source'

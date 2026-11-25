@@ -10,7 +10,7 @@ import {
 } from 'y-protocols/awareness'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import type { Extension } from '@codemirror/state'
-import type { ICRDT } from '@savoire/plugin-api'
+import type { AgentPeer, AgentPresenceInput, ICRDT } from '@savoire/plugin-api'
 import type { ICollaborativeText, CrdtVersion } from '@savoire/domain-index'
 import { YjsCollaborativeText } from './YjsCollaborativeText'
 import { YjsSharedText } from './YjsSharedText'
@@ -30,6 +30,65 @@ const Y_ = Y as Record<string, any>
 
 const REMOTE_ORIGIN = 'remote'
 
+// ── Agents IA presents dans la note (ADR-033) ────────────────────────────────
+//
+// Un agent qui lit ou ecrit est un pair de plus dans l'awareness : son etat
+// porte `agentState`, son nom et sa couleur dans `user`, et sa position en
+// positions relatives de Yjs (`cursor` s'il ecrit : yCollab le dessine comme
+// le curseur d'une personne ; `reading` s'il lit). Le serveur le pose pour
+// une IA externe (realtime/presence.rs) ; l'appli le pose pour un agent qui
+// tourne ici (setAgentPresence).
+
+/** Origine des etats poses ici pour un agent : diffuses aux autres, retraits compris. */
+const AGENT_ORIGIN = 'agent'
+/**
+ * Sans nouvelle d'un agent depuis ce delai, il est retire ici. Le serveur le
+ * retire deja (10 s de silence) : ceci couvre un retrait perdu en route.
+ */
+export const AGENT_SILENCE_MS = 12_000
+const AGENT_DEFAULT_COLOR = '#7c3aed'
+
+interface AgentAwarenessState {
+  user?: { name?: string; color?: string }
+  agent?: { id?: string; for?: string }
+  agentState?: string
+  cursor?: { anchor?: unknown; head?: unknown }
+  reading?: { anchor?: unknown; head?: unknown }
+}
+
+function isAgentState(s: unknown): s is AgentAwarenessState & { agentState: 'reading' | 'writing' } {
+  const state = (s as AgentAwarenessState | null)?.agentState
+  return state === 'reading' || state === 'writing'
+}
+
+/** Mise a jour d'awareness d'un seul client (format de y-protocols) ; etat null : il part. */
+function encodeAwarenessState(clientId: number, clock: number, state: unknown): Uint8Array {
+  const out: number[] = []
+  const varUint = (n: number) => {
+    while (n > 0x7f) { out.push(0x80 | (n % 0x80)); n = Math.floor(n / 0x80) }
+    out.push(n)
+  }
+  const json = new TextEncoder().encode(JSON.stringify(state))
+  varUint(1)
+  varUint(clientId)
+  varUint(clock)
+  varUint(json.length)
+  const bytes = new Uint8Array(out.length + json.length)
+  bytes.set(out, 0)
+  bytes.set(json, out.length)
+  return bytes
+}
+
+/** ClientID d'un agent qui tourne ici : stable pour cet agent dans ce document ouvert, jamais 0. */
+function agentClientId(agentId: string, localClientId: number): number {
+  let h = 0x811c9dc5
+  for (const c of `${agentId}\0${localClientId}`) {
+    h ^= c.charCodeAt(0)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h || 1
+}
+
 /**
  * Deterministic color from a numeric seed. Keyed on the Yjs clientID (random
  * per Y.Doc instance) rather than the account userId — two tabs signed into
@@ -47,11 +106,106 @@ export class YjsCrdtAdapter implements ICRDT {
   private readonly awareness: Awareness
   private text: YjsSharedText | undefined
   private tree: YjsSharedTree | undefined
+  /** Agents presents : clientID -> heure de leur derniere nouvelle. */
+  private readonly agentSeen = new Map<number, number>()
+  private readonly agentListeners = new Set<() => void>()
+  private agentSweep: ReturnType<typeof setTimeout> | null = null
+  private agentClock = 0
 
   constructor() {
     this.ydoc = new Y_.Doc()
     this.ytext = this.ydoc.getText('codemirror')
     this.awareness = new Awareness(this.ydoc)
+    this.awareness.on('change', this.trackAgents)
+  }
+
+  // ── Agents IA presents ────────────────────────────────────────────────────
+
+  private trackAgents = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }): void => {
+    let touched = false
+    const now = Date.now()
+    for (const id of [...added, ...updated]) {
+      if (id === this.ydoc.clientID) continue
+      if (isAgentState(this.awareness.getStates().get(id))) {
+        this.agentSeen.set(id, now)
+        touched = true
+      } else if (this.agentSeen.delete(id)) touched = true
+    }
+    for (const id of removed) if (this.agentSeen.delete(id)) touched = true
+    if (!touched) return
+    this.scheduleAgentSweep()
+    for (const cb of [...this.agentListeners]) cb()
+  }
+
+  private scheduleAgentSweep(): void {
+    if (this.agentSweep) clearTimeout(this.agentSweep)
+    this.agentSweep = null
+    if (this.agentSeen.size === 0) return
+    const oldest = Math.min(...this.agentSeen.values())
+    this.agentSweep = setTimeout(() => {
+      this.agentSweep = null
+      const limit = Date.now() - AGENT_SILENCE_MS
+      const stale = [...this.agentSeen].filter(([, at]) => at <= limit).map(([id]) => id)
+      // Origine « server » : un retrait local, pas a rediffuser.
+      if (stale.length) removeAwarenessStates(this.awareness, stale, 'server')
+      this.scheduleAgentSweep()
+    }, Math.max(50, oldest + AGENT_SILENCE_MS - Date.now()))
+  }
+
+  private absolutePosition(rel: unknown): number | null {
+    if (!rel || typeof rel !== 'object') return null
+    try {
+      const abs = Y_.createAbsolutePositionFromRelativePosition(Y_.createRelativePositionFromJSON(rel), this.ydoc)
+      return abs && abs.type === this.ytext ? (abs.index as number) : null
+    } catch {
+      return null
+    }
+  }
+
+  agentPeers(): AgentPeer[] {
+    const peers: AgentPeer[] = []
+    for (const [clientId, state] of this.awareness.getStates()) {
+      if (clientId === this.ydoc.clientID || !isAgentState(state)) continue
+      const range = state.agentState === 'writing' ? state.cursor : state.reading
+      const a = this.absolutePosition(range?.anchor)
+      const b = this.absolutePosition(range?.head)
+      peers.push({
+        key: String(clientId),
+        name: state.user?.name || 'Agent',
+        color: state.user?.color || AGENT_DEFAULT_COLOR,
+        state: state.agentState,
+        ...(a !== null && b !== null ? { from: Math.min(a, b), to: Math.max(a, b) } : {}),
+        ...(state.agent?.for ? { onBehalfOf: state.agent.for } : {}),
+      })
+    }
+    return peers
+  }
+
+  onAgentPeersChange(cb: () => void): () => void {
+    this.agentListeners.add(cb)
+    return () => { this.agentListeners.delete(cb) }
+  }
+
+  setAgentPresence({ agent, activity }: AgentPresenceInput): void {
+    const clientId = agentClientId(agent.id, this.ydoc.clientID)
+    // Horloge croissante : les autres ignorent une horloge qui recule.
+    this.agentClock = Math.max(Date.now(), this.agentClock + 1)
+    let state: (AgentAwarenessState & { user: { colorLight: string } }) | null = null
+    if (activity) {
+      const length = this.ytext.length as number
+      const rel = (index: number, assoc: number): unknown =>
+        Y_.relativePositionToJSON(Y_.createRelativePositionFromTypeIndex(this.ytext, Math.max(0, Math.min(length, index)), assoc))
+      const range = activity.from !== undefined
+        ? { anchor: rel(activity.from, 0), head: rel(activity.to ?? activity.from, -1) }
+        : undefined
+      state = {
+        user: { name: agent.name, color: agent.color, colorLight: `${agent.color}33` },
+        agent: { id: agent.id, ...(agent.onBehalfOf ? { for: agent.onBehalfOf } : {}) },
+        agentState: activity.state,
+        ...(range ? (activity.state === 'writing' ? { cursor: range } : { reading: range }) : {}),
+      }
+    }
+    applyAwarenessUpdate(this.awareness, encodeAwarenessState(clientId, this.agentClock, state), AGENT_ORIGIN)
   }
 
   /**
@@ -131,11 +285,12 @@ export class YjsCrdtAdapter implements ICRDT {
     cb: (bytes: Uint8Array, changedClients: number[]) => void,
   ): () => void {
     const handler = (
-      { added, updated }: { added: number[]; updated: number[]; removed: number[] },
+      { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
       origin: unknown,
     ) => {
       if (origin === 'server') return
-      const changed = [...added, ...updated]
+      // Un agent pose ici qui part : son depart se dit aussi aux autres.
+      const changed = [...added, ...updated, ...(origin === AGENT_ORIGIN ? removed : [])]
       if (changed.length > 0) cb(encodeAwarenessUpdate(this.awareness, changed), changed)
     }
     this.awareness.on('change', handler)
@@ -171,6 +326,8 @@ export class YjsCrdtAdapter implements ICRDT {
 
   dispose(): void {
     this.text?.dispose()
+    if (this.agentSweep) clearTimeout(this.agentSweep)
+    this.agentListeners.clear()
     removeAwarenessStates(this.awareness, [this.ydoc.clientID], 'local')
     this.awareness.destroy()
     this.ydoc.destroy()

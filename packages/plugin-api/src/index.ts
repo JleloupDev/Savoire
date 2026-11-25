@@ -94,7 +94,7 @@ export type { PluginTrust, PeerPluginPolicy } from './manifest'
 // Runtime values from domain-index re-exported via indexing.ts
 export { AnchorIndex, resolveEntry, validateEntry, anchorKey } from './indexing'
 
-export type { ICRDT } from './crdt'
+export type { ICRDT, AgentPeer, AgentPresenceInput } from './crdt'
 export type { ITransport } from './transport'
 export type { IIdentityProvider, ISeedExportingIdentityProvider } from './identity'
 export { encodeSignedOp, decodeSignedOp, toHex, fromHex } from './identity'

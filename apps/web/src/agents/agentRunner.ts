@@ -66,7 +66,7 @@ export function appToolBox(p: AppToolBoxParams): ToolBox {
   assertAgentUsable(p.agent, p.vaultId)
   const { host, pluginTools } = appToolParts(p)
   const actor: ToolActor = { agentId: p.agent.id, agentName: p.agent.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
-  return new ToolBox({ agent: p.agent, person: { canWrite: p.person.canWrite }, actor, runtime: 'app', host, pluginTools, approve: p.approve, saveAgent: saveAgentMode })
+  return new ToolBox({ agent: p.agent, person: { canWrite: p.person.canWrite }, actor, runtime: 'app', host: host.withPresence(p.agent, p.person.displayName), pluginTools, approve: p.approve, saveAgent: saveAgentMode })
 }
 
 export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
@@ -84,7 +84,7 @@ export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
   const depsFor = (a: AgentDefinition, used: number): EngineDeps => {
     const actor: ToolActor = { agentId: a.id, agentName: a.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
     // Seul l'agent lance change de mode : un sous-agent a des droits reduits, on ne les enregistre pas.
-    const tools = new ToolBox({ agent: a, person, actor, runtime: 'app', host, pluginTools, approve: p.approve, ...(a === agent ? { saveAgent: saveAgentMode } : {}) })
+    const tools = new ToolBox({ agent: a, person, actor, runtime: 'app', host: host.withPresence(a, p.person.displayName), pluginTools, approve: p.approve, ...(a === agent ? { saveAgent: saveAgentMode } : {}) })
     return {
       agent: a, person, actor, tools,
       chat: req => aiService.chat(req, a.connectionId),

@@ -9,7 +9,7 @@
 // pour commenter et proposer. Le serveur verifie donc les memes droits (ACL)
 // que pour elle. L'auteur des commentaires et propositions est l'agent :
 // « Archiviste (IA), pour Jean ».
-import { HostError, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type AiMark, type EditorContextEntry, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
+import { HostError, agentColor, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type AiMark, type EditorContextEntry, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
 import { describeActor, ReviewService, type AgentActor, type IVaultSyncSession } from '@savoire/application'
 import { relPosFromBase64 } from '@savoire/infrastructure-sync'
 import type { VaultClient } from '@savoire/platform'
@@ -25,6 +25,13 @@ const MAX_READ = 512 * 1024
 const TYPING = { budgetMs: 3000, maxWrites: 30, maxDelayMs: 120 }
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
+/** L'agent reste visible un instant apres son dernier geste, puis part (personne n'est « observe »). */
+export const PRESENCE_LINGER_MS = 4000
+/** Quand l'outil dit qu'il a fini : il part plus vite. */
+export const PRESENCE_IDLE_MS = 1500
+
+type PresenceSignal = Parameters<NonNullable<AgentToolHost['signal']>>[0]
+
 export interface AppToolHostDeps {
   client: VaultClient
   session: IVaultSyncSession
@@ -32,6 +39,8 @@ export interface AppToolHostDeps {
   api: Pick<PluginAPI, 'search' | 'indexer' | 'query'> | null
   /** Le canal des deplacements de l'appli (VaultAPI.moveFiles : renommer puis faire suivre les liens). */
   moveFiles?: (moves: { from: string; to: string }[]) => Promise<number>
+  /** L'agent qui se montre dans les notes qu'il lit ou ecrit (withPresence). Absent : il ne se montre pas. */
+  presence?: { id: string; name: string; color: string; onBehalfOf?: string }
 }
 
 function agentActor(a: ToolActor): AgentActor {
@@ -45,6 +54,56 @@ export class AppToolHost implements AgentToolHost {
 
   private get review(): ReviewService {
     return reviewFor(this.d.session)
+  }
+
+  // ── Presence (ADR-033) ───────────────────────────────────────────────────
+
+  /** Le meme hote, qui montre cet agent dans les notes : un hote par agent (l'orchestrateur et ses sous-agents ont chacun le leur). */
+  withPresence(agent: { id: string; name: string; color?: string }, onBehalfOf?: string): AppToolHost {
+    return new AppToolHost({ ...this.d, presence: { id: agent.id, name: agent.name, color: agentColor(agent), ...(onBehalfOf ? { onBehalfOf } : {}) } })
+  }
+
+  /** Notes ou l'agent se montre : le document reste ouvert tant qu'il y est. */
+  private readonly shown = new Map<string, { crdt: ICRDT; timer: ReturnType<typeof setTimeout> | null }>()
+
+  /**
+   * L'agent se montre dans la note, ici et chez les autres personnes qui l'ont
+   * ouverte (awareness du document). Il part de lui-meme peu apres son dernier
+   * geste. Jamais bloquant, jamais fatal pour l'outil.
+   */
+  signal(s: PresenceSignal): void {
+    const agent = this.d.presence
+    if (!agent) return
+    try {
+      let entry = this.shown.get(s.docId)
+      if (s.state === 'idle') {
+        if (entry) this.leaveLater(s.docId, PRESENCE_IDLE_MS)
+        return
+      }
+      if (!entry) {
+        const crdt = this.d.session.openDocument(s.docId) as ICRDT
+        if (!crdt.setAgentPresence) { this.d.session.closeDocument(s.docId); return }
+        entry = { crdt, timer: null }
+        this.shown.set(s.docId, entry)
+      }
+      entry.crdt.setAgentPresence?.({
+        agent,
+        activity: { state: s.state, ...(s.from !== undefined ? { from: s.from } : {}), ...(s.to !== undefined ? { to: s.to } : {}) },
+      })
+      this.leaveLater(s.docId, PRESENCE_LINGER_MS)
+    } catch { /* la presence ne fait jamais echouer un outil */ }
+  }
+
+  private leaveLater(docId: string, after: number): void {
+    const entry = this.shown.get(docId)
+    const agent = this.d.presence
+    if (!entry || !agent) return
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.timer = setTimeout(() => {
+      this.shown.delete(docId)
+      try { entry.crdt.setAgentPresence?.({ agent, activity: null }) } catch { /* document deja ferme */ }
+      this.d.session.closeDocument(docId)
+    }, after)
   }
 
   private notes(): HostNoteRef[] {

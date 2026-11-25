@@ -18,6 +18,12 @@ export interface AgentPresence {
   busy: boolean
   /** Clic sur le robot (ouvrir le panneau Agents...). */
   onClick?: () => void
+  /** Ce qu'il fait, dit apres son nom quand il travaille (« lit » par defaut). */
+  activity?: string
+  /** Sa couleur (« #rrggbb ») ; absente : celle du theme. */
+  color?: string
+  /** Un bouton a cote du robot (« Suivre »). */
+  action?: { label: string; title?: string; active?: boolean; onClick: () => void }
 }
 
 const setPresence = StateEffect.define<{ owner: string; presence: AgentPresence | null }>()
@@ -68,11 +74,33 @@ class PresenceView {
       robot.textContent = '🤖'
       const name = document.createElement('span')
       name.className = 'cm-agent-presence-label'
-      name.textContent = p.busy ? `${p.label} lit…` : p.label
+      name.textContent = p.busy ? `${p.label} ${p.activity ?? 'lit'}…` : p.label
       chip.append(robot, name)
       chip.addEventListener('mousedown', e => e.preventDefault())
       if (p.onClick) chip.addEventListener('click', () => p.onClick?.())
-      this.dom.appendChild(chip)
+      if (p.color) {
+        chip.style.color = p.color
+        chip.style.borderColor = p.color
+      }
+      if (!p.action) {
+        this.dom.appendChild(chip)
+        continue
+      }
+      // Avec un bouton : une rangee, le bouton a gauche du robot.
+      const action = p.action
+      const row = document.createElement('div')
+      row.className = 'cm-agent-presence-row'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = `cm-agent-presence-action${action.active ? ' is-active' : ''}`
+      button.setAttribute('data-testid', 'agent-presence-action')
+      button.setAttribute('aria-pressed', action.active ? 'true' : 'false')
+      button.title = action.title ?? action.label
+      button.textContent = action.label
+      button.addEventListener('mousedown', e => e.preventDefault())
+      button.addEventListener('click', () => action.onClick())
+      row.append(button, chip)
+      this.dom.appendChild(row)
     }
   }
 

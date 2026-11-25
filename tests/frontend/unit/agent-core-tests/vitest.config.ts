@@ -9,6 +9,8 @@ export default defineConfig({
       '@savoire/agent-core': path.resolve(__dirname, '../../../../packages/agent-core/src/index.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
+      // L'hote des outils de l'appli (apps/web/src/agents/appToolHost.ts), sans vault ni Revision.
+      '@savoire/application': path.resolve(__dirname, './src/stubs/application.ts'),
     },
   },
   test: {

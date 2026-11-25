@@ -6,7 +6,7 @@
 // faire action par action, ou, et avec quel budget. Il se cree a la main ou a
 // partir d'un modele apporte par un plugin du store.
 import { useEffect, useState } from 'react'
-import { ACTION_LABELS, canRequestMode, modeLabel, normalizePermissions, writingModeLabel } from '@savoire/agent-core'
+import { ACTION_LABELS, AGENT_COLORS, MODE_LABELS, agentColor, canRequestMode, modeLabel, normalizePermissions, writingModeLabel } from '@savoire/agent-core'
 import { AGENT_ACTION_MODES, AGENT_ACTIONS, type AgentActionMode, type AgentDefinition, type AgentPreset } from '@savoire/plugin-api'
 import type { AIConnectionInfo } from '@savoire/plugin-api'
 import { isAndroidRuntime, isTauriRuntime } from '../tauriRuntime'
@@ -94,6 +94,29 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
         <label style={LABEL}>Consignes (prompt)</label>
         <textarea data-testid="agent-instructions" style={{ ...INPUT, minHeight: 110, resize: 'vertical' }} value={draft.instructions}
           onChange={e => set({ instructions: e.target.value })} placeholder="Tu ranges les notes du dossier Inbox dans les bons dossiers…" />
+
+        <label style={LABEL}>Couleur dans les notes</label>
+        <div style={MUTED}>Quand il lit ou écrit dans une note ouverte, son curseur et son nom s’y montrent dans cette couleur.</div>
+        <div data-testid="agent-color" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+          <button type="button" data-testid="agent-color-auto" aria-pressed={!draft.color} title="Couleur choisie pour lui, d’après son identité"
+            style={{ ...BTN, ...(draft.color ? {} : { borderColor: 'var(--accent)', color: 'var(--accent)' }) }} onClick={() => set({ color: undefined })}>
+            Automatique
+          </button>
+          {AGENT_COLORS.map(c => (
+            <button key={c} type="button" data-testid="agent-color-swatch" data-color={c} aria-label={`Couleur ${c}`} aria-pressed={draft.color === c} title={c}
+              onClick={() => set({ color: c })}
+              style={{ width: 20, height: 20, padding: 0, borderRadius: '50%', cursor: 'pointer', background: c,
+                border: draft.color === c ? '2px solid var(--text)' : '2px solid transparent', outline: '1px solid var(--border)' }} />
+          ))}
+          <input type="color" data-testid="agent-color-custom" title="Autre couleur" aria-label="Autre couleur"
+            value={draft.color ?? agentColor({ id: draft.id ?? '', color: draft.color })} onChange={e => set({ color: e.target.value })}
+            style={{ width: 26, height: 22, padding: 0, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', cursor: 'pointer' }} />
+          <span data-testid="agent-color-preview" style={{ marginLeft: 4, padding: '0 6px', borderRadius: 4, color: '#fff', fontSize: 11, fontWeight: 600, lineHeight: '18px',
+            background: draft.id || draft.color ? agentColor({ id: draft.id ?? '', color: draft.color }) : 'var(--text-muted)' }}>
+            {draft.name.trim() || 'Agent'} écrit…
+          </span>
+          {!draft.id && !draft.color && <span style={MUTED}>choisie à l’enregistrement</span>}
+        </div>
 
         <label style={LABEL}>Appartient à</label>
         <select style={INPUT} value={draft.vaultId ?? ''} onChange={e => set({ vaultId: e.target.value || undefined })}>
@@ -229,7 +252,10 @@ export function AgentsSettings({ presets, connections, adminVaults, vaults }: Ag
           return (
             <div key={a.id} data-testid="agent-row" style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{a.name}{a.vaultId ? <span style={MUTED}> · agent du vault</span> : null}</div>
+                <div style={{ fontWeight: 600 }}>
+                  <span data-testid="agent-row-color" title="Sa couleur dans les notes" style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', marginRight: 6, background: agentColor(a) }} />
+                  {a.name}{a.vaultId ? <span style={MUTED}> · agent du vault</span> : null}
+                </div>
                 {a.description && <div style={MUTED}>{a.description}</div>}
                 <div style={{ ...MUTED, marginTop: 2 }}>{rights || 'Aucun droit'}</div>
                 {perms.edit !== 'deny' && <div data-testid="agent-writing-mode" style={{ ...MUTED, marginTop: 2 }}>Mode : {writingModeLabel(a)}</div>}

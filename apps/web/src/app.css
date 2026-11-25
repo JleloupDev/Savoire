@@ -793,6 +793,24 @@ html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-
   25% { transform: translateY(-2px) rotate(-8deg); }
   75% { transform: translateY(-2px) rotate(8deg); }
 }
+/* Un agent IA qui lit ou ecrit dans la note, en direct (AgentCursors.ts). */
+.cm-agent-presence-row { display: flex; align-items: center; gap: 6px; }
+.cm-agent-presence-action {
+  pointer-events: auto; cursor: pointer; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-elevated); color: var(--text-muted); font: 11px var(--font-ui, sans-serif);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+.cm-agent-presence-action:hover { color: var(--text); }
+.cm-agent-presence-action.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.cm-agent-tag-anchor { position: relative; display: inline; width: 0; }
+.cm-agent-tag {
+  position: absolute; left: -1px; bottom: 100%; z-index: 102; white-space: nowrap; pointer-events: none; user-select: none;
+  padding: 0 5px; border-radius: 4px 4px 4px 0; color: #fff; font: 600 10.5px/1.5 var(--font-ui, sans-serif);
+}
+.cm-block-mark-bar.cm-block-agent-reading { background: rgba(124, 58, 237, 0.45); width: 2px; animation: cm-block-reading 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .cm-block-mark-bar.cm-block-agent-reading { animation: none; }
+}
 .agent-watch-dot { width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; opacity: 0.55; display: inline-block; flex: none; }
 .agent-watch-dot.is-busy { opacity: 1; animation: agent-watch-pulse 1.2s ease-in-out infinite; }
 @keyframes agent-watch-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.5); } 50% { box-shadow: 0 0 0 4px rgba(124, 58, 237, 0); } }
