@@ -178,6 +178,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     const at = withReviewText(session!, docId!, text => ReviewService.locate(entry.anchor!, text))
     if (!at) { setError('Ce passage n’existe plus dans la note.'); return }
     activeEditor?.selectRange?.(at.from, at.to)
+    // Sa carte dans la marge, si la marge est affichee.
+    activeEditor?.selectAnnotation?.(entry.id)
   }
 
   /** Accepte une suggestion ou une proposition ; `hunks` : seulement ces blocs de lignes. */
@@ -260,7 +262,7 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
           <span>
             <b>Annotations dans la note</b>
             <span style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)' }}>
-              {inline ? 'Un clic sur un passage surligné ouvre son fil : répondre, accepter, refuser.' : 'Les fils ne se traitent qu’ici.'}
+              {inline ? 'Les fils sont dans la marge, ou s’ouvrent d’un clic sur leur passage : répondre, accepter, refuser.' : 'Les fils ne se traitent qu’ici.'}
             </span>
           </span>
         </label>

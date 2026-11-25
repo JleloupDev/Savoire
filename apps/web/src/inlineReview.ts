@@ -7,15 +7,19 @@
 // resout, sans ouvrir le panneau Revision. « Commenter » et « Suggérer » sur
 // la selection ouvrent aussi leur brouillon dans la note.
 //
+// Editeur assez large : les fils sont aussi dans la marge, a la hauteur de
+// leur passage (editor-core/MarginComments) ; le fil choisi s'y ouvre a la
+// place de la carte flottante, dessine par le meme code.
+//
 // La personne choisit (isInlineReview) : sans annotations dans la note, les
 // passages ne sont surlignes que quand le panneau Revision est ouvert, comme
 // avant.
 //
 // Un commentaire peut etre adresse a un agent (« Demander à… », « @Nom ») :
 // voir agents/agentRequests.ts.
-import type { AnnotationHost, EditorController, EditorHighlight } from '@savoire/editor-core'
-import { ReviewService, describeActor, type IVaultSyncSession, type UserActor } from '@savoire/application'
-import { renderAnnotationCard, renderDraftCard } from './AnnotationCard'
+import type { AnnotationHost, EditorController, EditorHighlight, MarginComment } from '@savoire/editor-core'
+import { ReviewService, describeActor, type IVaultSyncSession, type ReviewThread, type UserActor } from '@savoire/application'
+import { marginCommentOf, renderAnnotationCard, renderDraftCard } from './AnnotationCard'
 import { annotationCardDeps, isInlineReview, onInlineReviewChange, reviewFor, withReviewText } from './reviewProposals'
 import { commentOrAsk, draftAskDeps, replyOrAsk, requestCardDeps } from './agents/agentRequests'
 
@@ -71,12 +75,24 @@ const host: AnnotationHost = {
   },
 }
 
+/** Les fils qui visent un passage, encore ouverts. */
+function anchoredThreads(session: IVaultSyncSession, docId: string): ReviewThread[] {
+  return reviewFor(session).threads(docId).filter(t => t.root.anchor && (t.root.status ?? 'open') === 'open')
+}
+
+/**
+ * Les fils de la note pour la marge : une carte courte par fil ouvert qui
+ * vise un passage. L'editeur ne garde que ceux dont le passage est surligne
+ * (meme identifiant que dans noteHighlights).
+ */
+export function noteMarginComments(session: IVaultSyncSession, docId: string): MarginComment[] {
+  return anchoredThreads(session, docId).map(marginCommentOf)
+}
+
 /** Les passages de la note a surligner : fils ouverts, ancres dans le texte. */
 export function noteHighlights(session: IVaultSyncSession, docId: string, clickable: boolean): EditorHighlight[] {
-  const review = reviewFor(session)
   const where = clickable ? 'cliquer pour ouvrir' : 'panneau Révision'
-  return withReviewText(session, docId, text => review.threads(docId)
-    .filter(t => t.root.anchor && (t.root.status ?? 'open') === 'open')
+  return withReviewText(session, docId, text => anchoredThreads(session, docId)
     .flatMap(t => {
       const at = ReviewService.locate(t.root.anchor!, text)
       const isSuggestion = t.root.kind === 'suggestion'
@@ -106,8 +122,14 @@ function refresh(): void {
   if (wantHost && hosted !== editor) { editor.setAnnotationHost?.(host); hosted = editor }
   if (!wantHost && hosted === editor) { editor.setAnnotationHost?.(null); hosted = null }
   const docId = ctx!.docId()
-  if (!session || !docId || (!inline && panels === 0)) { editor.setHighlights?.([]); return }
+  if (!session || !docId || (!inline && panels === 0)) {
+    editor.setHighlights?.([])
+    editor.setMarginComments?.([])
+    return
+  }
   editor.setHighlights?.(noteHighlights(session, docId, inline))
+  // La marge fait partie des annotations dans la note : meme choix de la personne.
+  editor.setMarginComments?.(inline ? noteMarginComments(session, docId) : [])
 }
 
 onInlineReviewChange(refresh)
@@ -137,7 +159,8 @@ export function refreshInlineReview(): void {
 }
 
 /**
- * « Commenter » / « Suggérer » sur la selection, dans la note. False : pas
+ * « Commenter » / « Suggérer » sur la selection, dans la note : dans la
+ * marge si elle est affichee, sinon dans une carte flottante. False : pas
  * d'annotations dans la note, pas de selection, ou editeur sans cartes (le
  * panneau Revision prend alors le relais).
  */

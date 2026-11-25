@@ -14,7 +14,11 @@
 // (et comprend « @Nom ») ; la carte du fil dit ou en est la demande. La carte
 // ne decide rien : qui est vise et quoi lancer viennent de l'appelant
 // (agents/agentRequests.ts).
+//
+// Dans la marge (editor-core/MarginComments), le fil ferme tient en une carte
+// courte : marginCommentOf dit ce qu'elle montre. Ouvert, c'est cette carte-ci.
 import { describeActor, type ReviewEntry, type ReviewService, type ReviewThread } from '@savoire/application'
+import type { MarginComment } from '@savoire/editor-core'
 
 /** Une demande a un agent, vue de la carte du fil. */
 export interface RequestCardDeps {
@@ -61,6 +65,24 @@ const KIND_LABEL: Record<string, string> = { comment: 'Commentaire', suggestion:
 const STATUS_LABEL: Record<string, string> = { accepted: 'Acceptée', rejected: 'Refusée', resolved: 'Résolu' }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
+
+/** Le fil en court, pour sa carte dans la marge : auteur, debut du texte, reponses. */
+export function marginCommentOf({ root, replies }: ReviewThread): MarginComment {
+  const isSuggestion = root.kind === 'suggestion'
+  const quote = root.anchor?.quote ?? ''
+  // Une suggestion sans explication : la carte dit ce qu'elle change.
+  const change = root.replacement
+    ? `« ${clip(quote, 60)} » → « ${clip(root.replacement, 60)} »`
+    : `Supprimer « ${clip(quote, 80)} »`
+  return {
+    id: root.id,
+    author: describeActor(root.author),
+    text: isSuggestion && (!root.text || root.text === 'Suggestion') ? change : root.text,
+    replies: replies.length,
+    ...(isSuggestion ? { label: 'Suggestion' } : {}),
+    ...(root.author.kind === 'agent' ? { agent: true } : {}),
+  }
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
