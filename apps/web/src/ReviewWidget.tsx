@@ -27,6 +27,7 @@ import {
 } from './reviewProposals'
 import { showReviewHighlights } from './inlineReview'
 import { commentOrAsk, draftAskDeps, replyOrAsk, requestCardDeps } from './agents/agentRequests'
+import { AiChangesSection } from './AiChangesSection'
 
 export { withReviewText } from './reviewProposals'
 
@@ -208,6 +209,11 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
     }
   }
 
+  // Les modifications de l'IA sont des points du texte de la note : rien a montrer pour un fichier ou un arbre.
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const fileType = refs.fileTypeRegistry.current?.resolve(ext)
+  const textNote = ext === 'md' || (!!fileType && fileType.collaborationMode === 'crdt' && fileType.superType !== 'binary' && fileType.crdtRoot !== 'tree')
+
   /** Tout accepter ou tout refuser (suggestions et propositions ouvertes de la note). */
   async function all(decision: 'accept' | 'reject') {
     setError(null)
@@ -266,6 +272,10 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
         )}
       </div>
       {error && <div data-testid="review-error" style={{ color: 'var(--color-danger, #ef4444)', fontSize: 12, marginBottom: 8 }}>{error}</div>}
+
+      {textNote && (
+        <AiChangesSection key={docId} session={session} docId={docId} me={{ id: account.userId, name: account.displayName }} canWrite={canWrite} editor={() => activeEditor} />
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {threads.length === 0 && <Muted>Aucun commentaire.</Muted>}

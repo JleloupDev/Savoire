@@ -18,6 +18,8 @@ export default defineConfig({
       '@savoire/ui-components':      path.resolve(__dirname, '../../../../packages/ui-components/src/index.ts'),
       '@savoire/i18n':               path.resolve(__dirname, '../../../../packages/i18n/src/index.ts'),
       '@savoire/domain-index':       path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),
+      // La section « Modifications de l'IA » de la Revision (couleur des agents).
+      '@savoire/agent-core':         path.resolve(__dirname, '../../../../packages/agent-core/src/index.ts'),
       '@savoire/editor-core':        mock('editor-core.ts'),
       '@savoire/infrastructure-sync': mock('infrastructure-sync.ts'),
       '@savoire/plugin-runtime':     mock('plugin-runtime.ts'),

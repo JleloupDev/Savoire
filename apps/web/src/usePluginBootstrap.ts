@@ -43,6 +43,7 @@ import { dictation } from './dictation'
 import { desktopNetwork } from './tauriRuntime'
 import { sharedLibraries } from './sharedLibraries'
 import { ReviewWidget, setReviewEditor, startReviewDraft } from './ReviewWidget'
+import { installAiChangeHistory } from './aiChangeHistory'
 import { AssistantWidget } from './agents/AssistantWidget'
 import { moveWithLinks } from '@savoire/plugin-api'
 import { createReviewAPI, isInlineReview, isSuggesting, setInlineReview, setSuggesting, setSuggestionEditor } from './reviewProposals'
@@ -301,6 +302,8 @@ export function usePluginBootstrap({
 
   const onBeforeReady = useCallback(async (manager: WorkspaceManagerImpl) => {
     reviewManagerRef.current = manager
+    // « Historique » d'une modification de l'IA (carte dans la note, showAiChange) : la Revision s'ouvre sur ce point.
+    installAiChangeHistory(openReviewPanel)
     manager.setDisplayPreferences({
       showFileExtensions, linkPreviewDelay, defaultFileType,
       // Le type par defaut vient de la disposition : les deux sources previennent.
