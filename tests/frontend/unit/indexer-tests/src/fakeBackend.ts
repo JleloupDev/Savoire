@@ -54,6 +54,12 @@ export interface ReceivedWrite {
   status: number
 }
 
+/** Une presence d'agent recue (POST .../presence). */
+export interface ReceivedPresence {
+  vaultId: string
+  body: { ticket?: string; docId?: string; state?: string; color?: string; range?: { anchor: object; head: object } }
+}
+
 export interface FakeBackendOptions {
   token: string
   instances?: string[]
@@ -76,6 +82,10 @@ export class FakeBackend {
   readonly docReads = new Map<string, number>()
   /** Ecritures des outils d'agents (ADR-033). */
   readonly writes: ReceivedWrite[] = []
+  /** Presences des agents dans les notes (ADR-033), dans l'ordre d'arrivee. */
+  readonly presences: ReceivedPresence[] = []
+  /** La route presence repond cette erreur (0 : elle marche). */
+  presenceFailure = 0
   /** Tickets valides ; vide : tout ticket est accepte. Un ticket « propose » refuse notes, arbre et types. */
   readonly tickets = new Map<string, 'direct' | 'propose'>()
   private server?: Server
@@ -156,6 +166,19 @@ export class FakeBackend {
           const status = this.applyWrite(vaultId, body)
           this.writes.push({ vaultId, body, status })
           send(status, status === 200 ? { written: body.ops?.length ?? 0 } : { error: { code: 'denied', message: 'Écriture refusée (test).' } })
+        })
+        return
+      }
+      m = /^\/internal\/indexer\/vaults\/([^/]+)\/presence$/.exec(p)
+      if (m && req.method === 'POST') {
+        const vaultId = decodeURIComponent(m[1]!)
+        let raw = ''
+        req.on('data', c => { raw += c })
+        req.on('end', () => {
+          if (this.presenceFailure) return send(this.presenceFailure, { error: { code: 'denied', message: 'Présence refusée (test).' } })
+          this.presences.push({ vaultId, body: JSON.parse(raw || '{}') as ReceivedPresence['body'] })
+          res.writeHead(204)
+          res.end()
         })
         return
       }

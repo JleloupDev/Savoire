@@ -19,6 +19,7 @@
 //   GET    /api/v1/agents/actions?limit=          journal des actions externes
 // API interne (pair indexeur, jeton de service) :
 //   POST   /internal/indexer/vaults/{vaultId}/write   ecritures d'un outil, avec un ticket
+//   POST   /internal/indexer/vaults/{vaultId}/presence  ce que l'agent lit ou ecrit, montre dans la note
 //
 // Les droits sont verifies DEUX fois : avant de relayer l'appel au pair
 // (mode de l'action, portee de l'agent), puis a l'ecriture (ticket, ACL de la
@@ -174,7 +175,17 @@ fn clean_definition(body: &Value) -> AppResult<(String, Option<String>, Value)> 
     if o.get("canRequestMode").and_then(Value::as_bool) == Some(false) {
         def["canRequestMode"] = json!(false);
     }
+    // Couleur de l'agent dans les notes (curseur, etiquette). Absente : derivee de son id.
+    if let Some(v) = o.get("color").filter(|v| !v.is_null() && v.as_str() != Some("")) {
+        let c = v.as_str().map(str::trim).filter(|c| is_color(c)).ok_or_else(|| AppError::validation("La couleur de l'agent s'ecrit #rrggbb."))?;
+        def["color"] = json!(c.to_ascii_lowercase());
+    }
     Ok((name, vault_id, def))
+}
+
+/// « #rrggbb ».
+fn is_color(c: &str) -> bool {
+    c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn require_account(caller: &str) -> AppResult<()> {
@@ -472,6 +483,8 @@ pub async fn execute(st: &AppState, call: &ToolCall<'_>, action: &str, mode: &st
     let r = call_indexer(st, call.user, call.vault_id, TOOLS_CAPABILITY, "call", &params).await;
     st.agent_tickets.remove(&ticket);
     st.agent_tickets.retain(|_, t| t.expires > Instant::now());
+    // L'appel est fini : l'agent quitte les notes ou il se montrait.
+    st.realtime.agent_presence.end_call(st, &ticket);
     let outcome = match r {
         Err(e) => ToolOutcome::error(&e.to_string()),
         Ok(r) if r.status != 200 => ToolOutcome::error(&error_message(&r.json, r.status)),
@@ -842,6 +855,63 @@ pub async fn internal_write(
     Ok(ok(&json!({ "written": written })))
 }
 
+// ── API interne : presence de l'agent dans une note ─────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceRequest {
+    ticket: Option<String>,
+    doc_id: Option<String>,
+    /// « reading », « writing » ou « idle ».
+    state: Option<String>,
+    /// Couleur de l'agent (#rrggbb), calculee par le pair.
+    color: Option<String>,
+    /// Passage lu ou curseur : positions relatives de Yjs { anchor, head }.
+    range: Option<Value>,
+}
+
+/// Le pair dit ce que l'agent fait dans une note : le serveur le montre aux
+/// personnes qui l'ont ouverte (realtime/presence.rs). Meme ticket que les
+/// ecritures : hors d'un appel en cours, rien ne passe.
+pub async fn internal_presence(
+    State(st): State<AppState>,
+    ReqParts(parts): ReqParts,
+    Path(vault_id): Path<String>,
+    Body(req): Body<PresenceRequest>,
+) -> AppResult<Response> {
+    if let Err(r) = indexer_peer_allowed(&st, &parts).await {
+        return Ok(r);
+    }
+    let ticket_id = req.ticket.unwrap_or_default();
+    let Some(ticket) = st.agent_tickets.get(&ticket_id).map(|x| x.clone()) else {
+        return Ok(internal_error(403, "invalid_ticket", "Ticket inconnu ou expiré."));
+    };
+    if ticket.vault_id != vault_id || ticket.expires <= Instant::now() {
+        return Ok(internal_error(403, "invalid_ticket", "Ticket non valide pour ce vault."));
+    }
+    let Some(doc_id) = req.doc_id.filter(|d| !d.is_empty() && d.len() <= 200) else {
+        return Ok(internal_error(400, "invalid_query", "docId manquant."));
+    };
+    // L'agent ne se montre que dans une note que la personne peut lire.
+    let mut c = st.db.acquire().await?;
+    if access::check_document(&mut c, &ticket.user, &vault_id, &doc_id, Level::Read).await.is_err() {
+        return Ok(internal_error(403, "denied", "Note inconnue ou illisible pour cette personne."));
+    }
+    drop(c);
+    st.realtime.agent_presence.signal(&st, &crate::realtime::presence::Activity {
+        doc_id: &doc_id,
+        ticket: &ticket_id,
+        agent_id: &ticket.agent_id,
+        agent_name: &ticket.agent_name,
+        user_id: &ticket.user,
+        on_behalf_of: &ticket.display_name,
+        state: req.state.as_deref().unwrap_or("idle"),
+        color: req.color.as_deref(),
+        range: req.range.as_ref(),
+    });
+    Ok(no_content())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,6 +1005,19 @@ mod tests {
         assert!(describe_mode(&a, Some(false), None).contains("ne peut que lire"));
         a.definition["canRequestMode"] = json!(false);
         assert!(describe_mode(&a, None, None).contains("ne peut pas demander"));
+    }
+
+    #[test]
+    fn color() {
+        let def = |c: Value| clean_definition(&json!({ "name": "A", "color": c }));
+        assert_eq!(def(json!("#0A7fC2")).unwrap().2["color"], "#0a7fc2");
+        // Absente, vide ou nulle : pas de couleur (derivee de l'id a l'affichage).
+        assert!(clean_definition(&json!({ "name": "A" })).unwrap().2.get("color").is_none());
+        assert!(def(json!("")).unwrap().2.get("color").is_none());
+        assert!(def(Value::Null).unwrap().2.get("color").is_none());
+        for bad in [json!("rouge"), json!("#fff"), json!("#12345g"), json!("#1234567"), json!(3)] {
+            assert!(def(bad).is_err());
+        }
     }
 
     #[test]

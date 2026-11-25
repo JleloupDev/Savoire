@@ -24,6 +24,7 @@
 // quota-exceeded, rate-limited).
 
 pub mod hubs;
+pub mod presence;
 pub mod socket;
 
 use std::collections::{HashMap, HashSet};
@@ -167,6 +168,8 @@ pub struct Realtime {
     pub locks: DashMap<String, LockHolder>,
     pub edge_rooms: EdgeRooms,
     pub limiter: RateLimiter,
+    /// Agents IA presents dans une note, le temps d'un appel (presence.rs).
+    pub agent_presence: presence::AgentPresences,
 }
 
 impl Default for Realtime {
@@ -186,6 +189,7 @@ impl Realtime {
             locks: DashMap::new(),
             edge_rooms: EdgeRooms::default(),
             limiter: RateLimiter::new(),
+            agent_presence: presence::AgentPresences::default(),
         }
     }
 

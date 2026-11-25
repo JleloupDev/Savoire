@@ -14,7 +14,7 @@
 // au-dessus d'un hote qui lit les journaux Yjs et renvoie au serveur ce qu'il
 // ecrit (POST /internal/indexer/vaults/{id}/write). Le serveur reverifie tout.
 import {
-  HostError, ToolBox, coreCatalog, minimalChange, planTyping, titleOf,
+  HostError, ToolBox, agentColor, coreCatalog, minimalChange, planTyping, titleOf,
   type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange,
 } from '@savoire/agent-core'
 import {
@@ -22,7 +22,7 @@ import {
 } from '@savoire/indexer-core'
 import { MAX_PROPOSAL_BYTES, relinkAfterMoves, textFingerprint, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
 import { baseOfQuery, canRead, filterResult, parseAccess, type AccessRules } from './access'
-import type { UpdatesLog, WriteBody } from './backend'
+import type { PresenceBody, UpdatesLog, WriteBody } from './backend'
 import { HttpError } from './errors'
 import type { ServerPluginSet } from './serverPlugins'
 
@@ -55,7 +55,11 @@ export interface PeerVaultFacade {
   /** Journal des types des proprietes du vault (canal « settings/properties »). */
   typesLog(): Promise<UpdatesLog | null>
   write(body: WriteBody): Promise<void>
+  /** Ce que l'agent fait dans une note, montre a qui l'a ouverte. Absent : pas de presence. Ne rejette pas. */
+  presence?(body: PresenceBody): Promise<void>
 }
+
+type PresenceSignal = Parameters<NonNullable<AgentToolHost['signal']>>[0]
 
 const b64 = (u: Uint8Array): string => Buffer.from(u).toString('base64')
 const isTrash = (p: string): boolean => p.startsWith(TRASH_DIR)
@@ -140,6 +144,53 @@ export class PeerToolHost implements AgentToolHost {
   private async write(body: Omit<WriteBody, 'ticket'>): Promise<void> {
     await this.f.write({ ticket: this.ticket, ...body })
     this.pathCache = null
+  }
+
+  // ── Presence (ADR-033) ───────────────────────────────────────────────────
+  //
+  // L'agent se montre dans la note qu'il lit ou ecrit, a qui l'a ouverte. Le
+  // serveur retire la presence tout seul, peu apres la fin de l'appel. Rien
+  // ici ne retarde l'outil ni ne le fait echouer : les signaux partent a la
+  // suite, et un signal encore en attente est remplace par le suivant.
+
+  /** Couleur de l'agent dans les notes ; posee par callTools. */
+  presenceColor?: string
+  private readonly waiting = new Map<string, PresenceSignal>()
+  private sending: Promise<void> = Promise.resolve()
+
+  signal(s: PresenceSignal): void {
+    if (!this.f.presence) return
+    const queued = this.waiting.has(s.docId)
+    this.waiting.set(s.docId, s)
+    if (queued) return
+    this.sending = this.sending.then(async () => {
+      const next = this.waiting.get(s.docId)
+      this.waiting.delete(s.docId)
+      if (next) await this.sendPresence(next)
+    }).catch(() => undefined)
+  }
+
+  /** Les signaux en file sont partis (avant de rendre la main : apres, le ticket ne vaut plus rien). */
+  presenceSettled(): Promise<void> {
+    return this.sending
+  }
+
+  private async sendPresence(s: PresenceSignal): Promise<void> {
+    const path = (await this.paths()).get(s.docId)
+    if (!path || !this.visible(s.docId, path)) return
+    let range: PresenceBody['range']
+    if (s.state !== 'idle' && s.from !== undefined) {
+      const log = await this.f.docLog(s.docId)
+      if (log?.format === 'yjs') {
+        // Positions relatives : elles suivent le texte si quelqu'un tape pendant ce temps.
+        const a = textAnchor(log.updates, s.from, s.to ?? s.from)
+        range = { anchor: a.from, head: a.to }
+      }
+    }
+    await this.f.presence?.({
+      ticket: this.ticket, docId: s.docId, state: s.state,
+      ...(this.presenceColor ? { color: this.presenceColor } : {}), ...(range ? { range } : {}),
+    })
   }
 
   // ── Lecture ──────────────────────────────────────────────────────────────
@@ -567,12 +618,17 @@ export async function callTools(f: PeerVaultFacade, method: string, params: unkn
   const agent = p.agent as AgentDefinition
   const actor = p.actor as ToolActor
   const host = new PeerToolHost(f, parseAccess(p.access), p.ticket)
+  host.presenceColor = agentColor(agent)
   // Un outil de plugin : ses lectures et ecritures passent par le meme hote (ticket, ACL).
   const pluginTools = plugins && !coreCatalog('server').some(t => t.name === p.name) && (await plugins.specs()).some(s => s.name === p.name)
     ? await plugins.tools({ host, actor, paths: await host.visiblePaths() })
     : []
   // Le serveur a verifie les droits de la personne et recueilli l'accord : il impose le mode.
   const tools = new ToolBox({ agent, person: { canWrite: true }, actor, runtime: 'server', host, pluginTools, imposedMode: p.mode === 'propose' ? 'propose' : 'direct' })
-  const outcome = await tools.call(p.name, args)
-  return { text: outcome.result.text, isError: !!outcome.result.isError, ...(outcome.result.sources ? { sources: outcome.result.sources } : {}) }
+  try {
+    const outcome = await tools.call(p.name, args)
+    return { text: outcome.result.text, isError: !!outcome.result.isError, ...(outcome.result.sources ? { sources: outcome.result.sources } : {}) }
+  } finally {
+    await host.presenceSettled()
+  }
 }

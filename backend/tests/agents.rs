@@ -8,9 +8,10 @@
 mod common;
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::{Path, State};
-use common::{SERVICE_TOKEN, b64};
+use common::{LONG, SERVICE_TOKEN, SHORT, b64};
 use serde_json::{Value, json};
 
 /// Un faux pair : il rend un catalogue, et pour « append » ecrit dans la note
@@ -22,6 +23,9 @@ struct Peer {
     last_write: Arc<Mutex<Option<(u16, Value)>>>,
     /// Le catalogue offre aussi add_image.
     image: Arc<std::sync::atomic::AtomicBool>,
+    /// « append » montre aussi l'agent dans la note (route presence) ; reponses du serveur gardees.
+    presence: Arc<std::sync::atomic::AtomicBool>,
+    presence_replies: Arc<Mutex<Vec<u16>>>,
 }
 
 fn catalog() -> Value {
@@ -72,6 +76,19 @@ async fn fake_peer() -> (String, Peer) {
                     if status != 200 {
                         return axum::Json(json!({ "result": { "text": "Échec de l'écriture.", "isError": true } }));
                     }
+                    if p.presence.load(std::sync::atomic::Ordering::Relaxed) {
+                        // Ce que fait le vrai pair : il lit, puis il ecrit, avec la couleur de l'agent.
+                        for (state, doc_id) in [("reading", doc.as_str()), ("writing", doc.as_str()), ("writing", "pas-une-note")] {
+                            let r = reqwest::Client::new()
+                                .post(format!("{server}/internal/indexer/vaults/{vault}/presence"))
+                                .bearer_auth(SERVICE_TOKEN)
+                                .json(&json!({ "ticket": params["ticket"], "docId": doc_id, "state": state, "color": params["agent"]["color"], "range": presence_range() }))
+                                .send()
+                                .await
+                                .unwrap();
+                            p.presence_replies.lock().unwrap().push(r.status().as_u16());
+                        }
+                    }
                 }
                 axum::Json(json!({ "result": { "text": format!("{} fait ({})", params["name"].as_str().unwrap(), params["mode"].as_str().unwrap()), "isError": false } }))
             }),
@@ -79,6 +96,36 @@ async fn fake_peer() -> (String, Peer) {
         .with_state(peer.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.ok() });
     (url, peer)
+}
+
+/// Un passage de la note, en positions relatives de Yjs (JSON).
+fn presence_range() -> Value {
+    json!({ "anchor": { "tname": "codemirror", "item": null, "assoc": 0 }, "head": { "tname": "codemirror", "item": null, "assoc": -1 } })
+}
+
+/// Une mise a jour d'awareness de Yjs a un seul etat : (clientID, horloge, etat).
+fn decode_awareness(update_b64: &str) -> (u64, u64, Value) {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(update_b64).unwrap();
+    let mut at = 0usize;
+    let mut var_uint = |bytes: &[u8]| {
+        let (mut n, mut shift) = (0u64, 0);
+        loop {
+            let b = bytes[at];
+            at += 1;
+            n |= ((b & 0x7f) as u64) << shift;
+            shift += 7;
+            if b & 0x80 == 0 {
+                return n;
+            }
+        }
+    };
+    assert_eq!(var_uint(&bytes), 1, "un seul etat");
+    let client = var_uint(&bytes);
+    let clock = var_uint(&bytes);
+    let len = var_uint(&bytes) as usize;
+    assert_eq!(at + len, bytes.len());
+    (client, clock, serde_json::from_slice(&bytes[at..]).unwrap())
 }
 
 fn indexer_config(url: &str) -> Value {
@@ -444,4 +491,70 @@ async fn request_mode_never_exceeds_the_person_rights() {
     let token = app.post(&tc, "/api/v1/me/access-tokens", json!({ "name": "c", "agentId": own.1["id"] })).await.1["token"].as_str().unwrap().to_string();
     let t = text(&mcp(&app, &token, 2, "tools/call", json!({ "name": "get_mode", "arguments": { "vault": v } })).await);
     assert!(t.contains("ne modifie pas") && t.contains("ne peut que lire"), "{t}");
+}
+
+#[tokio::test]
+async fn agent_shows_in_the_open_note_then_leaves() {
+    let (url, peer) = fake_peer().await;
+    peer.presence.store(true, std::sync::atomic::Ordering::Relaxed);
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let (_, tb) = app.user("bob").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let doc = app.document(&ta, &v).await;
+    let other = app.document(&ta, &v).await;
+    // La couleur de l'agent : validee, gardee, rendue.
+    let bad = app.post(&ta, "/api/v1/agents", json!({ "name": "Secrétaire", "color": "rouge", "permissions": {} })).await;
+    assert_eq!(bad.0, 400, "{}", bad.1);
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Secrétaire", "color": "#00AA77", "permissions": { "read": "direct", "edit": "direct" } })).await;
+    assert_eq!(agent.1["color"], "#00aa77");
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "ChatGPT", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+
+    // Alice a la note ouverte ; une autre note ouverte ailleurs ; Bob n'a aucun droit.
+    let mut editor = app.hub("sync", &ta).await.unwrap();
+    editor.invoke("JoinDocument", json!([v, doc])).await.unwrap();
+    let mut elsewhere = app.hub("sync", &ta).await.unwrap();
+    elsewhere.invoke("JoinDocument", json!([v, other])).await.unwrap();
+    let mut bob = app.hub("sync", &tb).await.unwrap();
+    assert!(bob.invoke("JoinDocument", json!([v, doc])).await.is_err());
+
+    let r = mcp(&app, &token, 1, "tools/call", json!({ "name": "append", "arguments": { "vault": "Journal", "id": doc, "text": "x" } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    // Le pair recoit la couleur avec l'agent ; une note inconnue est refusee.
+    let call = peer.calls.lock().unwrap().iter().rev().find(|c| c["params"]["name"] == "append").unwrap().clone();
+    assert_eq!(call["params"]["agent"]["color"], "#00aa77");
+    assert_eq!(*peer.presence_replies.lock().unwrap(), vec![204, 204, 403]);
+
+    // L'ecriture, puis l'agent qui lit, puis qui ecrit : au nom de l'agent, jamais du pair.
+    assert!(editor.wait_event("ReceiveOperation", LONG).await.is_some());
+    let reading = editor.wait_event("AwarenessUpdated", LONG).await.unwrap();
+    assert_eq!(reading[0], doc);
+    let (client, clock1, state) = decode_awareness(reading[1].as_str().unwrap());
+    assert_eq!(state["user"], json!({ "name": "Secrétaire", "color": "#00aa77", "colorLight": "#00aa7733" }));
+    assert_eq!(state["agent"]["id"], agent.1["id"]);
+    assert_eq!(state["agentState"], "reading");
+    assert_eq!(state["reading"], presence_range());
+    assert!(state.get("cursor").is_none());
+    let (client2, clock2, state) = decode_awareness(editor.wait_event("AwarenessUpdated", LONG).await.unwrap()[1].as_str().unwrap());
+    assert_eq!(client2, client);
+    assert!(clock2 > clock1);
+    assert_eq!(state["agentState"], "writing");
+    assert_eq!(state["cursor"], presence_range());
+    assert_eq!(app.state.realtime.agent_presence.len(), 1);
+
+    // L'appel est fini : l'agent part de lui-meme, peu apres.
+    let (client3, clock3, state) = decode_awareness(editor.wait_event("AwarenessUpdated", Duration::from_secs(6)).await.unwrap()[1].as_str().unwrap());
+    assert_eq!((client3, state), (client, Value::Null));
+    assert!(clock3 > clock2);
+    assert!(app.state.realtime.agent_presence.is_empty());
+    assert!(editor.no_event("AwarenessUpdated", SHORT).await);
+    // Rien pour qui a une autre note ouverte.
+    assert!(elsewhere.no_event("AwarenessUpdated", SHORT).await);
+
+    // Hors d'un appel : le ticket ne vaut plus rien, et il faut le jeton de service.
+    let body = json!({ "ticket": call["params"]["ticket"], "docId": doc, "state": "writing" });
+    assert_eq!(app.post(SERVICE_TOKEN, &format!("/internal/indexer/vaults/{v}/presence"), body.clone()).await.0, 403);
+    assert_eq!(app.post(&ta, &format!("/internal/indexer/vaults/{v}/presence"), body).await.0, 401);
+    assert!(editor.no_event("AwarenessUpdated", SHORT).await);
 }

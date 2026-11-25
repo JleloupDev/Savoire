@@ -533,6 +533,7 @@ export class VaultStore {
       treeLog: () => this.fetch(() => this.backend.tree(v.id, signal)),
       reviewLog: () => this.fetch(() => this.backend.review(v.id, signal)),
       typesLog: () => this.fetch(() => this.backend.settings(v.id, 'properties', signal)),
+      presence: async body => { await this.backend.presence(v.id, body, signal) },
       write: async body => {
         try {
           await this.backend.write(v.id, body, signal)

@@ -91,6 +91,8 @@ export interface AgentDefinition {
   instructions: string
   /** La personne a qui il appartient. */
   ownerId: string
+  /** Sa couleur dans les notes (curseur, etiquette), « #rrggbb ». Absente : derivee de son id. */
+  color?: string
   /** Agent du vault (partage par ses membres). Absent : agent personnel. */
   vaultId?: string
   permissions: AgentPermissions

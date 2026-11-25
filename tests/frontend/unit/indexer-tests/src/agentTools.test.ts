@@ -252,3 +252,75 @@ describe('tools des plugins', () => {
     expect((await call(all, 'maison_ping', {})).body.result.text).toBe('pong A.md')
   })
 })
+
+// L'agent se montre dans la note qu'il lit ou ecrit : le pair le dit au serveur,
+// qui le montre aux personnes qui ont la note ouverte.
+describe('presence de l agent dans la note', () => {
+  /** La position d'une ancre relative dans la note, telle que le serveur la garde. */
+  const at = (docId: string, rel: object): number =>
+    Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(rel), backend.vaults.get('v1')!.docs.get(docId)!.doc)!.index
+
+  it('lire : le passage lu, avec le ticket et la couleur de l agent', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'Bonjour le monde')
+    const p = await ready()
+    const r = await call(p, 'read_note', { id: 'a' })
+    expect(r.body.result.isError).toBe(false)
+    // Deja parti quand l'outil repond : apres, le ticket ne vaut plus rien.
+    expect(backend.presences).toHaveLength(1)
+    const { vaultId, body } = backend.presences[0]!
+    expect(vaultId).toBe('v1')
+    expect(body).toMatchObject({ ticket: 't1', docId: 'a', state: 'reading' })
+    // Couleur derivee de l'id de l'agent : la meme que dans l'appli.
+    expect(body.color).toBe('#0d9488')
+    expect([at('a', body.range!.anchor), at('a', body.range!.head)]).toEqual([0, 'Bonjour le monde'.length])
+  })
+
+  it('ecrire : le curseur a la fin de ce qu il vient d ecrire, apres l ecriture', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'Bonjour le monde')
+    const p = await ready()
+    const r = await p.call<ToolReply>('v1', 'tools', 'call', {
+      name: 'edit_note', args: { id: 'a', find: 'le monde', replace: 'tout le monde' }, mode: 'direct', ticket: 't1', actor,
+      agent: { ...agent({ read: 'direct', edit: 'direct' }), color: '#0A7FC2' },
+    })
+    expect(r.body.result.isError).toBe(false)
+    expect(backend.text('v1', 'a')).toBe('Bonjour tout le monde')
+    const writing = backend.presences.filter(x => x.body.state === 'writing')
+    expect(writing).toHaveLength(1)
+    const { body } = writing[0]!
+    expect(body.color).toBe('#0a7fc2')
+    // Le passage ecrit : « tout le monde », dans le texte d'apres.
+    expect(backend.text('v1', 'a').slice(at('a', body.range!.anchor), at('a', body.range!.head))).toBe('tout le monde')
+    // L'ancre suit le texte si quelqu'un tape avant.
+    backend.vaults.get('v1')!.docs.get('a')!.doc.getText('codemirror').insert(0, 'Hier, ')
+    expect(backend.text('v1', 'a').slice(at('a', body.range!.anchor), at('a', body.range!.head))).toBe('tout le monde')
+  })
+
+  it('une proposition ne montre pas de curseur : rien n est ecrit', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'Il ont manger')
+    const p = await ready()
+    await call(p, 'edit_note', { id: 'a', find: 'Il ont manger', replace: 'Ils ont mangé' }, { mode: 'propose', perms: { read: 'direct', edit: 'direct' } })
+    expect(backend.presences.filter(x => x.body.state === 'writing')).toHaveLength(0)
+  })
+
+  it('une note cachee a la personne : aucune presence', async () => {
+    backend.writeNote('v1', 'a', 'Prive/A.md', 'secret')
+    const p = await ready()
+    const r = await call(p, 'read_note', { id: 'a' }, { access: { base: 'write', rules: [{ folder: 'Prive', permission: 'none' }], closed: [] } })
+    expect(r.body.result.isError).toBe(true)
+    expect(backend.presences).toHaveLength(0)
+  })
+
+  it('le serveur refuse ou ne repond pas : l outil marche quand meme', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'Bonjour')
+    const p = await ready()
+    backend.presenceFailure = 403
+    const read = await call(p, 'read_note', { id: 'a' })
+    expect(read.body.result.isError).toBe(false)
+    expect(read.body.result.text).toContain('Bonjour')
+    backend.presenceFailure = 500
+    const r = await call(p, 'append', { id: 'a', text: 'Suite' })
+    expect(r.body.result.isError).toBe(false)
+    expect(backend.text('v1', 'a')).toBe('Bonjour\n\nSuite')
+    expect(backend.presences).toHaveLength(0)
+  })
+})

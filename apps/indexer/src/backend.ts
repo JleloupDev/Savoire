@@ -66,7 +66,7 @@ export interface BackendMetrics {
   duration: Histogram
 }
 
-type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings' | 'file' | 'review' | 'write'
+type Route = 'vaults' | 'changes' | 'tree' | 'document' | 'settings' | 'file' | 'review' | 'write' | 'presence'
 
 /** Ecritures d'un outil d'agent (ADR-033), avec le ticket du serveur. */
 export interface WriteBody {
@@ -77,6 +77,20 @@ export interface WriteBody {
   attach?: { docId: string; noteId: string; name: string }[]
   ops: ({ target: 'document'; docId: string; update: string } | { target: 'vault'; update: string } | { target: 'index'; ns: string; update: string })[]
 }
+
+/** Ce que l'agent fait dans une note (ADR-033) : le serveur le montre aux personnes qui l'ont ouverte. */
+export interface PresenceBody {
+  ticket: string
+  docId: string
+  state: 'reading' | 'writing' | 'idle'
+  /** Couleur de l'agent, « #rrggbb ». */
+  color?: string
+  /** Passage lu ou ecrit : positions relatives de Yjs (JSON). */
+  range?: { anchor: unknown; head: unknown }
+}
+
+/** La presence ne vaut pas d'attendre : au-dela, tant pis. */
+const PRESENCE_TIMEOUT_MS = 2000
 
 export class BackendClient {
   constructor(
@@ -154,6 +168,32 @@ export class BackendClient {
     } finally {
       this.metrics?.requests.inc({ route: 'write', status: String(status || 'error') })
       this.metrics?.duration.observe({ route: 'write' }, (performance.now() - t0) / 1000)
+    }
+  }
+
+  /**
+   * Dit au serveur ce que l'agent fait dans une note. Un seul essai, delai
+   * court ; rend false si le serveur n'en a pas voulu (ticket fini, note
+   * illisible) ou n'a pas repondu. Ne rejette jamais.
+   */
+  async presence(vaultId: string, body: PresenceBody, signal?: AbortSignal): Promise<boolean> {
+    const timeout = AbortSignal.timeout(Math.min(this.opts.timeoutMs, PRESENCE_TIMEOUT_MS))
+    let status = 0
+    try {
+      const res = await fetch(`${this.opts.url}/internal/indexer/vaults/${encodeURIComponent(vaultId)}/presence`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await this.opts.token.get()}`, 'content-type': 'application/json', 'user-agent': this.opts.userAgent },
+        body: JSON.stringify(body),
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      })
+      status = res.status
+      await res.body?.cancel().catch(() => undefined)
+      if (res.status === 401) this.opts.token.invalidate?.()
+      return res.ok
+    } catch {
+      return false
+    } finally {
+      this.metrics?.requests.inc({ route: 'presence', status: String(status || 'error') })
     }
   }
 
