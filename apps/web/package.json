@@ -29,6 +29,7 @@
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-bible": "workspace:*",
     "@savoire/plugin-animation": "workspace:*",
+    "@savoire/plugin-slides": "workspace:*",
     "@savoire/plugin-board": "workspace:*",
     "@savoire/plugin-callout": "workspace:*",
     "@savoire/plugin-chat": "workspace:*",

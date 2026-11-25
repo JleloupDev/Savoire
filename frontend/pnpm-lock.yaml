@@ -157,6 +157,9 @@ importers:
       '@savoire/plugin-powerpoint':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-powerpoint
+      '@savoire/plugin-slides':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-slides
       '@savoire/plugin-task-list':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-task-list
@@ -326,6 +329,9 @@ importers:
       '@savoire/plugin-search':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-search
+      '@savoire/plugin-slides':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-slides
       '@savoire/plugin-table':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-table
@@ -1175,6 +1181,12 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  ../packages/plugins/plugin-slides:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+
   ../packages/plugins/plugin-table:
     dependencies:
       '@savoire/plugin-api':
@@ -1624,6 +1636,9 @@ importers:
       '@savoire/plugin-page':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-page
+      '@savoire/plugin-slides':
+        specifier: workspace:*
+        version: link:../../../../packages/plugins/plugin-slides
       '@savoire/plugin-templates':
         specifier: workspace:*
         version: link:../../../../packages/plugins/plugin-templates

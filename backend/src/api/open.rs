@@ -184,7 +184,9 @@ Pour ecrire, ne reecrivez pas la note : patch_note retouche un bloc par sa refer
 Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
 (drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
 Une presentation est une note avec la propriete type: slides : les diapositives sont separees par une ligne --- \
-precedee d'une ligne vide, une ligne « Notes : » ouvre les notes du presentateur, un titre # en tete fait une diapositive de titre. \
+precedee d'une ligne vide, une ligne « Notes : » ouvre les notes du presentateur, un titre # en tete fait une diapositive de titre, \
+une ligne « . . . » fait apparaitre la suite au clic. slides_outline donne son plan ; slides_style regle son allure \
+(transitions, points des listes un par un, decor, couleur ou image de fond), pour toute la presentation ou une diapositive. \
 Les animations (.anim, anime.js) se font avec les outils animation_* (animation_create, animation_update...) \
 et se montrent dans une note ou une diapositive avec animation_embed. \
 Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas. \

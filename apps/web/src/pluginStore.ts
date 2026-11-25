@@ -173,6 +173,21 @@ export const STORE_CATALOG: StoreEntry[] = [
       return mod.default
     },
   },
+  {
+    // Les outils des IA pour les presentations (le format est dans l'editeur).
+    id: 'plugin-slides', preinstalled: true, core: true,
+    manifest: {
+      id: 'plugin-slides',
+      name: 'Présentations',
+      version: '0.0.1',
+      description: 'Les outils des IA pour les présentations (notes type: slides) : plan, transitions, apparitions, décor, images de fond',
+      scope: 'vault',
+      permissions: ['vault:read', 'vault:write', 'agents'],
+      defaultActive: true,
+      official: true,
+    },
+    load: async () => (await import('@savoire/plugin-slides')).default,
+  },
 
   // ── Store : a installer ────────────────────────────────────────────────────
   // Documents existants : un plugin par type (son indexeur se desactive avec lui).

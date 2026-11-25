@@ -38,6 +38,7 @@ export default defineConfig({
       '@savoire/plugin-task-list': src('plugin-task-list'),
       '@savoire/plugin-board': src('plugin-board'),
       '@savoire/plugin-animation': src('plugin-animation'),
+      '@savoire/plugin-slides': src('plugin-slides'),
       '@savoire/plugin-outline': src('plugin-outline'),
       '@savoire/plugin-latex': src('plugin-latex'),
       '@savoire/plugin-csv': src('plugin-csv'),
