@@ -13,7 +13,7 @@
 // Fichier minimal mais complet : un masque, une disposition vide, un theme,
 // un masque des notes. Ouvert par PowerPoint, Keynote, LibreOffice et Google
 // Slides.
-import { createZip, type SlideRatio, type ZipEntry } from '@savoire/plugin-api'
+import { createZip, type SlideDecor, type SlideRatio, type SlideTransition, type ZipEntry } from '@savoire/plugin-api'
 import type { SlideColors } from './Slides'
 
 // ── Modele ──────────────────────────────────────────────────────────────
@@ -53,6 +53,13 @@ export interface PptxSlide {
   notes: string
   /** Diapositive de titre : texte centre. */
   cover: boolean
+  /** Transition a l'entree de la diapositive. */
+  transition?: SlideTransition
+  decor?: SlideDecor
+  /** Couleur de fond propre a la diapositive (#rrggbb). */
+  background?: string
+  /** Image de fond : toute la diapositive ou une moitie. */
+  image?: { picture: PptxPicture; side: 'plein' | 'gauche' | 'droite' }
 }
 
 export interface PptxDeck {
@@ -133,9 +140,9 @@ function textBox(id: number, name: string, x: number, y: number, cx: number, cy:
     + `<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="${anchor}"><a:normAutofit/></a:bodyPr><a:lstStyle/>${paragraphs}</p:txBody></p:sp>`
 }
 
-function pictureXml(id: number, rid: string, x: number, y: number, cx: number, cy: number): string {
+function pictureXml(id: number, rid: string, x: number, y: number, cx: number, cy: number, crop = ''): string {
   return `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="Image ${id}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>`
-    + `<p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>`
+    + `<p:blipFill><a:blip r:embed="${rid}"/>${crop}<a:stretch><a:fillRect/></a:stretch></p:blipFill>`
     + `<p:spPr><a:xfrm><a:off x="${Math.round(x)}" y="${Math.round(y)}"/><a:ext cx="${Math.round(cx)}" cy="${Math.round(cy)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
 }
 
@@ -152,38 +159,101 @@ function layoutPictures(pics: PptxPicture[], x: number, y: number, cx: number, c
   })
 }
 
+/** Recadre une image pour couvrir une zone sans la deformer (comme object-fit: cover). */
+function coverCrop(p: PptxPicture, cx: number, cy: number): string {
+  if (!(p.width > 0 && p.height > 0 && cx > 0 && cy > 0)) return ''
+  const pic = p.width / p.height, box = cx / cy
+  if (Math.abs(pic - box) < 0.001) return ''
+  if (pic > box) {
+    const cut = Math.round((1 - box / pic) / 2 * 100000)
+    return `<a:srcRect l="${cut}" r="${cut}"/>`
+  }
+  const cut = Math.round((1 - pic / box) / 2 * 100000)
+  return `<a:srcRect t="${cut}" b="${cut}"/>`
+}
+
+/** Melange deux couleurs #rrggbb (`t` : part de `a`). */
+function mix(a: string, b: string, t: number): string {
+  const ca = hex(a), cb = hex(b)
+  const ch = (s: string, i: number) => parseInt(s.slice(i, i + 2), 16)
+  return [0, 2, 4].map(i => Math.round(ch(ca, i) * t + ch(cb, i) * (1 - t)).toString(16).padStart(2, '0')).join('')
+}
+
+function shapeXml(id: number, name: string, geom: 'rect' | 'ellipse' | 'roundRect', x: number, y: number, cx: number, cy: number, fillXml: string, lineXml = '<a:ln><a:noFill/></a:ln>'): string {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xmlText(name)}"/><p:cNvSpPr/><p:nvPr userDrawn="1"/></p:nvSpPr>`
+    + `<p:spPr><a:xfrm><a:off x="${Math.round(x)}" y="${Math.round(y)}"/><a:ext cx="${Math.round(cx)}" cy="${Math.round(cy)}"/></a:xfrm><a:prstGeom prst="${geom}"><a:avLst/></a:prstGeom>${fillXml}${lineXml}</p:spPr></p:sp>`
+}
+
+const alphaFill = (color: string, alpha: number) => `<a:solidFill><a:srgbClr val="${hex(color)}"><a:alpha val="${Math.round(alpha * 100000)}"/></a:srgbClr></a:solidFill>`
+
+const TRANSITION_XML: Record<SlideTransition, string> = {
+  aucune: '',
+  fondu: '<p:fade/>',
+  glissement: '<p:push dir="l"/>',
+  zoom: '<p:zoom/>',
+  // Pas de cube dans le format de base : une poussee, la plus proche.
+  cube: '<p:push dir="l"/>',
+}
+
 const GROUP = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
 
-function slideXml(s: PptxSlide, deck: PptxDeck, picRids: string[]): string {
+function slideXml(s: PptxSlide, deck: PptxDeck, picRids: string[], imageRid?: string): string {
   const { cx: W, cy: H } = slideSizeEmu(deck.ratio)
+  const px = W / (deck.ratio === '4:3' ? 1024 : 1280)
   const m = 457200 * 1.1
-  const c = deck.colors
+  const c = s.background ? { ...deck.colors, bg: s.background } : deck.colors
   const shapes: string[] = []
   let id = 2
+  // Decor, sous le reste.
+  if (s.decor === 'bande') {
+    shapes.push(shapeXml(id++, 'Bande', 'rect', 0, 0, W, 14 * px, fill(c.accent)))
+    shapes.push(shapeXml(id++, 'Filet', 'roundRect', 72 * px, H - 58 * px, 120 * px, 4 * px, alphaFill(c.accent, 0.55)))
+  } else if (s.decor === 'formes') {
+    shapes.push(shapeXml(id++, 'Forme', 'ellipse', W - 370 * px, -230 * px, 560 * px, 560 * px, alphaFill(c.accent, 0.16)))
+    shapes.push(shapeXml(id++, 'Anneau', 'ellipse', -102 * px, H - 132 * px, 264 * px, 264 * px, '<a:noFill/>', `<a:ln w="${Math.round(36 * px)}">${alphaFill(c.heading, 0.12)}</a:ln>`))
+  }
+  // Image de fond, et la zone laissee au texte.
+  let left = m, right = W - m
+  if (s.image && imageRid) {
+    const side = s.image.side
+    const ix = side === 'droite' ? W / 2 : 0
+    const iw = side === 'plein' ? W : W / 2
+    shapes.push(pictureXml(id++, imageRid, ix, 0, iw, H, coverCrop(s.image.picture, iw, H)))
+    if (side === 'plein') shapes.push(shapeXml(id++, 'Voile', 'rect', 0, 0, W, H, alphaFill(c.bg, 0.45)))
+    if (side === 'gauche') left = W / 2 + 56 * px
+    if (side === 'droite') right = W / 2 - 56 * px
+  }
+  const tw = right - left
   const hasText = s.paragraphs.length > 0
   if (s.cover) {
     if (s.title.length) {
       const title = paragraphXml({ runs: s.title }, c, 'ctr', { size: 4800, color: c.heading, bold: true, spacing: false })
-      shapes.push(textBox(id++, 'Titre', m, H * 0.26, W - 2 * m, H * 0.22, title, 'b'))
+      shapes.push(textBox(id++, 'Titre', left, H * 0.26, tw, H * 0.22, title, 'b'))
     }
     const below = s.paragraphs.map(p => paragraphXml(p, c, 'ctr')).join('')
-    if (below) shapes.push(textBox(id++, 'Texte', m, H * 0.52, W - 2 * m, s.pictures.length ? H * 0.16 : H * 0.36, below))
-    layoutPictures(s.pictures, m, s.pictures.length && !below ? H * 0.52 : H * 0.7, W - 2 * m, H * 0.24).forEach((r, i) => shapes.push(pictureXml(id++, picRids[i]!, r.x, r.y, r.cx, r.cy)))
+    if (below) shapes.push(textBox(id++, 'Texte', left, H * 0.52, tw, s.pictures.length ? H * 0.16 : H * 0.36, below))
+    layoutPictures(s.pictures, left, s.pictures.length && !below ? H * 0.52 : H * 0.7, tw, H * 0.24).forEach((r, i) => shapes.push(pictureXml(id++, picRids[i]!, r.x, r.y, r.cx, r.cy)))
   } else {
     let top = m * 0.8
     if (s.title.length) {
       const title = paragraphXml({ runs: s.title }, c, 'l', { size: 3600, color: c.heading, bold: true, spacing: false })
-      shapes.push(textBox(id++, 'Titre', m, top, W - 2 * m, 914400, title, 'b'))
+      shapes.push(textBox(id++, 'Titre', left, top, tw, 914400, title, 'b'))
       top += 914400 + 182880
     }
     const bodyH = H - top - m
-    const textW = s.pictures.length && hasText ? (W - 2 * m) * 0.56 : W - 2 * m
-    if (hasText) shapes.push(textBox(id++, 'Texte', m, top, textW, bodyH, s.paragraphs.map(p => paragraphXml(p, c, 'l')).join('')))
-    const px = hasText ? m + textW + 228600 : m
-    const pw = hasText ? W - m - px : W - 2 * m
-    layoutPictures(s.pictures, px, top, pw, bodyH).forEach((r, i) => shapes.push(pictureXml(id++, picRids[i]!, r.x, r.y, r.cx, r.cy)))
+    const textW = s.pictures.length && hasText ? tw * 0.56 : tw
+    if (hasText) shapes.push(textBox(id++, 'Texte', left, top, textW, bodyH, s.paragraphs.map(p => paragraphXml(p, c, 'l')).join('')))
+    const pxl = hasText ? left + textW + 228600 : left
+    const pw = hasText ? right - pxl : tw
+    layoutPictures(s.pictures, pxl, top, pw, bodyH).forEach((r, i) => shapes.push(pictureXml(id++, picRids[i]!, r.x, r.y, r.cx, r.cy)))
   }
-  return `${XML_HEAD}<p:sld ${NS}><p:cSld><p:bg><p:bgPr>${fill(c.bg)}<a:effectLst/></p:bgPr></p:bg><p:spTree>${GROUP}${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
+  const bg = s.decor === 'dégradé'
+    ? `<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:srgbClr val="${mix(c.accent, c.bg, 0.2)}"/></a:gs><a:gs pos="55000"><a:srgbClr val="${hex(c.bg)}"/></a:gs><a:gs pos="100000"><a:srgbClr val="${mix(c.heading, c.bg, 0.12)}"/></a:gs></a:gsLst><a:lin ang="8100000" scaled="0"/></a:gradFill>`
+    : fill(c.bg)
+  const transition = TRANSITION_XML[s.transition ?? 'aucune']
+  return `${XML_HEAD}<p:sld ${NS}><p:cSld><p:bg><p:bgPr>${bg}<a:effectLst/></p:bgPr></p:bg><p:spTree>${GROUP}${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>`
+    + (transition ? `<p:transition spd="med">${transition}</p:transition>` : '')
+    + '</p:sld>'
 }
 
 function notesXml(notes: string): string {
@@ -242,7 +312,16 @@ export function pptxEntries(deck: PptxDeck, now = new Date()): ZipEntry[] {
       picRids.push(rid)
       slideRels.push({ id: rid, type: `${REL}/image`, target: `../media/${name}` })
     })
-    put(`ppt/slides/slide${num}.xml`, slideXml(s, deck, picRids))
+    let imageRid: string | undefined
+    if (s.image) {
+      const p = s.image.picture
+      const name = `fond${num}.${p.ext}`
+      exts.add(p.ext)
+      put(`ppt/media/${name}`, p.bytes)
+      imageRid = `rId${s.pictures.length + 3}`
+      slideRels.push({ id: imageRid, type: `${REL}/image`, target: `../media/${name}` })
+    }
+    put(`ppt/slides/slide${num}.xml`, slideXml(s, deck, picRids, imageRid))
     put(`ppt/slides/_rels/slide${num}.xml.rels`, rels(slideRels))
     put(`ppt/notesSlides/notesSlide${num}.xml`, notesXml(s.notes))
     put(`ppt/notesSlides/_rels/notesSlide${num}.xml.rels`, rels([

@@ -47,6 +47,12 @@ class SlideLabel extends WidgetType {
 
 const notesLine = Decoration.line({ class: 'plume-slide-notes' })
 const notesHead = Decoration.line({ class: 'plume-slide-notes plume-slide-notes-head' })
+// Reglages d'une diapositive (`<!-- transition: zoom -->`) et pauses (`. . .`) : discrets.
+const settingLine = Decoration.line({ class: 'plume-slide-setting' })
+const pauseLine = Decoration.line({ class: 'plume-slide-pause' })
+const SETTING_RE = /^[ \t]*<!--[^>]*:[\s\S]*-->[ \t]*$/
+const PAUSE_RE = /^[ \t]*\.[ \t]\.[ \t]\.[ \t]*$/
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
 
 function build(state: EditorState, opts: SlideMarksOptions): DecorationSet {
   const text = state.doc.toString()
@@ -59,6 +65,16 @@ function build(state: EditorState, opts: SlideMarksOptions): DecorationSet {
     const at = Math.min(s.from, state.doc.length)
     const line = state.doc.lineAt(at)
     ranges.push(Decoration.widget({ widget: new SlideLabel(s.index, count, s.title, opts), block: true, side: -1 }).range(line.from))
+    const end = Math.min(state.doc.length, s.notesFrom >= 0 ? s.notesFrom : s.to)
+    let fence = false
+    for (let n = line.number; n <= state.doc.lineAt(end).number; n++) {
+      const l = state.doc.line(n)
+      if (l.from >= end && n > line.number) break
+      if (FENCE_RE.test(l.text)) { fence = !fence; continue }
+      if (fence) continue
+      if (SETTING_RE.test(l.text)) ranges.push(settingLine.range(l.from))
+      else if (PAUSE_RE.test(l.text)) ranges.push(pauseLine.range(l.from))
+    }
     if (s.notesFrom >= 0) {
       const first = state.doc.lineAt(s.notesFrom).number
       const last = state.doc.lineAt(Math.max(s.notesFrom, Math.min(state.doc.length, s.to - 1))).number
@@ -83,6 +99,8 @@ const THEME = EditorView.baseTheme({
   '.plume-slide-mark-play:hover': { opacity: '1', color: 'var(--accent, #2563eb)', borderColor: 'currentColor' },
   '.plume-slide-notes': { color: 'var(--text-muted, #57606a)', fontSize: '0.92em', borderLeft: '3px solid var(--border, #d0d7de)', paddingLeft: '10px !important' },
   '.plume-slide-notes-head': { fontStyle: 'italic' },
+  '.plume-slide-setting, .plume-slide-setting *': { color: 'var(--text-faint, #8b949e) !important', fontFamily: 'var(--font-ui, system-ui, sans-serif) !important', fontSize: '12px !important' },
+  '.plume-slide-pause, .plume-slide-pause *': { color: 'var(--accent, #2563eb) !important', letterSpacing: '.3em', fontWeight: '700' },
 })
 
 /** Les marques des diapositives, pour une note Markdown. */

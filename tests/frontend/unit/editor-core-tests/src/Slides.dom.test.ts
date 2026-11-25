@@ -6,8 +6,8 @@
 // (ligne vide avant), notes du presentateur, reglages ; rendu, presentation,
 // export PowerPoint.
 import { describe, it, expect, afterEach } from 'vitest'
-import { insertIntoSlide, isSlidesNote, readZip, slideDeck, slideIndexAt } from '@savoire/plugin-api'
-import { renderSlide } from '../../../../../packages/editor-core/src/Slides'
+import { insertIntoSlide, isSlidesNote, readZip, slideDeck, slideIndexAt, slideSteps } from '@savoire/plugin-api'
+import { renderSlide, setSlideStep } from '../../../../../packages/editor-core/src/Slides'
 import { startSlideShow } from '../../../../../packages/editor-core/src/SlideShow'
 import { buildPptx, pptxEntries, readSlideBody, xmlText, type PptxDeck } from '../../../../../packages/editor-core/src/SlidesPptx'
 import { SLIDE_COLORS, editorSlideColors } from '../../../../../packages/editor-core/src/Slides'
@@ -132,6 +132,105 @@ describe('renderSlide', () => {
   })
 })
 
+const STYLED = `---
+type: slides
+transition: glissement
+décor: formes
+apparition: listes
+effet: montée
+---
+# Titre
+
+---
+
+<!-- transition: zoom; fond: #1e3a5f; décor: aucun -->
+![[Images/photo.jpg|fond gauche]]
+## Points
+
+- un
+- deux
+  - sous-point
+- trois
+
+. . .
+
+Conclusion
+
+\`\`\`
+. . .
+<!-- transition: cube -->
+\`\`\`
+
+---
+
+![fond](https://exemple.org/ciel.jpg)
+## Ciel
+`
+
+describe('transitions, apparitions, decor', () => {
+  it('lit les reglages de la presentation et ceux d une diapositive', () => {
+    const deck = slideDeck(STYLED)
+    expect(deck).toMatchObject({ transition: 'glissement', decor: 'formes', builds: true, effect: 'montée' })
+    const [one, two, three] = deck.slides
+    expect(one!.options).toEqual({ transition: null, effect: null, decor: null, builds: null, background: '' })
+    expect(two!.options).toMatchObject({ transition: 'zoom', background: '#1e3a5f', decor: 'aucun' })
+    expect(two!.image).toEqual({ markdown: '![[Images/photo.jpg]]', side: 'gauche' })
+    expect(two!.markdown.startsWith('## Points')).toBe(true)
+    // Dans le code, rien n'est lu ni coupe.
+    expect(two!.markdown).toContain('<!-- transition: cube -->')
+    expect(slideSteps(two!.markdown)).toHaveLength(2)
+    expect(three!.image).toEqual({ markdown: '![](https://exemple.org/ciel.jpg)', side: 'plein' })
+    expect(slideDeck('---\ntype: slides\n---\n![fondation](x.png)\n').slides[0]!.image).toBeNull()
+    expect(slideDeck('---\ntype: slides\n---\n<!-- fond: url(x) -->\nx').slides[0]!.options.background).toBe('')
+  })
+
+  it('rend les etapes : les points un par un, puis le passage apres . . .', () => {
+    const deck = slideDeck(STYLED)
+    const el = renderSlide(deck, deck.slides[1]!)
+    expect(el.dataset.steps).toBe('4')
+    expect(el.dataset.effect).toBe('montée')
+    expect(el.dataset.image).toBe('gauche')
+    expect(el.dataset.decor).toBeUndefined()
+    expect(el.style.getPropertyValue('--slide-bg')).toBe('#1e3a5f')
+    // Sans plugin des images (test), le lien reste en texte ; dans l'appli, l'image.
+    expect(el.querySelector('.plume-slide-image')).not.toBeNull()
+    const sky = renderSlide(deck, deck.slides[2]!)
+    expect(sky.querySelector<HTMLImageElement>('.plume-slide-image img')?.getAttribute('src')).toBe('https://exemple.org/ciel.jpg')
+    const steps = Array.from(el.querySelectorAll<HTMLElement>('[data-step]')).map(e => `${e.dataset.step}:${e.tagName}`)
+    expect(steps).toEqual(['1:LI', '2:LI', '3:LI', '4:DIV'])
+    // Tout reste visible tant qu'on ne presente pas (export, miniatures).
+    expect(el.querySelectorAll('.plume-step-hidden')).toHaveLength(0)
+    setSlideStep(el, 1)
+    expect(el.querySelectorAll('.plume-step-hidden')).toHaveLength(3)
+    const cover = renderSlide(deck, deck.slides[0]!)
+    expect(cover.dataset.decor).toBe('formes')
+    expect(cover.querySelector('.plume-slide-decor')).not.toBeNull()
+    expect(cover.dataset.steps).toBeUndefined()
+  })
+
+  it('en presentation, un clic montre l etape suivante, puis passe a la diapositive', () => {
+    const show = startSlideShow(STYLED, { start: 1 })!
+    const root = document.querySelector<HTMLElement>('[data-testid="slide-show"]')!
+    const hidden = () => root.querySelectorAll('.plume-show-layer:last-child .plume-step-hidden').length
+    expect(show.step).toBe(0)
+    expect(hidden()).toBe(4)
+    const key = (k: string) => root.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
+    key('ArrowRight'); key('ArrowRight')
+    expect([show.index, show.step, hidden()]).toEqual([1, 2, 2])
+    key('ArrowLeft')
+    expect(show.step).toBe(1)
+    key('ArrowRight'); key('ArrowRight'); key('ArrowRight')
+    expect([show.index, show.step]).toEqual([1, 4])
+    key('ArrowRight')
+    expect([show.index, show.step]).toEqual([2, 0])
+    // En arriere : la diapositive precedente, complete.
+    key('ArrowLeft')
+    expect([show.index, show.step]).toEqual([1, 4])
+    expect(root.querySelectorAll('.plume-show-layer')).toHaveLength(1)
+    show.close()
+  })
+})
+
 describe('startSlideShow', () => {
   afterEach(() => { document.body.replaceChildren() })
 
@@ -178,6 +277,32 @@ describe('export PowerPoint', () => {
         cover: false,
       },
     ],
+  })
+
+  it('ecrit les transitions, le decor et l image de fond', () => {
+    const d = deck()
+    d.slides[0]!.transition = 'fondu'
+    d.slides[0]!.decor = 'formes'
+    d.slides[1]!.transition = 'glissement'
+    d.slides[1]!.decor = 'dégradé'
+    d.slides[1]!.background = '#1e3a5f'
+    d.slides[1]!.image = { picture: { bytes: new Uint8Array([0xff, 0xd8, 0xff]), ext: 'jpeg', width: 1000, height: 1000 }, side: 'gauche' }
+    const entries = pptxEntries(d)
+    const text = (p: string) => new TextDecoder().decode(entries.find(e => e.path === p)!.bytes)
+    expect(text('ppt/slides/slide1.xml')).toContain('<p:transition spd="med"><p:fade/></p:transition></p:sld>')
+    expect(text('ppt/slides/slide1.xml')).toContain('prst="ellipse"')
+    const two = text('ppt/slides/slide2.xml')
+    expect(two).toContain('<p:push dir="l"/>')
+    expect(two).toContain('<a:gradFill')
+    expect(two).toContain('r:embed="rId4"')
+    // Image carree sur une moitie haute : recadree en largeur, pas deformee.
+    expect(two).toMatch(/<a:srcRect l="\d+" r="\d+"\/>/)
+    expect(text('ppt/slides/_rels/slide2.xml.rels')).toContain('../media/fond2.jpeg')
+    expect(text('[Content_Types].xml')).toContain('Extension="jpeg"')
+    for (const e of entries.filter(x => /slide\d\.xml$/.test(x.path))) {
+      const doc = new DOMParser().parseFromString(text(e.path), 'application/xml')
+      expect(doc.getElementsByTagName('parsererror').length, e.path).toBe(0)
+    }
   })
 
   it('ecrit les parties attendues, les diapositives, les notes et les images', async () => {

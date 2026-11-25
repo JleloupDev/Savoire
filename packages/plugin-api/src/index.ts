@@ -155,7 +155,7 @@ export type {
   CapabilityId, CapabilityLevel, CapabilityInfo, CapabilityReport, PluginRegistrations, DiffItem, FileTypeReview,
   ComparableView, ComparableFileView,
 } from './capabilities'
-export { SLIDE_THEMES, isSlidesNote, slideDeck, slideSeparators, slideIndexAt, insertIntoSlide } from './slides'
-export type { Slide, SlideDeck, SlideTheme, SlideRatio } from './slides'
+export { SLIDE_THEMES, SLIDE_TRANSITIONS, SLIDE_EFFECTS, SLIDE_DECORS, isSlidesNote, slideDeck, slideSeparators, slideIndexAt, slideSteps, insertIntoSlide, setDeckStyle, setSlideStyle, setSlideImage, slideStyleValue } from './slides'
+export type { Slide, SlideDeck, SlideTheme, SlideRatio, SlideTransition, SlideEffect, SlideDecor, SlideImage, SlideOptions, DeckStyle, SlideStyle } from './slides'
 export type { NoteBlock, NoteBlockKind } from './noteBlocks'
 export { splitNoteBlocks, blockFingerprint, textFingerprint, blockAt, newBlockId, blockIdInsertion, PROSE_BLOCK_KINDS } from './noteBlocks'

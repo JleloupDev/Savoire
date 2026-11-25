@@ -5,7 +5,7 @@
 // d'impression, comme l'export PDF d'une note) et PowerPoint (.pptx).
 import { slideDeck, type SlideDeck } from '@savoire/plugin-api'
 import { settle } from './PdfExport'
-import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, slideColors, type SlideRenderOptions } from './Slides'
+import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, slideColors, slideSettings, toHex, type SlideRenderOptions } from './Slides'
 import { buildPptx, pictureOf, readSlideBody, type PptxSlide } from './SlidesPptx'
 
 export interface SlidesExportOptions extends SlideRenderOptions {
@@ -102,7 +102,16 @@ export async function slidesToPptx(text: string, opts: SlidesExportOptions = {})
       const read = readSlideBody(body)
       const pictures = (await Promise.all(read.images.slice(0, 6).map(pictureOf))).filter(p => p !== null)
       const slide = deck.slides[i]!
-      out.push({ title: read.title, paragraphs: read.paragraphs, pictures, notes: slide.notes, cover: slide.cover })
+      const set = slideSettings(deck, slide)
+      const bgImg = slides[i]!.querySelector<HTMLImageElement>('.plume-slide-image img')
+      const bgPicture = bgImg ? await pictureOf(bgImg) : null
+      out.push({
+        title: read.title, paragraphs: read.paragraphs, pictures, notes: slide.notes, cover: slide.cover,
+        transition: set.transition,
+        decor: set.decor,
+        background: slide.options.background ? toHex(slide.options.background) ?? undefined : undefined,
+        image: bgPicture && slide.image ? { picture: bgPicture, side: slide.image.side } : undefined,
+      })
     }
     return buildPptx({ title: opts.title ?? '', ratio: deck.ratio, colors: slideColors(deck.theme), slides: out })
   } finally {

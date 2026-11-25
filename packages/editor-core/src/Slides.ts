@@ -8,7 +8,7 @@
 // Une diapositive a une taille fixe (1280 x 720 en 16:9, 1024 x 768 en 4:3).
 // L'ecran la met a l'echelle ; l'impression en fait une page ; l'export
 // PowerPoint lit ce rendu.
-import { BLOCK_DESTROY_EVENT, type BlockRegistry, type HookRegistry, type Slide, type SlideDeck, type SlideRatio, type SlideTheme } from '@savoire/plugin-api'
+import { BLOCK_DESTROY_EVENT, slideSteps, type BlockRegistry, type HookRegistry, type Slide, type SlideDecor, type SlideDeck, type SlideEffect, type SlideRatio, type SlideTheme, type SlideTransition } from '@savoire/plugin-api'
 import { COLUMNS_CSS, renderFragmentInto } from './NoteFragment'
 
 export const SLIDE_SIZE: Record<SlideRatio, { w: number; h: number }> = {
@@ -44,7 +44,7 @@ export const SLIDE_COLORS: Record<FixedTheme, SlideColors> = {
 }
 
 /** Une couleur CSS en #rrggbb (l'export PowerPoint n'en lit pas d'autre). */
-function toHex(value: string, doc: Document): string | null {
+export function toHex(value: string, doc: Document = document): string | null {
   const v = value.trim()
   if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase()
   const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v)
@@ -163,6 +163,38 @@ export const SLIDES_CSS = `
 .plume-slide .plume-columns:has([data-fit]) { flex: 0 1 auto; min-height: 0; grid-template-rows: minmax(0, auto); }
 .plume-slide .plume-column:has([data-fit]) { align-self: stretch !important; min-height: 0; display: flex; flex-direction: column; }
 .plume-slide .plume-column [data-fit] { flex: 0 1 auto; min-height: 0; }
+/* Decor, dessine avec les couleurs du theme, sous le contenu. */
+.plume-slide > .plume-slide-body, .plume-slide > .plume-slide-foot { position: relative; z-index: 2; }
+.plume-slide > .plume-slide-foot { position: absolute; }
+.plume-slide-decor { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.plume-slide-decor::before, .plume-slide-decor::after { content: ''; position: absolute; }
+.plume-slide[data-decor="bande"] .plume-slide-decor::before { left: 0; right: 0; top: 0; height: 14px; background: var(--slide-accent); }
+.plume-slide[data-decor="bande"] .plume-slide-decor::after { left: 72px; width: 120px; bottom: 54px; height: 4px; border-radius: 2px; background: var(--slide-accent); opacity: .55; }
+.plume-slide[data-decor="dégradé"] .plume-slide-decor { background:
+  radial-gradient(circle at 88% 8%, color-mix(in srgb, var(--slide-accent) 22%, transparent), transparent 52%),
+  radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--slide-heading) 14%, transparent), transparent 50%); }
+.plume-slide[data-decor="formes"] .plume-slide-decor::before { width: 560px; height: 560px; right: -190px; top: -230px; border-radius: 50%; background: color-mix(in srgb, var(--slide-accent) 16%, transparent); }
+.plume-slide[data-decor="formes"] .plume-slide-decor::after { width: 300px; height: 300px; left: -120px; bottom: -150px; border-radius: 50%; border: 36px solid color-mix(in srgb, var(--slide-heading) 12%, transparent); }
+/* Image de fond : toute la diapositive (voile pour le texte), ou une moitie. */
+.plume-slide-image { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.plume-slide-image img { display: block; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; border-radius: 0; }
+.plume-slide[data-image="plein"] .plume-slide-image::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--slide-bg) 50%, transparent); }
+.plume-slide[data-image="gauche"] .plume-slide-image { right: 50%; }
+.plume-slide[data-image="droite"] .plume-slide-image { left: 50%; }
+.plume-slide[data-image="gauche"] { padding-left: calc(50% + 56px); }
+.plume-slide[data-image="droite"] { padding-right: calc(50% + 56px); }
+.plume-slide[data-image="gauche"] > .plume-slide-foot { left: calc(50% + 56px); }
+.plume-slide[data-image="droite"] > .plume-slide-foot { right: calc(50% + 40px); }
+.plume-slide[data-image="gauche"] .plume-slide-decor, .plume-slide[data-image="droite"] .plume-slide-decor { z-index: 1; }
+/* Etapes : ce qui apparait au clic. */
+.plume-step { transition: opacity .45s ease, transform .45s ease; }
+.plume-step-hidden { opacity: 0 !important; pointer-events: none; }
+.plume-slide[data-effect="montée"] .plume-step-hidden { transform: translateY(.9em); }
+.plume-slide[data-effect="zoom"] .plume-step-hidden { transform: scale(.82); }
+.plume-slide[data-effect="zoom"] .plume-step { transform-origin: 0 50%; }
+.plume-slide-cover[data-effect="zoom"] .plume-step { transform-origin: 50% 50%; }
+.plume-step-group > [data-fit] { flex: 0 1 auto; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .plume-step { transition: none; } }
 .plume-slide-foot { position: absolute; left: 72px; right: 40px; bottom: 18px; display: flex; justify-content: space-between; gap: 16px; font-size: 16px; color: var(--slide-muted); pointer-events: none; }
 ${COLUMNS_CSS}`
 
@@ -182,23 +214,108 @@ export function applySlideTheme(el: HTMLElement, theme: SlideTheme): void {
   for (const [k, v] of Object.entries(c)) el.style.setProperty(`--slide-${k}`, v)
 }
 
+/** Reglages d'une diapositive : les siens, sinon ceux de la presentation. */
+export function slideSettings(deck: SlideDeck, slide: Slide): { transition: SlideTransition; effect: SlideEffect; decor: SlideDecor; builds: boolean } {
+  const o = slide.options
+  return {
+    transition: o?.transition ?? deck.transition ?? 'aucune',
+    effect: o?.effect ?? deck.effect ?? 'fondu',
+    decor: o?.decor ?? deck.decor ?? 'aucun',
+    builds: o?.builds ?? deck.builds ?? false,
+  }
+}
+
+/** Un element de premier niveau d'une liste (pas un sous-point, pas dans un rendu de plugin). */
+function buildItems(group: HTMLElement): HTMLElement[] {
+  return Array.from(group.querySelectorAll<HTMLElement>('li')).filter(li =>
+    !li.parentElement?.closest('li') && !li.closest('.plume-plugin-render'))
+}
+
+const firstBlockIsList = (group: HTMLElement): boolean => {
+  const first = group.firstElementChild
+  const inner = first?.firstElementChild
+  return !!first && (/^(UL|OL)$/.test(first.tagName) || (!!inner && /^(UL|OL)$/.test(inner.tagName)))
+}
+
+/**
+ * Le contenu, par etapes : chaque morceau entre deux `. . .`, et les points
+ * des listes si elles apparaissent un par un. Chaque element revele porte
+ * `data-step` (1, 2...) ; tout reste visible tant qu'on n'appelle pas
+ * setSlideStep (export, miniatures).
+ */
+function renderSteps(body: HTMLElement, markdown: string, builds: boolean, opts: SlideRenderOptions): number {
+  const fragment = { registry: opts.registry, hooks: opts.hooks, activeIds: opts.activeIds, ctx: { editorView: null } }
+  const parts = slideSteps(markdown)
+  if (parts.length === 1 && !builds) {
+    renderFragmentInto(body, markdown, fragment)
+    return 0
+  }
+  let step = 0
+  parts.forEach((part, i) => {
+    const group = document.createElement('div')
+    group.className = 'plume-step-group'
+    renderFragmentInto(group, part, fragment)
+    body.appendChild(group)
+    // Le premier point d'une liste qui ouvre son etape arrive avec elle.
+    let shared = false
+    if (i > 0) {
+      group.dataset.step = String(++step)
+      group.classList.add('plume-step')
+      shared = builds && firstBlockIsList(group)
+    }
+    if (!builds) return
+    for (const li of buildItems(group)) {
+      if (shared) { shared = false; continue }
+      li.dataset.step = String(++step)
+      li.classList.add('plume-step')
+    }
+  })
+  return step
+}
+
 /** Une diapositive, a sa taille reelle (non mise a l'echelle). */
 export function renderSlide(deck: SlideDeck, slide: Slide, opts: SlideRenderOptions = {}): HTMLElement {
   const { w, h } = SLIDE_SIZE[deck.ratio]
+  const set = slideSettings(deck, slide)
   const el = document.createElement('section')
   el.className = `plume-slide${slide.cover ? ' plume-slide-cover' : ''}`
   el.dataset.slide = String(slide.index + 1)
   el.style.width = `${w}px`
   el.style.height = `${h}px`
   applySlideTheme(el, deck.theme)
+  if (slide.options?.background) el.style.setProperty('--slide-bg', slide.options.background)
+  el.dataset.effect = set.effect
+  el.dataset.transition = set.transition
+  if (set.decor !== 'aucun') {
+    el.dataset.decor = set.decor
+    const decor = document.createElement('div')
+    decor.className = 'plume-slide-decor'
+    decor.setAttribute('aria-hidden', 'true')
+    el.appendChild(decor)
+  }
+  if (slide.image) {
+    el.dataset.image = slide.image.side
+    const box = document.createElement('div')
+    box.className = 'plume-slide-image'
+    box.setAttribute('aria-hidden', 'true')
+    const holder = document.createElement('div')
+    renderFragmentInto(holder, slide.image.markdown, { registry: opts.registry, hooks: opts.hooks, activeIds: opts.activeIds, ctx: { editorView: null } })
+    // L'image seule (sans sa poignee ni sa marge), couvrant sa zone.
+    const img = holder.querySelector('img')
+    if (img) {
+      img.removeAttribute('style')
+      img.removeAttribute('width')
+      img.removeAttribute('height')
+      box.appendChild(img)
+    } else {
+      box.append(...Array.from(holder.childNodes))
+    }
+    el.appendChild(box)
+  }
   const body = document.createElement('div')
   body.className = 'plume-slide-body'
-  renderFragmentInto(body, slide.markdown, {
-    registry: opts.registry,
-    hooks: opts.hooks,
-    activeIds: opts.activeIds,
-    ctx: { editorView: null },
-  })
+  const steps = renderSteps(body, slide.markdown, set.builds, opts)
+  if (steps) el.dataset.steps = String(steps)
   el.appendChild(body)
   if (deck.numbers || deck.footer) {
     const foot = document.createElement('div')
@@ -211,6 +328,19 @@ export function renderSlide(deck: SlideDeck, slide: Slide, opts: SlideRenderOpti
     el.appendChild(foot)
   }
   return el
+}
+
+/** Nombre d'etapes d'une diapositive rendue (0 : tout d'un coup). */
+export function slideStepCount(el: HTMLElement): number {
+  return Number(el.dataset.steps ?? 0) || 0
+}
+
+/** Montre les etapes jusqu'a `step` (0 : rien de ce qui apparait au clic). */
+export function setSlideStep(el: HTMLElement, step: number): void {
+  el.dataset.shown = String(step)
+  for (const s of Array.from(el.querySelectorAll<HTMLElement>('[data-step]'))) {
+    s.classList.toggle('plume-step-hidden', Number(s.dataset.step) > step)
+  }
 }
 
 /**

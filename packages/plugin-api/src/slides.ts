@@ -16,15 +16,50 @@
 //    horizontal dans une diapositive : `***` ou `___`.
 //  - Notes du presentateur : une ligne `Notes :` (ou `Note:`), seule ou
 //    suivie du debut des notes ; tout ce qui suit dans la diapositive.
-//  - Reglages, dans les proprietes : `thème` (clair, sombre, bleu, sépia),
-//    `format` (16:9, 4:3), `numéros` (oui / non), `pied` (texte en bas).
-import { findFrontmatter, parseFrontmatter } from './properties'
+//  - Reglages, dans les proprietes : `thème` (éditeur, clair, sombre, bleu,
+//    sépia), `format` (16:9, 4:3), `numéros` (oui / non), `pied` (texte en
+//    bas), `transition` (fondu, glissement, zoom, cube), `apparition: listes`
+//    (les points d'une liste un par un), `effet` (fondu, montée, zoom : comment
+//    ils apparaissent), `décor` (bande, dégradé, formes).
+//  - Dans une diapositive :
+//      · une ligne `. . .` (comme Pandoc) : la suite apparait au clic suivant ;
+//      · `![fond](photo.jpg)` ou `![[photo.jpg|fond]]` : image de fond, sur
+//        toute la diapositive ; `fond gauche` / `fond droite` : sur une moitie,
+//        le texte sur l'autre ;
+//      · une ligne `<!-- transition: zoom; fond: #1e3a5f -->` : reglages de
+//        cette diapositive seule (transition, fond, décor, apparition, effet).
+//        Invisible hors de Savoire.
+import { findFrontmatter, parseFrontmatter, setFrontmatterValue } from './properties'
 
 // « éditeur » (par defaut) : les couleurs de l'editeur, celles du theme de l'appli.
 export const SLIDE_THEMES = ['éditeur', 'clair', 'sombre', 'bleu', 'sépia'] as const
 export type SlideTheme = typeof SLIDE_THEMES[number]
 
 export type SlideRatio = '16:9' | '4:3'
+
+export const SLIDE_TRANSITIONS = ['aucune', 'fondu', 'glissement', 'zoom', 'cube'] as const
+export type SlideTransition = typeof SLIDE_TRANSITIONS[number]
+export const SLIDE_EFFECTS = ['fondu', 'montée', 'zoom'] as const
+export type SlideEffect = typeof SLIDE_EFFECTS[number]
+export const SLIDE_DECORS = ['aucun', 'bande', 'dégradé', 'formes'] as const
+export type SlideDecor = typeof SLIDE_DECORS[number]
+
+/** Image de fond d'une diapositive : sur toute la diapositive ou sur une moitie. */
+export interface SlideImage {
+  /** Le Markdown qui rend l'image (`![[photo.jpg]]` ou `![](https://...)`). */
+  markdown: string
+  side: 'plein' | 'gauche' | 'droite'
+}
+
+/** Reglages propres a une diapositive (null : ceux de la presentation). */
+export interface SlideOptions {
+  transition: SlideTransition | null
+  effect: SlideEffect | null
+  decor: SlideDecor | null
+  builds: boolean | null
+  /** Couleur de fond ('' : celle du theme). */
+  background: string
+}
 
 export interface Slide {
   /** Rang, a partir de 0. */
@@ -42,6 +77,10 @@ export interface Slide {
   title: string
   /** Diapositive de titre : elle commence par un titre de niveau 1 (centree). */
   cover: boolean
+  /** Image de fond (null : aucune). Retiree de `markdown`. */
+  image: SlideImage | null
+  /** Reglages de cette diapositive (lignes `<!-- ... -->`, retirees de `markdown`). */
+  options: SlideOptions
 }
 
 export interface SlideDeck {
@@ -54,6 +93,11 @@ export interface SlideDeck {
   footer: string
   /** Debut du corps (apres le frontmatter). */
   bodyFrom: number
+  transition: SlideTransition
+  effect: SlideEffect
+  decor: SlideDecor
+  /** Les points des listes apparaissent un par un. */
+  builds: boolean
 }
 
 const SLIDES_TYPES = new Set(['slides', 'slide', 'présentation', 'presentation', 'diapositives', 'diaporama'])
@@ -185,6 +229,126 @@ function themeOf(v: unknown): SlideTheme {
   return aliases[s] ?? 'éditeur'
 }
 
+function pick<T extends string>(v: unknown, aliases: Record<string, T>): T | null {
+  if (typeof v === 'boolean') return aliases[v ? 'oui' : 'non'] ?? null
+  return typeof v === 'string' ? aliases[fold(v)] ?? null : null
+}
+
+const TRANSITION_ALIASES: Record<string, SlideTransition> = {
+  aucune: 'aucune', aucun: 'aucune', non: 'aucune', none: 'aucune', no: 'aucune',
+  fondu: 'fondu', fade: 'fondu', oui: 'fondu',
+  glissement: 'glissement', glisse: 'glissement', slide: 'glissement', push: 'glissement', poussee: 'glissement',
+  zoom: 'zoom',
+  cube: 'cube',
+}
+const EFFECT_ALIASES: Record<string, SlideEffect> = {
+  fondu: 'fondu', fade: 'fondu', apparition: 'fondu',
+  montee: 'montée', monte: 'montée', up: 'montée', 'fly-in': 'montée', glissement: 'montée',
+  zoom: 'zoom',
+}
+const DECOR_ALIASES: Record<string, SlideDecor> = {
+  aucun: 'aucun', aucune: 'aucun', non: 'aucun', none: 'aucun',
+  bande: 'bande', bandeau: 'bande', band: 'bande',
+  degrade: 'dégradé', gradient: 'dégradé',
+  formes: 'formes', forme: 'formes', shapes: 'formes', cercles: 'formes',
+}
+const BUILD_ALIASES: Record<string, boolean> = {
+  listes: true, liste: true, oui: true, 'une par une': true, 'un par un': true, incremental: true, yes: true, true: true, points: true,
+  non: false, aucune: false, aucun: false, no: false, false: false, none: false,
+}
+
+function buildsOf(v: unknown): boolean | null {
+  if (typeof v === 'boolean') return v
+  if (typeof v !== 'string') return null
+  const b = BUILD_ALIASES[fold(v)]
+  return b === undefined ? null : b
+}
+
+/** Une couleur CSS simple (pas de quoi sortir de la propriete). */
+const COLOR_RE = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|(?:rgb|hsl)a?\([\d\s.,%/deg-]+\))$/i
+
+const PAUSE_LINE = /^[ \t]*\.[ \t]\.[ \t]\.[ \t]*$/
+const DIRECTIVE_LINE = /^[ \t]*<!--([\s\S]*?)-->[ \t]*$/
+const IMAGE_MD = /^[ \t]*!\[(?:fond|bg|background)(?=[\s\]])(?:[ \t]+(gauche|droite|left|right))?[^\]]*\]\(\s*<?([^)>\s]+)>?(?:\s+"[^"]*")?\s*\)[ \t]*$/i
+const IMAGE_WIKI = /^[ \t]*!\[\[([^\]|]+)\|[ \t]*(?:fond|bg|background)(?:[ \t]+(gauche|droite|left|right))?[ \t]*\]\][ \t]*$/i
+
+const sideOf = (s: string | undefined): SlideImage['side'] => {
+  const v = (s ?? '').toLowerCase()
+  return v === 'gauche' || v === 'left' ? 'gauche' : v === 'droite' || v === 'right' ? 'droite' : 'plein'
+}
+
+/** Une ligne de reglages `<!-- cle: valeur; cle: valeur -->`, sinon null. */
+function directivesOf(line: string): Record<string, string> | null {
+  const m = DIRECTIVE_LINE.exec(line)
+  if (!m) return null
+  const out: Record<string, string> = {}
+  for (const part of m[1]!.split(/[;\n]/)) {
+    const kv = /^\s*([^:]+?)\s*:\s*(.*?)\s*$/.exec(part)
+    if (kv) out[fold(kv[1]!)] = kv[2]!
+  }
+  return Object.keys(out).length ? out : null
+}
+
+/**
+ * Retire d'une diapositive ses lignes de reglages et son image de fond (hors
+ * code) ; rend le reste, l'image et les reglages.
+ */
+function slideExtras(markdown: string): { markdown: string; image: SlideImage | null; options: SlideOptions } {
+  const options: SlideOptions = { transition: null, effect: null, decor: null, builds: null, background: '' }
+  let image: SlideImage | null = null
+  let fence = false
+  const kept: string[] = []
+  for (const line of markdown.split('\n')) {
+    if (FENCE.test(line)) fence = !fence
+    if (fence || FENCE.test(line)) { kept.push(line); continue }
+    const d = directivesOf(line)
+    if (d) {
+      const get = (...names: string[]) => names.map(n => d[fold(n)]).find(v => v !== undefined)
+      options.transition = pick(get('transition'), TRANSITION_ALIASES) ?? options.transition
+      options.effect = pick(get('effet', 'effect'), EFFECT_ALIASES) ?? options.effect
+      options.decor = pick(get('décor', 'decor'), DECOR_ALIASES) ?? options.decor
+      options.builds = buildsOf(get('apparition', 'incremental')) ?? options.builds
+      const bg = get('fond', 'background', 'bg')?.trim()
+      if (bg && COLOR_RE.test(bg)) options.background = bg
+      continue
+    }
+    if (!image) {
+      const md = IMAGE_MD.exec(line)
+      if (md) {
+        const url = md[2]!
+        const markdown = /^(https?:|data:image\/|blob:)/i.test(url) ? `![](${url})` : `![[${safeDecode(url)}]]`
+        image = { markdown, side: sideOf(md[1]) }
+        continue
+      }
+      const wiki = IMAGE_WIKI.exec(line)
+      if (wiki) { image = { markdown: `![[${wiki[1]!.trim()}]]`, side: sideOf(wiki[2]) }; continue }
+    }
+    kept.push(line)
+  }
+  return { markdown: kept.join('\n').trim(), image, options }
+}
+
+function safeDecode(s: string): string {
+  try { return decodeURI(s) } catch { return s }
+}
+
+/**
+ * Les etapes d'une diapositive : son contenu coupe aux lignes `. . .` (hors
+ * code). Une seule etape quand il n'y en a pas.
+ */
+export function slideSteps(markdown: string): string[] {
+  const out: string[] = []
+  let cur: string[] = []
+  let fence = false
+  for (const line of markdown.split('\n')) {
+    if (FENCE.test(line)) fence = !fence
+    if (!fence && PAUSE_LINE.test(line)) { out.push(cur.join('\n').trim()); cur = []; continue }
+    cur.push(line)
+  }
+  out.push(cur.join('\n').trim())
+  return out.length > 1 ? out.filter((s, i) => i === 0 || s !== '') : out
+}
+
 /** La presentation : ses diapositives et ses reglages. */
 export function slideDeck(text: string): SlideDeck {
   const fm = findFrontmatter(text)
@@ -201,9 +365,10 @@ export function slideDeck(text: string): SlideDeck {
   // Une diapositive vide en tete (la note commence par `---`) ne compte pas.
   const kept = bounds.filter((b, i) => i > 0 || text.slice(b.from, b.to).trim() !== '' || bounds.length === 1)
   const slides = kept.map((b, index): Slide => {
-    const { markdown, notes, notesFrom } = splitNotes(text, b.from, b.to)
+    const split = splitNotes(text, b.from, b.to)
+    const { markdown, image, options } = slideExtras(split.markdown)
     const h = headingOf(markdown)
-    return { index, from: b.from, to: b.to, markdown, notes, notesFrom, title: h.title, cover: startsWithH1(markdown) }
+    return { index, from: b.from, to: b.to, markdown, notes: split.notes, notesFrom: split.notesFrom, title: h.title, cover: startsWithH1(markdown), image, options }
   })
   const ratio = String(prop(props, ['format', 'ratio', 'taille']) ?? '').replace(/\s/g, '') === '4:3' ? '4:3' : '16:9'
   const footer = prop(props, ['pied', 'pied de page', 'footer'])
@@ -214,6 +379,10 @@ export function slideDeck(text: string): SlideDeck {
     numbers: yes(prop(props, ['numéros', 'numérotation', 'pagination', 'numbers', 'paginate']), true),
     footer: typeof footer === 'string' ? footer : '',
     bodyFrom,
+    transition: pick(prop(props, ['transition', 'transitions']), TRANSITION_ALIASES) ?? 'aucune',
+    effect: pick(prop(props, ['effet', 'effect', 'effet d’apparition', "effet d'apparition"]), EFFECT_ALIASES) ?? 'fondu',
+    decor: pick(prop(props, ['décor', 'decor', 'décoration']), DECOR_ALIASES) ?? 'aucun',
+    builds: buildsOf(prop(props, ['apparition', 'apparitions', 'incremental'])) ?? false,
   }
 }
 
@@ -238,4 +407,150 @@ export function insertIntoSlide(text: string, slideNumber: number, block: string
   const rest = text.slice(end).replace(/^\s+/, '')
   const gap = head ? '\n\n' : ''
   return rest ? `${head}${gap}${block.trim()}\n\n${rest}` : `${head}${gap}${block.trim()}\n`
+}
+
+// ── Ecriture des reglages (outils d'agent, MCP) ─────────────────────────
+
+/** Reglages de toute la presentation (proprietes). undefined : inchange. */
+export interface DeckStyle {
+  theme?: SlideTheme
+  transition?: SlideTransition
+  effect?: SlideEffect
+  decor?: SlideDecor
+  builds?: boolean
+}
+
+/** Reglages d'une diapositive (ligne `<!-- ... -->`). null : retire, undefined : inchange. */
+export interface SlideStyle {
+  transition?: SlideTransition | null
+  effect?: SlideEffect | null
+  decor?: SlideDecor | null
+  builds?: boolean | null
+  background?: string | null
+}
+
+/** La valeur ecrite, a partir de ce qu'on donne (alias compris). Erreur si inconnue. */
+export function slideStyleValue(kind: 'theme' | 'transition' | 'effect' | 'decor' | 'builds', raw: unknown): SlideTheme | SlideTransition | SlideEffect | SlideDecor | boolean {
+  const fail = (list: readonly string[]) => new Error(`Valeur inconnue pour ${kind} : ${String(raw)}. Possibles : ${list.join(', ')}.`)
+  if (kind === 'builds') {
+    const b = buildsOf(raw)
+    if (b === null) throw new Error(`Valeur inconnue pour builds : ${String(raw)} (oui ou non).`)
+    return b
+  }
+  if (kind === 'theme') {
+    const s = typeof raw === 'string' ? fold(raw) : ''
+    const t = themeOf(raw)
+    if (t === 'éditeur' && !['editeur', 'editor', 'app', 'appli', 'auto'].includes(s)) throw fail(SLIDE_THEMES)
+    return t
+  }
+  const table = kind === 'transition' ? TRANSITION_ALIASES : kind === 'effect' ? EFFECT_ALIASES : DECOR_ALIASES
+  const v = pick(raw, table as Record<string, string>)
+  if (!v) throw fail(kind === 'transition' ? SLIDE_TRANSITIONS : kind === 'effect' ? SLIDE_EFFECTS : SLIDE_DECORS)
+  return v as SlideTransition | SlideEffect | SlideDecor
+}
+
+const DECK_KEYS: Record<keyof DeckStyle, { names: string[]; write: string }> = {
+  theme: { names: ['thème', 'theme'], write: 'thème' },
+  transition: { names: ['transition', 'transitions'], write: 'transition' },
+  effect: { names: ['effet', 'effect'], write: 'effet' },
+  decor: { names: ['décor', 'decor', 'décoration'], write: 'décor' },
+  builds: { names: ['apparition', 'apparitions', 'incremental'], write: 'apparition' },
+}
+
+/** Change les reglages de la presentation, dans ses proprietes (cle deja ecrite gardee). */
+export function setDeckStyle(text: string, style: DeckStyle): string {
+  const props = findFrontmatter(text) ? parseFrontmatter(text) as Record<string, unknown> : {}
+  let out = text
+  for (const [k, v] of Object.entries(style) as [keyof DeckStyle, unknown][]) {
+    if (v === undefined) continue
+    const spec = DECK_KEYS[k]
+    const wanted = new Set(spec.names.map(fold))
+    const key = Object.keys(props).find(p => wanted.has(fold(p))) ?? spec.write
+    const value = k === 'builds' ? (v ? 'listes' : 'non') : String(v)
+    out = setFrontmatterValue(out, key, value)
+  }
+  return out
+}
+
+/** Reecrit les lignes d'une diapositive (son contenu, notes exclues). */
+function rewriteSlide(text: string, slideNumber: number, f: (lines: string[]) => string[]): string {
+  const deck = slideDeck(text)
+  const slide = deck.slides[slideNumber - 1]
+  if (!slide) throw new Error(`Diapositive ${slideNumber} introuvable : la présentation en a ${deck.slides.length}.`)
+  const end = slide.notesFrom >= 0 ? slide.notesFrom : slide.to
+  const lines = f(text.slice(slide.from, end).split('\n'))
+  return text.slice(0, slide.from) + lines.join('\n') + text.slice(end)
+}
+
+/** Ajoute des lignes en tete d'une diapositive (avant son premier contenu). */
+function prepend(lines: string[], head: string[]): string[] {
+  if (!head.length) return lines
+  const first = lines.findIndex(l => l.trim() !== '')
+  if (first < 0) return ['', ...head, '', '']
+  return [...lines.slice(0, first), ...head, ...lines.slice(first)]
+}
+
+const DIRECTIVE_WRITE: Record<keyof SlideStyle, string> = {
+  transition: 'transition', effect: 'effet', decor: 'décor', builds: 'apparition', background: 'fond',
+}
+const DIRECTIVE_READ: Record<string, keyof SlideStyle> = {
+  transition: 'transition', effet: 'effect', effect: 'effect', decor: 'decor', apparition: 'builds', incremental: 'builds',
+  fond: 'background', background: 'background', bg: 'background',
+}
+
+/**
+ * Change les reglages d'une diapositive : une seule ligne `<!-- ... -->` en
+ * tete, qui reunit les anciennes. Les autres commentaires restent.
+ */
+export function setSlideStyle(text: string, slideNumber: number, style: SlideStyle): string {
+  if (style.background && !COLOR_RE.test(style.background.trim())) throw new Error(`Couleur de fond invalide : ${style.background} (ex. #1e3a5f).`)
+  return rewriteSlide(text, slideNumber, lines => {
+    const values = new Map<string, string>()
+    const others: Record<string, string> = {}
+    const kept: string[] = []
+    let fence = false
+    for (const line of lines) {
+      if (FENCE.test(line)) fence = !fence
+      const d = fence || FENCE.test(line) ? null : directivesOf(line)
+      if (!d) { kept.push(line); continue }
+      for (const [k, v] of Object.entries(d)) {
+        const known = DIRECTIVE_READ[k]
+        if (known) values.set(DIRECTIVE_WRITE[known], v)
+        else others[k] = v
+      }
+    }
+    for (const [k, v] of Object.entries(style) as [keyof SlideStyle, unknown][]) {
+      if (v === undefined) continue
+      const key = DIRECTIVE_WRITE[k]
+      if (v === null || v === '') values.delete(key)
+      else values.set(key, k === 'builds' ? (v ? 'listes' : 'non') : String(v).trim())
+    }
+    // Les cles inconnues d'une ligne de reglages restent (un autre outil les lit peut-etre).
+    for (const [k, v] of Object.entries(others)) values.set(k, v)
+    const head = values.size ? [`<!-- ${[...values].map(([k, v]) => `${k}: ${v}`).join('; ')} -->`] : []
+    return prepend(kept, head)
+  })
+}
+
+/**
+ * Pose (ou retire, avec null) l'image de fond d'une diapositive. Un chemin du
+ * vault devient `![[photo.jpg|fond]]`, une adresse web `![fond](https://...)`.
+ */
+export function setSlideImage(text: string, slideNumber: number, image: { path: string; side?: SlideImage['side'] } | null): string {
+  return rewriteSlide(text, slideNumber, lines => {
+    let fence = false
+    const kept = lines.filter(line => {
+      if (FENCE.test(line)) { fence = !fence; return true }
+      return fence || !(IMAGE_MD.test(line) || IMAGE_WIKI.test(line))
+    })
+    if (!image) return kept
+    const path = image.path.trim().replace(/[\]|\n]/g, '')
+    if (!path) throw new Error('Donnez l’image (chemin dans le vault ou adresse web).')
+    const word = image.side && image.side !== 'plein' ? `fond ${image.side}` : 'fond'
+    const line = /^(https?:|data:image\/)/i.test(path) ? `![${word}](${path.replace(/[()\s]/g, encodeURIComponent)})` : `![[${path}|${word}]]`
+    // Apres la ligne de reglages, s'il y en a une en tete.
+    const first = kept.findIndex(l => l.trim() !== '')
+    if (first >= 0 && DIRECTIVE_LINE.test(kept[first]!)) return [...kept.slice(0, first + 1), line, ...kept.slice(first + 1)]
+    return prepend(kept, [line])
+  })
 }

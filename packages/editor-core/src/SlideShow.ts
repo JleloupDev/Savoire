@@ -4,8 +4,9 @@
 // Mode presentation d'une note `type: slides` : plein ecran, une diapositive
 // a la fois, au clavier comme PowerPoint ou reveal.js.
 //
-//  →  ↓  Espace  Page suivante  Entree   diapositive suivante
-//  ←  ↑  Retour  Page precedente         precedente
+//  →  ↓  Espace  Page suivante  Entree   etape suivante (ce qui apparait
+//                                        au clic), puis diapositive suivante
+//  ←  ↑  Retour  Page precedente         en arriere
 //  Debut / Fin                           premiere / derniere
 //  un numero puis Entree                 aller a cette diapositive
 //  O                                     vue d'ensemble
@@ -20,10 +21,12 @@
 // pilotee au clavier elle aussi.
 //
 // Les diapositives sont rendues a la demande : une animation integree
-// (![[x.anim]]) demarre quand sa diapositive s'affiche.
-import { slideDeck, type SlideDeck } from '@savoire/plugin-api'
+// (![[x.anim]]) demarre quand sa diapositive s'affiche. Le passage d'une
+// diapositive a l'autre suit sa transition (fondu, glissement, zoom, cube),
+// sauf si le systeme demande moins d'animations.
+import { slideDeck, type SlideDeck, type SlideTransition } from '@savoire/plugin-api'
 import { markdownBlock } from './NoteFragment'
-import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, type SlideRenderOptions } from './Slides'
+import { SLIDE_SIZE, ensureSlidesStyle, fitSlide, releaseSlide, renderSlide, setSlideStep, slideSettings, slideStepCount, type SlideRenderOptions } from './Slides'
 
 export interface SlideShowOptions extends SlideRenderOptions {
   /** Titre de la presentation (nom de la note). */
@@ -36,15 +39,21 @@ export interface SlideShowOptions extends SlideRenderOptions {
 
 export interface SlideShowHandle {
   goTo(index: number): void
+  /** Clic suivant : l'etape suivante, sinon la diapositive suivante. */
+  next(): void
+  previous(): void
   close(): void
   readonly index: number
+  /** Etape montree de la diapositive (0 : avant le premier clic). */
+  readonly step: number
 }
 
 const SHOW_CSS = `
 .plume-show { position: fixed; inset: 0; z-index: 2147483000; background: #000; color: #e6e6e6; display: flex; flex-direction: column; outline: none; font-family: var(--font-ui, system-ui, sans-serif); user-select: none; }
 .plume-show-main { flex: 1; min-height: 0; display: flex; gap: 16px; }
-.plume-show-stage { position: relative; flex: 1; min-width: 0; overflow: hidden; }
-.plume-show-frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 0 0 1px rgba(255,255,255,.04); }
+.plume-show-stage { position: relative; flex: 1; min-width: 0; overflow: hidden; perspective: 2200px; }
+.plume-show-layer { position: absolute; inset: 0; backface-visibility: hidden; }
+.plume-show-layer > .plume-slide { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 0 0 1px rgba(255,255,255,.04); }
 .plume-show-side { display: none; width: 34%; min-width: 300px; flex-direction: column; gap: 12px; padding: 16px 16px 16px 0; overflow: hidden; }
 .plume-show-presenter .plume-show-main { padding: 16px 0 0 16px; background: #111; }
 .plume-show-presenter .plume-show-side { display: flex; }
@@ -78,6 +87,31 @@ const SHOW_CSS = `
 .plume-speaker-top > div { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .plume-speaker .plume-show-next { flex: 1; aspect-ratio: auto; }
 `
+
+/** Les images cles d'une transition : la diapositive qui entre, celle qui sort. */
+function transitionFrames(kind: SlideTransition, dir: number): { enter: Keyframe[]; leave: Keyframe[]; enterOrigin?: string; leaveOrigin?: string; duration: number } | null {
+  const d = dir < 0 ? -1 : 1
+  switch (kind) {
+    case 'fondu':
+      return { enter: [{ opacity: 0 }, { opacity: 1 }], leave: [{ opacity: 1 }, { opacity: 0 }], duration: 450 }
+    case 'glissement':
+      return { enter: [{ transform: `translateX(${d * 100}%)` }, { transform: 'translateX(0)' }], leave: [{ transform: 'translateX(0)' }, { transform: `translateX(${-d * 100}%)` }], duration: 550 }
+    case 'zoom':
+      return { enter: [{ opacity: 0, transform: 'scale(.72)' }, { opacity: 1, transform: 'scale(1)' }], leave: [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(1.18)' }], duration: 550 }
+    case 'cube':
+      return {
+        enter: [{ transform: `translateX(${d * 100}%) rotateY(${d * 90}deg)` }, { transform: 'translateX(0) rotateY(0deg)' }],
+        leave: [{ transform: 'translateX(0) rotateY(0deg)' }, { transform: `translateX(${-d * 100}%) rotateY(${-d * 90}deg)` }],
+        enterOrigin: d > 0 ? '0% 50%' : '100% 50%',
+        leaveOrigin: d > 0 ? '100% 50%' : '0% 50%',
+        duration: 750,
+      }
+    default:
+      return null
+  }
+}
+
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** Met une diapositive a l'echelle de son cadre, centree. */
 function fitInto(box: HTMLElement, slide: HTMLElement, w: number, h: number): void {
@@ -132,9 +166,6 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   main.className = 'plume-show-main'
   const stage = document.createElement('div')
   stage.className = 'plume-show-stage'
-  const frame = document.createElement('div')
-  frame.className = 'plume-show-frame'
-  stage.appendChild(frame)
   const side = document.createElement('div')
   side.className = 'plume-show-side'
   main.append(stage, side)
@@ -153,9 +184,9 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   const bar = document.createElement('div')
   bar.className = 'plume-show-bar'
   bar.append(
-    button(document, '‹', 'Précédente (←)', () => go(index - 1), 'slide-show-prev'),
+    button(document, '‹', 'Précédente (←)', () => previous(), 'slide-show-prev'),
     countEl,
-    button(document, '›', 'Suivante (→)', () => go(index + 1), 'slide-show-next'),
+    button(document, '›', 'Suivante (→)', () => next(), 'slide-show-next'),
     button(document, '▦', 'Vue d’ensemble (O)', () => toggleOverview()),
     button(document, '🗒', 'Vue présentateur (P)', () => togglePresenter(), 'slide-show-presenter'),
     button(document, '⧉', 'Notes dans une autre fenêtre (S)', () => openSpeakerWindow()),
@@ -220,8 +251,8 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   }
   const timerId = setInterval(tick, 1000)
 
-  /** Une diapositive en miniature dans `box` (aucune interaction). */
-  const thumb = (box: HTMLElement, i: number) => {
+  /** Une diapositive en miniature dans `box` (aucune interaction), a une etape donnee. */
+  const thumb = (box: HTMLElement, i: number, atStep?: number) => {
     releaseSlide(box)
     if (i >= count) {
       const end = box.ownerDocument.createElement('div')
@@ -235,6 +266,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     el.style.left = '0'
     el.style.top = '0'
     el.style.transformOrigin = '0 0'
+    if (atStep !== undefined) setSlideStep(el, atStep)
     box.replaceChildren(el)
     fitSlide(el)
     const place = () => fitInto(box, el, w, h)
@@ -243,8 +275,10 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   }
 
   const fillSpeaker = (s: Speaker) => {
-    thumb(s.next, index + 1)
-    if (s.current) thumb(s.current, index)
+    // Suivante : ce que montre le prochain clic (une etape, ou la diapositive d'apres).
+    if (step < steps) thumb(s.next, index, step + 1)
+    else thumb(s.next, index + 1, 0)
+    if (s.current) thumb(s.current, index, step)
     const notes = deck.slides[index]!.notes
     if (notes) s.notes.replaceChildren(markdownBlock(notes, opts.hooks))
     else {
@@ -257,27 +291,84 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
 
   // ── Diapositive affichee ──
   let shown: HTMLElement | null = null
+  let layer: HTMLElement | null = null
+  let step = 0
+  let steps = 0
+  let leaving: HTMLElement[] = []
+  let running: Animation[] = []
   const place = () => { if (shown) fitInto(stage, shown, w, h) }
-  const show = () => {
-    releaseSlide(shown)
-    shown = renderSlide(deck, deck.slides[index]!, opts)
-    frame.replaceChildren(shown)
-    fitSlide(shown)
-    place()
+  /** Termine la transition en cours (on avance vite) : l'ancienne diapositive part. */
+  const settle = () => {
+    const anims = running
+    running = []
+    for (const a of anims) { try { a.finish() } catch { /* deja finie */ } }
+    for (const l of leaving) { releaseSlide(l); l.remove() }
+    leaving = []
+  }
+  const sync = () => {
     countEl.textContent = `${index + 1} / ${count}`
     root.dataset.slide = String(index + 1)
+    root.dataset.step = String(step)
+    root.dataset.steps = String(steps)
     for (const s of speakers) fillSpeaker(s)
+  }
+  /** Affiche la diapositive `index`, a l'etape `at` (-1 : toutes), venant de `from`. */
+  const show = (from: number | null = null, at = 0) => {
+    settle()
+    const slide = deck.slides[index]!
+    const el = renderSlide(deck, slide, opts)
+    steps = slideStepCount(el)
+    step = at < 0 ? steps : Math.min(at, steps)
+    // Avant d'entrer dans la page : les etapes cachees n'apparaissent pas en fondu.
+    setSlideStep(el, step)
+    const incoming = document.createElement('div')
+    incoming.className = 'plume-show-layer'
+    incoming.appendChild(el)
+    stage.appendChild(incoming)
+    const old = layer
+    shown = el
+    layer = incoming
+    fitSlide(el)
+    place()
+    if (old) {
+      const dir = from === null ? 0 : Math.sign(index - from)
+      // La transition est celle de la diapositive qui entre ; en arriere, celle qu'on defait.
+      const owner = dir < 0 && from !== null ? deck.slides[from]! : slide
+      const frames = dir === 0 || reducedMotion() || typeof incoming.animate !== 'function' ? null : transitionFrames(slideSettings(deck, owner).transition, dir)
+      if (!frames) { releaseSlide(old); old.remove() }
+      else {
+        leaving.push(old)
+        if (frames.enterOrigin) incoming.style.transformOrigin = frames.enterOrigin
+        if (frames.leaveOrigin) old.style.transformOrigin = frames.leaveOrigin
+        const timing: KeyframeAnimationOptions = { duration: frames.duration, easing: 'cubic-bezier(.4, 0, .2, 1)' }
+        const enter = incoming.animate(frames.enter, timing)
+        const leave = old.animate(frames.leave, { ...timing, fill: 'forwards' })
+        running = [enter, leave]
+        void enter.finished.then(() => { if (running.includes(enter)) settle() }, () => {})
+      }
+    }
+    sync()
     for (const t of Array.from(overview.children)) t.classList.toggle('plume-show-thumb-on', (t as HTMLElement).dataset.index === String(index))
   }
   // La diapositive est placee dans le cadre, mise a l'echelle par lui.
   const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { place(); for (const s of speakers) { if (s.doc === document) fillSpeaker(s) } }) : null
   observer?.observe(stage)
 
-  const go = (i: number) => {
-    const next = Math.max(0, Math.min(count - 1, i))
-    if (next === index && shown) return
-    index = next
-    show()
+  /** Va a la diapositive `i` (etape 0, ou toutes avec `all`). */
+  const go = (i: number, all = false) => {
+    const target = Math.max(0, Math.min(count - 1, i))
+    if (target === index && shown) return
+    const from = shown ? index : null
+    index = target
+    show(from, all ? -1 : 0)
+  }
+  const next = () => {
+    if (step < steps && shown) { step++; setSlideStep(shown, step); sync() }
+    else go(index + 1)
+  }
+  const previous = () => {
+    if (step > 0 && shown) { step--; setSlideStep(shown, step); sync() }
+    else go(index - 1, true)
   }
 
   const toggleOverview = (on = !root.classList.contains('plume-show-overview-on')) => {
@@ -358,8 +449,8 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
       else if (root.classList.contains('plume-show-overview-on')) toggleOverview(false)
       else if (root.classList.contains('plume-show-blacked')) root.classList.remove('plume-show-blacked')
       else close()
-    } else if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter', 'n', 'N'].includes(k)) go(index + 1)
-    else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) go(index - 1)
+    } else if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter', 'n', 'N'].includes(k)) next()
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) previous()
     else if (k === 'p' || k === 'P') togglePresenter()
     else if (k === 'Home') go(0)
     else if (k === 'End') go(count - 1)
@@ -375,9 +466,9 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   stage.addEventListener('click', e => {
     root.focus()
     if ((e.target as HTMLElement).closest?.('a, button, input, select, textarea, iframe, video, audio, [contenteditable]')) return
-    go(index + 1)
+    next()
   })
-  stage.addEventListener('contextmenu', e => { e.preventDefault(); go(index - 1) })
+  stage.addEventListener('contextmenu', e => { e.preventDefault(); previous() })
   root.addEventListener('keydown', onKey)
   // Le focus peut partir (fenetre des notes, cadre d'une animation) : les touches suivent.
   const onWindowKey = (e: KeyboardEvent) => { if (!root.contains(e.target as Node)) onKey(e) }
@@ -388,6 +479,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     closed = true
     clearInterval(timerId)
     observer?.disconnect()
+    settle()
     window.removeEventListener('keydown', onWindowKey, true)
     releaseSlide(root)
     if (popup && !popup.closed) popup.close()
@@ -405,7 +497,10 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
 
   return {
     goTo: i => go(i),
+    next,
+    previous,
     close,
     get index() { return index },
+    get step() { return step },
   }
 }
