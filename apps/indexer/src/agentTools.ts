@@ -28,6 +28,10 @@ import type { ServerPluginSet } from './serverPlugins'
 
 export const TOOLS_CAPABILITY = 'tools'
 const REVIEW_NS = 'map/review'
+const TYPES_NS = 'settings/properties'
+/** Operations au plus dans une ecriture (MAX_WRITE_OPS du serveur). */
+const MAX_WRITE_OPS = 32
+const BASE_PATH = /\.base$/i
 const TRASH_DIR = '.trash/'
 const MAX_READ = 512 * 1024
 /**
@@ -48,6 +52,8 @@ export interface PeerVaultFacade {
   docLog(id: string): Promise<UpdatesLog | null | undefined>
   treeLog(): Promise<UpdatesLog | null>
   reviewLog(): Promise<UpdatesLog | null>
+  /** Journal des types des proprietes du vault (canal « settings/properties »). */
+  typesLog(): Promise<UpdatesLog | null>
   write(body: WriteBody): Promise<void>
 }
 
@@ -384,11 +390,28 @@ export class PeerToolHost implements AgentToolHost {
 
   // ── Pour la PluginAPI sans ecran (pluginApi.ts) ──────────────────────────
 
-  /** Les notes visibles par la personne : id -> chemin (hors corbeille, ACL). */
+  /** Les notes et les bases visibles par la personne : id -> chemin (hors corbeille, ACL). */
   async visiblePaths(): Promise<Map<string, string>> {
     const out = new Map<string, string>()
     for (const [id, p] of await this.paths()) if (this.visible(id, p)) out.set(id, p)
+    for (const [id, p] of await this.bases()) if (!out.has(id) && this.visible(id, p)) out.set(id, p)
     return out
+  }
+
+  private baseCache: Map<string, string> | null = null
+
+  /**
+   * Les bases (.base) : l'index ne garde que leurs lignes, pas le fichier. Leur
+   * chemin est lu dans l'arborescence du vault (une fois par appel).
+   */
+  private async bases(): Promise<Map<string, string>> {
+    if (!this.baseCache) {
+      const tree = await this.f.treeLog()
+      this.baseCache = new Map(tree ? [...vaultTreeFromUpdates(tree.updates).docs].filter(([, p]) => BASE_PATH.test(p)) : [])
+    }
+    // Ce que cet appel a cree ou deplace l'emporte.
+    for (const [id, p] of this.moved) if (BASE_PATH.test(p) || this.baseCache.has(id)) this.baseCache.set(id, p)
+    return this.baseCache
   }
 
   /** Le texte d'une note, relu dans son journal Yjs (sinon le texte extrait). */
@@ -408,11 +431,14 @@ export class PeerToolHost implements AgentToolHost {
    * vient d'etre cree par cet appel. Memes regles de visibilite que les notes.
    */
   async docUpdates(docId: string): Promise<string[]> {
-    const path = (await this.paths()).get(docId)
-    if (!path || !this.visible(docId, path)) throw new HostError('Document introuvable.', 'not_found')
+    // Un annexe (« id~lot-003 » : un lot de lignes d'une base) suit son document, et peut ne pas exister encore.
+    const cut = docId.indexOf('~')
+    const owner = cut < 0 ? docId : docId.slice(0, cut)
+    const path = (await this.paths()).get(owner) ?? (await this.bases()).get(owner)
+    if (!path || !this.visible(owner, path)) throw new HostError('Document introuvable.', 'not_found')
     const log = await this.f.docLog(docId)
     if (!log) {
-      if (this.moved.has(docId)) return []
+      if (this.moved.has(docId) || owner !== docId) return []
       throw new HostError('Document introuvable.', 'not_found')
     }
     if (log.format !== 'yjs') throw new HostError('Ce document n’est pas un document partagé modifiable ici.', 'invalid')
@@ -421,7 +447,25 @@ export class PeerToolHost implements AgentToolHost {
 
   /** Envoie au serveur une modification d'un document (une mise a jour Yjs, la difference seule). */
   async writeDocument(docId: string, update: Uint8Array): Promise<void> {
-    await this.write({ ops: [{ target: 'document', docId, update: b64(update) }] })
+    await this.writeDocuments([{ docId, update }])
+  }
+
+  /** Plusieurs documents d'un coup (une base et ses lots) : une ecriture, coupee si elle est trop longue. */
+  async writeDocuments(docs: readonly { docId: string; update: Uint8Array }[]): Promise<void> {
+    for (let i = 0; i < docs.length; i += MAX_WRITE_OPS) {
+      await this.write({ ops: docs.slice(i, i + MAX_WRITE_OPS).map(d => ({ target: 'document' as const, docId: d.docId, update: b64(d.update) })) })
+    }
+  }
+
+  /** Le journal des types des proprietes du vault ; vide si aucun n'est declare. */
+  async typeUpdates(): Promise<string[]> {
+    const log = await this.f.typesLog()
+    return log && log.format === 'yjs' ? log.updates : []
+  }
+
+  /** Envoie une modification des types des proprietes (le serveur la refuse en mode proposition). */
+  async writeTypes(update: Uint8Array): Promise<void> {
+    await this.write({ ops: [{ target: 'index', ns: TYPES_NS, update: b64(update) }] })
   }
 
   /** Applique `edit` au texte du moment : la difference seulement part au serveur. */

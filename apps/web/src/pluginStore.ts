@@ -124,6 +124,7 @@ export const STORE_CATALOG: StoreEntry[] = [
       scope: 'vault',
       permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
       defaultActive: true,
+      official: true,
     },
     extensions: ['base'],
     load: async () => (await import('@savoire/plugin-base')).default,

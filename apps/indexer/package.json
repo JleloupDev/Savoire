@@ -15,6 +15,7 @@
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/plugin-agenda": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
+    "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",
     "@savoire/plugin-excalidraw": "workspace:*",
     "@savoire/plugin-excel": "workspace:*",

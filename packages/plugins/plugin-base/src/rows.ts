@@ -154,6 +154,17 @@ export class LightRows {
     return row ? readRow(id, row) : null
   }
 
+  /**
+   * Une ligne, sans attendre pour rien (outils d'agent) : un lot qui porte
+   * deja des lignes est charge, la ligne y est ou n'existe pas. Un lot vide
+   * est peut-etre en train d'arriver : on l'attend, comme get.
+   */
+  async find(id: string): Promise<LightRow | null> {
+    const tree = await this.lot(this.lotOf(id))
+    const { row } = await this.rowMap(id, tree.root.keys().length > 0 ? 0 : undefined)
+    return row ? readRow(id, row) : null
+  }
+
   async remove(id: string): Promise<void> {
     const tree = await this.lot(this.lotOf(id))
     tree.transact(() => tree.root.delete(BASE_ROW_PREFIX + id))

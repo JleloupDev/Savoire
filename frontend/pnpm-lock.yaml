@@ -124,6 +124,9 @@ importers:
       '@savoire/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
+      '@savoire/plugin-base':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-base
       '@savoire/plugin-csv':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-csv

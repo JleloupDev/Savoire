@@ -14,7 +14,7 @@ export const alias = [
   // Plugins officiels dont le pair fait tourner les extracteurs (PDF, Word...).
   { find: /^@savoire\/plugin-(word|powerpoint|excel|opendocument|pdf|images|webpage|csv)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },
   // Plugins dont le pair execute les outils d'agent (serverPlugins.ts).
-  { find: /^@savoire\/plugin-(agenda|hashtags|mermaid|excalidraw)\/server$/, replacement: pkg('plugins/plugin-$1/src/server.ts') },
+  { find: /^@savoire\/plugin-(agenda|hashtags|mermaid|excalidraw|base)\/server$/, replacement: pkg('plugins/plugin-$1/src/server.ts') },
   // L'arbre partage des documents (dessins), le meme adaptateur Yjs que l'appli.
   { find: /^@savoire\/infrastructure-sync\/shared-tree$/, replacement: pkg('infrastructure-sync/src/YjsSharedTree.ts') },
   { find: /^@savoire\/plugin-(task-list|templates)$/, replacement: pkg('plugins/plugin-$1/src/index.ts') },

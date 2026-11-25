@@ -19,18 +19,24 @@
 //    son journal. Il reste ouvert jusqu'a la fin de l'appel ; ce qu'on y a
 //    ecrit part alors au serveur, en une difference, avec le ticket
 //    (flushTrees) ;
+//  - vault.sharedData(doc).openTree : un arbre annexe du document (un lot de
+//    lignes d'une base, « id~lot-003 »), ouvert et envoye de la meme facon ;
+//  - properties : les types des proprietes du vault, lus a la demande
+//    (ready), envoyes a la fin de l'appel eux aussi ;
+//  - vault.deleteFile : la corbeille ;
 //  - review.propose : une entree « proposal » de la carte map/review ;
 //  - indexer (liens, tags), query, search : les pouvoirs locaux.
 // Le reste (vues, blocs, commandes, menu /, espace de travail) est inerte : un
 // onload qui enregistre une vue ne casse pas, la vue n'existe simplement pas.
-// Pas de sharedData : un outil qui en a besoin (historique, discussions,
-// lignes legeres des bases) reste dans l'appli (runtime 'app').
+// Pas de carte partagee (sharedData.openMap) : un outil qui en a besoin
+// (historique, discussions) reste dans l'appli (runtime 'app').
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { editDoc, type DocEdit } from '@savoire/indexer-core'
 import { YjsSharedTree } from '@savoire/infrastructure-sync/shared-tree'
+import { PROPERTY_TYPES } from '@savoire/plugin-api'
 import type {
-  AgentPreset, AgentRegistry, FileTreeEntry, IIndexerAPI, IQueryEngine, ISearchEngine, ISharedTree, IndexState,
-  PluginAPI, PluginManifest, PluginTool, ReviewAPI, ToolActor, VaultAPI,
+  AgentPreset, AgentRegistry, FileTreeEntry, IIndexerAPI, IPropertyTypes, IQueryEngine, ISearchEngine, ISharedTree, IndexState,
+  PluginAPI, PluginManifest, PluginTool, PropertyDef, PropertyType, ReviewAPI, ToolActor, VaultAPI,
 } from '@savoire/plugin-api'
 import type { PeerToolHost } from './agentTools'
 
@@ -44,7 +50,9 @@ export interface PluginCallScope {
   /** id -> chemin des notes visibles, lu avant l'appel, tenu a jour par ses ecritures. */
   paths: Map<string, string>
   /** Les arbres ouverts pendant l'appel (openTree), envoyes a la fin (flushTrees). */
-  trees?: Map<string, { edit: DocEdit; tree: ISharedTree }>
+  trees?: Map<string, { edit: DocEdit; tree: ISharedTree; owner?: string }>
+  /** Les types des proprietes du vault, lus par properties.ready() ; ce qu'on y change part a la fin. */
+  types?: DocEdit
 }
 
 const scopes = new AsyncLocalStorage<PluginCallScope>()
@@ -91,13 +99,36 @@ async function edit(docId: string, change: (text: string) => string): Promise<bo
  * l'outil a fini sans erreur.
  */
 export async function flushTrees(s: PluginCallScope): Promise<void> {
-  for (const [docId, t] of s.trees ?? []) {
-    const update = t.edit.changes()
-    if (!update) continue
-    await s.host.writeDocument(docId, update)
-    t.edit.sent()
-    await s.host.recordEdit(docId, s.tool, s.actor)
+  // Les types d'abord : une colonne ajoutee a une base a deja le sien.
+  const types = s.types?.changes()
+  if (types) {
+    await s.host.writeTypes(types)
+    s.types!.sent()
   }
+  const changed = [...(s.trees ?? [])].flatMap(([docId, t]) => {
+    const update = t.edit.changes()
+    return update ? [{ docId, update, t }] : []
+  })
+  if (!changed.length) return
+  // Une ecriture pour tous (une base et ses lots de lignes) ; la trace est sur le document, pas sur ses annexes.
+  await s.host.writeDocuments(changed)
+  for (const c of changed) c.t.edit.sent()
+  for (const docId of new Set(changed.map(c => c.t.owner ?? c.docId))) await s.host.recordEdit(docId, s.tool, s.actor)
+}
+
+/** L'arbre d'un document, ou d'un de ses annexes (`owner` : le document), ouvert pour l'appel. */
+async function openDocTree(docId: string, owner?: string): Promise<ISharedTree> {
+  const s = current()
+  s.trees ??= new Map()
+  const open = s.trees.get(docId)
+  if (open) return open.tree
+  const edit = editDoc(await s.host.docUpdates(docId))
+  // Deux ouvertures en meme temps du meme document : la premiere arrivee sert aux deux.
+  const raced = s.trees.get(docId)
+  if (raced) return raced.tree
+  const tree = new YjsSharedTree(edit.doc) as ISharedTree
+  s.trees.set(docId, { edit, tree, ...(owner ? { owner } : {}) })
+  return tree
 }
 
 function vaultApi(): VaultAPI {
@@ -145,22 +176,64 @@ function vaultApi(): VaultAPI {
       await s.host.moveFiles([{ from, to: newPath }])
       s.paths.set(id, newPath)
     },
-    openTree: async docId => {
-      const s = current()
-      s.trees ??= new Map()
-      const open = s.trees.get(docId)
-      if (open) return open.tree
-      const edit = editDoc(await s.host.docUpdates(docId))
-      const tree = new YjsSharedTree(edit.doc) as ISharedTree
-      s.trees.set(docId, { edit, tree })
-      return tree
-    },
+    openTree: docId => openDocTree(docId),
     // Rien a fermer ici : l'arbre vit jusqu'a la fin de l'appel, ses changements partent alors.
     closeTree: () => {},
+    // Les lots de lignes d'une base : des arbres annexes de son document.
+    sharedData: documentId => ({
+      openMap: () => { throw new Error('Cartes partagées indisponibles sur le pair indexeur.') },
+      openTree: name => openDocTree(`${documentId}~${name}`, documentId),
+      closeTree: () => {},
+    }),
+    deleteFile: async id => {
+      const s = current()
+      if (!s.paths.has(id)) throw new Error('Note introuvable.')
+      await s.host.trashNote(id)
+      s.paths.delete(id)
+    },
     getCurrentUser: () => {
       const s = scopes.getStore()
       return s ? { id: s.actor.onBehalfOf.userId, name: s.actor.onBehalfOf.displayName } : null
     },
+  }
+}
+
+/**
+ * Les types des proprietes du vault (carte « entries » du canal
+ * settings/properties, comme VaultPropertyTypes dans l'appli). Lus a la
+ * demande : un outil appelle ready() avant de s'en servir.
+ */
+function propertiesApi(): IPropertyTypes {
+  const entries = () => {
+    const s = current()
+    if (!s.types) throw new Error('Types des propriétés pas encore lus : appeler properties.ready() d’abord.')
+    return s.types.doc.getMap<unknown>('entries')
+  }
+  const read = (key: string, value: unknown): PropertyDef | undefined => {
+    const v = value as Partial<PropertyDef> | null
+    return v && typeof v === 'object' && PROPERTY_TYPES.includes(v.type as PropertyType) ? { ...v, key, type: v.type as PropertyType } : undefined
+  }
+  return {
+    ready: async () => {
+      const s = current()
+      if (s.types) return
+      const edit = editDoc(await s.host.typeUpdates())
+      s.types ??= edit
+    },
+    schema: () => {
+      const properties: PropertyDef[] = []
+      if (scopes.getStore()) entries().forEach((value, key) => { const d = read(key, value); if (d) properties.push(d) })
+      return { properties }
+    },
+    get: key => (scopes.getStore() ? read(key, entries().get(key)) : undefined),
+    set: def => {
+      if (!PROPERTY_TYPES.includes(def.type)) throw new Error(`Type de propriété inconnu : ${def.type}`)
+      const { key, ...stored } = def
+      // Sans champ vide, comme l'appli les range.
+      entries().set(key, JSON.parse(JSON.stringify(stored)))
+    },
+    remove: key => { entries().delete(key) },
+    onChange: () => () => {},
   }
 }
 
@@ -258,6 +331,7 @@ export function headlessPluginAPI(manifest: PluginManifest): HeadlessPlugin {
   }
   const api = {
     vault: vaultApi(),
+    properties: propertiesApi(),
     review: reviewApi(),
     indexer: indexerApi(),
     query: queryApi(),

@@ -702,7 +702,7 @@ pub struct Attach {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteOp {
-    /// 'document', 'vault' (arborescence) ou 'index' (seul « map/review »).
+    /// 'document', 'vault' (arborescence) ou 'index' (« map/review », « settings/properties »).
     target: String,
     doc_id: Option<String>,
     ns: Option<String>,
@@ -710,8 +710,10 @@ pub struct WriteOp {
 }
 
 const MAX_WRITE_OPS: usize = 32;
-/// Seul canal partage qu'un agent ecrit : la Revision (commentaires, propositions, traces).
+/// Canal partage qu'un agent ecrit toujours : la Revision (commentaires, propositions, traces).
 const REVIEW_NS: &str = "map/review";
+/// Types des proprietes du vault (colonnes des bases) : en direct seulement, jamais en mode proposition.
+const PROPERTIES_NS: &str = "settings/properties";
 
 fn internal_error(status: u16, code: &str, message: &str) -> Response {
     raw_json(status, indexer_error_json(code, message).to_string())
@@ -818,13 +820,19 @@ pub async fn internal_write(
                 st.realtime.vault.send_group(&vault_id, None, &event("VaultOperationReceived", vec![json!(vault_id), json!(op.update)]));
             }
             "index" => {
-                if op.ns.as_deref() != Some(REVIEW_NS) {
-                    return Ok(internal_error(403, "denied", "Un agent n'écrit que dans la Révision."));
-                }
+                // La Revision, ou les types des proprietes (outils des bases) : rien d'autre.
+                let ns = match op.ns.as_deref() {
+                    Some(REVIEW_NS) => REVIEW_NS,
+                    Some(PROPERTIES_NS) if !propose_only => PROPERTIES_NS,
+                    Some(PROPERTIES_NS) => {
+                        return Ok(internal_error(403, "denied", "Mode proposition : l'agent ne change pas les types des propriétés."));
+                    }
+                    _ => return Ok(internal_error(403, "denied", "Un agent n'écrit que dans la Révision et les types des propriétés.")),
+                };
                 access::check_vault(&mut c, user, &vault_id, Level::Write).await?;
-                let o = Operation::create(crdt::INDEX, &format!("index:{vault_id}:{REVIEW_NS}"), "server-relay", now(), bytes).by(author.clone());
+                let o = Operation::create(crdt::INDEX, &format!("index:{vault_id}:{ns}"), "server-relay", now(), bytes).by(author.clone());
                 repos::op_append(&mut c, &o).await?;
-                st.realtime.vault.send_group(&format!("idx:{vault_id}:{REVIEW_NS}"), None, &event("IndexUpdateReceived", vec![json!(vault_id), json!(REVIEW_NS), json!(op.update)]));
+                st.realtime.vault.send_group(&format!("idx:{vault_id}:{ns}"), None, &event("IndexUpdateReceived", vec![json!(vault_id), json!(ns), json!(op.update)]));
             }
             _ => return Ok(internal_error(400, "invalid_query", "target : document, vault ou index.")),
         }

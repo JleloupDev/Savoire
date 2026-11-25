@@ -15,8 +15,9 @@
 // `export default` un VaultPlugin), filtres par le meme reglage.
 //
 // Seuls les outils qui declarent le runtime 'server' sont proposes : un outil
-// qui a besoin de l'ecran ou des donnees partagees d'un document (sharedData)
-// reste dans l'appli. L'arbre d'un document (openTree : un dessin) est permis ;
+// qui a besoin de l'ecran ou d'une carte partagee d'un document (sharedData.openMap)
+// reste dans l'appli. L'arbre d'un document (openTree : un dessin, une base) et
+// ses arbres annexes (les lots de lignes d'une base) sont permis ;
 // ce que l'outil y ecrit part a la fin de l'appel, s'il a reussi.
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -30,10 +31,11 @@ import agenda from '@savoire/plugin-agenda/server'
 import mermaid from '@savoire/plugin-mermaid/server'
 import hashtags from '@savoire/plugin-hashtags/server'
 import excalidraw from '@savoire/plugin-excalidraw/server'
+import bases from '@savoire/plugin-base/server'
 import { flushTrees, headlessPluginAPI, runInScope, type HeadlessPlugin, type PluginCallScope } from './pluginApi'
 
 /** Les plugins livres avec Savoire qui apportent des outils serveur. */
-export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags, excalidraw]
+export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags, excalidraw, bases]
 
 export interface ServerPluginsOptions {
   policy: PeerPluginPolicy
@@ -106,7 +108,7 @@ export function serverPlugins(o: ServerPluginsOptions): ServerPluginSet {
         const scope: PluginCallScope = { ...base, paths: new Map(base.paths), mode: ctx.mode, tool: t.spec.title }
         return runInScope(scope, async () => {
           const result = await t.run(args, ctx)
-          // Les arbres ouverts (dessins) : leurs changements partent maintenant, avec le ticket de l'appel.
+          // Les arbres ouverts (dessins, bases) et les types : leurs changements partent maintenant, avec le ticket de l'appel.
           await flushTrees(scope)
           return result
         })

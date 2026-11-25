@@ -532,6 +532,7 @@ export class VaultStore {
       docLog: id => this.fetch(() => this.readDoc(v, id, signal)),
       treeLog: () => this.fetch(() => this.backend.tree(v.id, signal)),
       reviewLog: () => this.fetch(() => this.backend.review(v.id, signal)),
+      typesLog: () => this.fetch(() => this.backend.settings(v.id, 'properties', signal)),
       write: async body => {
         try {
           await this.backend.write(v.id, body, signal)

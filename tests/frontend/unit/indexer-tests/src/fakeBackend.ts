@@ -76,7 +76,7 @@ export class FakeBackend {
   readonly docReads = new Map<string, number>()
   /** Ecritures des outils d'agents (ADR-033). */
   readonly writes: ReceivedWrite[] = []
-  /** Tickets valides ; vide : tout ticket est accepte. Un ticket « propose » refuse notes et arbre. */
+  /** Tickets valides ; vide : tout ticket est accepte. Un ticket « propose » refuse notes, arbre et types. */
   readonly tickets = new Map<string, 'direct' | 'propose'>()
   private server?: Server
   instances: string[]
@@ -199,12 +199,14 @@ export class FakeBackend {
     if (!mode) return 403
     for (const op of body.ops ?? []) {
       if (mode === 'propose' && op.target !== 'index') return 403
-      if (op.target === 'index' && op.ns !== 'map/review') return 403
+      // La Revision toujours ; les types des proprietes en direct seulement.
+      if (op.target === 'index' && op.ns !== 'map/review' && !(op.ns === 'settings/properties' && mode === 'direct')) return 403
     }
     for (const op of body.ops ?? []) {
       const u = Buffer.from(op.update, 'base64')
       if (op.target === 'document') { Y.applyUpdate(this.docOf(v, op.docId!).doc, u); this.touch(vaultId, 'document', op.docId) }
       else if (op.target === 'vault') { Y.applyUpdate(v.tree.doc, u); this.touch(vaultId, 'vault') }
+      else if (op.ns === 'settings/properties') { Y.applyUpdate(v.types.doc, u); this.touch(vaultId, 'settings') }
       else Y.applyUpdate(v.review.doc, u)
     }
     return 200
@@ -405,6 +407,36 @@ export class FakeBackend {
     const row = lot.doc.getMap('tree').get(`row:${rowId}`) as Y.Map<unknown>
     row.set(key, value)
     this.touch(vaultId, 'document', lotId)
+  }
+
+  /** Les lignes legeres d'une base, tous lots confondus, telles que les clients les liraient. */
+  baseRows(vaultId: string, baseId: string): { id: string; title: string; values: Record<string, unknown> }[] {
+    const out: { id: string; title: string; values: Record<string, unknown> }[] = []
+    for (const [docId, d] of this.vaults.get(vaultId)?.docs ?? []) {
+      if (!docId.startsWith(baseId + '~lot-')) continue
+      d.doc.getMap('tree').forEach((row, key) => {
+        if (!key.startsWith('row:') || !(row instanceof Y.Map)) return
+        const { title, ...values } = Object.fromEntries([...row.entries()].map(([k, v]) => [k, v instanceof Y.Array ? v.toArray() : v]))
+        out.push({ id: key.slice(4), title: String(title ?? ''), values })
+      })
+    }
+    return out.sort((a, b) => a.title.localeCompare(b.title))
+  }
+
+  /** Les colonnes enregistrees d'une base (manifeste), dans leur ordre, et ses lots. */
+  baseManifest(vaultId: string, baseId: string): { columns: string[]; lots: string[] } {
+    const base = this.vaults.get(vaultId)?.docs.get(baseId)?.doc.getMap('tree').get('base') as Y.Map<unknown> | undefined
+    const columns = base?.get('columns') as Y.Map<Y.Map<unknown>> | undefined
+    const lots = base?.get('lots') as Y.Map<unknown> | undefined
+    return {
+      columns: columns ? [...columns.entries()].sort((a, b) => Number(a[1].get('order')) - Number(b[1].get('order'))).map(([k]) => k) : [],
+      lots: lots ? [...lots.keys()].sort() : [],
+    }
+  }
+
+  /** Les types des proprietes du vault (canal settings/properties). */
+  propertyTypes(vaultId: string): Record<string, { type: string; options?: { value: string }[] }> {
+    return Object.fromEntries(this.vaults.get(vaultId)?.types.doc.getMap('entries').entries() ?? []) as Record<string, { type: string }>
   }
 
   /** Retire une ligne de son lot. */

@@ -151,6 +151,12 @@ export interface IPropertyTypes {
   onChange(cb: () => void): () => void
   /** Membres du vault, si le profil de synchro les connait. */
   members?(): Promise<PropertyMember[]>
+  /**
+   * Attend que les types soient lus. Sur le pair indexeur, ils ne le sont
+   * qu'a la demande : un outil d'agent l'appelle avant schema, get ou set.
+   * Absent : ils sont deja la.
+   */
+  ready?(): Promise<void>
 }
 
 export const PROPERTY_TYPES: readonly PropertyType[] = [

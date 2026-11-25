@@ -26,7 +26,7 @@ struct Peer {
 
 fn catalog() -> Value {
     let t = |name: &str, action: &str| json!({ "name": name, "title": name, "description": name, "action": action,
-        "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": [], "additionalProperties": false } });
+        "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "ns": { "type": "string" } }, "required": [], "additionalProperties": false } });
     json!({ "tools": [t("search", "read"), t("append", "edit"), t("move_note", "organize"), t("trash_note", "delete")] })
 }
 
@@ -58,7 +58,11 @@ async fn fake_peer() -> (String, Peer) {
                     let r = reqwest::Client::new()
                         .post(format!("{server}/internal/indexer/vaults/{vault}/write"))
                         .bearer_auth(SERVICE_TOKEN)
-                        .json(&json!({ "ticket": params["ticket"], "ops": [{ "target": "document", "docId": doc, "update": b64(b"agent-op") }] }))
+                        // Avec « ns » : une ecriture dans un canal partage (Revision, types des proprietes).
+                        .json(&json!({ "ticket": params["ticket"], "ops": [match params["args"]["ns"].as_str() {
+                            Some(ns) => json!({ "target": "index", "ns": ns, "update": b64(b"agent-op") }),
+                            None => json!({ "target": "document", "docId": doc, "update": b64(b"agent-op") }),
+                        }] }))
                         .send()
                         .await
                         .unwrap();
@@ -212,6 +216,39 @@ async fn propose_mode_cannot_touch_notes_and_tokens_without_agent_stay_read_only
     assert_eq!(names, vec!["list_vaults", "search"]);
     let denied = mcp(&app, &plain, 3, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "id": doc, "text": "x" } })).await;
     assert_eq!(denied["result"]["isError"], true);
+}
+
+#[tokio::test]
+async fn agent_writes_property_types_in_direct_mode_only() {
+    let (url, peer) = fake_peer().await;
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Bases").await;
+    let status = || peer.last_write.lock().unwrap().clone().unwrap().0;
+    let types = format!("index:{v}:settings/properties");
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Bibliothécaire", "permissions": { "read": "direct", "edit": "direct" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "d", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+
+    // En direct : les types des proprietes du vault (colonnes des bases), signes de l'agent.
+    let r = mcp(&app, &token, 1, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "ns": "settings/properties" } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    assert_eq!(status(), 200);
+    let author: Value = sqlx::query_scalar("SELECT author FROM operations_log WHERE resource_id = $1").bind(&types).fetch_one(&app.state.db).await.unwrap();
+    assert_eq!(author["agentName"], "Bibliothécaire");
+    // Aucun autre canal partage.
+    mcp(&app, &token, 2, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "ns": "settings/autre" } })).await;
+    assert_eq!(status(), 403);
+
+    // En mode proposition : la Revision seulement.
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Correcteur", "permissions": { "read": "direct", "edit": "propose" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "p", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+    mcp(&app, &token, 3, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "ns": "settings/properties" } })).await;
+    assert_eq!(status(), 403);
+    mcp(&app, &token, 4, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "ns": "map/review" } })).await;
+    assert_eq!(status(), 200);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM operations_log WHERE resource_id = $1").bind(&types).fetch_one(&app.state.db).await.unwrap();
+    assert_eq!(n, 1);
 }
 
 #[tokio::test]

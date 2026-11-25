@@ -18,6 +18,7 @@ import { parseBaseEmbed, renderBaseEmbed } from './embed'
 import { canLinkView, renderLinkedView } from './linkedView'
 import { cellProposalType } from './proposals'
 import { baseAgentTools } from './agentTools'
+import { BASE_PLUGIN_MANIFEST } from './pluginManifest'
 
 export { createBaseView } from './view'
 export type { BaseViewOptions, EmbeddedOptions } from './view'
@@ -36,6 +37,8 @@ export { createPageRow, folderOfBase, uniqueNotePath, writeNoteProperty, renameP
 export { ROW_HEIGHT, PAGE_SIZE } from './table'
 export { CELL_PROPOSAL, cellProposalType } from './proposals'
 export { baseAgentTools } from './agentTools'
+export { parseFilter, parseSorts, parseCell, FILTER_OPS } from './agentArgs'
+export { BASE_PLUGIN_MANIFEST } from './pluginManifest'
 export type { CellProposal } from './proposals'
 export { withFormulas, clientFormulas, toEngineQuery, needsFormulas, splitWhere } from './formulaEngine'
 export { computeTotal, totalText, TOTAL_KINDS } from './totals'
@@ -50,22 +53,13 @@ export type { TotalKind } from './totals'
 export function createBasePlugin(): VaultPlugin {
   let api: PluginAPI | undefined
   return {
-    manifest: {
-      id: 'plugin-base',
-      name: 'Bases',
-      version: '0.0.1',
-      description: 'Des bases façon Notion : tableau, kanban, propriétés typées (fichiers .base)',
-      scope: 'vault',
-      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
-      // Actif dans toutes les notes : blocs ```base et ![[x.base]].
-      defaultActive: true,
-    },
+    manifest: BASE_PLUGIN_MANIFEST,
 
     async onload(pluginApi: PluginAPI) {
       api = pluginApi
       // Revision : une valeur de cellule proposee (mode suggestion), appliquee a l'acceptation.
       pluginApi.review?.registerProposalType(cellProposalType(pluginApi))
-      // Agents (ADR-033) : decrire une base, changer une cellule (ou le proposer).
+      // Agents (ADR-033) : creer, decrire, interroger et modifier les bases (aussi sur le pair, pour ChatGPT et Claude).
       for (const tool of baseAgentTools(pluginApi)) pluginApi.agents?.registerTool(tool)
       pluginApi.files.register({
         extension: 'base',
