@@ -680,6 +680,10 @@ async fn apply_mode_request(st: &AppState, user: &str, agent: &AgentRow, args: &
     row.definition = switch_mode(&agent.definition, mode);
     row.updated_at = now();
     db::update(&mut c, &row).await?;
+    // Le journal des actions le dit, comme pour une action accordee (execute).
+    let summary = format!("Passer en mode {}", mode_title(mode));
+    let vault_id = agent.vault_id.clone().unwrap_or_default();
+    db::action_add(&mut c, &db::ActionRow { agent_id: &agent.id, user_id: user, vault_id: &vault_id, tool: REQUEST_MODE, action: "mode", mode: "direct", status: "done", summary: &summary }).await?;
     Ok(ToolOutcome { text: format!("« {} » est maintenant en mode {}.", agent.name, mode_title(mode)), is_error: false })
 }
 

@@ -432,6 +432,9 @@ async fn request_mode_switches_between_edit_and_review_only_with_the_person_appr
     assert_eq!((done.0, done.1["status"].as_str()), (200, Some("done")), "{}", done.1);
     let p = agent_perms().await;
     assert_eq!((p["edit"].as_str(), p["create"].as_str(), p["delete"].as_str()), (Some("direct"), Some("direct"), Some("ask")));
+    // Le journal des actions dit que c'est fait, pas seulement « en attente ».
+    let log = app.get(&ta, "/api/v1/agents/actions").await.1["actions"].clone();
+    assert!(log.as_array().unwrap().iter().any(|a| a["tool"] == "request_mode" && a["status"] == "done"), "{log}");
     let w = mcp(&app, &token, 7, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "id": doc, "text": "x" } })).await;
     assert_eq!(text(&w), "append fait (direct)", "{w}");
     let same = mcp(&app, &token, 8, "tools/call", json!({ "name": "request_mode", "arguments": { "mode": "direct", "reason": "x" } })).await;
