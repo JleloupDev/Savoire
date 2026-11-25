@@ -12,6 +12,9 @@
 //
 // L'editeur ne sait rien de la revision : il dit seulement quels passages on
 // a ouverts. Sans hote, un clic ne fait rien de plus que placer le curseur.
+//
+// Editeur assez large : les fils sont dans la marge (MarginComments.ts), qui
+// prend alors la place de la carte flottante (annotationPlace).
 
 import { Facet, StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state'
 import { EditorView, ViewPlugin, showTooltip, type Tooltip, type TooltipView } from '@codemirror/view'
@@ -51,6 +54,27 @@ const staticHost = Facet.define<AnnotationHost, AnnotationHost | null>({
 
 const hostOf = (state: EditorState): AnnotationHost | null =>
   state.field(popover, false)?.host ?? state.facet(staticHost)
+
+/** L'hote des cartes de cet editeur, s'il en a un. */
+export function annotationHostOf(state: EditorState): AnnotationHost | null {
+  return hostOf(state)
+}
+
+/**
+ * Un autre endroit que la carte flottante pour montrer les annotations (la
+ * marge, MarginComments.ts). Chaque fonction rend true quand elle s'en
+ * charge : la carte flottante ne s'ouvre alors pas.
+ */
+export interface AnnotationPlace {
+  /** Un clic sur les passages `ids` (liste vide : un clic hors de tout passage). */
+  threads(view: EditorView, ids: string[]): boolean
+  /** Un brouillon sur la selection. */
+  draft(view: EditorView, draft: AnnotationDraft): boolean
+}
+
+export const annotationPlace = Facet.define<AnnotationPlace, AnnotationPlace | null>({
+  combine: values => values[0] ?? null,
+})
 
 const popover = StateField.define<PopoverState>({
   create: () => ({ host: null, open: null }),
@@ -113,8 +137,10 @@ const clicks = EditorView.domEventHandlers({
     const ids = pos === null ? [] : highlightIdsAt(view.state, pos)
     const first = onMark?.dataset.highlightId
     if (first && !ids.includes(first)) ids.unshift(first)
+    // La marge, quand elle est visible, montre le fil a la place de la carte.
+    const taken = view.state.facet(annotationPlace)?.threads(view, ids) ?? false
     const current = view.state.field(popover).open
-    if (ids.length === 0) {
+    if (ids.length === 0 || taken) {
       if (current?.what === 'threads') view.dispatch({ effects: setOpen.of(null) })
       return false
     }
@@ -142,6 +168,7 @@ export function setAnnotationHost(view: EditorView, host: AnnotationHost | null)
 /** Ouvre la carte des fils `ids`, a la position `pos`. */
 export function openAnnotations(view: EditorView, ids: string[], pos: number): void {
   if (!hostOf(view.state) || ids.length === 0) return
+  if (view.state.facet(annotationPlace)?.threads(view, ids)) return
   view.dispatch({ effects: setOpen.of(openThreads(ids, pos)) })
 }
 
@@ -149,6 +176,7 @@ export function openAnnotations(view: EditorView, ids: string[], pos: number): v
 export function openAnnotationDraft(view: EditorView, draft: AnnotationDraft): boolean {
   const host = hostOf(view.state)
   if (!host?.renderDraft) return false
+  if (view.state.facet(annotationPlace)?.draft(view, draft)) { closeAnnotations(view); return true }
   const opened: Opened = {
     what: 'draft', draft, pos: draft.to,
     create: v => card(v, (dom, close) => {

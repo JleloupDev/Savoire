@@ -8,6 +8,7 @@ import { aiChangeFlashFor, setAiChangeHost, type AiChangeHost } from './AiChange
 import { aiMarksExtension, applyAiMarks, type AiMarkRange } from './AiMarks'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
+import { applyMarginComments, marginCommentsExtension, selectMarginComment, type MarginComment } from './MarginComments'
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, Facet, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
@@ -460,6 +461,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         aiMarksExtension(),
         // Cartes de revision par-dessus la note (clic sur un passage surligne).
         annotationsExtension(),
+        // Les fils dans la marge, a la hauteur de leur passage (editeur assez large).
+        marginCommentsExtension(),
         suggestionModeExtension(),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(defaultHighlightStyle),
@@ -1078,6 +1081,16 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Ouvre un brouillon de commentaire ou de suggestion dans la note ; false si impossible. */
   openAnnotationDraft(draft: AnnotationDraft): boolean {
     return openAnnotationDraft(this.view, draft)
+  }
+
+  /** Les fils montres dans la marge (liste vide : plus de cartes). */
+  setMarginComments(items: readonly MarginComment[]): void {
+    applyMarginComments(this.view, items)
+  }
+
+  /** Choisit un fil dans la marge ; false si la marge n'est pas affichee. */
+  selectAnnotation(id: string): boolean {
+    return selectMarginComment(this.view, id)
   }
 
   /** Le document ouvert dans cet editeur. */

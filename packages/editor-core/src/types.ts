@@ -93,6 +93,10 @@ export interface EditorController {
   setAiChangeHost?(host: import('./AiChangeFlash').AiChangeHost | null): void
   /** Ouvre un brouillon (commenter, suggerer) dans la note ; false si impossible. */
   openAnnotationDraft?(draft: import('./Annotations').AnnotationDraft): boolean
+  /** Les fils montres dans la marge, a la hauteur de leur passage surligne. */
+  setMarginComments?(items: readonly import('./MarginComments').MarginComment[]): void
+  /** Choisit un fil dans la marge ; false si la marge n'est pas affichee. */
+  selectAnnotation?(id: string): boolean
   /** Le document ouvert dans cet editeur. */
   getDocId?(): string | undefined
   /** Mode suggestion (suivi des modifications) : la frappe devient des propositions. Null : le couper. */

@@ -98,6 +98,23 @@ export function highlightIdsAt(state: EditorState, pos: number): string[] {
   return found.sort((a, b) => a.size - b.size).map(f => f.id)
 }
 
+/**
+ * Ou se trouve chaque passage surligne qui porte un identifiant, a jour des
+ * modifications du texte (commentaires dans la marge).
+ */
+export function highlightRangesById(state: EditorState): Map<string, { from: number; to: number }> {
+  const out = new Map<string, { from: number; to: number }>()
+  const deco = state.field(field, false)
+  if (!deco) return out
+  deco.between(0, state.doc.length, (from, to, value) => {
+    const id = (value.spec as { highlightId?: string }).highlightId
+    if (!id) return
+    const known = out.get(id)
+    out.set(id, known ? { from: Math.min(known.from, from), to: Math.max(known.to, to) } : { from, to })
+  })
+  return out
+}
+
 export function highlightsExtension(): Extension {
   return field
 }
