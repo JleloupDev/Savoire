@@ -1376,7 +1376,9 @@ export function createBaseView(path: string, ctx: FileContext, api: PluginAPI | 
     const tabs = h('div', { class: 'base-tabs' }, ...shown.map(v => {
       const tab = h('button', { class: v.id === activeId ? 'base-tab base-tab-active' : 'base-tab', type: 'button', 'data-testid': 'base-tab', 'data-id': v.id },
         `${VIEW_TYPES.find(t => t.type === v.type)?.glyph ?? '▦'} ${v.name}`)
-      tab.addEventListener('click', () => { activeId = v.id; update() })
+      // Un clic sur l'onglet deja actif ne redessine rien : sinon l'onglet est
+      // remplace entre les deux clics, et le double-clic (renommer) se perd.
+      tab.addEventListener('click', () => { if (activeId === v.id) return; activeId = v.id; update() })
       tab.addEventListener('dblclick', () => {
         // Integree, le nom de la vue est dans le lien de la note : on ne le change pas d'ici.
         if (!canStructure() || embedded) return
