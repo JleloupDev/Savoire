@@ -12,9 +12,12 @@ import { EditorState, Facet, Prec, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, moveLineUp, moveLineDown, copyLineDown, deleteLine, selectLine, undo, redo } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { printNote } from './PdfExport'
+import { startSlideShow, type SlideShowHandle } from './SlideShow'
+import { downloadSlidesPptx, printSlides } from './SlidesExport'
+import { slideMarksExtension } from './SlideMarks'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 
-import { resolveLinkPath } from '@savoire/plugin-api'
+import { isSlidesNote, minimalTextChange, resolveLinkPath, setFrontmatterValue, slideDeck, slideIndexAt } from '@savoire/plugin-api'
 import type { EditorController, EditorCoreOptions, EditorEvent, MarkdownFormat, SelectionCoords, TriggerActivation, ToolbarCommand } from './types'
 import type { VaultAPI } from '@savoire/plugin-api'
 import type { EditorCommandContext, EditorPositionAPI, NoteScope, NotePluginScope, IEditorHostAPI, IPluginLoader, Hotkey, PluginCommand, PluginCommandContext } from '@savoire/plugin-api'
@@ -37,6 +40,33 @@ import { noteTitleExtension, notePathChanged, renameNoteForTitle } from './NoteT
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
 import { focusedSubEditor, hostOf, subEditorExtensions } from './SubEditor'
+
+/**
+ * Insere une nouvelle diapositive apres celle du curseur (`---` entre deux
+ * lignes vides). Une note qui n'est pas encore une presentation le devient
+ * (`type: slides`).
+ */
+function insertSlide(view: EditorView): void {
+  if (!isSlidesNote(view.state.doc.toString())) {
+    const text = view.state.doc.toString()
+    const change = minimalTextChange(text, setFrontmatterValue(text, 'type', 'slides'))
+    if (change) view.dispatch({ changes: change, userEvent: 'input' })
+  }
+  const doc = view.state.doc.toString()
+  const deck = slideDeck(doc)
+  const slide = deck.slides[slideIndexAt(deck, view.state.selection.main.head)]
+  // Fin de la diapositive (notes comprises) : le separateur de la suivante, ou la fin.
+  const end = slide ? slide.to : doc.length
+  const from = doc.slice(0, end).replace(/\s+$/, '').length
+  const head = '\n\n---\n\n## '
+  view.dispatch({
+    changes: { from, to: end, insert: end < doc.length ? `${head}\n\n` : head },
+    selection: { anchor: from + head.length },
+    userEvent: 'input',
+    scrollIntoView: true,
+  })
+  view.focus()
+}
 
 const LONE_SYMBOL_RE = /^(#{1,6}|[-*+]|>)\s*$/
 
@@ -450,6 +480,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
                 () => { this.syncDefaults(); return new Set(this.activationMap.keys()) },
                 options.editorMode === 'classic' ? 'classic' : 'power',
               ),
+              // Note `type: slides` : debut de chaque diapositive, notes du presentateur.
+              ...(/\.md$/i.test(options.filePath ?? '') ? [slideMarksExtension({ present: i => this.presentSlides(this.view, i) })] : []),
             ]),
         // Marques de blocs (modifie depuis la derniere visite, agent en veille) :
         // une gouttiere apres les numeros de ligne, contre le texte.
@@ -833,6 +865,64 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       editor: true,
       run: ctx => exportPdf(viewOf(ctx)),
     })
+
+    // Diapositives : une note `type: slides` se presente et s'exporte
+    // (Slides.ts, SlideShow.ts, SlidesExport.ts). F5 comme dans PowerPoint,
+    // seulement dans une presentation : ailleurs la touche garde son role.
+    const isDeck = (ctx: PluginCommandContext) => isSlidesNote((viewOf(ctx) ?? this.view).state.doc.toString())
+    const here = (view: EditorView) => slideIndexAt(slideDeck(view.state.doc.toString()), view.state.selection.main.head)
+    const slideCommands: { id: string; label: string; icon: string; menu: 'insert' | 'more'; hotkeys?: Hotkey[]; deckOnly?: boolean; run(view: EditorView): void }[] = [
+      { id: 'editor:present', label: 'Présenter (diapositives)', icon: 'presentation', menu: 'more', hotkeys: [{ modifiers: [], key: 'F5' }], deckOnly: true, run: v => this.presentSlides(v, 0) },
+      { id: 'editor:present-here', label: 'Présenter à partir de cette diapositive', icon: 'presentation', menu: 'more', hotkeys: [{ modifiers: ['Shift'], key: 'F5' }], deckOnly: true, run: v => this.presentSlides(v, here(v)) },
+      { id: 'editor:export-slides-pdf', label: 'Exporter les diapositives en PDF', icon: 'file-down', menu: 'more', run: v => this.exportSlides(v, 'pdf') },
+      { id: 'editor:export-slides-pptx', label: 'Exporter en PowerPoint (.pptx)', icon: 'file-down', menu: 'more', run: v => this.exportSlides(v, 'pptx') },
+      { id: 'editor:insert-slide', label: 'Diapositive', icon: 'gallery-horizontal-end', menu: 'insert', run: v => insertSlide(v) },
+    ]
+    for (const c of slideCommands) {
+      if (c.id !== 'editor:present-here') {
+        toolbar.register({ id: `tb-${c.id.slice('editor:'.length)}`, label: c.label, icon: c.icon, menu: c.menu, commandId: c.id, run: ctx => c.run(viewOf(ctx) ?? this.view) })
+      }
+      this.pluginAPI.commands.register({
+        id: c.id, label: c.label, editor: true, ...(c.hotkeys ? { hotkeys: c.hotkeys } : {}),
+        ...(c.deckOnly ? { isAvailable: isDeck } : {}),
+        run: ctx => c.run(viewOf(ctx) ?? this.view),
+      })
+    }
+  }
+
+  private slideShow: SlideShowHandle | null = null
+
+  /** Le nom de la note ouverte, sans extension. */
+  private noteTitle(): string {
+    const path = this.pluginAPI.workspace?.getActiveDocument?.()?.path ?? this.activeFile ?? ''
+    return path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+  }
+
+  /** Presente la note en diapositives, a partir de `start` (rang). */
+  presentSlides(view: EditorView | null | undefined, start = 0): void {
+    const v = view ?? this.view
+    if (!v) return
+    this.slideShow?.close()
+    this.slideShow = startSlideShow(v.state.doc.toString(), {
+      title: this.noteTitle(),
+      start,
+      registry: this.pluginAPI.blocks,
+      hooks: this.pluginAPI.hooks,
+      activeIds: new Set(this.activationMap.keys()),
+      onExit: () => { this.slideShow = null; v.focus() },
+    })
+  }
+
+  private exportSlides(view: EditorView, kind: 'pdf' | 'pptx'): void {
+    const opts = {
+      title: this.noteTitle(),
+      registry: this.pluginAPI.blocks,
+      hooks: this.pluginAPI.hooks,
+      activeIds: new Set(this.activationMap.keys()),
+    }
+    const text = view.state.doc.toString()
+    const run = kind === 'pdf' ? printSlides(text, opts) : downloadSlidesPptx(text, opts)
+    void run.catch(err => console.error(`[diapositives] export ${kind}`, err))
   }
 
 

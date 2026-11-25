@@ -97,7 +97,7 @@ const PRINT_CSS = `
 ${COLUMNS_CSS}`
 
 /** Attend la fin des rendus asynchrones (images, diagrammes), sans depasser `maxMs`. */
-async function settle(doc: Document, maxMs: number): Promise<void> {
+export async function settle(doc: Document, maxMs: number): Promise<void> {
   const end = Date.now() + maxMs
   const images = Array.from(doc.images).filter(i => !i.complete)
   await Promise.race([

@@ -155,5 +155,7 @@ export type {
   CapabilityId, CapabilityLevel, CapabilityInfo, CapabilityReport, PluginRegistrations, DiffItem, FileTypeReview,
   ComparableView, ComparableFileView,
 } from './capabilities'
+export { SLIDE_THEMES, isSlidesNote, slideDeck, slideSeparators, slideIndexAt, insertIntoSlide } from './slides'
+export type { Slide, SlideDeck, SlideTheme, SlideRatio } from './slides'
 export type { NoteBlock, NoteBlockKind } from './noteBlocks'
 export { splitNoteBlocks, blockFingerprint, textFingerprint, blockAt, newBlockId, blockIdInsertion, PROSE_BLOCK_KINDS } from './noteBlocks'
