@@ -3,6 +3,7 @@
 import { applyHighlights, highlightsExtension, type EditorHighlight } from './Highlights'
 import { applyBlockMarks, blockMarksExtension, type BlockMark } from './BlockMarks'
 import { agentPresenceExtension, applyAgentPresence, type AgentPresence } from './AgentPresence'
+import { aiMarksExtension, applyAiMarks, type AiMarkRange } from './AiMarks'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
 import { EditorView, keymap } from '@codemirror/view'
@@ -423,6 +424,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         highlightsExtension(),
         // Agent en veille sur la note : un robot en bas a droite.
         agentPresenceExtension(),
+        // Passages surlignes et epingles pour l'IA (personnels, hors du texte).
+        aiMarksExtension(),
         // Cartes de revision par-dessus la note (clic sur un passage surligne).
         annotationsExtension(),
         suggestionModeExtension(),
@@ -945,6 +948,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   /** Presence d'un agent sur la note (null : la retire). */
   setAgentPresence(owner: string, presence: AgentPresence | null): void {
     applyAgentPresence(this.view, owner, presence)
+  }
+
+  /** Remplace les marques pour l'IA (surlignages, epingles) ; liste vide : les retire. */
+  setAiMarks(ranges: readonly AiMarkRange[]): void {
+    applyAiMarks(this.view, ranges)
   }
 
   /** Le passage du texte visible a l'ecran (a peu pres : la partie dessinee). */

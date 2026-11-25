@@ -52,6 +52,8 @@ import { markNoteAsSeen, setVisitMarksEnabled, startVisitMarks, visitMarksEnable
 import { setSharedPassagesEnabled, sharedPassagesEnabled, startSharedPassages } from './sharedPassages'
 import { copyBlockLink } from './blockLinks'
 import { agentWatch, startAgentWatch, watchMarksEnabled } from './agents/agentWatch'
+import { setAiEditor } from './aiContext'
+import { clearAiMarks, highlightForAi, pinForAi, startAiMarks } from './aiMarks'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
@@ -255,6 +257,14 @@ export function usePluginBootstrap({
       docId: () => ctrl?.getDocId?.(),
       path: () => ctrl?.getActiveFile?.() ?? undefined,
       vaultId: () => editorAreaRefsHolder.current?.selectedVault.current?.id,
+    })
+    // Contexte pour l'IA : note ouverte, selection, epingles et surlignages.
+    setAiEditor({
+      editor: ctrl,
+      docId: () => ctrl?.getDocId?.(),
+      path: () => ctrl?.getActiveFile?.() ?? undefined,
+      vaultId: () => editorAreaRefsHolder.current?.selectedVault.current?.id,
+      session: () => vaultSessionRef.current,
     })
     // Revision dans la note : passages surlignes, cartes au clic.
     setInlineReviewEditor({
@@ -550,6 +560,16 @@ export function usePluginBootstrap({
       pluginApi.commands.register({ id: 'notes:mark-seen', label: 'Marquer la note comme lue (effacer « modifié depuis votre visite »)', run: () => markNoteAsSeen() })
       pluginApi.commands.register({ id: 'notes:toggle-visit-marks', label: 'Montrer ce qui a changé depuis ma dernière visite', run: () => setVisitMarksEnabled(!visitMarksEnabled()) })
       pluginApi.commands.register({ id: 'notes:toggle-shared-passages', label: 'Montrer les passages qui existent aussi ailleurs', run: () => setSharedPassagesEnabled(!sharedPassagesEnabled()) })
+      // Marques pour l'IA (aiMarks.ts) : epingles nommees et passages surlignes, personnels, hors de la note.
+      startAiMarks()
+      pluginApi.commands.register({ id: 'ai:pin', label: 'Épingler pour l’IA', editor: true, hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'p' }], run: () => { void pinForAi() } })
+      pluginApi.commands.register({ id: 'ai:highlight', label: 'Surligner pour l’IA (ou effacer ce surlignage)', editor: true, hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'h' }], run: () => { void highlightForAi() } })
+      pluginApi.commands.register({ id: 'ai:clear-highlights', label: 'Effacer les surlignages IA de cette note', run: () => { void clearAiMarks('highlight', 'note') } })
+      pluginApi.commands.register({ id: 'ai:clear-all-highlights', label: 'Effacer tous les surlignages IA', run: () => { void clearAiMarks('highlight', 'all') } })
+      pluginApi.commands.register({ id: 'ai:clear-pins', label: 'Retirer les épingles IA de cette note', run: () => { void clearAiMarks('pin', 'note') } })
+      pluginApi.toolbar.register({ id: 'tb-ai-pin', label: 'Épingler pour l’IA', icon: 'pin', group: 'review', menu: 'more', bubble: true, commandId: 'ai:pin', run: () => { void pinForAi() } })
+      pluginApi.toolbar.register({ id: 'tb-ai-highlight', label: 'Surligner pour l’IA', icon: 'sparkles', group: 'review', menu: 'more', bubble: true, commandId: 'ai:highlight', run: () => { void highlightForAi() } })
+      pluginApi.toolbar.register({ id: 'tb-ai-clear-highlights', label: 'Effacer les surlignages IA de cette note', icon: 'trash-2', group: 'review', menu: 'more', commandId: 'ai:clear-highlights', run: () => { void clearAiMarks('highlight', 'note') } })
       pluginApi.commands.register({ id: 'agents:toggle-watch-marks', label: 'Agents en veille : traits de lecture dans la marge', run: () => agentWatch.setMarksEnabled(!watchMarksEnabled()) })
 
       // ContentIndexingService: wires hooks → contributors → storage.

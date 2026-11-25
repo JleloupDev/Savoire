@@ -81,6 +81,8 @@ export interface EditorController {
   setBlockMarks?(owner: string, marks: readonly import('./BlockMarks').BlockMark[]): void
   /** Presence d'un agent sur la note : robot en bas a droite (null : la retire). */
   setAgentPresence?(owner: string, presence: import('./AgentPresence').AgentPresence | null): void
+  /** Marques pour l'IA (surlignages, epingles) : personnelles, jamais dans le texte. */
+  setAiMarks?(ranges: readonly import('./AiMarks').AiMarkRange[]): void
   /** Le passage du texte visible a l'ecran. */
   getVisibleRange?(): { from: number; to: number }
   /** Cartes de revision dans la note : l'hote les dessine (null : plus de cartes). */

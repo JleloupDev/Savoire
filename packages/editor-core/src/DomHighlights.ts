@@ -41,9 +41,9 @@ function isRaw(node: Node): boolean {
 
 /**
  * Les plages du texte rendu de l'editeur ou `find` trouve quelque chose.
- * `find` recoit le texte d'un bloc rendu et rend des [debut, fin].
+ * `find` recoit le texte d'un bloc rendu (et ce bloc) et rend des [debut, fin].
  */
-export function renderedTextRanges(view: EditorView, find: (text: string) => [number, number][], limit = 1000): Range[] {
+export function renderedTextRanges(view: EditorView, find: (text: string, block: Element) => [number, number][], limit = 1000): Range[] {
   const out: Range[] = []
   for (const block of Array.from(view.contentDOM.children)) {
     let nodes: Text[] = []
@@ -51,7 +51,7 @@ export function renderedTextRanges(view: EditorView, find: (text: string) => [nu
     let text = ''
     const flush = () => {
       if (text) {
-        for (const [from, to] of find(text)) {
+        for (const [from, to] of find(text, block)) {
           if (out.length >= limit) break
           const at = (pos: number, end: boolean): [Text, number] => {
             let i = starts.length - 1

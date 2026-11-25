@@ -20,6 +20,8 @@ import { extractorRegistry } from './extractors'
 import { publications } from './publication'
 import { aiService, setAIAccount } from './aiService'
 import { setAgentDirectory } from './agents/agentDirectory'
+import { setAiServer } from './aiContext'
+import { loadAiMarks } from './aiMarks'
 import { startLocalMcpService } from './agents/localMcpDesktop'
 import { LocalMcpApprovals } from './agents/LocalMcpSettings'
 import { sharedLibraries } from './sharedLibraries'
@@ -562,6 +564,9 @@ export function AppShell() {
   setAgentDirectory(!activeAccountRef.current ? null : activeProfile.name === 'server'
     ? { kind: 'server', accountId: activeAccountRef.current.userId, token: () => tokenRef.current ?? '', url: serverUrl }
     : { kind: 'local', accountId: activeAccountRef.current.userId })
+  // Contexte de l'editeur pour l'IA, epingles et surlignages : envoyes au serveur en profil serveur seulement.
+  setAiServer(activeAccountRef.current && activeProfile.name === 'server' ? { token: () => tokenRef.current ?? '', url: serverUrl } : null)
+  void loadAiMarks(token ? activeAccountRef.current?.userId ?? null : null)
   // Publication sur le web : jeton, vault, lecture et rendu de la note.
   publications.configure({
     token: () => tokenRef.current ?? '',

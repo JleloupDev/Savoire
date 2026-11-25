@@ -19,6 +19,7 @@ import { pathInScope } from './policy'
 import { sharedReadMemory, type ReadMemory } from './readMemory'
 import { countOccurrences, findOccurrence, folderOf, notePath, setPropertyChange, titleOf, type TextChange } from './text'
 import { alreadyReviewed, type WatchReview } from './watch'
+import { CONTEXT_TOOLS } from './contextTools'
 
 export interface CoreToolContext {
   mode: 'direct' | 'propose'
@@ -907,4 +908,6 @@ export const CORE_TOOLS: readonly CoreTool[] = [
   createNote, createFolder, moveNote,
   trashNote,
   addImage,
+  // Contexte de l'editeur (appli) : ou travaille la personne, ses epingles.
+  ...CONTEXT_TOOLS,
 ]

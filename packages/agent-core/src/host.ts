@@ -64,6 +64,16 @@ export interface AgentToolHost {
   power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null>
   listReview(docId: string): Promise<HostReviewEntry[]>
 
+  // ── Contexte de l'editeur (editorContext.ts) : l'appli seule a un editeur ──
+  /**
+   * Ou etait la personne il y a `secondsAgo` secondes (note ouverte,
+   * selection ou curseur), et l'age de cette entree. Null : rien d'ouvert.
+   * Absent : pas d'editeur ici (le pair ; le serveur sert get_context lui-meme).
+   */
+  editorContext?(p: { secondsAgo: number }): Promise<{ entry: import('./editorContext').EditorContextEntry; ageSeconds: number } | null>
+  /** Les marques de la personne pour l'IA dans ce vault : epingles, ou passages surlignes. */
+  aiMarks?(kind: 'pin' | 'highlight'): Promise<import('./editorContext').AiMark[]>
+
   // ── Ecriture (au nom de la personne, avec l'agent comme auteur) ──
   /** Remplace [from, to) du texte de la note par `text`. */
   replaceText(docId: string, from: number, to: number, text: string, actor: ToolActor): Promise<void>

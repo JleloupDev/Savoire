@@ -9,12 +9,14 @@
 // pour commenter et proposer. Le serveur verifie donc les memes droits (ACL)
 // que pour elle. L'auteur des commentaires et propositions est l'agent :
 // « Archiviste (IA), pour Jean ».
-import { HostError, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
+import { HostError, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type AiMark, type EditorContextEntry, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
 import { describeActor, ReviewService, type AgentActor, type IVaultSyncSession } from '@savoire/application'
 import { relPosFromBase64 } from '@savoire/infrastructure-sync'
 import type { VaultClient } from '@savoire/platform'
 import { textFingerprint, type ICRDT, type PluginAPI, type ToolActor } from '@savoire/plugin-api'
 import { reviewFor } from '../reviewProposals'
+import { editorContextAt } from '../aiContext'
+import { aiMarks } from '../aiMarks'
 
 /** Un document ouvert pour ecrire reste ouvert un moment : ses operations partent avant la fermeture. */
 const CLOSE_DELAY_MS = 3000
@@ -139,6 +141,23 @@ export class AppToolHost implements AgentToolHost {
       ...(e.status ? { status: e.status } : {}), ...(e.parentId ? { parentId: e.parentId } : {}),
       ...(e.anchor ? { quote: e.anchor.quote } : {}), ...(e.replacement !== undefined ? { replacement: e.replacement } : {}),
     }))
+  }
+
+  // ── Contexte de l'editeur (get_context, list_pins) ───────────────────────
+
+  async editorContext(p: { secondsAgo: number }): Promise<{ entry: EditorContextEntry; ageSeconds: number } | null> {
+    const found = editorContextAt(p.secondsAgo)
+    if (!found) return null
+    // Une note d'un autre vault, ou partie a la corbeille : elle n'existe pas pour cet agent.
+    const note = this.find({ id: found.entry.docId })
+    return note ? { entry: { ...found.entry, path: note.path }, ageSeconds: found.ageSeconds } : null
+  }
+
+  async aiMarks(kind: AiMark['kind']): Promise<AiMark[]> {
+    return aiMarks().filter(m => m.kind === kind).flatMap(m => {
+      const note = this.find({ id: m.docId })
+      return note ? [{ ...m, path: note.path }] : []
+    })
   }
 
   // ── Ecriture ─────────────────────────────────────────────────────────────

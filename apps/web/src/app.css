@@ -818,3 +818,22 @@ html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-
 @keyframes dictation-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .dictation-bar-dot { animation: none; } }
 .dictation-bar-dot { transform: scale(calc(1 + var(--dictation-level, 0) * 0.9)); transition: transform 80ms linear; }
+
+/* ── Marques pour l'IA : passages surlignes et epingles (personnels, hors de la note) ── */
+.cm-block-mark-bar.cm-block-ai-highlight { background: rgba(8, 145, 178, 0.85); }
+.cm-block-mark-bar.cm-block-ai-pin { background: rgba(219, 39, 119, 0.8); }
+.cm-block-badge-ai .cm-block-badge-button { border-color: rgba(8, 145, 178, 0.6); padding: 0 3px; }
+.ai-pin-prompt {
+  position: fixed; z-index: 1000; width: 320px; max-width: calc(100vw - 24px); padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22); font: 13px var(--font-ui, sans-serif);
+}
+.ai-pin-prompt-title { display: block; margin-bottom: 6px; font-weight: 600; }
+.ai-pin-prompt-input {
+  width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; font: inherit;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.ai-pin-prompt-input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.ai-pin-prompt-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+/* Le panneau d'une pastille deborde de la gouttiere, par-dessus le texte : sans cela il est coupe a sa largeur. */
+.cm-gutter.cm-block-marks { overflow: visible; }
