@@ -10,10 +10,14 @@
 // La personne choisit (isInlineReview) : sans annotations dans la note, les
 // passages ne sont surlignes que quand le panneau Revision est ouvert, comme
 // avant.
+//
+// Un commentaire peut etre adresse a un agent (« Demander à… », « @Nom ») :
+// voir agents/agentRequests.ts.
 import type { AnnotationHost, EditorController, EditorHighlight } from '@savoire/editor-core'
 import { ReviewService, describeActor, type IVaultSyncSession, type UserActor } from '@savoire/application'
 import { renderAnnotationCard, renderDraftCard } from './AnnotationCard'
 import { annotationCardDeps, isInlineReview, onInlineReviewChange, reviewFor, withReviewText } from './reviewProposals'
+import { commentOrAsk, draftAskDeps, replyOrAsk, requestCardDeps } from './agents/agentRequests'
 
 export interface InlineReviewContext {
   editor: EditorController | null
@@ -37,7 +41,18 @@ const host: AnnotationHost = {
   render(ids, dom, close) {
     const session = ctx?.session()
     if (!ctx || !session) return () => {}
-    return renderAnnotationCard(dom, ids, annotationCardDeps(session, ctx.actor, ctx.canWrite, ctx.openPanel), close)
+    const context = ctx
+    const deps = annotationCardDeps(session, context.actor, context.canWrite, context.openPanel)
+    return renderAnnotationCard(dom, ids, {
+      ...deps,
+      requests: requestCardDeps(session),
+      // Une reponse qui mentionne un agent (« @Nom ») lui adresse une demande.
+      reply: (root, text) => {
+        const me = context.actor()
+        if (!me) throw new Error('Aucun compte connecté.')
+        replyOrAsk(session, root, text, me)
+      },
+    }, close)
   },
   renderDraft(draft, dom, close) {
     const context = ctx
@@ -47,13 +62,12 @@ const host: AnnotationHost = {
     // Ancre tout de suite : le passage suivra ce que les autres modifient pendant qu'on ecrit.
     const anchor = withReviewText(session, docId, text => ReviewService.anchor(text, draft.from, draft.to))
     if (!anchor) { close(); return () => {} }
-    return renderDraftCard(dom, { kind: draft.kind, quote: anchor.quote }, (text, replacement) => {
+    return renderDraftCard(dom, { kind: draft.kind, quote: anchor.quote }, (text, replacement, ask) => {
       const me = context.actor()
       if (!me || !context.canWrite()) throw new Error('Lecture seule : vous ne pouvez pas commenter.')
-      const review = reviewFor(session)
-      if (draft.kind === 'suggestion') review.suggest(docId, anchor, replacement, me, text)
-      else review.comment(docId, text, me, anchor)
-    }, close)
+      if (draft.kind === 'suggestion') reviewFor(session).suggest(docId, anchor, replacement, me, text)
+      else commentOrAsk(session, docId, text, me, anchor, ask)
+    }, close, draftAskDeps)
   },
 }
 

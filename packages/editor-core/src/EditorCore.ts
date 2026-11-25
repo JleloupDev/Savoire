@@ -503,7 +503,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
 
             // Frappe de la personne (pas un changement venu d'un pair) :
             // l'historique des versions l'attribue a son auteur.
-            if (update.transactions.some(tr => tr.annotation(Transaction.userEvent) !== undefined)) this.localEditPending = true
+            if (update.transactions.some(tr => tr.annotation(Transaction.userEvent) !== undefined)) {
+              this.localEditPending = true
+              // Pour l'IA : un agent n'ecrit pas dans le paragraphe ou l'on tape.
+              this.events.emit('userTyped', update)
+            }
 
             // see ADR-015
             if (this.stabilizeDebounceTimer !== null) clearTimeout(this.stabilizeDebounceTimer)

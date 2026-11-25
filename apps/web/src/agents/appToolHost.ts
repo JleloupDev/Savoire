@@ -9,13 +9,13 @@
 // pour commenter et proposer. Le serveur verifie donc les memes droits (ACL)
 // que pour elle. L'auteur des commentaires et propositions est l'agent :
 // « Archiviste (IA), pour Jean ».
-import { HostError, agentColor, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type AiMark, type EditorContextEntry, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange } from '@savoire/agent-core'
+import { HostError, agentColor, notePath, planTyping, titleOf, typeInto, type AgentToolHost, type AiMark, type EditorContextEntry, type HostHit, type HostNote, type HostNoteRef, type HostRequest, type HostReviewEntry, type TextChange, type TypingSpot } from '@savoire/agent-core'
 import { describeActor, ReviewService, type AgentActor, type IVaultSyncSession } from '@savoire/application'
 import { relPosFromBase64 } from '@savoire/infrastructure-sync'
 import type { VaultClient } from '@savoire/platform'
 import { textFingerprint, type ICRDT, type PluginAPI, type ToolActor } from '@savoire/plugin-api'
 import { reviewFor } from '../reviewProposals'
-import { editorContextAt } from '../aiContext'
+import { editorContextAt, typingSpot } from '../aiContext'
 import { aiMarks } from '../aiMarks'
 
 /** Un document ouvert pour ecrire reste ouvert un moment : ses operations partent avant la fermeture. */
@@ -199,7 +199,24 @@ export class AppToolHost implements AgentToolHost {
       id: e.id, kind: e.kind, text: e.text, author: describeActor(e.author), authorIsAgent: e.author.kind === 'agent', createdAt: e.createdAt,
       ...(e.status ? { status: e.status } : {}), ...(e.parentId ? { parentId: e.parentId } : {}),
       ...(e.anchor ? { quote: e.anchor.quote } : {}), ...(e.replacement !== undefined ? { replacement: e.replacement } : {}),
+      ...(e.author.kind === 'agent' ? { authorAgentId: e.author.agentId } : {}),
     }))
+  }
+
+  /** Les demandes ouvertes adressees a cet agent, dans les notes du vault (requests.ts). */
+  async listRequests(agentId: string): Promise<HostRequest[]> {
+    return this.review.openRequests(agentId).flatMap(({ root, replies }) => {
+      const note = this.find({ id: root.docId })
+      if (!note) return []
+      // Une relance : la demande est la reponse de la personne, pas la racine.
+      const ask = replies.find(r => r.id === root.request?.entryId) ?? root
+      return [{ id: root.id, docId: root.docId, path: note.path, text: ask.text, quote: root.anchor?.quote ?? '', author: describeActor(ask.author), createdAt: root.request?.askedAt ?? ask.createdAt }]
+    })
+  }
+
+  /** L'agent a repondu : sa demande ouverte sur ce fil est close. */
+  async closeRequest(rootId: string, actor: ToolActor): Promise<boolean> {
+    return this.review.closeRequest(rootId, actor.agentId)
   }
 
   // ── Contexte de l'editeur (get_context, list_pins) ───────────────────────
@@ -217,6 +234,13 @@ export class AppToolHost implements AgentToolHost {
       const note = this.find({ id: m.docId })
       return note ? [{ ...m, path: note.path }] : []
     })
+  }
+
+  // ── La personne tape ─────────────────────────────────────────────────────
+
+  /** Ou la personne tape en ce moment dans cette note, d'apres l'editeur de l'appli (aiContext). */
+  async typing(docId: string): Promise<TypingSpot | null> {
+    return typingSpot(docId)
   }
 
   // ── Ecriture ─────────────────────────────────────────────────────────────

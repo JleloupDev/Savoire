@@ -38,10 +38,26 @@ export interface HostReviewEntry {
   parentId?: string
   quote?: string
   replacement?: string
+  /** L'agent qui a ecrit l'entree (son id), si c'est un agent. */
+  authorAgentId?: string
+}
+
+/** Une demande adressee a un agent : la personne a selectionne un passage et ecrit un commentaire pour lui (requests.ts). */
+export interface HostRequest {
+  /** Le fil de commentaire (sa racine) : c'est la qu'on repond. */
+  id: string
+  docId: string
+  path: string
+  /** Ce que la personne demande. */
+  text: string
+  /** Le passage vise ('' : la note entiere). */
+  quote: string
+  author: string
+  createdAt: string
 }
 
 export class HostError extends Error {
-  constructor(message: string, readonly code: 'not_found' | 'denied' | 'invalid' | 'unavailable' | 'conflict' = 'invalid') {
+  constructor(message: string, readonly code: 'not_found' | 'denied' | 'invalid' | 'unavailable' | 'conflict' | 'busy' = 'invalid') {
     super(message)
   }
 }
@@ -63,6 +79,11 @@ export interface AgentToolHost {
    */
   power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null>
   listReview(docId: string): Promise<HostReviewEntry[]>
+  /**
+   * Les demandes ouvertes adressees a cet agent, dans les notes que la
+   * personne peut lire. Absent : l'hote ne connait pas les demandes.
+   */
+  listRequests?(agentId: string): Promise<HostRequest[]>
 
   // ── Contexte de l'editeur (editorContext.ts) : l'appli seule a un editeur ──
   /**
@@ -97,6 +118,12 @@ export interface AgentToolHost {
   suggest(docId: string, from: number, to: number, replacement: string, actor: ToolActor, note: string): Promise<string>
   /** Trace d'une ecriture directe de l'agent, dans la Revision. */
   recordEdit(docId: string, text: string, actor: ToolActor): Promise<void>
+  /**
+   * L'agent a repondu dans le fil `rootId` : si c'est une demande ouverte qui
+   * lui est adressee, elle est close (jamais traitee deux fois). Rend true si
+   * elle l'etait.
+   */
+  closeRequest?(rootId: string, actor: ToolActor): Promise<boolean>
 
   // ── Ecriture fine (patch_note, effet de frappe) ──
   /**
@@ -115,6 +142,13 @@ export interface AgentToolHost {
    * Absent : l'hote ne tient pas le Y.Doc ; l'ancre se resout par sa citation.
    */
   resolveRelative?(docId: string, start: string, end: string): Promise<{ from: number; to: number } | null>
+
+  // ── La personne tape (typingGuard.ts) ──
+  /**
+   * Ou la personne tape en ce moment dans cette note : un agent n'ecrit pas
+   * dans son paragraphe. Null : elle n'y tape pas. Absent : l'hote ne le sait pas.
+   */
+  typing?(docId: string): Promise<import('./typingGuard').TypingSpot | null>
 
   // ── Presence ──
   /**

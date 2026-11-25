@@ -9,6 +9,8 @@
 //  - noteRefs, readMemory, patch, anchor, typing : lire et ecrire une note par
 //    morceaux (references de bloc, versions, retouches, ancres, effet de frappe) ;
 //  - editorContext : ou travaille la personne dans l'editeur (selection, ancre), pour l'IA ;
+//  - typingGuard : ne jamais ecrire dans le paragraphe ou la personne tape ;
+//  - requests : une demande adressee a un agent par selection + commentaire ;
 //  - toolbox  : les outils d'un agent pour une execution, filtres par ses droits ;
 //  - engine   : la boucle (et la delegation a des sous-agents) ;
 //  - watch    : la veille d'un agent sur la note ouverte, bloc par bloc.
@@ -23,6 +25,8 @@ export * from './patch'
 export * from './typing'
 export * from './coreTools'
 export * from './editorContext'
+export * from './typingGuard'
+export * from './requests'
 export * from './toolbox'
 export * from './engine'
 export * from './watch'

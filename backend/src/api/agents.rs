@@ -339,7 +339,7 @@ pub async fn decide(State(st): State<AppState>, Auth(p): Auth, Path(id): Path<St
             Some(agent) if a.tool == REQUEST_MODE => apply_mode_request(&st, &p.sub, agent, &a.args).await?,
             Some(agent) => {
                 let display = p.display_name.clone().unwrap_or_else(|| p.sub.clone());
-                let call = ToolCall { user: &p.sub, display_name: &display, agent, vault_id: &a.vault_id, tool: &a.tool, args: &a.args };
+                let call = ToolCall { user: &p.sub, display_name: &display, agent, vault_id: &a.vault_id, tool: &a.tool, args: &a.args, approved: true };
                 match plan(&st, &call).await? {
                     Plan::Deny(m) => ToolOutcome::error(&m),
                     // Accord donne : on fait (ou on propose, si c'est le mode de l'action).
@@ -387,6 +387,8 @@ pub struct ToolCall<'a> {
     pub vault_id: &'a str,
     pub tool: &'a str,
     pub args: &'a Value,
+    /// La personne vient d'accepter cet appel (accord) : il s'ecrit meme la ou elle tape.
+    pub approved: bool,
 }
 
 pub enum Plan {
@@ -476,10 +478,17 @@ pub async fn execute(st: &AppState, call: &ToolCall<'_>, action: &str, mode: &st
     agent["id"] = json!(call.agent.id);
     agent["name"] = json!(call.agent.name);
     agent["ownerId"] = json!(call.agent.owner_id);
-    let params = json!({
+    let mut params = json!({
         "name": call.tool, "args": call.args, "mode": run_mode, "agent": agent, "ticket": ticket,
         "actor": { "agentId": call.agent.id, "agentName": call.agent.name, "onBehalfOf": { "userId": call.user, "displayName": call.display_name } },
     });
+    // La personne tape dans une note de ce vault : le pair le sait, et n'ecrit pas
+    // dans son paragraphe (agent-core/typingGuard.ts). Sauf accord qu'elle vient de donner.
+    if action != "read" && run_mode == "direct" && !call.approved
+        && let Some((t, age)) = st.editor_contexts.typing(call.user, call.vault_id, Instant::now())
+    {
+        params["typing"] = json!({ "docId": t.doc_id, "blockHash": t.block_hash, "anchor": t.anchor, "ageMs": age });
+    }
     let r = call_indexer(st, call.user, call.vault_id, TOOLS_CAPABILITY, "call", &params).await;
     st.agent_tickets.remove(&ticket);
     st.agent_tickets.retain(|_, t| t.expires > Instant::now());

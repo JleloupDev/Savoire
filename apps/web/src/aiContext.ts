@@ -15,7 +15,14 @@
 //    partie dans la fenetre de ChatGPT, la derniere entree reste la bonne.
 //  - Plusieurs onglets ou appareils : le dernier actif l'emporte (revenir sur
 //    la fenetre renvoie l'entree).
-import { EditorContextRing, buildAnchor, buildEditorContext, locateByQuote, sameEditorContext, type EditorAnchor, type EditorContextEntry } from '@savoire/agent-core'
+//  - Quand la personne tape, l'entree porte l'heure de sa derniere frappe
+//    (typingAt) : un agent n'ecrit pas dans ce paragraphe tant que c'est
+//    recent. Une frappe ne declenche rien d'autre : elle note l'heure, et
+//    l'entree part au plus une fois toutes les 2 s (la premiere tout de suite).
+import {
+  EditorContextRing, TYPING_GUARD_MS, buildAnchor, buildEditorContext, locateByQuote, sameEditorContext,
+  type EditorAnchor, type EditorContextEntry, type TypingSpot,
+} from '@savoire/agent-core'
 import type { IVaultSyncSession } from '@savoire/application'
 import type { ICollaborativeText } from '@savoire/domain-index'
 import type { EditorController } from '@savoire/editor-core'
@@ -40,6 +47,8 @@ export interface AiServer {
 const CAPTURE_DELAY_MS = 300
 /** Au plus un envoi par seconde. */
 const SEND_INTERVAL_MS = 1000
+/** Pendant la frappe : au plus une entree toutes les 2 s. */
+const TYPING_REPORT_MS = 2000
 
 let server: AiServer | null = null
 let active: AiEditor | null = null
@@ -48,6 +57,11 @@ let captureTimer: ReturnType<typeof setTimeout> | null = null
 let sendTimer: ReturnType<typeof setTimeout> | null = null
 let lastSendAt = 0
 let lastSent: EditorContextEntry | null = null
+/** Heure de la derniere frappe ; `typingDirty` : pas encore dans une entree. */
+let typedAt = 0
+let typingDirty = false
+let typingTimer: ReturnType<typeof setTimeout> | null = null
+let lastTypingCapture = 0
 /** Vaults ou le serveur refuse le contexte (chiffres de bout en bout) : on n'insiste pas. */
 const refused = new Set<string>()
 const ring = new EditorContextRing()
@@ -106,20 +120,44 @@ function capture(force = false): void {
   const session = a?.session()
   if (!a || !editor?.getSelectionRange || !docId || !vaultId || !session) return
   let entry: EditorContextEntry | null
+  // Elle a tape depuis la derniere entree : celle-ci le dit.
+  const typingAt = typingDirty ? typedAt : 0
   try {
     const range = editor.getSelectionRange()
     entry = withNoteText(session, docId, text => buildEditorContext({
       vaultId, docId, path: a.path() ?? '', text: text.toString(), from: range.from, to: range.to,
       tabId: tabId(), at: Date.now(), encode: (i, assoc) => encodeRelPos(text.createRelPos(i, assoc)),
+      ...(typingAt ? { typingAt } : {}),
     }))
   } catch {
     // Editeur deja detruit, note pas encore chargee : la derniere entree reste.
     return
   }
   if (!entry) return
-  if (!force && sameEditorContext(entry, ring.last())) return
+  if (typingAt) {
+    typingDirty = false
+    lastTypingCapture = Date.now()
+    if (typingTimer) { clearTimeout(typingTimer); typingTimer = null }
+  }
+  if (!force && !typingAt && sameEditorContext(entry, ring.last())) return
   ring.push(entry)
   queueSend()
+}
+
+/**
+ * La personne vient de taper : on note l'heure, rien de plus. L'entree qui le
+ * dit part tout de suite si la derniere a plus de 2 s, sinon a cette echeance.
+ */
+function typed(): void {
+  typedAt = Date.now()
+  typingDirty = true
+  if (typingTimer) return
+  // Un tour de boucle au moins : le texte partage a recu la frappe (memes positions que l'editeur).
+  typingTimer = setTimeout(() => {
+    typingTimer = null
+    if (captureTimer) clearTimeout(captureTimer)
+    capture()
+  }, Math.max(0, lastTypingCapture + TYPING_REPORT_MS - typedAt))
 }
 
 function schedule(): void {
@@ -175,7 +213,9 @@ export function setAiEditor(editor: AiEditor): void {
   active = editor
   if (editor.editor) {
     // Fermer la note ne vide rien : la derniere entree reste la bonne.
-    stopListening = editor.editor.on('selectionChanged', schedule)
+    const stopSelection = editor.editor.on('selectionChanged', schedule)
+    const stopTyping = editor.editor.on('userTyped', typed)
+    stopListening = () => { stopSelection(); stopTyping() }
     schedule()
   }
   for (const cb of [...editorListeners]) cb()
@@ -189,6 +229,21 @@ export function aiEditor(): AiEditor | null {
 export function onAiEditorChange(cb: () => void): () => void {
   editorListeners.add(cb)
   return () => { editorListeners.delete(cb) }
+}
+
+/**
+ * Ou la personne tape en ce moment dans cette note (les agents de l'appli,
+ * la veille) : la derniere entree ou elle tapait, si c'est recent. Null : elle
+ * n'y tape pas.
+ */
+export function typingSpot(docId: string, now = Date.now()): TypingSpot | null {
+  // Une frappe pas encore retenue compte tout de suite.
+  if (typingDirty) capture()
+  const e = ring.lastTyped()
+  if (!e?.typingAt || e.docId !== docId) return null
+  const ageMs = Math.max(0, now - e.typingAt)
+  if (ageMs >= TYPING_GUARD_MS) return null
+  return { docId, ageMs, blockHash: e.blockHash, anchor: { start: e.anchor.start, end: e.anchor.end, prefix: e.anchor.prefix, suffix: e.anchor.suffix } }
 }
 
 /** Ou etait la personne il y a `secondsAgo` secondes (l'assistant de l'appli). */

@@ -9,7 +9,36 @@
 // DOM simple, sans React : la carte vit dans l'editeur (ADR-023), ou dans le
 // conteneur qu'un plugin donne. Elle se redessine quand la revision change,
 // en gardant ce qu'on tapait dans une reponse.
+//
+// Demander a un agent : le brouillon d'un commentaire offre « Demander à… »
+// (et comprend « @Nom ») ; la carte du fil dit ou en est la demande. La carte
+// ne decide rien : qui est vise et quoi lancer viennent de l'appelant
+// (agents/agentRequests.ts).
 import { describeActor, type ReviewEntry, type ReviewService, type ReviewThread } from '@savoire/application'
+
+/** Une demande a un agent, vue de la carte du fil. */
+export interface RequestCardDeps {
+  /** Ou en est la demande, en une ligne. */
+  line(root: ReviewEntry): string
+  /** La demande a echoue ou a ete interrompue : on peut la relancer ici. */
+  canRetry(root: ReviewEntry): boolean
+  retry(root: ReviewEntry): void
+}
+
+/** « Demander à… » dans le brouillon d'un commentaire. */
+export interface DraftAskDeps {
+  /** Les agents a qui l'on peut demander dans ce vault. */
+  agents(): { id: string; name: string }[]
+  /** Une IA est configuree dans l'appli : l'agent y repond tout de suite. */
+  inApp(): boolean
+  /** A qui irait ce texte, avec ce choix ('' , 'app:<id>', 'external:<id>'). Null : un simple commentaire. */
+  resolve(text: string, choice: string): DraftAsk | null
+}
+
+export interface DraftAsk {
+  agent: { id: string; name: string }
+  via: 'app' | 'external'
+}
 
 /** Ce dont la carte a besoin : la revision, et quoi faire des decisions. */
 export interface AnnotationCardDeps {
@@ -24,6 +53,8 @@ export interface AnnotationCardDeps {
   resolve(root: ReviewEntry, resolved: boolean): void
   /** Ouvrir le panneau Revision (facultatif). */
   openPanel?(): void
+  /** Les demandes aux agents (facultatif : sans lui, la carte ne les montre pas). */
+  requests?: RequestCardDeps
 }
 
 const KIND_LABEL: Record<string, string> = { comment: 'Commentaire', suggestion: 'Suggestion', proposal: 'Proposition' }
@@ -119,6 +150,20 @@ export function renderAnnotationCard(container: HTMLElement, ids: readonly strin
     }
     const isDefault = (root.kind === 'suggestion' && root.text === 'Suggestion') || (root.kind === 'proposal' && root.text === 'Proposition')
     if (!isDefault && root.text) box.append(el('div', 'annotation-text', root.text))
+    // Une demande a un agent : ou elle en est, et la relancer si elle a echoue.
+    if (root.request && deps.requests) {
+      const line = el('div', 'annotation-request')
+      line.dataset.testid = 'annotation-request'
+      line.dataset.state = root.request.state
+      line.append(el('span', 'annotation-ia', 'IA'), el('span', undefined, deps.requests.line(root)))
+      if (canWrite && deps.requests.canRetry(root)) {
+        line.append(button('Relancer', '', 'annotation-request-retry', () => {
+          errors.delete(root.id)
+          try { deps.requests!.retry(root) } catch (err) { fail(root.id, err) }
+        }))
+      }
+      box.append(line)
+    }
 
     for (const r of replies) {
       const reply = el('div', 'annotation-reply')
@@ -158,7 +203,7 @@ export function renderAnnotationCard(container: HTMLElement, ids: readonly strin
       const form = el('div', 'annotation-reply-form')
       const input = el('input', 'annotation-input')
       input.dataset.testid = 'annotation-reply-input'
-      input.placeholder = 'Répondre…'
+      input.placeholder = deps.requests && root.kind === 'comment' ? 'Répondre… (@Nom : demander à un agent)' : 'Répondre…'
       input.value = drafts.get(root.id) ?? ''
       const send = () => {
         const text = input.value.trim()
@@ -194,13 +239,16 @@ export function renderAnnotationCard(container: HTMLElement, ids: readonly strin
 /**
  * Brouillon dans la carte : commenter le passage, ou suggerer un autre texte.
  * `submit` enregistre (et peut lever une erreur, affichee) ; la carte se
- * ferme ensuite. Rend le nettoyage.
+ * ferme ensuite. `ask` : le commentaire peut etre une demande a un agent
+ * (« Demander à… », ou « @Nom » dans le texte) ; `submit` recoit alors a qui.
+ * Rend le nettoyage.
  */
 export function renderDraftCard(
   container: HTMLElement,
   draft: { kind: 'comment' | 'suggestion'; quote: string },
-  submit: (text: string, replacement: string) => void,
+  submit: (text: string, replacement: string, ask: DraftAsk | null) => void,
   close: () => void,
+  ask?: DraftAskDeps,
 ): () => void {
   container.replaceChildren()
   container.classList.add('annotation-card')
@@ -217,23 +265,56 @@ export function renderDraftCard(
   text.placeholder = draft.kind === 'suggestion' ? 'Explication (facultative)…' : 'Commenter ce passage…'
   const error = el('div', 'annotation-error')
   error.dataset.testid = 'annotation-error'
+
+  // « Demander à… » : un agent du vault, dans l'appli ou par son IA externe.
+  const agents = draft.kind === 'comment' ? ask?.agents() ?? [] : []
+  const select = el('select', 'annotation-input annotation-ask')
+  select.dataset.testid = 'annotation-draft-ask'
+  const hint = el('div', 'annotation-muted')
+  hint.dataset.testid = 'annotation-draft-ask-hint'
+  if (ask && agents.length) {
+    const option = (value: string, label: string): HTMLOptionElement => { const o = el('option', undefined, label); o.value = value; return o }
+    const group = (label: string, via: 'app' | 'external'): HTMLOptGroupElement => {
+      const g = el('optgroup')
+      g.label = label
+      for (const a of agents) g.append(option(`${via}:${a.id}`, a.name))
+      return g
+    }
+    select.append(option('', 'Demander à… (personne)'))
+    if (ask.inApp()) select.append(group('Dans Savoire, tout de suite', 'app'))
+    select.append(group('Par son IA externe (ChatGPT, Claude…)', 'external'))
+    text.placeholder = 'Commenter ce passage, ou demander : @Nom…'
+  }
+  const target = (): DraftAsk | null => (ask && agents.length ? ask.resolve(text.value, select.value) : null)
+  const submitButton = button(draft.kind === 'suggestion' ? 'Suggérer' : 'Commenter', 'annotation-accept', 'annotation-draft-submit', () => send())
+  /** A qui va le commentaire : dit avant d'envoyer. */
+  const showTarget = () => {
+    const to = target()
+    hint.textContent = !to ? '' : to.via === 'app'
+      ? `${to.agent.name} répondra dans ce fil, et n’écrira que dans ce passage.`
+      : `${to.agent.name} verra cette demande par son IA externe, et répondra dans ce fil.`
+    if (draft.kind === 'comment') submitButton.textContent = to ? 'Demander' : 'Commenter'
+  }
   const send = () => {
     error.textContent = ''
     try {
-      submit(text.value, replacement.value)
+      submit(text.value, replacement.value, target())
       close()
     } catch (err) {
       error.textContent = err instanceof Error ? err.message : String(err)
     }
   }
   const actions = el('div', 'annotation-actions')
-  actions.append(
-    button(draft.kind === 'suggestion' ? 'Suggérer' : 'Commenter', 'annotation-accept', 'annotation-draft-submit', send),
-    button('Annuler', '', 'annotation-draft-cancel', close),
-  )
+  actions.append(submitButton, button('Annuler', '', 'annotation-draft-cancel', close))
   text.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send() } })
+  if (ask && agents.length) {
+    text.addEventListener('input', showTarget)
+    select.addEventListener('change', showTarget)
+  }
   if (draft.kind === 'suggestion') box.append(replacement)
-  box.append(text, actions, error)
+  box.append(text)
+  if (ask && agents.length) box.append(select, hint)
+  box.append(actions, error)
   container.append(box)
   const first = draft.kind === 'suggestion' ? replacement : text
   requestAnimationFrame(() => { first.focus(); first.setSelectionRange(first.value.length, first.value.length) })

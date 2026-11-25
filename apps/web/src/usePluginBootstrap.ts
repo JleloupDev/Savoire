@@ -52,6 +52,7 @@ import { markNoteAsSeen, setVisitMarksEnabled, startVisitMarks, visitMarksEnable
 import { setSharedPassagesEnabled, sharedPassagesEnabled, startSharedPassages } from './sharedPassages'
 import { copyBlockLink } from './blockLinks'
 import { agentWatch, startAgentWatch, watchMarksEnabled } from './agents/agentWatch'
+import { startAgentRequests } from './agents/agentRequests'
 import { setAiEditor } from './aiContext'
 import { clearAiMarks, highlightForAi, pinForAi, startAiMarks } from './aiMarks'
 import type { VaultSummary } from './types'
@@ -554,6 +555,8 @@ export function usePluginBootstrap({
       startAgentWatch(editorAreaRefs, () => {
         if (manager.getPaneState('right').collapsed || manager.getActivePanelId() !== 'assistant') manager.toggleView('assistant')
       })
+      // Demandes aux agents par selection + commentaire (« Demander à… », « @Nom »).
+      startAgentRequests(editorAreaRefs)
       const copyLink = () => copyBlockLink(vaultProxy, liveBlocks.selection())
       pluginApi.commands.register({ id: 'editor:copy-block-link', label: 'Copier le lien vers ce bloc', editor: true, run: () => { void copyLink() } })
       pluginApi.toolbar.register({ id: 'tb-copy-block-link', label: 'Copier le lien vers ce bloc', icon: 'link', group: 'insert', menu: 'more', commandId: 'editor:copy-block-link', run: () => { void copyLink() } })

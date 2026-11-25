@@ -561,3 +561,84 @@ async fn agent_shows_in_the_open_note_then_leaves() {
     assert_eq!(app.post(&ta, &format!("/internal/indexer/vaults/{v}/presence"), body).await.0, 401);
     assert!(editor.no_event("AwarenessUpdated", SHORT).await);
 }
+
+/// Un agent n'ecrit pas dans le paragraphe ou la personne tape : l'application
+/// dit quand elle tape (typingAt), et le serveur joint l'endroit a l'appel du
+/// pair, pour une ecriture directe seulement, tant que la frappe est recente.
+#[tokio::test]
+async fn the_peer_learns_where_the_person_types_and_only_then() {
+    let (url, peer) = fake_peer().await;
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let doc = app.document(&ta, &v).await;
+    let other_vault = app.vault(&alice, &ta, "Autre").await;
+    let other_doc = app.document(&ta, &other_vault).await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Secrétaire", "permissions": { "read": "direct", "edit": "direct", "organize": "ask" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "ChatGPT", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+    let last = |name: &str| peer.calls.lock().unwrap().iter().rev().find(|c| c["params"]["name"] == name).unwrap().clone();
+    // L'entree de l'application ; `typed_ago` : elle a tape il y a tant de millisecondes (a son horloge).
+    let context = |typed_ago: Option<i64>| {
+        let at = 1_795_000_000_000i64;
+        let mut c = json!({
+            "vaultId": v, "docId": doc, "path": "Plan.md", "selection": "",
+            "anchor": { "docId": doc, "start": "AAEBAQ==", "end": "AAEBAQ==", "quote": "", "prefix": "ce qu'elle écrit", "suffix": "" },
+            "before": "ce qu'elle écrit", "after": "", "headingPath": [], "blockHash": "0123456789abcdef", "at": at, "tabId": "onglet-1",
+        });
+        if let Some(ago) = typed_ago {
+            c["typingAt"] = json!(at - ago);
+        }
+        c
+    };
+    let append = json!({ "name": "append", "arguments": { "vault": "Journal", "id": doc, "text": "x" } });
+    let get_context = json!({ "name": "get_context", "arguments": {} });
+
+    // Elle a seulement place son curseur : rien n'est joint a l'appel.
+    assert_eq!(app.post(&ta, "/api/v1/me/editor-context", context(None)).await.0, 204);
+    mcp(&app, &token, 1, "tools/call", append.clone()).await;
+    assert!(last("append")["params"].get("typing").is_none());
+
+    // Elle tape (il y a 1,5 s) : le pair recoit l'endroit et l'age de la frappe.
+    assert_eq!(app.post(&ta, "/api/v1/me/editor-context", context(Some(1500))).await.0, 204);
+    mcp(&app, &token, 2, "tools/call", append.clone()).await;
+    let typing = last("append")["params"]["typing"].clone();
+    assert_eq!(typing["docId"], doc, "{typing}");
+    assert_eq!(typing["blockHash"], "0123456789abcdef");
+    assert_eq!(typing["anchor"]["start"], "AAEBAQ==");
+    assert_eq!(typing["anchor"]["prefix"], "ce qu'elle écrit");
+    let age = typing["ageMs"].as_u64().unwrap();
+    assert!((1500..8000).contains(&age), "{age}");
+    // get_context le dit a l'IA, avant qu'elle n'ecrive.
+    let ctx = mcp(&app, &token, 3, "tools/call", get_context.clone()).await;
+    assert!(text(&ctx).contains("La personne écrit dans cette note en ce moment"), "{ctx}");
+    assert_eq!(ctx["result"]["structuredContent"]["typing"], true);
+
+    // Lire ne recoit rien ; un autre vault non plus.
+    mcp(&app, &token, 4, "tools/call", json!({ "name": "search", "arguments": { "vault": "Journal", "query": "x" } })).await;
+    assert!(last("search")["params"].get("typing").is_none());
+    mcp(&app, &token, 5, "tools/call", json!({ "name": "append", "arguments": { "vault": "Autre", "id": other_doc, "text": "x" } })).await;
+    let elsewhere = last("append");
+    assert_eq!(elsewhere["params"]["args"]["id"], other_doc);
+    assert!(elsewhere["params"].get("typing").is_none());
+
+    // Une action qu'elle vient d'accepter s'ecrit, meme la ou elle tapait.
+    mcp(&app, &token, 6, "tools/call", json!({ "name": "move_note", "arguments": { "vault": "Journal", "id": doc, "to": "Archives/" } })).await;
+    let approval = app.get(&ta, "/api/v1/agents/approvals").await.1["approvals"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(app.post(&ta, "/api/v1/me/editor-context", context(Some(0))).await.0, 204);
+    assert_eq!(app.post(&ta, &format!("/api/v1/agents/approvals/{approval}/decide"), json!({ "approve": true })).await.1["status"], "done");
+    assert!(last("move_note")["params"].get("typing").is_none());
+
+    // Elle a tape il y a plus de 8 s : elle ne tape plus.
+    assert_eq!(app.post(&ta, "/api/v1/me/editor-context", context(Some(9000))).await.0, 204);
+    mcp(&app, &token, 7, "tools/call", append.clone()).await;
+    assert!(last("append")["params"].get("typing").is_none());
+    let ctx = mcp(&app, &token, 8, "tools/call", get_context).await;
+    assert!(!text(&ctx).contains("La personne écrit"), "{ctx}");
+    assert!(ctx["result"]["structuredContent"].get("typing").is_none());
+
+    // Les consignes du serveur parlent des demandes, des commentaires courts et de la frappe.
+    let init = mcp(&app, &token, 9, "initialize", json!({})).await;
+    let instructions = init["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.contains("list_requests") && instructions.contains("peu et courts") && instructions.contains("propose: true"), "{instructions}");
+}

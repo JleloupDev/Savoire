@@ -692,6 +692,8 @@ button:active { filter: brightness(0.84); }
 textarea.annotation-input { width: 100%; min-height: 48px; resize: vertical; }
 .annotation-replacement { border-color: rgba(34, 197, 94, 0.5); background: rgba(34, 197, 94, 0.06); }
 .annotation-error { color: var(--color-danger, #ef4444); font-size: 11px; }
+.annotation-request { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; color: var(--text-muted); }
+select.annotation-ask { flex: none; width: 100%; }
 .annotation-error:empty { display: none; }
 
 /* ── Interface mobile : boutons flottants au-dessus de la barre du bas ─────── */

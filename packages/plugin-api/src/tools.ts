@@ -75,6 +75,13 @@ export interface ToolContext {
   mode: 'direct' | 'propose'
   actor: ToolActor
   signal?: AbortSignal
+  /**
+   * A appeler avant d'ecrire directement dans le texte d'une note
+   * (changeNoteText le fait) : leve si la personne tape dans ce paragraphe.
+   * `before` : le texte lu ; `change` : la plage remplacee et son texte.
+   * Absent : rien a verifier.
+   */
+  beforeWrite?(docId: string, before: string, change: { from: number; to: number; text: string }): Promise<void>
 }
 
 export const TOOL_NAME = /^[a-z][a-z0-9_]{1,63}$/

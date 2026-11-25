@@ -23,6 +23,7 @@ import {
   type PersonRights, type WritingMode,
 } from './policy'
 import type { ReadMemory } from './readMemory'
+import { guardTyping } from './typingGuard'
 
 export interface ApprovalRequest {
   tool: ToolSpec
@@ -59,6 +60,8 @@ export interface ToolBoxOptions {
   saveAgent?: (agent: AgentDefinition) => Promise<unknown>
   /** Ce que les agents ont deja lu (read_note since). Absent : la memoire du processus. */
   memory?: ReadMemory
+  /** L'heure (millisecondes), pour les tests. */
+  now?: () => number
 }
 
 export interface ToolCallOutcome {
@@ -70,7 +73,8 @@ export interface ToolCallOutcome {
   approval?: 'approved' | 'refused' | 'pending'
 }
 
-type Entry = { spec: ToolSpec; run: (args: Record<string, unknown>, mode: 'direct' | 'propose', signal?: AbortSignal) => Promise<ToolResult> }
+/** `approved` : la personne vient d'accepter cet appel (mode « demander »). */
+type Entry = { spec: ToolSpec; run: (args: Record<string, unknown>, mode: 'direct' | 'propose', signal?: AbortSignal, approved?: boolean) => Promise<ToolResult> }
 
 export class ToolBox {
   private readonly entries = new Map<string, Entry>()
@@ -81,7 +85,12 @@ export class ToolBox {
     this.agent = o.agent
     if (o.host) {
       const host = o.host
-      for (const t of CORE_TOOLS) this.add(t.spec, (args, mode) => t.run(args, { mode, actor: o.actor, host, scope: o.agent.scope, ...(o.memory ? { memory: o.memory } : {}) }))
+      for (const t of CORE_TOOLS) {
+        this.add(t.spec, (args, mode, _signal, approved) => t.run(args, {
+          mode, actor: o.actor, host, scope: o.agent.scope,
+          ...(o.memory ? { memory: o.memory } : {}), ...(approved ? { approved } : {}), ...(o.now ? { now: o.now } : {}),
+        }))
+      }
     }
     if (o.saveAgent && o.runtime === 'app' && !o.imposedMode) {
       const never = async (): Promise<ToolResult> => ({ text: '', isError: true })
@@ -90,7 +99,12 @@ export class ToolBox {
     }
     for (const t of o.pluginTools ?? []) {
       if (this.entries.has(t.spec.name)) continue // un plugin ne remplace pas un outil du socle
-      this.add(t.spec, (args, mode, signal) => t.run(args, { mode, actor: o.actor, ...(signal ? { signal } : {}) }))
+      // Un outil de plugin qui ecrit dans une note (changeNoteText) : jamais la ou la personne tape, comme le socle.
+      const host = o.host
+      this.add(t.spec, (args, mode, signal, approved) => t.run(args, {
+        mode, actor: o.actor, ...(signal ? { signal } : {}),
+        ...(host?.typing && !approved ? { beforeWrite: (docId: string, before: string, change: { from: number; to: number; text: string }) => guardTyping(host, docId, before, [change]) } : {}),
+      }))
     }
   }
 
@@ -144,7 +158,7 @@ export class ToolBox {
       approval = 'approved'
     }
     try {
-      const result = await e.run(args, run, signal)
+      const result = await e.run(args, run, signal, approval === 'approved')
       return { action: spec.action, mode, result, ...(approval ? { approval } : {}) }
     } catch (err) {
       if ((err as { name?: string })?.name === 'AbortError') throw err

@@ -16,8 +16,10 @@
 //  - Marges : un trait discret sur les blocs a relire, un trait anime sur
 //    celui qu'il lit (desactivable).
 //  - Sa consommation compte dans son budget (tokens par jour).
+//  - Il ne relit pas le paragraphe ou la personne tape : il attend qu'elle
+//    ait fini (8 s sans frappe), comme les outils d'ecriture.
 import {
-  BlockWatcher, type WatchMemory, type WatchMemoryStore, type WatchReply, type WatchReview, type WatchStatus,
+  BlockWatcher, TYPING_GUARD_MS, typingZone, type WatchMemory, type WatchMemoryStore, type WatchReply, type WatchReview, type WatchStatus,
 } from '@savoire/agent-core'
 import { reviewFor } from '../reviewProposals'
 import type { AgentDefinition, NoteBlock, ToolActor } from '@savoire/plugin-api'
@@ -25,6 +27,7 @@ import type { BlockMark } from '@savoire/editor-core'
 import { notify } from '@savoire/notifications'
 import type { EditorAreaRefs } from '../EditorAreaWidget'
 import { aiService } from '../aiService'
+import { typingSpot } from '../aiContext'
 import { liveBlocks, type BlocksSnapshot } from '../liveBlocks'
 import { agentDirectory, onAgentDirectoryChange, usedToday } from './agentDirectory'
 import { AppToolHost } from './appToolHost'
@@ -273,6 +276,14 @@ class AgentWatchService {
         this.changed()
       },
       reviews: note => this.reviews(agent, note.docId),
+      // Le paragraphe ou la personne tape attend qu'elle ait fini.
+      typing: note => {
+        const spot = typingSpot(note.docId)
+        if (!spot) return null
+        const zone = note.blocks.some(b => b.hash === spot.blockHash) ? null : typingZone(note.text, spot)
+        const hash = zone ? note.blocks.find(b => b.from === zone.from)?.hash : spot.blockHash
+        return hash ? { blockHash: hash, freeInMs: TYPING_GUARD_MS - spot.ageMs } : null
+      },
       askLarge: (_count, estimated) => new Promise<boolean>(resolve => {
         w.asking = resolve
         w.askEstimate = estimated

@@ -10,6 +10,7 @@ import type { CoreTool, CoreToolContext } from './coreTools'
 import { CONTEXT_STALE_SECONDS, type AiMark } from './editorContext'
 import { HostError } from './host'
 import { pathInScope } from './policy'
+import { TYPING_GUARD_MS } from './typingGuard'
 
 const quoted = (s: string): string => `« ${s.replace(/\n/g, ' ⏎ ')} »`
 
@@ -57,7 +58,11 @@ const getContext: CoreTool = {
           `Juste avant : ${quoted(e.before)}`, `Juste après : ${quoted(e.after)}`)
       }
       lines.push(`Ancre : ${JSON.stringify(e.anchor)}`, hint)
-      data = { ...e, noteId: e.docId, ageSeconds, stale, hint, isCursor: e.selection === '' }
+      // Elle tape dans cette note : l'IA le sait avant d'ecrire.
+      const spot = await ctx.host.typing?.(e.docId).catch(() => null)
+      const typing = !!spot && spot.ageMs < TYPING_GUARD_MS
+      if (typing) lines.push('La personne écrit dans cette note en ce moment : n’écrivez pas dans son paragraphe. Attendez, ou proposez (propose: true).')
+      data = { ...e, noteId: e.docId, ageSeconds, stale, hint, isCursor: e.selection === '', ...(typing ? { typing } : {}) }
     }
     if (highlights.length) {
       lines.push('', `Passages surlignés pour l’IA (${highlights.length}) :`)

@@ -19,6 +19,11 @@
 // la racine de son fil : deux personnes qui repondent en meme temps ne
 // s'ecrasent pas. Le statut vit sur la racine ; deux changements simultanes
 // de statut se departagent par le dernier ecrivain.
+//
+// Demande a un agent : un commentaire peut etre adresse a un agent (« Demander
+// à… », ou « @Nom »). La demande vit sur la racine du fil (`request`), avec
+// son etat : un agent de l'appli la traite tout de suite, une IA externe la
+// lit par son outil list_requests. Elle n'est jamais traitee deux fois.
 import { lineHunks, mergeHunks } from './lineDiff'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import type { ICollaborativeText, RelPosJSON } from '@savoire/domain-index'
@@ -40,6 +45,30 @@ export interface ReviewAnchor {
   to: RelPosJSON
   quote: string
 }
+
+/**
+ * Une demande adressee a un agent, sur la racine d'un fil de commentaire.
+ *  - via   : 'app', un agent de l'appli la traite des qu'elle est posee ;
+ *            'external', une IA externe (MCP) la prendra ;
+ *  - state : open (a prendre), running (un agent de l'appli y travaille),
+ *            done (repondue), failed (echec : on peut relancer).
+ */
+export interface ReviewRequest {
+  agentId: string
+  agentName: string
+  via: 'app' | 'external'
+  state: 'open' | 'running' | 'done' | 'failed'
+  /** L'entree qui porte la demande, si ce n'est pas la racine (une relance dans le fil). */
+  entryId?: string
+  /** Date ISO de la demande (ou de sa relance). */
+  askedAt: string
+  doneAt?: string
+  /** Pourquoi l'agent de l'appli a echoue. */
+  error?: string
+}
+
+/** A qui l'on demande, et ou la demande sera traitee. */
+export type ReviewRequestTarget = Pick<ReviewRequest, 'agentId' | 'agentName' | 'via'>
 
 /** Le texte d'une note, pour ancrer et pour appliquer une suggestion. */
 export interface ReviewText extends ICollaborativeText {
@@ -66,6 +95,9 @@ function asJson(value: unknown, max: number, what: string): unknown {
 
 /** Longueur maximale d'un passage cite. */
 const MAX_QUOTE = 2000
+
+/** Au-dela, une demande « en cours » est tenue pour interrompue (on peut la relancer). */
+export const REQUEST_STALE_MS = 3 * 60_000
 
 export interface ReviewEntry {
   id: string
@@ -102,6 +134,8 @@ export interface ReviewEntry {
   statusAt?: string
   /** Suggestion acceptee en partie (certaines lignes seulement). */
   partial?: boolean
+  /** Demande adressee a un agent (racine d'un fil de commentaire seulement). */
+  request?: ReviewRequest
 }
 
 export interface ReviewThread {
@@ -146,11 +180,88 @@ export class ReviewService {
 
   /**
    * Ouvre un fil, sur la note entiere ou sur un passage. `target` : ce que
-   * vise le commentaire dans un document de plugin (JSON).
+   * vise le commentaire dans un document de plugin (JSON). `ask` : le
+   * commentaire est une demande a cet agent.
    */
-  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor, target?: unknown): ReviewEntry {
+  comment(docId: string, text: string, author: Actor, anchor?: ReviewAnchor, target?: unknown, ask?: ReviewRequestTarget): ReviewEntry {
     const aim = target === undefined ? undefined : asJson(target, MAX_TARGET_BYTES, 'cible')
-    return this.add({ docId, kind: 'comment', text, author, status: 'open', ...(anchor ? { anchor } : {}), ...(aim !== undefined ? { target: aim } : {}) })
+    return this.add({
+      docId, kind: 'comment', text, author, status: 'open', ...(anchor ? { anchor } : {}), ...(aim !== undefined ? { target: aim } : {}),
+      ...(ask ? { request: this.newRequest(ask) } : {}),
+    })
+  }
+
+  // ── Demandes a un agent ──────────────────────────────────────────────────
+
+  /** Une demande neuve : prise tout de suite par l'appli ('running'), ou a prendre par une IA externe ('open'). */
+  private newRequest(ask: ReviewRequestTarget, entryId?: string): ReviewRequest {
+    return {
+      agentId: ask.agentId, agentName: ask.agentName, via: ask.via, state: ask.via === 'app' ? 'running' : 'open',
+      askedAt: this.now().toISOString(), ...(entryId ? { entryId } : {}),
+    }
+  }
+
+  /**
+   * Adresse (ou relance) une demande sur un fil de commentaire existant.
+   * `entryId` : la reponse de la personne qui porte la demande (absent : la
+   * racine). Refuse si un agent de l'appli y travaille deja.
+   */
+  ask(rootId: string, ask: ReviewRequestTarget, entryId?: string): ReviewEntry {
+    const root = this.root(rootId)
+    if (root.kind !== 'comment') throw new Error('une demande se pose sur un commentaire')
+    if (root.request?.state === 'running' && !this.stale(root.request)) throw new Error('un agent travaille déjà sur cette demande')
+    const next: ReviewEntry = { ...root, request: this.newRequest(ask, entryId ?? root.request?.entryId), ...(root.status && root.status !== 'open' ? { status: 'open' as const } : {}) }
+    this.map.set(root.id, next)
+    return next
+  }
+
+  /** Une demande « en cours » depuis trop longtemps : l'appli qui la traitait a ete fermee. */
+  stale(request: ReviewRequest): boolean {
+    return request.state === 'running' && this.now().getTime() - Date.parse(request.askedAt) > REQUEST_STALE_MS
+  }
+
+  /** La demande de ce fil est-elle encore celle que cet agent de l'appli a prise (`askedAt`) ? */
+  isRunning(rootId: string, askedAt: string): boolean {
+    const r = this.thread(rootId)?.root.request
+    return !!r && r.state === 'running' && r.askedAt === askedAt
+  }
+
+  /**
+   * L'agent de l'appli a fini (ou echoue) la demande qu'il avait prise
+   * (`askedAt`). Rien ne change si elle a ete relancee ou close entre-temps :
+   * jamais deux fois.
+   */
+  finishRequest(rootId: string, askedAt: string, state: 'done' | 'failed', error?: string): ReviewEntry | null {
+    if (!this.isRunning(rootId, askedAt)) return null
+    return this.setRequest(this.root(rootId), state, error)
+  }
+
+  /**
+   * L'agent `agentId` a repondu dans ce fil (outil reply) : si une demande
+   * ouverte lui est adressee, elle est close. Rend true si elle l'etait.
+   */
+  closeRequest(rootId: string, agentId: string): boolean {
+    const root = this.thread(rootId)?.root
+    if (!root?.request || root.request.agentId !== agentId || root.request.state !== 'open') return false
+    this.setRequest(root, 'done')
+    return true
+  }
+
+  private setRequest(root: ReviewEntry, state: 'done' | 'failed', error?: string): ReviewEntry {
+    const { error: _old, ...rest } = root.request!
+    const request: ReviewRequest = { ...rest, state, ...(state === 'done' ? { doneAt: this.now().toISOString() } : {}), ...(error ? { error: error.slice(0, 500) } : {}) }
+    const next: ReviewEntry = { ...root, request }
+    this.map.set(root.id, next)
+    return next
+  }
+
+  /** Les demandes ouvertes adressees a cet agent (IA externe, ou assistant qui les liste). */
+  openRequests(agentId: string): ReviewThread[] {
+    const all = this.entries()
+    return all
+      .filter(e => !e.parentId && e.kind === 'comment' && e.request?.agentId === agentId && e.request.state === 'open' && (e.status ?? 'open') === 'open')
+      .sort(byDate)
+      .map(root => ({ root, replies: all.filter(e => e.parentId === root.id).sort(byDate) }))
   }
 
   /**

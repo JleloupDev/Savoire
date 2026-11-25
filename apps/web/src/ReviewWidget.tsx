@@ -26,6 +26,7 @@ import {
   onProposeError, onSuggestingChange, proposalType, reviewFor, setInlineReview, setSuggesting, textOfProposal, withReviewText,
 } from './reviewProposals'
 import { showReviewHighlights } from './inlineReview'
+import { commentOrAsk, draftAskDeps, replyOrAsk, requestCardDeps } from './agents/agentRequests'
 
 export { withReviewText } from './reviewProposals'
 
@@ -85,6 +86,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const [draftAnchor, setDraftAnchor] = useState<{ docId?: string; anchor: ReviewAnchor } | null>(null)
   const [draftKind, setDraftKind] = useState<'comment' | 'suggestion'>('comment')
   const [replacement, setReplacement] = useState('')
+  // « Demander à… » : '' (personne), 'app:<id>' ou 'external:<id>'.
+  const [askChoice, setAskChoice] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   // Mode suggestion (suivi des modifications) : la frappe devient des propositions.
@@ -149,11 +152,17 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
   const anchorHere = draftAnchor && (!draftAnchor.docId || draftAnchor.docId === docId) ? draftAnchor.anchor : null
   const suggesting = draftKind === 'suggestion' && !!anchorHere
 
+  // Le commentaire est-il adresse a un agent (« Demander à… », ou « @Nom ») ?
+  const askAgents = suggesting ? [] : draftAskDeps.agents()
+  const askTarget = askAgents.length && !suggesting ? draftAskDeps.resolve(draft, askChoice) : null
+  const requests = requestCardDeps(session)
+
   function submit() {
     setError(null)
     try {
       if (suggesting) review!.suggest(docId!, anchorHere!, replacement, me, draft)
-      else review!.comment(docId!, draft, me, anchorHere ?? undefined)
+      else commentOrAsk(session!, docId!, draft, me, anchorHere ?? undefined, askTarget)
+      setAskChoice('')
       setDraft('')
       setDraftAnchor(null)
       setDraftKind('comment')
@@ -265,7 +274,8 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
             key={t.root.id}
             thread={t}
             canWrite={canWrite}
-            onReply={text => act(() => review.reply(t.root.id, text, me))}
+            onReply={text => act(() => replyOrAsk(session, t.root, text, me))}
+            request={t.root.request ? { line: requests.line(t.root), state: t.root.request.state, onRetry: requests.canRetry(t.root) ? () => act(() => requests.retry(t.root)) : undefined } : undefined}
             onStatus={status => act(() => review.setStatus(t.root.id, status, me))}
             onReveal={() => reveal(t.root)}
             onAccept={hunks => accept(t.root, hunks)}
@@ -296,12 +306,33 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
         value={draft}
         onChange={e => setDraft(e.target.value)}
         disabled={!canWrite}
-        placeholder={!canWrite ? 'Lecture seule : vous ne pouvez pas commenter.' : suggesting ? 'Explication (facultative)…' : anchorHere ? 'Commenter ce passage…' : 'Écrire un commentaire…'}
+        placeholder={!canWrite ? 'Lecture seule : vous ne pouvez pas commenter.' : suggesting ? 'Explication (facultative)…' : askAgents.length ? 'Commenter, ou demander : @Nom…' : anchorHere ? 'Commenter ce passage…' : 'Écrire un commentaire…'}
         style={{ width: '100%', boxSizing: 'border-box', marginTop: anchorHere ? 6 : 12, minHeight: suggesting ? 36 : 60, padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 12 }}
       />
+      {canWrite && askAgents.length > 0 && (
+        <select data-testid="review-ask" value={askChoice} onChange={e => setAskChoice(e.target.value)}
+          style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'inherit' }}>
+          <option value="">Demander à… (personne)</option>
+          {draftAskDeps.inApp() && (
+            <optgroup label="Dans Savoire, tout de suite">
+              {askAgents.map(a => <option key={a.id} value={`app:${a.id}`}>{a.name}</option>)}
+            </optgroup>
+          )}
+          <optgroup label="Par son IA externe (ChatGPT, Claude…)">
+            {askAgents.map(a => <option key={a.id} value={`external:${a.id}`}>{a.name}</option>)}
+          </optgroup>
+        </select>
+      )}
+      {askTarget && (
+        <div data-testid="review-ask-hint" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
+          {askTarget.via === 'app'
+            ? `${askTarget.agent.name} répondra dans ce fil${anchorHere ? ', et n’écrira que dans ce passage' : ''}.`
+            : `${askTarget.agent.name} verra cette demande par son IA externe, et répondra dans ce fil.`}
+        </div>
+      )}
       <button data-testid="review-submit" style={{ ...BUTTON, marginTop: 6 }}
         disabled={!canWrite || (suggesting ? replacement === anchorHere!.quote : !draft.trim())} onClick={submit}>
-        {suggesting ? 'Suggérer' : 'Commenter'}
+        {suggesting ? 'Suggérer' : askTarget ? 'Demander' : 'Commenter'}
       </button>
       {error && <div style={{ color: 'var(--danger, #ef4444)', fontSize: 12, marginTop: 6 }}>{error}</div>}
 
@@ -311,9 +342,11 @@ function ReviewPanel({ manager, refs }: { manager: WorkspaceManagerImpl; refs: E
 
 const SUGGESTION_STATUS: Partial<Record<ReviewStatus, string>> = { accepted: 'Acceptée', rejected: 'Refusée' }
 
-function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCompare }: {
+function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCompare, request }: {
   thread: ReviewThread
   canWrite: boolean
+  /** Demande a un agent : ou elle en est ; `onRetry` si on peut la relancer. */
+  request?: { line: string; state: string; onRetry?: () => void }
   onReply: (text: string) => void
   onStatus: (status: ReviewStatus) => void
   onReveal: () => void
@@ -336,6 +369,13 @@ function Thread({ thread, canWrite, onReply, onStatus, onReveal, onAccept, onCom
   return (
     <div data-testid="review-thread" data-kind={root.kind} data-status={root.status ?? ''} style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: root.status && root.status !== 'open' ? 0.75 : 1 }}>
       <Entry entry={root} onReveal={onReveal} />
+      {request && (
+        <div data-testid="review-request" data-state={request.state} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+          <span style={{ fontWeight: 700, padding: '0 5px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.15)', color: '#7c3aed' }}>IA</span>
+          <span>{request.line}</span>
+          {canWrite && request.onRetry && <button data-testid="review-request-retry" onClick={request.onRetry} style={SMALL}>Relancer</button>}
+        </div>
+      )}
       {isSuggestion && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
           {onCompare && <button data-testid="review-compare" onClick={onCompare} style={SMALL}>Comparer</button>}

@@ -189,7 +189,11 @@ Les animations (.anim, anime.js) se font avec les outils animation_* (animation_
 et se montrent dans une note ou une diapositive avec animation_embed. \
 Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas. \
 Pour passer de l'edition (modifications directes) a la revision (propositions dans Revision), ou l'inverse : request_mode, avec l'accord de la personne. \
-Quand la personne dit « ici », « ce passage », « ca » ou « la selection », appelez get_context : il rend la note ouverte, sa selection et ses surlignages.";
+Quand la personne dit « ici », « ce passage », « ca » ou « la selection », appelez get_context : il rend la note ouverte, sa selection et ses surlignages. \
+Quand elle parle d'une demande ou d'un commentaire qu'elle vous a laisse dans une note, appelez list_requests, n'agissez que sur le passage vise, \
+puis repondez dans le fil avec reply : la demande est close, ne la traitez pas deux fois. \
+Commentaires : peu et courts (une ou deux phrases), de preference un seul, dans la marge du passage. \
+N'ecrivez jamais dans le paragraphe ou la personne est en train d'ecrire : si un outil le refuse, attendez ou proposez (propose: true).";
 pub const MAX_MCP_BYTES: usize = 256 * 1024;
 
 pub fn rpc_error(id: Value, code: i64, message: &str) -> Value {
@@ -506,7 +510,7 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
     let display = p.display_name.clone().unwrap_or_else(|| p.sub.clone());
     let plan = {
         let probe = Value::Object(rest.clone());
-        let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &probe };
+        let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &probe, approved: false };
         agents::plan(st, &call).await?
     };
     if let agents::Plan::Deny(m) = &plan {
@@ -525,7 +529,7 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
         false
     };
     let rest = Value::Object(rest);
-    let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &rest };
+    let call = agents::ToolCall { user: &p.sub, display_name: &display, agent: &agent, vault_id: &vault.id, tool: name, args: &rest, approved: false };
     Ok(Some(match plan {
         agents::Plan::Deny(m) => tool_error(&m),
         agents::Plan::Ask { action } => {

@@ -47,6 +47,12 @@ export interface EditorContextEntry {
   at: number
   /** L'onglet ou l'appareil. */
   tabId: string
+  /**
+   * La personne a tape ici, a cette heure (millisecondes, horloge de
+   * l'appareil). Absent : elle a seulement selectionne ou deplace le curseur.
+   * Un agent n'ecrit pas dans ce paragraphe tant que c'est recent (typingGuard.ts).
+   */
+  typingAt?: number
 }
 
 /** Une marque pour l'IA : epingle nommee, ou passage surligne. Personnelle, hors de la note. */
@@ -165,6 +171,8 @@ export interface EditorContextInput {
   encode: RelativePositionEncoder
   /** Les blocs de la note, s'ils sont deja calcules. */
   blocks?: readonly NoteBlock[]
+  /** Heure de la derniere frappe, si la personne a tape depuis l'entree precedente. */
+  typingAt?: number
 }
 
 /** Une entree de contexte pour la selection (ou le curseur) donnee. */
@@ -185,6 +193,7 @@ export function buildEditorContext(p: EditorContextInput): EditorContextEntry {
     blockHash: blockAt(blocks, from)?.hash ?? '',
     at: p.at,
     tabId: p.tabId,
+    ...(p.typingAt ? { typingAt: p.typingAt } : {}),
   }
 }
 
@@ -225,6 +234,12 @@ export class EditorContextRing {
 
   last(): EditorContextEntry | null {
     return this.entries[this.entries.length - 1] ?? null
+  }
+
+  /** La derniere entree ou la personne tapait. Null : elle n'a pas tape depuis une minute. */
+  lastTyped(): EditorContextEntry | null {
+    for (let i = this.entries.length - 1; i >= 0; i--) if (this.entries[i]!.typingAt) return this.entries[i]!
+    return null
   }
 
   clear(): void {

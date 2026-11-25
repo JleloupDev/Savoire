@@ -6,6 +6,8 @@ import type { TriggerActivation, ToolbarCommand } from '@savoire/plugin-api'
 
 export type EditorEvent =
   | 'documentChanged'
+  /** La personne vient de modifier le texte elle-meme (pas un pair, pas un agent). */
+  | 'userTyped'
   | 'cursorMoved'
   | 'selectionChanged'
   | 'fileOpened'

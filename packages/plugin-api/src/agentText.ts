@@ -28,7 +28,7 @@ const CONTEXT = 40
  */
 export async function changeNoteText(
   api: Pick<PluginAPI, 'vault' | 'review'>,
-  ctx: Pick<ToolContext, 'mode' | 'actor'>,
+  ctx: Pick<ToolContext, 'mode' | 'actor' | 'beforeWrite'>,
   docId: string,
   edit: (current: string) => string,
   note: string,
@@ -47,6 +47,8 @@ export async function changeNoteText(
     return 'proposed'
   }
   if (typeof api.vault.editText !== 'function') throw new Error('Ce vault ne permet pas de modifier la note.')
+  // Jamais dans le paragraphe ou la personne tape : l'application le verifie (elle leve).
+  await ctx.beforeWrite?.(docId, current, minimalChange(current, next))
   // Sur le texte du moment : une frappe a pu arriver entre-temps.
   await api.vault.editText(docId, edit)
   return 'done'

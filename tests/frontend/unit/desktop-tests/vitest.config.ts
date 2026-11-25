@@ -26,6 +26,8 @@ export default defineConfig({
       '@savoire/notifications': pkg('notifications'),
       '@savoire/i18n': pkg('i18n'),
       '@savoire/plugin-api': pkg('plugin-api'),
+      // Contexte de l'editeur pour l'IA (apps/web/src/aiContext.ts) : la frappe.
+      '@savoire/agent-core': pkg('agent-core'),
       // Import Notion (apps/web/src/notionImport.ts) : pages et bases.
       '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
       '@savoire/plugin-page': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/index.ts'),

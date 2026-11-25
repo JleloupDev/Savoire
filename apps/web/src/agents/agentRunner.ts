@@ -4,7 +4,7 @@
 // Lancer un agent dans l'appli (ADR-033) : ses outils (socle + plugins),
 // filtres par ses droits et ceux de la personne, l'IA de la personne, et
 // l'historique de ses executions (sur ce poste) avec leur consommation.
-import { AgentEngine, ToolBox, type AgentRun, type EngineDeps, type ApprovalRequest, type ApprovalAnswer } from '@savoire/agent-core'
+import { AgentEngine, ToolBox, type AgentRun, type AgentToolHost, type EngineDeps, type ApprovalRequest, type ApprovalAnswer } from '@savoire/agent-core'
 import type { IVaultSyncSession } from '@savoire/application'
 import type { VaultClient } from '@savoire/platform'
 import type { AIMessage, AgentDefinition, PluginAPI, PluginTool, ToolActor } from '@savoire/plugin-api'
@@ -95,6 +95,38 @@ export async function runAgentInApp(p: RunParams): Promise<AgentRun> {
   }
   const engine = new AgentEngine({ ...depsFor(agent, await usedToday(agent.id)), ...(p.onUpdate ? { onUpdate: p.onUpdate } : {}) })
   const run = await engine.run(p.input, { ...(p.history ? { history: p.history } : {}), ...(p.signal ? { signal: p.signal } : {}) })
+  saveRun(p.person.userId, run)
+  await reportRunUsage(run)
+  return run
+}
+
+export interface ConfinedRunParams extends Omit<RunParams, 'approve' | 'history'> {
+  /** Restreint l'hote des outils (une demande : le passage vise seulement). */
+  confine: (host: AgentToolHost) => AgentToolHost
+}
+
+/**
+ * Lance un agent sur une tache bornee (une demande en commentaire,
+ * agentRequests.ts) : ses outils passent par un hote confine, sans
+ * sous-agents, sans accord a demander et sans changement de mode. `agent` :
+ * deja reduit aux droits de la tache. Les outils des plugins : lecture seule.
+ */
+export async function runAgentConfined(p: ConfinedRunParams): Promise<AgentRun> {
+  const { agent } = p
+  assertAgentUsable(agent, p.vaultId)
+  if (!aiService.connections().length) throw new Error('Aucune IA configurée : ajoutez une connexion dans Paramètres → IA.')
+  const person = { canWrite: p.person.canWrite }
+  const { host, pluginTools } = appToolParts(p)
+  const actor: ToolActor = { agentId: agent.id, agentName: agent.name, onBehalfOf: { userId: p.person.userId, displayName: p.person.displayName } }
+  const tools = new ToolBox({
+    agent, person, actor, runtime: 'app', host: p.confine(host.withPresence(agent, p.person.displayName)),
+    pluginTools: pluginTools.filter(t => t.spec.action === 'read'),
+  })
+  const engine = new AgentEngine({
+    agent, person, actor, tools, chat: req => aiService.chat(req, agent.connectionId), usedToday: await usedToday(agent.id),
+    ...(p.onUpdate ? { onUpdate: p.onUpdate } : {}),
+  })
+  const run = await engine.run(p.input, p.signal ? { signal: p.signal } : {})
   saveRun(p.person.userId, run)
   await reportRunUsage(run)
   return run

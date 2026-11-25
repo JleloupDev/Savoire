@@ -9,7 +9,7 @@
 // ('direct' ou 'propose') et une portee a respecter pour chaque note.
 import { textFingerprint, type AgentScope, type ToolActor, type ToolInputSchema, type ToolParamSchema, type ToolResult, type ToolSource, type ToolSpec } from '@savoire/plugin-api'
 import { ANCHOR_LOST, resolveAnchor } from './anchor'
-import { HostError, type AgentToolHost, type HostNote, type HostNoteRef } from './host'
+import { HostError, type AgentToolHost, type HostNote, type HostNoteRef, type HostReviewEntry } from './host'
 import {
   alignBlocks, diffBlocks, findBlock, findSections, mergeSnapshot, noteSections, parseLines, refBlocks, renderBlocks, renderChanges, showRef, snapshotOf, stripRefLines,
   type NoteSection, type NoteSnapshot, type RefBlock,
@@ -17,6 +17,8 @@ import {
 import { MAX_PATCH_OPS, PATCH_OPS, applyTextChanges, blockChange, orderChanges, parsePatchOps, rangeChange, type PatchOp } from './patch'
 import { pathInScope } from './policy'
 import { sharedReadMemory, type ReadMemory } from './readMemory'
+import { MAX_AGENT_COMMENT_CHARS, MAX_NEW_COMMENTS, NEW_COMMENTS_WINDOW_MS } from './requests'
+import { guardTyping } from './typingGuard'
 import { countOccurrences, findOccurrence, folderOf, notePath, setPropertyChange, titleOf, type TextChange } from './text'
 import { alreadyReviewed, type WatchReview } from './watch'
 import { CONTEXT_TOOLS } from './contextTools'
@@ -28,6 +30,10 @@ export interface CoreToolContext {
   scope?: AgentScope
   /** Ce que les agents ont deja lu (versions, memoire). Absent : la memoire du processus. */
   memory?: ReadMemory
+  /** La personne vient d'accepter cet appel (mode « demander ») : elle sait ce qui va s'ecrire, meme la ou elle tape. */
+  approved?: boolean
+  /** L'heure (millisecondes), pour les tests. */
+  now?: () => number
 }
 
 export interface CoreTool {
@@ -144,12 +150,35 @@ function wrote(ctx: CoreToolContext, note: HostNote, changes: readonly TextChang
   return { snapshot, touched: [...touched] }
 }
 
+/** Comment proposer au lieu d'ecrire, dit a l'IA quand la personne tape la. */
+const PROPOSE_HINT = 'propose: true'
+
+/**
+ * Jamais dans le paragraphe ou la personne tape (typingGuard.ts) : leve avant
+ * toute ecriture directe. Sauf si elle vient d'accepter cet appel.
+ */
+async function notWhereTyping(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[]): Promise<void> {
+  if (ctx.approved) return
+  await guardTyping(ctx.host, note.id, note.content, changes, PROPOSE_HINT)
+}
+
+/** « propose: true » : l'agent choisit de proposer, meme s'il a le droit d'ecrire. */
+function proposing(args: Record<string, unknown>, ctx: CoreToolContext): CoreToolContext {
+  return (args.propose === true || args.propose === 'true') && ctx.mode !== 'propose' ? { ...ctx, mode: 'propose' } : ctx
+}
+
+const PROPOSE_PARAM: ToolParamSchema = {
+  type: 'boolean',
+  description: 'true : déposer la modification en proposition dans la Révision au lieu de l’écrire (par exemple quand la personne écrit dans ce paragraphe).',
+}
+
 /**
  * Ecrit des changements dans la note (mode direct) : une seule ecriture, sauf
  * un long texte, deroule par l'hote (effet de frappe). `expect` : l'hote
  * refuse si le texte n'est plus celui sur lequel les plages ont ete calculees.
  */
 async function writeChanges(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[], expect?: string): Promise<{ snapshot: NoteSnapshot; touched: RefBlock[] }> {
+  await notWhereTyping(ctx, note, changes)
   if (ctx.host.applyChanges) {
     await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}) })
   } else {
@@ -490,22 +519,45 @@ const listComments: CoreTool = {
 }
 
 // ── Commentaires ───────────────────────────────────────────────────────────
+//
+// Peu, et courts : un commentaire d'agent tient en une ou deux phrases, et un
+// agent n'en laisse pas plus de trois d'affilee sur une note.
+
+/** Le texte d'un commentaire d'agent : court, sinon refuse (l'IA le raccourcit). */
+function commentText(args: Record<string, unknown>): string {
+  const text = reqString(args, 'text', 10_000)
+  if (text.length > MAX_AGENT_COMMENT_CHARS) {
+    throw new HostError(`Commentaire trop long (${text.length} caractères) : ${MAX_AGENT_COMMENT_CHARS} au plus. Dites l’essentiel en une ou deux phrases.`)
+  }
+  return text
+}
+
+/** Les fils que cet agent vient d'ouvrir sur la note : encore ouverts, sans reponse de personne d'autre. */
+function recentOwnThreads(list: readonly HostReviewEntry[], actor: ToolActor, now: number): number {
+  const answered = new Set(list.filter(e => e.parentId && e.authorAgentId !== actor.agentId).map(e => e.parentId))
+  return list.filter(e => e.kind === 'comment' && !e.parentId && e.authorAgentId === actor.agentId && (e.status ?? 'open') === 'open'
+    && !answered.has(e.id) && now - Date.parse(e.createdAt) < NEW_COMMENTS_WINDOW_MS).length
+}
 
 const comment: CoreTool = {
   spec: {
     name: 'comment', title: 'Commenter', action: 'comment', runtimes: [...RUNTIMES],
-    description: 'Ouvre un fil de commentaire sur une note, ou sur un passage précis (quote : texte exact de la note).',
-    inputSchema: schema({ ...NOTE_REF, text: str('Le commentaire.'), quote: str('Passage visé, recopié à l’identique (facultatif).') }, ['text']),
+    description: `Ouvre un fil de commentaire dans la marge d’un passage précis (quote : texte exact de la note), ou sur la note. Préférez UN commentaire court, sur le passage concerné, à plusieurs ou à un long : une ou deux phrases, ${MAX_AGENT_COMMENT_CHARS} caractères au plus, et ${MAX_NEW_COMMENTS} nouveaux commentaires au plus à la suite sur une note. Pour répondre à un fil ou à une demande : reply.`,
+    inputSchema: schema({ ...NOTE_REF, text: str(`Le commentaire : une ou deux phrases (${MAX_AGENT_COMMENT_CHARS} caractères au plus).`), quote: str('Passage visé, recopié à l’identique (facultatif).') }, ['text']),
   },
   async run(args, ctx) {
     const note = await noteArg(args, ctx)
-    const text = reqString(args, 'text', 10_000)
+    const text = commentText(args)
     const quote = optString(args, 'quote', 2000)
     let range: { from: number; to: number } | undefined
     if (quote) {
       const at = findOccurrence(note.content, quote)
       if (at < 0) throw new HostError('Passage introuvable dans la note : recopiez-le à l’identique.')
       range = { from: at, to: at + quote.length }
+    }
+    const recent = recentOwnThreads(await ctx.host.listReview(note.id).catch(() => []), ctx.actor, ctx.now?.() ?? Date.now())
+    if (recent >= MAX_NEW_COMMENTS) {
+      throw new HostError(`Vous venez déjà de laisser ${recent} commentaires sur cette note : ${MAX_NEW_COMMENTS} au plus à la suite. Gardez les remarques les plus utiles ; la personne y répondra d’abord.`, 'denied')
     }
     const id = await ctx.host.comment(note.id, text, ctx.actor, range)
     return ok(`Commentaire ajouté sur ${note.path}.`, { data: { id }, sources: [source(note)] })
@@ -515,12 +567,36 @@ const comment: CoreTool = {
 const reply: CoreTool = {
   spec: {
     name: 'reply', title: 'Répondre', action: 'comment', runtimes: [...RUNTIMES],
-    description: 'Répond à un fil de commentaire (id rendu par list_comments).',
-    inputSchema: schema({ thread: str('Id du commentaire auquel répondre.'), text: str('La réponse.') }, ['thread', 'text']),
+    description: `Répond dans un fil de commentaire (id rendu par list_comments ou list_requests) : une ou deux phrases, ${MAX_AGENT_COMMENT_CHARS} caractères au plus. Répondre à une demande qui vous est adressée la clôt.`,
+    inputSchema: schema({ thread: str('Id du commentaire auquel répondre.'), text: str(`La réponse : une ou deux phrases (${MAX_AGENT_COMMENT_CHARS} caractères au plus).`) }, ['thread', 'text']),
   },
   async run(args, ctx) {
-    const id = await ctx.host.reply(reqString(args, 'thread', 200), reqString(args, 'text', 10_000), ctx.actor)
-    return ok('Réponse ajoutée.', { data: { id } })
+    const thread = reqString(args, 'thread', 200)
+    const id = await ctx.host.reply(thread, commentText(args), ctx.actor)
+    // Une demande adressee a cet agent : repondue, elle ne sera plus listee.
+    const closed = await ctx.host.closeRequest?.(thread, ctx.actor).catch(() => false) ?? false
+    return ok(closed ? 'Réponse ajoutée : la demande est close.' : 'Réponse ajoutée.', { data: { id, ...(closed ? { requestClosed: true } : {}) } })
+  },
+}
+
+// ── Demandes (selection + commentaire, requests.ts) ────────────────────────
+
+const listRequests: CoreTool = {
+  spec: {
+    name: 'list_requests', title: 'Demandes de la personne', action: 'read', runtimes: [...RUNTIMES],
+    description: 'Les demandes que la personne vous a adressées dans ses notes : elle a sélectionné un passage et écrit un commentaire pour vous (« Demander à… », ou @votre nom). Appelez-le quand elle parle de « mes demandes », de « ce que je t’ai demandé dans la note », ou d’un commentaire qu’elle vous a laissé. Pour chaque demande : lisez le passage, n’agissez que sur ce passage, puis répondez dans son fil avec reply (thread = id de la demande), en une ou deux phrases. Répondre clôt la demande : elle n’est plus listée, ne la traitez pas deux fois.',
+    inputSchema: schema({}),
+  },
+  async run(_args, ctx) {
+    if (!ctx.host.listRequests) throw new HostError('Les demandes sont indisponibles ici.', 'unavailable')
+    const list = (await ctx.host.listRequests(ctx.actor.agentId)).filter(r => pathInScope(ctx.scope, r.path))
+    if (!list.length) return ok('Aucune demande en attente pour vous.', { data: { requests: [] } })
+    const lines = list.flatMap(r => [
+      `- [${r.id}] ${r.path} (id : ${r.docId}), de ${r.author} : ${r.text}`,
+      r.quote ? `  passage : « ${r.quote.slice(0, 600).replace(/\n/g, ' ⏎ ')}${r.quote.length > 600 ? '…' : ''} »` : '  (sur la note entière)',
+    ])
+    return ok(`${list.length} demande(s) pour vous :\n${lines.join('\n')}\n\nRépondez à chacune dans son fil : reply, thread = l’id entre crochets.`,
+      { data: { requests: list }, sources: list.map(r => source({ id: r.docId, path: r.path })) })
   },
 }
 
@@ -530,9 +606,10 @@ const editNote: CoreTool = {
   spec: {
     name: 'edit_note', title: 'Modifier un passage', action: 'edit', runtimes: [...RUNTIMES],
     description: 'Remplace un passage d’une note. find : texte exact de la note, assez long pour être unique ; replace : le nouveau texte (vide pour supprimer).',
-    inputSchema: schema({ ...NOTE_REF, find: str('Passage à remplacer, recopié à l’identique.'), replace: str('Nouveau texte.'), occurrence: int('Quelle occurrence, à partir de 0 (si le passage revient plusieurs fois).'), why: str('Raison courte, montrée à la personne.') }, ['find', 'replace']),
+    inputSchema: schema({ ...NOTE_REF, find: str('Passage à remplacer, recopié à l’identique.'), replace: str('Nouveau texte.'), occurrence: int('Quelle occurrence, à partir de 0 (si le passage revient plusieurs fois).'), why: str('Raison courte, montrée à la personne.'), propose: PROPOSE_PARAM }, ['find', 'replace']),
   },
-  async run(args, ctx) {
+  async run(args, base) {
+    const ctx = proposing(args, base)
     const note = await noteArg(args, ctx)
     let find = rawString(args, 'find', 20_000)
     const replacement = rawString(args, 'replace', 200_000)
@@ -563,9 +640,10 @@ const appendNote: CoreTool = {
   spec: {
     name: 'append', title: 'Ajouter à la fin', action: 'edit', runtimes: [...RUNTIMES],
     description: 'Ajoute du texte Markdown à la fin d’une note.',
-    inputSchema: schema({ ...NOTE_REF, text: str('Texte à ajouter.'), why: str('Raison courte, montrée à la personne.') }, ['text']),
+    inputSchema: schema({ ...NOTE_REF, text: str('Texte à ajouter.'), why: str('Raison courte, montrée à la personne.'), propose: PROPOSE_PARAM }, ['text']),
   },
-  async run(args, ctx) {
+  async run(args, base) {
+    const ctx = proposing(args, base)
     const note = await noteArg(args, ctx)
     const raw = rawString(args, 'text', 200_000)
     if (!raw.trim()) throw new HostError('text est vide.')
@@ -702,9 +780,11 @@ const patchNote: CoreTool = {
         },
       },
       why: str('Raison courte, montrée à la personne.'),
+      propose: PROPOSE_PARAM,
     }, ['ops']),
   },
-  async run(args, ctx) {
+  async run(args, base) {
+    const ctx = proposing(args, base)
     const ops = parsePatchOps(args.ops)
     // La note : par path ou id ; sinon celle de l'ancre.
     const named = optString(args, 'id', 200) || optString(args, 'path', 1024)
@@ -874,6 +954,8 @@ const addImage: CoreTool = {
     let path = `${folder}${name}`
     for (let n = 1; await ctx.host.findNote({ path }); n++) path = `${folder}${name.slice(0, dot)} ${n}${name.slice(dot)}`
     guard(ctx, path)
+    // Le lien s'ajoute a la fin : pas si la personne y tape (verifie avant d'inscrire le fichier).
+    if (args.insert !== false) await notWhereTyping(ctx, note, [{ from: note.content.length, to: note.content.length, text: '' }])
     const file = await ctx.host.attachFile(fileId, path, note.id, ctx.actor)
     if (args.insert === false) return ok(`Image ajoutée : ${file.path}.`, { data: file, sources: [source(note)] })
     const fresh = await ctx.host.readNote({ id: note.id }) ?? note
@@ -888,7 +970,7 @@ const addImage: CoreTool = {
 
 /** Tous les outils du socle, dans l'ordre ou l'IA les voit. */
 export const CORE_TOOLS: readonly CoreTool[] = [
-  search, readNote, listNotes, backlinks, outgoingLinks, brokenLinks, listTags, notesWithTag, queryNotes, listComments,
+  search, readNote, listNotes, backlinks, outgoingLinks, brokenLinks, listTags, notesWithTag, queryNotes, listComments, listRequests,
   comment, reply,
   editNote, patchNote, appendNote, setProperty,
   createNote, createFolder, moveNote,

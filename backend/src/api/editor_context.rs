@@ -17,6 +17,12 @@
 //    personne les efface. Personnels, jamais ecrits dans la note.
 // Epingles et surlignages sont en base (ai_marks).
 //
+// La FRAPPE : quand la personne tape, l'application joint `typingAt` (l'heure
+// de sa derniere frappe) a l'entree, de temps en temps. Le serveur retient ou
+// elle tapait ; un agent qui ecrit par MCP recoit cet endroit avec son appel
+// (api/agents.rs, `typing`) et n'ecrit pas dans ce paragraphe tant que la
+// frappe a moins de 8 s.
+//
 // Routes (compte connecte) :
 //   POST   /api/v1/me/editor-context            ou je suis
 //   GET    /api/v1/me/ai-marks?vaultId=&docId=&kind=
@@ -67,6 +73,8 @@ const MAX_MARKS_PER_USER: i64 = 500;
 /// Au-dela, l'IA demande a la personne de confirmer avant d'agir.
 pub const STALE_SECONDS: u64 = 120;
 pub const MAX_SECONDS_AGO: i64 = 3600;
+/// Tant que la personne a tape il y a moins de ce delai, un agent n'ecrit pas dans son paragraphe.
+pub const TYPING_GUARD_MS: u64 = 8000;
 pub const MAX_BODY_KB: usize = 64;
 
 // ── Le contexte, en memoire ──────────────────────────────────────────────────
@@ -94,9 +102,23 @@ pub struct ContextEntry {
     pub received_at: Ts,
 }
 
+/// Ou la personne a tape en dernier.
+#[derive(Debug, Clone)]
+pub struct TypingEntry {
+    pub vault_id: String,
+    pub doc_id: String,
+    /// Empreinte du bloc ou elle tapait.
+    pub block_hash: String,
+    /// L'endroit du curseur (ancre de l'editeur).
+    pub anchor: Value,
+    /// Quand elle a tape, a l'horloge du serveur.
+    pub typed: Instant,
+}
+
 #[derive(Default)]
 pub struct ContextStore {
     users: DashMap<String, VecDeque<ContextEntry>>,
+    typing: DashMap<String, TypingEntry>,
 }
 
 impl ContextStore {
@@ -123,9 +145,23 @@ impl ContextStore {
         Some((found.clone(), now.saturating_duration_since(found.received).as_secs()))
     }
 
+    /// La personne a tape la (la derniere frappe l'emporte).
+    pub fn typed(&self, user: &str, e: TypingEntry) {
+        self.typing.insert(user.to_string(), e);
+    }
+
+    /// Ou elle tape en ce moment dans ce vault, et depuis combien de
+    /// millisecondes. None : elle ne tape pas (ou plus depuis TYPING_GUARD_MS).
+    pub fn typing(&self, user: &str, vault_id: &str, now: Instant) -> Option<(TypingEntry, u64)> {
+        let e = self.typing.get(user)?;
+        let age = now.saturating_duration_since(e.typed).as_millis() as u64;
+        (e.vault_id == vault_id && age < TYPING_GUARD_MS).then(|| (e.clone(), age))
+    }
+
     /// Le compte est supprime : plus rien de lui en memoire.
     pub fn forget(&self, user: &str) {
         self.users.remove(user);
+        self.typing.remove(user);
     }
 }
 
@@ -222,6 +258,17 @@ pub async fn publish(State(st): State<AppState>, Auth(p): Auth, Body(body): Body
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).take(MAX_HEADINGS).map(|h| cut(h, 200).0).collect())
         .unwrap_or_default();
+    let received = Instant::now();
+    let block_hash = cut(&text_of(o, "blockHash"), 32).0;
+    let client_at = o.get("at").and_then(Value::as_i64);
+    // Elle tapait ici : l'age de la frappe se compte a l'horloge de l'application
+    // (at - typingAt), puis on le reporte sur celle du serveur.
+    if let Some(typing_at) = o.get("typingAt").and_then(Value::as_i64) {
+        let ago = client_at.map(|at| (at - typing_at).clamp(0, 60_000) as u64).unwrap_or(0);
+        if let Some(typed) = received.checked_sub(Duration::from_millis(ago)) {
+            st.editor_contexts.typed(&p.sub, TypingEntry { vault_id: vault_id.clone(), doc_id: doc_id.clone(), block_hash: block_hash.clone(), anchor: anchor.clone(), typed });
+        }
+    }
     st.editor_contexts.push(&p.sub, ContextEntry {
         vault_id,
         doc_id,
@@ -232,10 +279,10 @@ pub async fn publish(State(st): State<AppState>, Auth(p): Auth, Body(body): Body
         before: cut_start(&text_of(o, "before"), MAX_AROUND_CHARS),
         after: cut(&text_of(o, "after"), MAX_AROUND_CHARS).0,
         heading_path,
-        block_hash: cut(&text_of(o, "blockHash"), 32).0,
+        block_hash,
         tab_id: cut(&text_of(o, "tabId"), 64).0,
-        client_at: o.get("at").and_then(Value::as_i64),
-        received: Instant::now(),
+        client_at,
+        received,
         received_at: now(),
     });
     Ok(no_content())
@@ -547,6 +594,11 @@ pub async fn tool(st: &AppState, user: &str, agent: &AgentRow, vaults: &[(String
                     }
                     text.push_str(&format!("Ancre : {}\n", e.anchor));
                     text.push_str(&format!("{hint}\n"));
+                    // Elle tape dans cette note : l'IA le sait avant d'ecrire.
+                    let typing = st.editor_contexts.typing(user, &e.vault_id, Instant::now()).is_some_and(|(t, _)| t.doc_id == e.doc_id);
+                    if typing {
+                        text.push_str("La personne écrit dans cette note en ce moment : n'écrivez pas dans son paragraphe. Attendez, ou proposez (propose: true).\n");
+                    }
                     data = json!({
                         "ageSeconds": age, "stale": stale, "hint": hint,
                         "vault": vault, "vaultId": e.vault_id, "noteId": e.doc_id, "path": e.path,
@@ -554,6 +606,9 @@ pub async fn tool(st: &AppState, user: &str, agent: &AgentRow, vaults: &[(String
                         "before": e.before, "after": e.after, "headingPath": e.heading_path, "blockHash": e.block_hash,
                         "anchor": e.anchor, "at": e.received_at, "tabId": e.tab_id,
                     });
+                    if typing {
+                        data["typing"] = json!(true);
+                    }
                 }
             }
             if !highlights.is_empty() {
@@ -630,6 +685,28 @@ mod tests {
         assert_eq!((then.doc_id.as_str(), age), ("selection", 10));
         // Avant tout ce qui est garde : la plus ancienne.
         assert_eq!(store.at("u", 3000, now).unwrap().0.doc_id, "selection");
+    }
+
+    #[test]
+    fn typing_is_known_for_a_few_seconds_in_its_vault_only() {
+        let store = ContextStore::new();
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let typed = |doc: &str, at: Instant| TypingEntry { vault_id: "v".into(), doc_id: doc.into(), block_hash: "h".into(), anchor: json!({}), typed: at };
+        assert!(store.typing("u", "v", t0).is_none());
+        store.typed("u", typed("a", t0));
+        let (e, age) = store.typing("u", "v", t0 + ms(3000)).unwrap();
+        assert_eq!((e.doc_id.as_str(), age), ("a", 3000));
+        // Un autre vault, une autre personne : rien.
+        assert!(store.typing("u", "autre", t0 + ms(3000)).is_none());
+        assert!(store.typing("bob", "v", t0 + ms(3000)).is_none());
+        // Apres 8 s sans frappe : elle ne tape plus.
+        assert!(store.typing("u", "v", t0 + ms(TYPING_GUARD_MS)).is_none());
+        // La derniere frappe l'emporte.
+        store.typed("u", typed("b", t0 + ms(9000)));
+        assert_eq!(store.typing("u", "v", t0 + ms(9500)).unwrap().0.doc_id, "b");
+        store.forget("u");
+        assert!(store.typing("u", "v", t0 + ms(9500)).is_none());
     }
 
     #[test]

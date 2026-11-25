@@ -24,6 +24,9 @@
 //    demande a l'IA). Un conseil ecarte non plus.
 //  - Contexte donne par la personne (addContext) : garde avec la note,
 //    joint a chaque analyse, sans arreter la veille.
+//  - Le paragraphe ou la personne tape (typing) n'est pas relu tant qu'elle
+//    y ecrit : il attend qu'elle ait fini (meme regle que les outils
+//    d'ecriture, typingGuard.ts).
 //
 // Sans DOM, sans reseau : l'hote donne l'IA (chat), dessine l'etat (onState)
 // et range les trouvailles (onFinding).
@@ -137,6 +140,12 @@ export interface BlockWatcherDeps {
   askLarge?(count: number, estimatedTokens: number): Promise<boolean>
   /** Revisions de la note (suggestions, commentaires, avec leur statut). */
   reviews?(note: WatchNote): WatchReview[]
+  /**
+   * Le bloc ou la personne tape en ce moment (son empreinte), et dans combien
+   * de temps il sera libre. Null : elle ne tape pas. La veille ne relit pas
+   * ce bloc avant.
+   */
+  typing?(note: WatchNote): { blockHash: string; freeInMs: number } | null
 }
 
 /** Les blocs que la veille relit. */
@@ -291,6 +300,8 @@ export class BlockWatcher {
   private warning: string | undefined
   private failures = 0
   private retryTimer: ReturnType<typeof setTimeout> | null = null
+  /** On reviendra au bloc ou la personne tape, quand elle aura fini. */
+  private typingTimer: ReturnType<typeof setTimeout> | null = null
   private visible: { from: number; to: number } = { from: 0, to: Number.MAX_SAFE_INTEGER }
 
   constructor(private readonly d: BlockWatcherDeps) {}
@@ -442,13 +453,27 @@ export class BlockWatcher {
     }
     // Apres une erreur passagere : on attend le nouvel essai.
     if (this.retryTimer) { this.emit(); return }
-    while (this.running.size < this.concurrency && this.queue.length) {
+    // Le bloc ou la personne tape attend : on ne travaille pas dans son paragraphe.
+    const held = this.d.typing?.(this.note)?.blockHash
+    while (this.running.size < this.concurrency) {
+      const next = this.queue.findIndex(b => b.hash !== held)
+      if (next < 0) break
       const refusal = this.d.canSpend?.() ?? null
       if (refusal) { this.fail(refusal); return }
-      const block = this.queue.shift()!
-      void this.analyze(this.note, block)
+      const [block] = this.queue.splice(next, 1)
+      void this.analyze(this.note, block!)
     }
+    this.waitTyping()
     this.emit()
+  }
+
+  /** Si le bloc ou elle tape est a relire : on y revient quand elle aura fini (un seul rappel). */
+  private waitTyping(): void {
+    if (this.typingTimer) { clearTimeout(this.typingTimer); this.typingTimer = null }
+    const note = this.note
+    const held = note ? this.d.typing?.(note) ?? null : null
+    if (!held || !this.queue.some(b => b.hash === held.blockHash)) return
+    this.typingTimer = setTimeout(() => { this.typingTimer = null; this.pump() }, Math.max(0, held.freeInMs) + 50)
   }
 
   private async analyze(note: WatchNote, block: NoteBlock): Promise<void> {
@@ -509,6 +534,7 @@ export class BlockWatcher {
 
   private cancelAll(): void {
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null }
+    if (this.typingTimer) { clearTimeout(this.typingTimer); this.typingTimer = null }
     for (const job of this.running.values()) job.ac.abort()
     this.running.clear()
   }

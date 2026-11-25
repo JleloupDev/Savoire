@@ -5,8 +5,12 @@
 // externes (ChatGPT, Claude), ADR-033.
 //
 //   tools.list  {}                         -> { tools: ToolSpec[] }   (catalogue du socle)
-//   tools.call  { name, args, mode, agent, actor, ticket, access }
+//   tools.call  { name, args, mode, agent, actor, ticket, access, typing? }
 //               -> { text, isError, sources? }
+//
+// `typing` : ou la personne tape en ce moment ({ docId, blockHash, anchor,
+// ageMs }), d'apres le contexte de l'editeur que le serveur garde. Un outil
+// n'ecrit pas dans ce paragraphe (agent-core/typingGuard.ts).
 //
 // Seul le serveur appelle ce pouvoir (la route publique le refuse). Il a deja
 // verifie l'agent, le vault et le mode ; il joint un TICKET d'ecriture et les
@@ -14,8 +18,8 @@
 // au-dessus d'un hote qui lit les journaux Yjs et renvoie au serveur ce qu'il
 // ecrit (POST /internal/indexer/vaults/{id}/write). Le serveur reverifie tout.
 import {
-  HostError, ToolBox, agentColor, coreCatalog, minimalChange, planTyping, titleOf,
-  type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostReviewEntry, type TextChange,
+  HostError, ToolBox, agentColor, coreCatalog, minimalChange, parseTypingSpot, planTyping, titleOf,
+  type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostRequest, type HostReviewEntry, type RequestState, type TextChange, type TypingSpot,
 } from '@savoire/agent-core'
 import {
   NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetUpdate,
@@ -78,7 +82,7 @@ interface ReviewValue {
   docId: string
   kind: HostReviewEntry['kind']
   text: string
-  author: { kind: 'user'; displayName: string } | { kind: 'agent'; agentName: string; onBehalfOf: { displayName: string } }
+  author: { kind: 'user'; displayName: string } | { kind: 'agent'; agentId?: string; agentName: string; onBehalfOf: { displayName: string } }
   createdAt: string
   parentId?: string
   status?: string
@@ -86,6 +90,8 @@ interface ReviewValue {
   replacement?: string
   proposalType?: string
   payload?: unknown
+  /** Demande adressee a un agent (ReviewService.ReviewRequest, agent-core/requests.ts). */
+  request?: { agentId: string; agentName?: string; via?: string; state: RequestState; entryId?: string; askedAt?: string; doneAt?: string }
 }
 
 const describe = (a: ReviewValue['author']): string =>
@@ -106,6 +112,13 @@ export class PeerToolHost implements AgentToolHost {
 
   /** Trouves dans l'arborescence, pas encore dans l'index (crees juste avant, par un autre appel). */
   private readonly late = new Map<string, string>()
+
+  /** Ou la personne tape en ce moment, d'apres le serveur ; posee par callTools. */
+  typingSpot: TypingSpot | null = null
+
+  async typing(docId: string): Promise<TypingSpot | null> {
+    return this.typingSpot?.docId === docId ? this.typingSpot : null
+  }
 
   private async paths(): Promise<Map<string, string>> {
     if (!this.pathCache) {
@@ -287,7 +300,36 @@ export class PeerToolHost implements AgentToolHost {
       id: e.id, kind: e.kind, text: e.text, author: describe(e.author), authorIsAgent: e.author?.kind === 'agent', createdAt: e.createdAt,
       ...(e.status ? { status: e.status } : {}), ...(e.parentId ? { parentId: e.parentId } : {}),
       ...(e.anchor ? { quote: e.anchor.quote } : {}), ...(e.replacement !== undefined ? { replacement: e.replacement } : {}),
+      ...(e.author?.kind === 'agent' && e.author.agentId ? { authorAgentId: e.author.agentId } : {}),
     }))
+  }
+
+  /** Les demandes ouvertes adressees a cet agent, dans les notes que la personne lit (requests.ts). */
+  async listRequests(agentId: string): Promise<HostRequest[]> {
+    const all = await this.reviewValues()
+    const paths = await this.paths()
+    return all.flatMap(e => {
+      const r = e.request
+      if (e.parentId || e.kind !== 'comment' || !r || r.agentId !== agentId || r.state !== 'open' || (e.status ?? 'open') !== 'open') return []
+      const path = paths.get(e.docId)
+      if (!path || !this.visible(e.docId, path)) return []
+      // Une relance : la demande est la reponse de la personne, pas la racine.
+      const ask = (r.entryId ? all.find(x => x.id === r.entryId && x.parentId === e.id) : undefined) ?? e
+      return [{ id: e.id, docId: e.docId, path, text: ask.text, quote: e.anchor?.quote ?? '', author: describe(ask.author), createdAt: r.askedAt ?? ask.createdAt }]
+    }).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
+  /** L'agent a repondu : sa demande ouverte sur ce fil est close. */
+  async closeRequest(rootId: string, actor: ToolActor): Promise<boolean> {
+    const all = await this.reviewValues()
+    let root = all.find(e => e.id === rootId)
+    while (root?.parentId) root = all.find(e => e.id === root!.parentId)
+    const r = root?.request
+    if (!root || !r || r.agentId !== actor.agentId || r.state !== 'open') return false
+    const log = await this.f.reviewLog()
+    const next = { ...root, request: { ...r, state: 'done', doneAt: this.now().toISOString() } }
+    await this.write({ ops: [{ target: 'index', ns: REVIEW_NS, update: b64(mapEntryUpdate(log?.updates ?? [], root.id, next)) }] })
+    return true
   }
 
   // ── Ecriture ─────────────────────────────────────────────────────────────
@@ -641,7 +683,7 @@ export async function callTools(f: PeerVaultFacade, method: string, params: unkn
     return { tools: [...core, ...(plugins ? (await plugins.specs()).filter(s => !taken.has(s.name)) : [])] }
   }
   if (method !== 'call') throw new HttpError(404, 'unknown_method', `Methode inconnue : tools.${method}.`)
-  const p = (params ?? {}) as { name?: unknown; args?: unknown; mode?: unknown; agent?: unknown; actor?: unknown; ticket?: unknown; access?: unknown }
+  const p = (params ?? {}) as { name?: unknown; args?: unknown; mode?: unknown; agent?: unknown; actor?: unknown; ticket?: unknown; access?: unknown; typing?: unknown }
   if (typeof p.name !== 'string' || typeof p.ticket !== 'string' || !p.agent || typeof p.agent !== 'object' || !p.actor || typeof p.actor !== 'object') {
     throw new HttpError(400, 'invalid_query', 'tools.call : name, agent, actor et ticket attendus.')
   }
@@ -650,6 +692,7 @@ export async function callTools(f: PeerVaultFacade, method: string, params: unkn
   const actor = p.actor as ToolActor
   const host = new PeerToolHost(f, parseAccess(p.access), p.ticket)
   host.presenceColor = agentColor(agent)
+  host.typingSpot = parseTypingSpot(p.typing)
   // Un outil de plugin : ses lectures et ecritures passent par le meme hote (ticket, ACL).
   const pluginTools = plugins && !coreCatalog('server').some(t => t.name === p.name) && (await plugins.specs()).some(s => s.name === p.name)
     ? await plugins.tools({ host, actor, paths: await host.visiblePaths() })
