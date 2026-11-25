@@ -23,6 +23,7 @@
     "@savoire/platform": "workspace:*",
     "@savoire/plugin-agenda": "workspace:*",
     "@savoire/plugin-agent-proofreader": "workspace:*",
+    "@savoire/plugin-ai-claude-code": "workspace:*",
     "@savoire/plugin-ai-mistral": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-base": "workspace:*",

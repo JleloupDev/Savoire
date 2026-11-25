@@ -3,8 +3,10 @@
 //
 // Parametres → IA : les connexions de la personne a des services d'IA.
 // La cle reste dans l'application (ce poste) ; les plugins ne la voient pas.
+// Un fournisseur servi par un programme du poste (Claude par l'abonnement,
+// bureau) n'a ni adresse ni cle : on montre le programme trouve.
 import { useEffect, useState } from 'react'
-import type { AIConnection, AIService } from '@savoire/application'
+import type { AIConnection, AIProgram, AIProgramStatus, AIService } from '@savoire/application'
 import { DEFAULT_TRANSCRIPTION_MODEL, browserDictationAvailable, dictationSourceLabel, loadDictationSettings, saveDictationSettings, type DictationSettings } from './dictation'
 
 const INPUT: React.CSSProperties = {
@@ -46,6 +48,7 @@ export function AISettings({ ai }: { ai: AIService }) {
     setBusy(false)
   }
   const provider = draft ? ai.provider(draft.providerId) : undefined
+  const runner = draft ? ai.runnerFor(draft.providerId) : undefined
 
   return (
     <div data-testid="ai-settings" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 620 }}>
@@ -61,7 +64,7 @@ export function AISettings({ ai }: { ai: AIService }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600 }}>{c.name}{c.isDefault && <span style={{ fontWeight: 400, color: 'var(--text-faint)' }}> · par défaut</span>}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {ai.provider(c.providerId)?.name ?? c.providerId} · {c.model || 'modèle à choisir'} · {c.baseUrl}
+              {ai.provider(c.providerId)?.name ?? c.providerId} · {c.model || 'modèle à choisir'} · {ai.runnerFor(c.providerId) ? 'sur cet ordinateur' : c.baseUrl}
             </div>
           </div>
           <button style={BTN} onClick={() => edit(c)}>Modifier</button>
@@ -80,15 +83,19 @@ export function AISettings({ ai }: { ai: AIService }) {
           {provider?.description && <><span /><div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{provider.description}</div></>}
           <label>Nom</label>
           <input data-testid="ai-name" style={INPUT} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} />
-          <label>Adresse</label>
-          <input data-testid="ai-url" style={INPUT} value={draft.baseUrl} placeholder="https://…/v1" onChange={e => setDraft({ ...draft, baseUrl: e.target.value })} />
-          <label>Clé API</label>
-          <div>
-            <input data-testid="ai-key" style={INPUT} type="password" autoComplete="off" value={draft.apiKey}
-              placeholder={provider?.requiresKey === false ? 'Pas de clé pour un service local' : 'sk-…'}
-              onChange={e => setDraft({ ...draft, apiKey: e.target.value })} />
-            {provider?.keyUrl && <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Obtenir une clé</a>}
-          </div>
+          {runner?.program ? <ProgramRow program={runner.program} /> : !runner && (
+            <>
+              <label>Adresse</label>
+              <input data-testid="ai-url" style={INPUT} value={draft.baseUrl} placeholder="https://…/v1" onChange={e => setDraft({ ...draft, baseUrl: e.target.value })} />
+              <label>Clé API</label>
+              <div>
+                <input data-testid="ai-key" style={INPUT} type="password" autoComplete="off" value={draft.apiKey}
+                  placeholder={provider?.requiresKey === false ? 'Pas de clé pour un service local' : 'sk-…'}
+                  onChange={e => setDraft({ ...draft, apiKey: e.target.value })} />
+                {provider?.keyUrl && <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Obtenir une clé</a>}
+              </div>
+            </>
+          )}
           <label>Modèle</label>
           <div style={{ display: 'flex', gap: 6 }}>
             <input data-testid="ai-model" style={INPUT} list="ai-models" value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} />
@@ -117,6 +124,43 @@ export function AISettings({ ai }: { ai: AIService }) {
       {status && <div data-testid="ai-status" style={{ fontSize: 12, color: status.ok ? 'var(--green, #16a34a)' : 'var(--danger, #dc2626)' }}>{status.text}</div>}
       <DictationSection connections={connections} />
     </div>
+  )
+}
+
+/** Le programme du poste d'un fournisseur local : trouve, choisi, sa version. */
+function ProgramRow({ program }: { program: AIProgram }) {
+  const [status, setStatus] = useState<AIProgramStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const run = async (job: () => Promise<AIProgramStatus>) => {
+    setBusy(true); setError(null)
+    try { setStatus(await job()) } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    setBusy(false)
+  }
+  useEffect(() => { void run(() => program.status()) }, [program])
+  const problem = error ?? status?.error
+  return (
+    <>
+      <label>Programme</label>
+      <div data-testid="ai-program" style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+        <div>
+          {!status ? 'Recherche du programme claude…'
+            : status.found ? <>claude {status.chosen ? 'choisi' : 'trouvé'} : <code>{status.path}</code>{status.version ? ` (${status.version})` : ''}</>
+            : 'Programme claude introuvable.'}
+        </div>
+        {problem && <div style={{ color: 'var(--danger, #dc2626)', lineHeight: 1.4 }}>{problem}</div>}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button style={BTN} disabled={busy} data-testid="ai-program-choose" onClick={() => void run(() => program.choose())}>Choisir le programme…</button>
+          {status?.chosen && <button style={BTN} disabled={busy} onClick={() => void run(() => program.forget())}>Le chercher sur l’ordinateur</button>}
+          <button style={BTN} disabled={busy} onClick={() => void run(() => program.status())}>Vérifier</button>
+        </div>
+        <div style={{ color: 'var(--text-faint)', fontSize: 11, lineHeight: 1.5 }}>
+          Savoire lance Claude Code, installé et connecté sur cet ordinateur ; vos demandes passent par votre abonnement.
+          Savoire ne lit pas vos identifiants Claude. La première fois, lancez « claude » dans un terminal pour vous connecter.
+          Claude n’a que les outils de Savoire, avec les droits de l’agent qui l’utilise.
+        </div>
+      </div>
+    </>
   )
 }
 

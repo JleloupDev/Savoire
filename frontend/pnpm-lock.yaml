@@ -227,6 +227,9 @@ importers:
       '@savoire/plugin-agent-proofreader':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-agent-proofreader
+      '@savoire/plugin-ai-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-ai-claude-code
       '@savoire/plugin-ai-mistral':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-ai-mistral
@@ -673,6 +676,16 @@ importers:
         version: 5.9.3
 
   ../packages/plugins/plugin-agent-proofreader:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-ai-claude-code:
     dependencies:
       '@savoire/plugin-api':
         specifier: workspace:*

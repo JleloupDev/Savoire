@@ -50,6 +50,7 @@ export default defineConfig({
       '@savoire/plugin-word': src('plugin-word'),
       '@savoire/plugin-agent-proofreader': src('plugin-agent-proofreader'),
       '@savoire/plugin-ai-mistral': src('plugin-ai-mistral'),
+      '@savoire/plugin-ai-claude-code': src('plugin-ai-claude-code'),
       // Avant '@savoire/plugin-page' : un alias vise aussi ses sous-chemins.
       '@savoire/plugin-page/adapter': path.resolve(__dirname, '../../../../packages/plugins/plugin-page/src/adapter/index.ts'),
       '@savoire/plugin-page': src('plugin-page'),

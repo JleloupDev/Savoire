@@ -18,7 +18,7 @@
 // son code : son entree recopie alors son manifeste, et un test verifie que la
 // copie reste fidele. Un plugin preinstalle est charge au demarrage ; le store
 // lit son manifeste directement.
-import { sandboxFrameUrl } from './tauriRuntime'
+import { isAndroidRuntime, isTauriRuntime, sandboxFrameUrl } from './tauriRuntime'
 import { selectNeededEntries } from './pluginNeeds'
 import type { PluginManifest, VaultPlugin } from '@savoire/plugin-api'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -53,6 +53,8 @@ export interface StoreEntry {
   formerIds?: string[]
   /** Paquet du Savoire Store (code signe, telecharge), pas livre avec Savoire. */
   fromStore?: boolean
+  /** Application de bureau seulement (il lance un programme du poste) : absent ailleurs. */
+  desktopOnly?: boolean
   load(ctx: PluginLoadContext): Promise<VaultPlugin>
 }
 
@@ -413,6 +415,21 @@ export const STORE_CATALOG: StoreEntry[] = [
     load: async () => (await import('@savoire/plugin-ai-mistral')).default,
   },
   {
+    // Claude avec l'abonnement de la personne : l'appli de bureau lance son programme claude.
+    id: 'plugin-ai-claude-code', preinstalled: false, desktopOnly: true,
+    manifest: {
+      id: 'plugin-ai-claude-code',
+      trust: 'verified',
+      name: 'Claude (abonnement)',
+      version: '0.0.1',
+      description: 'Parler à Claude avec votre abonnement, par Claude Code installé sur cet ordinateur (application de bureau)',
+      scope: 'personal',
+      permissions: ['ai'],
+    },
+    extensions: [],
+    load: async () => (await import('@savoire/plugin-ai-claude-code')).default,
+  },
+  {
     id: 'plugin-chat', preinstalled: false,
     manifest: {
       id: 'plugin-chat',
@@ -508,9 +525,10 @@ export function removePackageEntry(id: string): void {
   if (packageEntries.delete(id)) for (const cb of catalogListeners) cb()
 }
 
-/** Tout le catalogue : les plugins de Savoire, puis les paquets du store. */
-export function catalogEntries(): StoreEntry[] {
+/** Tout le catalogue : les plugins de Savoire, puis les paquets du store. Hors bureau, sans ceux du bureau. */
+export function catalogEntries(desktop: boolean = isTauriRuntime() && !isAndroidRuntime()): StoreEntry[] {
   return [...STORE_CATALOG, ...[...packageEntries.values()].filter(e => !STORE_CATALOG.some(s => s.id === e.id))]
+    .filter(e => desktop || !e.desktopOnly)
 }
 
 export function findCatalogEntry(id: string): StoreEntry | undefined {
