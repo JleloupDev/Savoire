@@ -184,7 +184,8 @@ Pour ecrire, ne reecrivez pas la note : patch_note retouche un bloc par sa refer
 Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
 (drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
 Vous agissez sous le nom d'un agent, avec ses droits : une action refusee ou en attente de validation ne se refait pas. \
-Pour passer de l'edition (modifications directes) a la revision (propositions dans Revision), ou l'inverse : request_mode, avec l'accord de la personne.";
+Pour passer de l'edition (modifications directes) a la revision (propositions dans Revision), ou l'inverse : request_mode, avec l'accord de la personne. \
+Quand la personne dit « ici », « ce passage », « ca » ou « la selection », appelez get_context : il rend la note ouverte, sa selection et ses surlignages.";
 pub const MAX_MCP_BYTES: usize = 256 * 1024;
 
 pub fn rpc_error(id: Value, code: i64, message: &str) -> Value {
@@ -314,12 +315,16 @@ async fn list_tools(st: &AppState, p: &Principal) -> Value {
     let Ok(agent) = token_agent(st, p).await else { return tools() };
     let modes = mode_tools(p, &agent);
     let cat = catalog_for(st, p, &agent).await;
+    // Contexte de l'editeur (get_context, list_pins) : servi ici, avec ou sans catalogue.
+    let context = if agents::mode_for(&agent.definition, "read") == "deny" { vec![] } else { super::editor_context::mcp_tools() };
     if cat.is_empty() {
         let mut out = tools().as_array().cloned().unwrap_or_default();
         out.extend(modes);
+        out.extend(context);
         return json!(out);
     }
     let mut out = vec![tools()[0].clone()];
+    out.extend(context);
     for t in cat {
         let action = t.get("action").and_then(Value::as_str).unwrap_or("read");
         if agents::mode_for(&agent.definition, action) == "deny" {
@@ -575,6 +580,7 @@ async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Valu
         "list_vaults" => list_vaults_tool(st, p).await,
         GET_MODE => get_mode_tool(st, p, &args).await,
         agents::REQUEST_MODE => request_mode_tool(st, p, &args).await,
+        n if super::editor_context::is_tool(n) => context_tool(st, p, n, &args).await,
         _ => match agent_tool(st, p, &name, &args).await {
             // Pas de catalogue (pair absent, ancien pair) : les outils de lecture d'avant.
             Ok(None) => match name.as_str() {
@@ -626,6 +632,18 @@ async fn list_vaults_tool(st: &AppState, p: &Principal) -> Result<Value, ToolFai
         out.push_str(&format!("- {} (id : {}, role : {})\n", v.name, v.id, v.role));
     }
     Ok(tool_text(&out))
+}
+
+/// Ou travaille la personne, ses epingles (api/editor_context.rs), pour l'agent du jeton.
+async fn context_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String, Value>) -> Result<Value, ToolFailure> {
+    let agent = token_agent(st, p).await?;
+    let list: Vec<(String, String)> = vaults(st, p).await?.into_iter().map(|v| (v.id, v.name)).collect();
+    let r = super::editor_context::tool(st, &p.sub, &agent, &list, name, args).await?;
+    let mut out = if r.is_error { tool_error(&r.text) } else { tool_text(&r.text) };
+    if let Some(data) = r.data {
+        out["structuredContent"] = data;
+    }
+    Ok(out)
 }
 
 async fn search_tool(st: &AppState, p: &Principal, args: &Map<String, Value>) -> Result<Value, ToolFailure> {

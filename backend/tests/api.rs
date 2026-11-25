@@ -668,7 +668,8 @@ async fn mcp_protocol() {
     let notif = app.http.post(app.url("/api/mcp")).bearer_auth(&token).json(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).send().await.unwrap();
     assert_eq!(notif.status(), 202);
     let tools = app.post(&token, "/api/mcp", json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).await;
-    assert_eq!(tools.1["result"]["tools"].as_array().unwrap().len(), 4);
+    // Les quatre outils de lecture, plus le contexte de l'editeur (get_context, list_pins).
+    assert_eq!(tools.1["result"]["tools"].as_array().unwrap().len(), 6);
     let call = app.post(&token, "/api/mcp", json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "list_vaults" } })).await;
     assert!(call.1["result"]["content"][0]["text"].as_str().unwrap().contains("Journal"));
     let missing = app.post(&token, "/api/mcp", json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "search", "arguments": { "vault": "Journal" } } })).await;

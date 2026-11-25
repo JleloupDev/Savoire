@@ -79,6 +79,7 @@ pub async fn erase(st: &AppState, user_id: &str) -> AppResult<Erasure> {
     delete_at_identity_provider(st, user_id).await?;
     // Des maintenant : un jeton encore valide ne recree pas le compte.
     st.auth.mark_deleted(user_id);
+    st.editor_contexts.forget(user_id);
     let owned: Vec<String> = repos::vaults_owned_by(&mut c, user_id).await?.into_iter().map(|(id, _)| id).collect();
     let joined: Vec<String> = sqlx::query("SELECT vault_id FROM vault_members WHERE user_id = $1")
         .bind(user_id)
@@ -100,6 +101,7 @@ pub async fn erase(st: &AppState, user_id: &str) -> AppResult<Erasure> {
             "DELETE FROM vault_key_wraps WHERE user_id = $1",
             "DELETE FROM vault_member_identities WHERE user_id = $1",
             "DELETE FROM access_tokens WHERE user_id = $1",
+            "DELETE FROM ai_marks WHERE user_id = $1",
             "DELETE FROM feedback_reports WHERE user_id = $1",
         ] {
             sqlx::query(sql).bind(user_id).execute(&mut *tx).await?;

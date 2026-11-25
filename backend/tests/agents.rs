@@ -140,7 +140,7 @@ async fn chatgpt_acts_through_the_peer_with_the_agent_rights() {
     // Le catalogue : ce que l'agent a le droit de faire, avec le parametre vault.
     let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["list_vaults", "search", "append", "move_note", "get_mode", "request_mode"]);
+    assert_eq!(names, vec!["list_vaults", "get_context", "list_pins", "search", "append", "move_note", "get_mode", "request_mode"]);
     let append = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "append").unwrap().clone();
     assert_eq!(append["inputSchema"]["required"][0], "vault");
     assert_eq!(append["annotations"]["readOnlyHint"], false);
@@ -213,7 +213,7 @@ async fn propose_mode_cannot_touch_notes_and_tokens_without_agent_stay_read_only
     let plain = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "lecture" })).await.1["token"].as_str().unwrap().to_string();
     let tools = mcp(&app, &plain, 2, "tools/list", json!({})).await;
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["list_vaults", "search"]);
+    assert_eq!(names, vec!["list_vaults", "get_context", "list_pins", "search"]);
     let denied = mcp(&app, &plain, 3, "tools/call", json!({ "name": "append", "arguments": { "vault": v, "id": doc, "text": "x" } })).await;
     assert_eq!(denied["result"]["isError"], true);
 }
@@ -285,7 +285,7 @@ async fn oauth_token_carries_the_chosen_agent() {
     // Les droits et le nom de l'agent choisi a l'ecran d'accord.
     let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["list_vaults", "search", "append", "get_mode", "request_mode"]);
+    assert_eq!(names, vec!["list_vaults", "get_context", "list_pins", "search", "append", "get_mode", "request_mode"]);
     let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "append", "arguments": { "vault": "Journal", "id": doc, "text": "x" } })).await;
     assert_eq!(r["result"]["isError"], false, "{r}");
     let author: Value = sqlx::query_scalar("SELECT author FROM operations_log WHERE resource_id = $1").bind(&doc).fetch_one(&app.state.db).await.unwrap();

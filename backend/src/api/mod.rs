@@ -8,6 +8,7 @@ pub mod account;
 pub mod agents;
 pub mod admin;
 pub mod attachments;
+pub mod editor_context;
 pub mod indexer;
 pub mod misc;
 pub mod notion;

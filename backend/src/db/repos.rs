@@ -1217,7 +1217,7 @@ pub async fn erase_vault_rows(c: &mut PgConnection, vault_id: &str) -> AppResult
         .bind(format!("{vault_id}:"))
         .execute(&mut *c)
         .await?;
-    for table in ["publications", "edgesync_blobs", "vault_key_wraps", "vault_member_identities"] {
+    for table in ["publications", "edgesync_blobs", "vault_key_wraps", "vault_member_identities", "ai_marks"] {
         sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table} WHERE vault_id = $1"))).bind(vault_id).execute(&mut *c).await?;
     }
     // Jetons limites a des vaults : celui-ci en sort ; un jeton qui ne visait

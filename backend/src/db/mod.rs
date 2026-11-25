@@ -12,6 +12,7 @@
 // deja une (comme BeginIfNone cote .NET).
 
 pub mod agents;
+pub mod ai_marks;
 pub mod indexer_feed;
 pub mod migrate;
 pub mod repos;

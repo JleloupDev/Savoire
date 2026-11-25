@@ -37,6 +37,8 @@ pub struct Inner {
     pub agent_catalog: Mutex<Option<(Instant, Vec<serde_json::Value>)>>,
     /// Jetons Notion en attente d'etre repris par l'application (ADR-035).
     pub notion_tickets: DashMap<String, crate::api::notion::NotionTicket>,
+    /// Ou travaille chaque personne dans l'editeur, pour l'IA (en memoire : api/editor_context.rs).
+    pub editor_contexts: crate::api::editor_context::ContextStore,
 }
 
 impl std::ops::Deref for AppState {
@@ -65,6 +67,7 @@ impl AppState {
             agent_tickets: DashMap::new(),
             agent_catalog: Mutex::new(None),
             notion_tickets: DashMap::new(),
+            editor_contexts: crate::api::editor_context::ContextStore::new(),
         }))
     }
 
