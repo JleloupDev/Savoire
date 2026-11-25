@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenetre principale : les commandes de vault, l'index SQLite des vaults ouverts, la liste des serveurs Savoire et leurs sessions, la connexion a un serveur par le navigateur du systeme, la reception des evenements du disque, et la lecture de pages des sites autorises pour les plugins (wol.jw.org). Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page. Les fenetres de note (note-*) ont les memes droits ; elles demandent la session a la fenetre principale par evenement. Le MCP local (127.0.0.1, jeton) pour les clients MCP du poste. Les mises a jour signees de l'appli (chercher, telecharger, redemarrer).",
+  "description": "Fenetre principale : les commandes de vault, l'index SQLite des vaults ouverts, la liste des serveurs Savoire et leurs sessions, la connexion a un serveur par le navigateur du systeme, la reception des evenements du disque, et la lecture de pages des sites autorises pour les plugins (wol.jw.org). Aucun acces direct au systeme de fichiers, aucune boite de dialogue appelable depuis la page. Les fenetres de note (note-*) ont les memes droits ; elles demandent la session a la fenetre principale par evenement. Le MCP local (127.0.0.1, jeton) pour les clients MCP du poste. Claude par l'abonnement de la personne : le programme claude du poste, lance par Rust (chemin choisi dans une boite de dialogue native, jamais donne par la page). Les mises a jour signees de l'appli (chercher, telecharger, redemarrer).",
   "windows": [
     "main",
     "note-*"
@@ -17,6 +17,7 @@
     "note-window",
     "network",
     "mcp-local",
+    "claude-cli",
     "update"
   ]
 }

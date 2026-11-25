@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jean Leloup
+#
+# Claude par l'abonnement de la personne (src/claude_cli.rs) : Savoire lance
+# le programme claude (Claude Code) du poste. La page ne donne ni programme
+# ni arguments : seulement le message (par l'entree standard), le modele et
+# l'acces ou non aux outils de Savoire.
+
+[[set]]
+identifier = "claude-cli"
+description = "Trouver le programme claude, le faire choisir dans une boite de dialogue, lancer une demande et l'arreter."
+permissions = [
+  "allow-claude-cli-status",
+  "allow-claude-cli-choose",
+  "allow-claude-cli-start",
+  "allow-claude-cli-cancel",
+]

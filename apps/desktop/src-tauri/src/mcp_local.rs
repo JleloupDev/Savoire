@@ -74,10 +74,16 @@ struct Running {
     stop: Arc<AtomicBool>,
 }
 
+/// Les messages qui attendent la reponse de la page (mcp_local_reply).
+pub(crate) type Pending = Arc<Mutex<HashMap<u64, Sender<String>>>>;
+
+/// Passe un message a la page ; false : aucune fenetre ne l'a recu.
+pub(crate) type Relay = Arc<dyn Fn(u64, String) -> bool + Send + Sync>;
+
 pub struct McpLocal {
     config_file: PathBuf,
     running: Mutex<Option<Running>>,
-    pending: Arc<Mutex<HashMap<u64, Sender<String>>>>,
+    pending: Pending,
     next: Arc<AtomicU64>,
 }
 
@@ -103,6 +109,12 @@ impl McpLocal {
         Ok(cfg)
     }
 
+    /// La file des reponses attendues : un autre serveur de la page (le MCP
+    /// d'une demande a Claude, claude_cli.rs) repond par mcp_local_reply.
+    pub(crate) fn relay_parts(&self) -> (Pending, Arc<AtomicU64>) {
+        (self.pending.clone(), self.next.clone())
+    }
+
     fn status(&self) -> McpStatus {
         let cfg = read_config(&self.config_file).unwrap_or(McpConfig { port: DEFAULT_PORT, token: String::new() });
         let running = self.running.lock().map(|r| r.as_ref().map(|x| x.port)).unwrap_or(None);
@@ -121,7 +133,7 @@ impl McpLocal {
 // ── Jeton et fichier de reglages ─────────────────────────────────────────────
 
 /// 32 octets aleatoires du systeme, en hexadecimal.
-fn new_token() -> Result<String, String> {
+pub(crate) fn new_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     random_bytes(&mut bytes)?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
@@ -281,13 +293,15 @@ fn rpc_unavailable(message: &str) -> String {
     serde_json::json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32603, "message": message } }).to_string()
 }
 
-fn serve(app: AppHandle, listener: TcpListener, token: String, stop: Arc<AtomicBool>, pending: Arc<Mutex<HashMap<u64, Sender<String>>>>, next: Arc<AtomicU64>) {
+/// Sert un ecouteur local : chaque message accepte est passe a la page par
+/// `relay`, et sa reponse attendue dans `pending`.
+pub(crate) fn serve(listener: TcpListener, token: String, stop: Arc<AtomicBool>, pending: Pending, next: Arc<AtomicU64>, relay: Relay) {
     for conn in listener.incoming() {
         if stop.load(Ordering::SeqCst) {
             break;
         }
         let Ok(mut stream) = conn else { continue };
-        let (app, token, pending, next) = (app.clone(), token.clone(), pending.clone(), next.clone());
+        let (relay, token, pending, next) = (relay.clone(), token.clone(), pending.clone(), next.clone());
         std::thread::spawn(move || {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
             let req = match read_request(&mut stream) {
@@ -301,7 +315,7 @@ fn serve(app: AppHandle, listener: TcpListener, token: String, stop: Arc<AtomicB
             let id = next.fetch_add(1, Ordering::SeqCst);
             let (tx, rx) = mpsc::channel();
             pending.lock().unwrap().insert(id, tx);
-            if app.emit_to("main", REQUEST_EVENT, RequestPayload { id, body }).is_err() {
+            if !relay(id, body) {
                 pending.lock().unwrap().remove(&id);
                 return write_response(&mut stream, 503, &rpc_unavailable("Savoire n'a pas de fenetre ouverte."));
             }
@@ -337,7 +351,8 @@ pub fn mcp_local_start(app: AppHandle, state: tauri::State<'_, McpLocal>, port: 
     let stop = Arc::new(AtomicBool::new(false));
     let (pending, next) = (state.pending.clone(), state.next.clone());
     let (s, token) = (stop.clone(), cfg.token.clone());
-    std::thread::spawn(move || serve(app, listener, token, s, pending, next));
+    let relay: Relay = Arc::new(move |id, body| app.emit_to("main", REQUEST_EVENT, RequestPayload { id, body }).is_ok());
+    std::thread::spawn(move || serve(listener, token, s, pending, next, relay));
     *state.running.lock().map_err(|_| "verrou empoisonne")? = Some(Running { port: cfg.port, stop });
     Ok(state.status())
 }

@@ -12,6 +12,8 @@
 #[cfg(desktop)]
 mod board_frame;
 #[cfg(desktop)]
+mod claude_cli;
+#[cfg(desktop)]
 mod folders;
 // Public : le pont de test examples/index_stdio.rs s'en sert.
 #[cfg(desktop)]
@@ -66,6 +68,8 @@ pub fn run() {
             app.manage(notion::NotionConnection::load(&app.path().app_config_dir()?));
             // MCP local (ADR-033) : demarre a la demande de la page (Parametres > Agents).
             app.manage(mcp_local::McpLocal::new(&app.path().app_config_dir()?));
+            // Claude avec l'abonnement de la personne : le programme claude du poste.
+            app.manage(claude_cli::ClaudeCli::new(&app.path().app_config_dir()?, &app.path().app_cache_dir()?));
             app.manage(updater::PendingUpdate::default());
             Ok(())
         })
@@ -113,6 +117,10 @@ pub fn run() {
             mcp_local::mcp_local_status,
             mcp_local::mcp_local_new_token,
             mcp_local::mcp_local_reply,
+            claude_cli::claude_cli_status,
+            claude_cli::claude_cli_choose,
+            claude_cli::claude_cli_start,
+            claude_cli::claude_cli_cancel,
             updater::update_check,
             updater::update_download,
             updater::update_restart,
