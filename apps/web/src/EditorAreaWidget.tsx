@@ -275,6 +275,15 @@ export function DocumentPanelHost({
     viewRef.current = view
 
     const ctrl = view.controller
+    // Ce que l'IA vient de changer (surligne un instant dans la note) : qui
+    // annule depuis la carte, et ou voir le point (panneau Revision).
+    ctrl?.setAiChangeHost?.({
+      me: () => {
+        const account = refs.activeAccount.current
+        return account ? { id: account.userId, name: account.displayName } : null
+      },
+      showHistory: (docId, id) => window.dispatchEvent(new CustomEvent('savoire:show-ai-change', { detail: { docId, id } })),
+    })
     setController(ctrl)
     refs.onControllerReady.current(ctrl)
     if (ctrl) {

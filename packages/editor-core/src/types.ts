@@ -89,6 +89,8 @@ export interface EditorController {
   getVisibleRange?(): { from: number; to: number }
   /** Cartes de revision dans la note : l'hote les dessine (null : plus de cartes). */
   setAnnotationHost?(host: import('./Annotations').AnnotationHost | null): void
+  /** Cartes « ce que l'IA vient de changer » : l'hote dit qui annule, et montre le point dans l'historique. */
+  setAiChangeHost?(host: import('./AiChangeFlash').AiChangeHost | null): void
   /** Ouvre un brouillon (commenter, suggerer) dans la note ; false si impossible. */
   openAnnotationDraft?(draft: import('./Annotations').AnnotationDraft): boolean
   /** Le document ouvert dans cet editeur. */

@@ -4,6 +4,7 @@ import { applyHighlights, highlightsExtension, type EditorHighlight } from './Hi
 import { applyBlockMarks, blockMarksExtension, type BlockMark } from './BlockMarks'
 import { agentPresenceExtension, applyAgentPresence, type AgentPresence } from './AgentPresence'
 import { agentCursorsExtension } from './AgentCursors'
+import { aiChangeFlashFor, setAiChangeHost, type AiChangeHost } from './AiChangeFlash'
 import { aiMarksExtension, applyAiMarks, type AiMarkRange } from './AiMarks'
 import { setSuggestionSink, suggestionModeExtension, type SuggestionSink } from './SuggestionMode'
 import { annotationsExtension, closeAnnotations, openAnnotationDraft, setAnnotationHost, type AnnotationDraft, type AnnotationHost } from './Annotations'
@@ -467,6 +468,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
         ...(options.crdt?.agentPeers && options.crdt.onAgentPeersChange
           ? [agentCursorsExtension({ list: () => options.crdt!.agentPeers!(), subscribe: cb => options.crdt!.onAgentPeersChange!(cb) })]
           : []),
+        // Ce que l'IA vient de changer, surligne un instant (AiChangeFlash.ts).
+        ...aiChangeFlashFor(options.crdt, { docId: options.docId }),
         // Mode « source » : Markdown brut, aucune decoration. Meme document,
         // meme CRDT — seul le rendu change.
         ...(options.editorMode === 'source'
@@ -1065,6 +1068,11 @@ export class EditorCore implements EditorController, EditorPositionAPI {
   setAnnotationHost(host: AnnotationHost | null): void {
     if (!host) closeAnnotations(this.view)
     setAnnotationHost(this.view, host)
+  }
+
+  /** Hote des cartes « ce que l'IA vient de changer » : qui annule, ou voir le point (null : le retire). */
+  setAiChangeHost(host: AiChangeHost | null): void {
+    setAiChangeHost(this.view, host)
   }
 
   /** Ouvre un brouillon de commentaire ou de suggestion dans la note ; false si impossible. */
