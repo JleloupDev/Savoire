@@ -150,31 +150,25 @@ function wrote(ctx: CoreToolContext, note: HostNote, changes: readonly TextChang
  * refuse si le texte n'est plus celui sur lequel les plages ont ete calculees.
  */
 async function writeChanges(ctx: CoreToolContext, note: HostNote, changes: readonly TextChange[], expect?: string): Promise<{ snapshot: NoteSnapshot; touched: RefBlock[] }> {
-  signal(ctx, note.id, 'writing', writtenRange(changes))
-  try {
-    if (ctx.host.applyChanges) {
-      await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}) })
-    } else {
-      // De la fin vers le debut : les positions d'avant restent justes.
-      for (let i = changes.length - 1; i >= 0; i--) await ctx.host.replaceText(note.id, changes[i]!.from, changes[i]!.to, changes[i]!.text, ctx.actor)
-    }
-  } finally {
-    signal(ctx, note.id, 'idle')
+  if (ctx.host.applyChanges) {
+    await ctx.host.applyChanges(note.id, changes, ctx.actor, { typing: true, ...(expect ? { expect } : {}) })
+  } else {
+    // De la fin vers le debut : les positions d'avant restent justes.
+    for (let i = changes.length - 1; i >= 0; i--) await ctx.host.replaceText(note.id, changes[i]!.from, changes[i]!.to, changes[i]!.text, ctx.actor)
   }
+  // L'agent se montre la ou il vient d'ecrire (positions du texte d'apres).
+  // Pas de « idle » : l'agent part de lui-meme peu apres la fin de l'appel.
+  signal(ctx, note.id, 'writing', writtenRange(changes))
   return wrote(ctx, note, changes)
 }
 
 /** Remplace une plage : directement (avec la trace), ou en suggestion. */
 async function change(ctx: CoreToolContext, note: HostNote, from: number, to: number, text: string, what: string, why: string): Promise<ToolResult> {
   if (ctx.mode === 'propose') {
-    signal(ctx, note.id, 'writing', { from, to })
-    try {
-      const id = await ctx.host.suggest(note.id, from, to, text, ctx.actor, why || what)
-      return ok(`Proposition déposée dans la Révision de ${note.path} (${what}). Rien ne change tant que la personne ne l'accepte pas.`,
-        { data: { suggestionId: id }, sources: [source(note)] })
-    } finally {
-      signal(ctx, note.id, 'idle')
-    }
+    // Une proposition n'ecrit rien : pas de curseur.
+    const id = await ctx.host.suggest(note.id, from, to, text, ctx.actor, why || what)
+    return ok(`Proposition déposée dans la Révision de ${note.path} (${what}). Rien ne change tant que la personne ne l'accepte pas.`,
+      { data: { suggestionId: id }, sources: [source(note)] })
   }
   await writeChanges(ctx, note, [{ from, to, text }])
   await ctx.host.recordEdit(note.id, why ? `${what} : ${why}` : what, ctx.actor)
@@ -251,8 +245,7 @@ const readNote: CoreTool = {
     // Un fichier (PDF, tableur...) : son texte brut, sans blocs ni versions.
     if (!/\.md$/i.test(note.path)) {
       if (section || since || outline) throw new HostError('section, since et outline ne valent que pour une note Markdown.')
-      signal(ctx, note.id, 'reading')
-      signal(ctx, note.id, 'idle')
+      signal(ctx, note.id, 'reading', { from: 0, to: note.content.length })
       if (!lines) return ok(`${head}\n\n${note.content}${tail}`, { data: base, sources: [source(note)] })
       if (lines.from > total) throw new HostError(`Ce texte a ${total} ligne(s).`)
       const to = Math.min(total, lines.to)
@@ -303,8 +296,8 @@ const readNote: CoreTool = {
       else memory.setView(ctx.actor, mergeSnapshot(prior, snap, first, last), true)
     }
 
-    signal(ctx, note.id, 'reading', partial && blocks.length ? { from: blocks[first]!.from, to: blocks[last]!.end } : undefined)
-    try {
+    signal(ctx, note.id, 'reading', partial && blocks.length ? { from: blocks[first]!.from, to: blocks[last]!.end } : { from: 0, to: note.content.length })
+    {
       if (outline) {
         const all = noteSections(blocks).filter(s => s.first >= first && s.first <= last)
         return ok(`${head}\nVersion : ${snap.token} · ${blocks.length} bloc(s), ${total} ligne(s).\n\n${all.length ? `Plan :\n${outlineText(all, blocks)}` : 'Aucun titre.'}`,
@@ -332,8 +325,6 @@ const readNote: CoreTool = {
       const meta = [`Version : ${snap.token} · ${partial ? about.join(', ') : `${blocks.length} bloc(s), ${total} ligne(s)`}. Référence de chaque bloc entre ‹ ›.`, ...remarks, ...(miss ? [miss] : [])]
       const body = blocks.length ? renderBlocks(note.content, blocks, first, last) : note.content
       return ok(`${head}\n${meta.join('\n')}\n\n${body}${!partial || last === blocks.length - 1 ? tail : ''}`, { data, sources: [source(note)] })
-    } finally {
-      signal(ctx, note.id, 'idle')
     }
   },
 }
@@ -735,15 +726,10 @@ const patchNote: CoreTool = {
           .filter(e => e.kind === 'suggestion' && !e.parentId)
           .map(e => ({ kind: 'suggestion', status: (e.status as WatchReview['status']) ?? 'open', quote: e.quote ?? '', ...(e.replacement !== undefined ? { replacement: e.replacement } : {}) }))
         const ids: string[] = []
-        signal(ctx, current.id, 'writing', { from: changes[0]!.from, to: changes[changes.length - 1]!.to })
-        try {
-          for (const c of changes) {
-            const quote = current.content.slice(c.from, c.to)
-            if (quote && alreadyReviewed({ find: quote, replace: c.text, why: '' }, prior)) continue
-            ids.push(await ctx.host.suggest(current.id, c.from, c.to, c.text, ctx.actor, why || (!quote ? 'texte ajouté' : c.text ? 'passage remplacé' : 'passage supprimé')))
-          }
-        } finally {
-          signal(ctx, current.id, 'idle')
+        for (const c of changes) {
+          const quote = current.content.slice(c.from, c.to)
+          if (quote && alreadyReviewed({ find: quote, replace: c.text, why: '' }, prior)) continue
+          ids.push(await ctx.host.suggest(current.id, c.from, c.to, c.text, ctx.actor, why || (!quote ? 'texte ajouté' : c.text ? 'passage remplacé' : 'passage supprimé')))
         }
         if (!ids.length) return ok('Ces retouches sont déjà dans la Révision (en attente, acceptées ou refusées) : pas de nouvelle proposition.')
         return ok(`${ids.length} proposition(s) déposée(s) dans la Révision de ${current.path}. Rien ne change tant que la personne ne les accepte pas.`,

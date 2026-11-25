@@ -571,27 +571,27 @@ describe('effet de frappe', () => {
 })
 
 describe('presence', () => {
-  it('lire : reading (avec la partie lue), puis idle', async () => {
+  it('lire : reading, avec la partie lue (le serveur fait partir l agent apres l appel)', async () => {
     const host = new FineHost({ 'Plan.md': NOTE })
     const tb = box(host)
     await tb.call('read_note', { path: 'Plan.md' })
-    expect(host.signals).toEqual(['reading', 'idle'])
+    expect(host.signals).toEqual([`reading 0-${NOTE.length}`])
     host.signals = []
     await tb.call('read_note', { path: 'Plan.md', section: 'Suite > Bases' })
-    expect(host.signals).toEqual([`reading ${NOTE.lastIndexOf('### Bases')}-${NOTE.length}`, 'idle'])
+    expect(host.signals).toEqual([`reading ${NOTE.lastIndexOf('### Bases')}-${NOTE.length}`])
   })
 
-  it('ecrire : writing avec la plage ecrite, puis idle, meme si l ecriture echoue', async () => {
+  it('ecrire : writing avec la plage ecrite, une fois l ecriture faite ; rien si elle echoue', async () => {
     const host = new FineHost({ 'Plan.md': NOTE })
     const tb = box(host)
     const at = NOTE.indexOf('La suite du plan.')
     await tb.call('edit_note', { path: 'Plan.md', find: 'La suite du plan.', replace: 'Fin.' })
-    expect(host.signals).toEqual([`writing ${at}-${at + 4}`, 'idle'])
+    expect(host.signals).toEqual([`writing ${at}-${at + 4}`])
     host.signals = []
     host.applyChanges = async () => { throw new HostError('refusé', 'denied') }
     const r = await tb.call('append', { path: 'Plan.md', text: 'x' })
     expect(r.result.isError).toBe(true)
-    expect(host.signals.at(-1)).toBe('idle')
+    expect(host.signals.filter(s => s.startsWith('writing'))).toEqual([])
   })
 
   it('un hote dont la presence echoue ne fait pas echouer l outil', async () => {
