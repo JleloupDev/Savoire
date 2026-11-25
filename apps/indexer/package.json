@@ -14,6 +14,7 @@
     "@savoire/indexer-core": "workspace:*",
     "@savoire/infrastructure-sync": "workspace:*",
     "@savoire/plugin-agenda": "workspace:*",
+    "@savoire/plugin-animation": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-csv": "workspace:*",

@@ -150,6 +150,28 @@ export const STORE_CATALOG: StoreEntry[] = [
     },
   },
 
+  {
+    // editorDefault : ![[x.anim]] se joue dans les notes et les diapositives.
+    id: 'plugin-animation', preinstalled: true, core: true, editorDefault: true,
+    manifest: {
+      id: 'plugin-animation',
+      name: 'Animations',
+      version: '0.0.1',
+      description: 'Des animations en code avec anime.js (fichiers .anim), intégrables dans les notes et les diapositives, commentées au timecode',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write', 'agents'],
+      defaultActive: true,
+      official: true,
+    },
+    extensions: ['anim'],
+    load: async () => {
+      const mod = await import('@savoire/plugin-animation')
+      // Meme cadre isole que les boards (sa propre CSP).
+      mod.setAnimationFrameUrl(sandboxFrameUrl())
+      return mod.default
+    },
+  },
+
   // ── Store : a installer ────────────────────────────────────────────────────
   // Documents existants : un plugin par type (son indexeur se desactive avec lui).
   // Verifies par l'equipe Savoire (official) : ils tournent aussi sur le pair indexeur.

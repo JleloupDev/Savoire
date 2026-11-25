@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@savoire/plugin-agenda": "workspace:*",
+    "@savoire/plugin-animation": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-bible": "workspace:*",

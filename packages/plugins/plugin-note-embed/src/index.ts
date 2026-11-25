@@ -14,6 +14,16 @@ export { parseSubpath, extractSubpath, stripBlockIds } from './section'
 export { installLinkPreview, previewTargetOf, DEFAULT_PREVIEW_DELAY } from './hover'
 export type { EmbedSubpath } from './section'
 
+/** Le bloc d'un autre plugin reconnait-il ce texte ? */
+function claims(detect: RegExp | ((text: string) => boolean) | undefined, text: string): boolean {
+  try {
+    if (detect instanceof RegExp) { detect.lastIndex = 0; return detect.test(text) }
+    return typeof detect === 'function' ? detect(text) : false
+  } catch {
+    return false
+  }
+}
+
 const FULL_EMBED_RE = /^\s*!\[\[([^\]]+)\]\]\s*$/
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'])
 
@@ -168,7 +178,13 @@ const plugin: VaultPlugin = {
 
       // K1 — read-only embed: ![[filename]]
       // Une base (.base) a son propre rendu (plugin-base).
-      detect: (text) => { const e = parseEmbedBlock(text); return e !== null && !/\.(base|board|mp4|m4v|webm|mov|ogv|mp3|wav|ogg|oga|m4a|flac)$/i.test(e.targetPath) },
+      // Plus generalement, un plugin qui sait rendre ce document integre (son
+      // propre bloc le reconnait : animation .anim...) passe avant.
+      detect: (text) => {
+        const e = parseEmbedBlock(text)
+        if (e === null || /\.(base|board|mp4|m4v|webm|mov|ogv|mp3|wav|ogg|oga|m4a|flac)$/i.test(e.targetPath)) return false
+        return !(api.blocks.getAll?.() ?? []).some(s => s.type !== 'note-embed' && claims(s.detect, text))
+      },
 
       deserialize(raw) {
         return parseEmbedBlock(String(raw)) ?? parseEmbedTarget('')

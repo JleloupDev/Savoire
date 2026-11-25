@@ -30,6 +30,7 @@ export const CONTENT_PATTERNS: Readonly<Record<string, RegExp[]>> = {
   'plugin-footnotes': [/\[\^[^\]\s]+\]/],
   'plugin-base': [/^\s*```base\b/m, /!\[\[[^\]]+\.base\b/i],
   'plugin-board': [/!\[\[[^\]]+\.board\b/i],
+  'plugin-animation': [/!\[\[[^\]]+\.anim\b/i],
   'plugin-video': [/!\[\[[^\]]+\.(?:mp4|m4v|webm|mov|ogv|mp3|wav|ogg|oga|m4a|flac)\b/i],
   'plugin-mermaid': [/^\s*```mermaid\b/m, /^\s*>\s*\[!mermaid\]/im],
 }
