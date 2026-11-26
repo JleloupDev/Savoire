@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="quick_note_widget_label">Note rapide</string>
+    <string name="quick_note_widget_hint">Noter dans le journal…</string>
+    <string name="quick_note_widget_description">Une note tapée ici va à la fin de la note du jour.</string>
+</resources>

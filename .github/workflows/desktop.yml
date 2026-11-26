@@ -217,6 +217,8 @@ jobs:
         run: |
           set -o pipefail
           pnpm tauri android init --ci 2>&1 | tee build.log
+          # Activite principale et widget « Note rapide » (android/, voir le script).
+          node scripts/android-extras.mjs 2>&1 | tee -a build.log
           pnpm tauri android build --debug --apk --target aarch64 2>&1 | tee -a build.log
 
       - name: Fin du journal en cas d'echec

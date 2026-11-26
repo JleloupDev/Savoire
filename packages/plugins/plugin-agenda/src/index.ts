@@ -6,30 +6,53 @@
 // d'Obsidian. Une note du jour neuve part du modele « Note du jour » du
 // dossier des modeles s'il existe (variables : voir renderTemplate).
 import type { PluginAPI, VaultPlugin } from '@savoire/plugin-api'
-import { renderTemplate } from '@savoire/plugin-api'
 import { AgendaWidget, type AgendaHost } from './AgendaWidget'
-import { dailyNotePath, dailyTemplatePath, dateOfKey, dayKey } from './daily'
+import { dayKey } from './daily'
+import { ensureDailyNote } from './dailyFile'
+import { appendBlock, createCaptureFlusher, QUICK_CAPTURE_EVENT, type CaptureEvent } from './quickCapture'
 import { agendaAgentTools } from './agentTools'
 import { AGENDA_MANIFEST, allFiles } from './server'
 
 /** Ouvre la note de ce jour ; la cree d'abord si besoin, depuis le modele. */
 export async function openDailyNote(api: PluginAPI, key: string): Promise<string> {
-  const files = await allFiles(api)
-  const path = dailyNotePath(key, files)
-  if (!files.includes(path)) {
-    if (typeof api.vault.createFile !== 'function') throw new Error('Ce vault ne permet pas de créer de note.')
-    const template = dailyTemplatePath(files)
-    const text = template ? renderTemplate(await api.vault.readDocumentByPath(template), { title: key, date: dateOfKey(key) }) : ''
-    await api.vault.createFile(path)
-    const id = api.vault.resolveDocumentId(path)
-    if (text && id && typeof api.vault.editText === 'function') await api.vault.editText(id, current => current || text)
-    api.workspace?.notifyVaultChange?.()
-  }
+  const { path } = await ensureDailyNote(api, key, await allFiles(api))
   await api.workspace.openFile(path)
   return path
 }
 
+/**
+ * Note rapide (voir quickCapture.ts) : vide la file des notes tapees dans
+ * l'ecran de saisie, maintenant et a chaque nouvelle note. Rend l'arret.
+ */
+function startQuickCapture(api: PluginAPI, open: (key: string) => Promise<void>): () => void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return () => {}
+  const emit = (detail: CaptureEvent) => window.dispatchEvent(new CustomEvent(QUICK_CAPTURE_EVENT, { detail }))
+  const flusher = createCaptureFlusher({
+    store: localStorage,
+    append: async (day, markdown) => {
+      if (typeof api.vault.editText !== 'function') throw new Error('Ce vault ne permet pas d’écrire dans une note.')
+      const { path, id } = await ensureDailyNote(api, day, await allFiles(api))
+      await api.vault.editText(id, md => appendBlock(md, markdown))
+      return path
+    },
+    openToday: () => open(dayKey(new Date())),
+    emit,
+  })
+  const onEvent = (e: Event) => flusher.handle((e as CustomEvent<CaptureEvent>).detail)
+  // Une note restee dans la file (hors ligne, appli fermee trop tot) repart au retour du reseau.
+  const onOnline = () => void flusher.flush()
+  window.addEventListener(QUICK_CAPTURE_EVENT, onEvent)
+  window.addEventListener('online', onOnline)
+  emit({ type: 'ready' })
+  void flusher.flush()
+  return () => {
+    window.removeEventListener(QUICK_CAPTURE_EVENT, onEvent)
+    window.removeEventListener('online', onOnline)
+  }
+}
+
 export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribbon?: boolean } = {}): VaultPlugin {
+  let stopCapture: (() => void) | null = null
   return {
     manifest: AGENDA_MANIFEST,
 
@@ -67,11 +90,18 @@ export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribb
         label: 'Ouvrir la note de demain',
         run: () => { const d = new Date(); d.setDate(d.getDate() + 1); void open(dayKey(d)) },
       })
+
+      stopCapture?.()
+      stopCapture = startQuickCapture(api, open)
     },
 
-    async onunload() {},
+    async onunload() {
+      stopCapture?.()
+      stopCapture = null
+    },
   }
 }
 
 export { dailyNotes, dailyNotePath, dailyTemplatePath, dayKey, monthGrid } from './daily'
+export { appendBlock, captureMarkdown, createCaptureFlusher, readCaptureQueue, removeCaptureEntry, QUICK_CAPTURE_EVENT, QUICK_CAPTURE_KEY, QUICK_CAPTURE_OPEN_KEY, type CaptureEntry, type CaptureEvent } from './quickCapture'
 export default createAgendaPlugin()

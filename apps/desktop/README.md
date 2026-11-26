@@ -159,6 +159,27 @@ Côté code : `src-tauri/src/lib.rs` (les commandes de dossier sont réservées
 au bureau, Android n'a que celles des serveurs), `isAndroidRuntime`
 (`apps/web/src/tauriRuntime.ts`) et `initProfile` (`apps/web/src/profile.ts`).
 
+### Widget « Note rapide »
+
+Un widget d'écran d'accueil (une barre « Noter dans le journal… ») ouvre
+l'app sur un écran de saisie : un champ et un bouton « Ajouter ». Ce qui est
+tapé va à la fin de la **note du jour** (`Journal/AAAA-MM-JJ.md`, créée depuis
+le modèle « Note du jour » si besoin), en élément de liste précédé de l'heure.
+
+- L'écran tient dans le premier fichier de la page (`apps/web/src/start.ts`,
+  `quickCapture/`) et s'affiche avant le reste de l'appli, qui se charge
+  dessous.
+- Il ne fait que remplir une file dans le stockage de la page. Le plugin
+  Agenda la vide dès qu'un vault est ouvert (le dernier ouvert), au retour du
+  réseau, ou au prochain lancement : une note tapée hors ligne n'est pas
+  perdue (`packages/plugins/plugin-agenda/src/quickCapture.ts`).
+- Ailleurs que sur Android : `/?capture` ouvre le même écran.
+
+Les fichiers Android propres à Savoire (activité principale, widget, ses
+ressources) sont dans `android/`. Le projet généré par `tauri android init`
+ne les a pas : `scripts/android-extras.mjs` les y copie et déclare le widget
+dans `AndroidManifest.xml`, entre `init` et `build`.
+
 Construction : le job « Android » de `.github/workflows/desktop.yml` génère
 le projet Android (`src-tauri/gen/android`, ignoré par git) puis un **APK
 de debug** pour `arm64`, dans les « Artifacts » du lancement. Il est signé
@@ -170,6 +191,7 @@ local, il faut le SDK et le NDK Android (`ANDROID_HOME`, `NDK_HOME`), Java
 ```sh
 cd apps/desktop
 ./node_modules/.bin/tauri android init --ci
+node scripts/android-extras.mjs
 ./node_modules/.bin/tauri android build --debug --apk --target aarch64
 ```
 

@@ -395,7 +395,12 @@ export class EditorCore implements EditorController, EditorPositionAPI {
     const hotkeyEngine = Prec.highest(EditorView.domEventHandlers({
       keydown: (event, view) => this.pluginAPI.hotkeys?.handleKeyEvent(event, { editorView: view }) ?? false,
     }))
-    const offlineDoc = crdtMode ? '' : (options.initialContent ?? '')
+    // CRDT : l'editeur part du texte deja la. Il est vide en general (son etat
+    // arrive apres, en changements distants), mais pas si le document etait
+    // deja ouvert ailleurs (ecriture hors editeur, note rapide) : partir de
+    // rien laisserait l'editeur vide et decale du texte partage (yCollab ne
+    // suit que les changements posterieurs).
+    const offlineDoc = crdtMode ? (options.crdt?.sharedText?.().toString() ?? '') : (options.initialContent ?? '')
     const startState = EditorState.create({
       doc: offlineDoc,
       selection: crdtMode ? undefined : { anchor: offlineDoc.length },

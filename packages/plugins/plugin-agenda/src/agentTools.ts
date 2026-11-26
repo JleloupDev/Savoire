@@ -3,8 +3,9 @@
 //
 // Outils d'agent de l'agenda (ADR-033) : la note du jour d'une date (lire),
 // y ajouter du texte (la creer d'abord, depuis le modele, si besoin).
-import { changeNoteText, renderTemplate, type PluginAPI, type PluginTool } from '@savoire/plugin-api'
-import { dailyNotePath, dailyTemplatePath, dateOfKey, dayKey } from './daily'
+import { changeNoteText, type PluginAPI, type PluginTool } from '@savoire/plugin-api'
+import { dailyNotePath, dayKey } from './daily'
+import { ensureDailyNote } from './dailyFile'
 
 /** `2026-11-18`, « aujourd'hui », « demain », « hier ». */
 export function dayOf(input: unknown, now = new Date()): string {
@@ -44,18 +45,7 @@ export function agendaAgentTools(api: PluginAPI, files: () => Promise<string[]>)
         const text = typeof args.text === 'string' ? args.text.trim() : ''
         if (!text) throw new Error('Le texte est vide.')
         const key = dayOf(args.date)
-        const all = await files()
-        const path = dailyNotePath(key, all)
-        if (!all.includes(path)) {
-          if (typeof api.vault.createFile !== 'function') throw new Error('Ce vault ne permet pas de créer de note.')
-          const template = dailyTemplatePath(all)
-          const base = template ? renderTemplate(await api.vault.readDocumentByPath(template), { title: key, date: dateOfKey(key) }) : ''
-          await api.vault.createFile(path)
-          const id = api.vault.resolveDocumentId(path)
-          if (base && id && typeof api.vault.editText === 'function') await api.vault.editText(id, current => current || base)
-        }
-        const id = api.vault.resolveDocumentId(path)
-        if (!id) throw new Error('La note du jour n’a pas pu être créée.')
+        const { path, id } = await ensureDailyNote(api, key, await files())
         const r = await changeNoteText(api, ctx, id, md => {
           const sep = md === '' || md.endsWith('\n\n') ? '' : md.endsWith('\n') ? '\n' : '\n\n'
           return `${md}${sep}${text}\n`
