@@ -35,6 +35,7 @@ import { DocumentPipeline } from './DocumentPipeline'
 import { createLivePreviewExtension, pluginsLoadedEffect } from './LivePreview'
 import { foldAllHeadings, foldStorage, toggleFoldAtCursor, unfoldAll } from './Folding'
 import { imageInsertExtension, insertImageFiles } from './ImageInsert'
+import { fileDropExtension } from './FileDrop'
 import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSource } from './PropertiesPanel'
 import type { PropertiesHost } from './PropertiesPanel'
 import { brackets, dedentListItem, enterBeforeHeading, highlightSelectionMatches, indentListItem, listHome, tripleClickLine, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
@@ -440,6 +441,8 @@ export class EditorCore implements EditorController, EditorPositionAPI {
             ]
         ),
         ...(uploadImage ? [imageInsertExtension(uploadImage)] : []),
+        // Un fichier glisse depuis l'explorateur : sa reference (FileDrop.ts).
+        fileDropExtension(path => vault?.linkTarget?.(path) ?? path.replace(/\.md$/i, '')),
         // Aides d'ecriture (EditingAids.ts), rechercher (FindReplace.ts),
         // coller (SmartPaste.ts), position retenue (NotePosition.ts).
         spellcheck,

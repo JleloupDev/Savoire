@@ -4,7 +4,7 @@ import { Icon } from '@savoire/ui-components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DockviewReact } from 'dockview'
 import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps, DockviewDidDropEvent } from 'dockview'
-import { DocumentView, isOpenableWithoutPlugin } from '@savoire/editor-core'
+import { DocumentView, FILE_PATH_DRAG_TYPE, isOpenableWithoutPlugin } from '@savoire/editor-core'
 import type { EditorController } from '@savoire/editor-core'
 import { sessionTrees } from '@savoire/application'
 import type { IVaultSyncSession, DocumentLockState } from '@savoire/application'
@@ -701,7 +701,7 @@ function EditorAreaPanel({
         components={{ 'doc-editor': PanelDispatcher as React.FC<IDockviewPanelProps> }}
         tabComponents={{ 'doc-tab': DocumentTab as React.FC<IDockviewPanelProps> }}
         onDidDrop={(e: DockviewDidDropEvent) => {
-          const path = e.nativeEvent.dataTransfer?.getData('text/x-poc-file-path')
+          const path = e.nativeEvent.dataTransfer?.getData(FILE_PATH_DRAG_TYPE)
           if (!path) return
           // e.position is 'top'|'bottom'|'left'|'right'|'center' (dockview Position)
           // addPanel direction is 'above'|'below'|'left'|'right'|'within' (dockview Direction)
@@ -717,8 +717,20 @@ function EditorAreaPanel({
           event.api.onDidLayoutChange(() => saveOpenTabs(event.api, owner))
           event.api.onDidActivePanelChange(() => saveOpenTabs(event.api, owner))
           event.api.onUnhandledDragOverEvent((e) => {
-            if (e.nativeEvent.dataTransfer?.types.includes('text/x-poc-file-path')) {
+            if (e.nativeEvent.dataTransfer?.types.includes(FILE_PATH_DRAG_TYPE)) {
               e.accept()
+            }
+          })
+          // Un fichier glisse sur une note qu'on peut modifier y met sa
+          // reference (l'editeur s'en charge) : pas de zone pour ouvrir ou
+          // partager le panneau. Ailleurs (onglets, autres documents), le
+          // fichier s'ouvre comme avant.
+          event.api.onWillShowOverlay((e) => {
+            const target = e.nativeEvent.target
+            const editor = target instanceof Element ? target.closest('.cm-editor') : null
+            if (e.nativeEvent.dataTransfer?.types.includes(FILE_PATH_DRAG_TYPE)
+              && editor?.querySelector(':scope > .cm-scroller > .cm-content[contenteditable="true"]')) {
+              e.preventDefault()
             }
           })
           // Notify workspace when the active tab changes (tab switch or new panel)
