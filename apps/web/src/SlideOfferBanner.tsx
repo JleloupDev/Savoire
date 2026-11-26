@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
-// Sur le telephone : une presentation est en cours sur un autre appareil du
-// meme compte (proposition relayee par le serveur, plugin-api/slideRemote.ts).
-// « Oui » ouvre la telecommande, comme le code QR ; « Non » ignore cette
+// Une presentation est en cours sur un autre appareil du meme compte
+// (proposition relayee par le serveur, plugin-api/slideRemote.ts). « Oui »
+// ouvre la telecommande, comme le code QR : sur le telephone a la place de
+// l'appli, sur un ordinateur dans une petite fenetre a cote (appli de
+// bureau : a la place, « Quitter » ramene a l'appli). « Non » ignore cette
 // presentation. Le bandeau part seul quand la proposition n'arrive plus.
 import { useEffect, useRef, useState } from 'react'
 import { SLIDE_OFFER_TTL_MS, isSlideOffer, remotePath, type SlideOffer } from '@savoire/plugin-api'
 import type { IMyDevices } from '@savoire/application'
+import { isOwnRemoteSession } from './slideRemote'
+import { isTauriRuntime } from './tauriRuntime'
 
 type Seen = SlideOffer & { at: number }
 
@@ -21,16 +25,18 @@ const CSS = `
 .so-buttons { display: flex; gap: 8px; }
 .so-btn { all: unset; flex: 1; text-align: center; padding: 12px 0; border-radius: 10px; font-size: 15px; font-weight: 600; background: #2a2e36; color: #fff; touch-action: manipulation; }
 .so-btn-yes { flex: 2; background: var(--accent, #2563eb); }
+.so-wide { left: auto; right: 16px; top: 56px; width: 360px; }
+.so-btn { cursor: pointer; }
 `
 
 /** Ecoute les propositions de presentation relayees aux appareils du compte, et les montre. */
-export function SlideOfferBanner({ devices }: { devices: IMyDevices }) {
+export function SlideOfferBanner({ devices, mobile }: { devices: IMyDevices; mobile: boolean }) {
   const [offer, setOffer] = useState<Seen | null>(null)
   const declined = useRef(new Set<string>())
 
   useEffect(() => {
     const off = devices.onMessage(m => {
-      if (!isSlideOffer(m)) return
+      if (!isSlideOffer(m) || isOwnRemoteSession(m.session)) return
       if (m.ended) { setOffer(o => (o?.session === m.session ? null : o)); return }
       if (declined.current.has(m.session)) return
       setOffer(o => (o?.session === m.session ? { ...o, title: m.title, at: Date.now() } : { ...m, at: Date.now() }))
@@ -44,10 +50,19 @@ export function SlideOfferBanner({ devices }: { devices: IMyDevices }) {
   useEffect(() => { if (session) navigator.vibrate?.([30, 60, 30]) }, [session])
 
   if (!offer) return null
-  const accept = () => window.location.assign(remotePath(offer.vaultId, offer.docId, offer.session))
+  const accept = () => {
+    const path = remotePath(offer.vaultId, offer.docId, offer.session)
+    // Ordinateur (navigateur) : une fenetre a cote, qui recoit la session
+    // (pas de noopener). Telephone, appli de bureau, fenetre bloquee : ici.
+    if (!mobile && !isTauriRuntime()) {
+      const w = window.open(path, `savoire-remote-${offer.session}`, 'popup,width=440,height=780')
+      if (w) { declined.current.add(offer.session); setOffer(null); return }
+    }
+    window.location.assign(path)
+  }
   const refuse = () => { declined.current.add(offer.session); setOffer(null) }
   return (
-    <div className="so" role="dialog" aria-label="Présentation en cours" data-testid="slide-offer">
+    <div className={mobile ? 'so' : 'so so-wide'} role="dialog" aria-label="Présentation en cours" data-testid="slide-offer">
       <style>{CSS}</style>
       <div className="so-head">Présentation en cours sur un autre appareil</div>
       <div className="so-title" data-testid="slide-offer-title">{offer.title}</div>

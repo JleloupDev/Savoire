@@ -129,8 +129,25 @@ export function SlideRemotePage({ target, sync, userId, ready, error }: {
 
   const quit = () => {
     forgetSlideRemote()
+    // Petite fenetre ouverte depuis l'appli (ordinateur) : elle se ferme.
+    if (window.opener) { window.close(); return }
     window.location.replace('/')
   }
+
+  // Clavier (ordinateur, telecommande de presentation) : fleches, espace, pages.
+  const pressRef = useRef(press)
+  pressRef.current = press
+  const live = !!state && !state.ended
+  useEffect(() => {
+    if (!live) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); pressRef.current('next') }
+      else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); pressRef.current('previous') }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [live])
 
   const waiting = error ?? (!ready ? 'Ouverture du vault…' : !state ? 'Connexion à l’ordinateur…' : null)
   return (

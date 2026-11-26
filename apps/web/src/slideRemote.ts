@@ -63,6 +63,13 @@ export function remoteOrigin(serverBase: string | null, loc: Pick<Location, 'pro
   return serverBase || loc.origin
 }
 
+/** Les sessions des presentations lancees ici : leur proposition ne s'affiche pas ici. */
+const ownSessions = new Set<string>()
+
+export function isOwnRemoteSession(session: string): boolean {
+  return ownSessions.has(session)
+}
+
 /** Un lien sur la room de la note : les messages d'une session, dans la presence. */
 export function openRemoteLink(opts: {
   sync: SyncAPI
@@ -77,6 +84,7 @@ export function openRemoteLink(opts: {
   /** Titre de la proposition quand la presentation n'en donne pas (nom de la note). */
   title?: string
 }): SlideRemoteLink {
+  ownSessions.add(opts.session)
   const listeners = new Set<(m: SlideRemoteMessage) => void>()
   let room: DocumentRoom | null = null
   let closed = false

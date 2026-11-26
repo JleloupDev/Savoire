@@ -1292,8 +1292,9 @@ export function AppShell() {
     return () => setSlideRemoteFactory(null)
   }, [activeProfile.desktop, activeProfile.name])
 
-  // Telephone : les messages des autres appareils du compte, meme sans vault
-  // ouvert (une presentation en cours propose d'etre sa telecommande).
+  // Les messages des autres appareils du compte, meme sans vault ouvert :
+  // une presentation en cours ailleurs propose d'etre sa telecommande
+  // (telephone ou ordinateur).
   const [myDevices, setMyDevices] = useState<MyDevicesClient | null>(null)
   // Le jeton du compte serveur (auth.token), pas celui d'un vault local.
   const serverTokenRef = useRef<string | null>(auth.token)
@@ -1301,11 +1302,11 @@ export function AppShell() {
   const onServer = !!auth.token && activeProfile.name !== 'edgesync'
   const serverUser = auth.activeAccount?.userId
   useEffect(() => {
-    if (!mobile || slideRemote || !onServer) return
+    if (noteWindow || slideRemote || !onServer) return
     const client = new MyDevicesClient(getServerBaseUrl(), () => serverTokenRef.current)
     setMyDevices(client)
     return () => { setMyDevices(null); void client.dispose() }
-  }, [mobile, slideRemote, onServer, serverUser])
+  }, [noteWindow, slideRemote, onServer, serverUser])
 
   // Telephone en telecommande : le vault de la presentation, des que la liste est la.
   const slideRemoteOpenedRef = useRef(false)
@@ -1798,8 +1799,8 @@ export function AppShell() {
         />
       )}
 
-      {/* Telephone : une presentation en cours ailleurs propose d'etre sa telecommande. */}
-      {myDevices && <SlideOfferBanner devices={myDevices} />}
+      {/* Une presentation en cours sur un autre appareil propose d'etre sa telecommande. */}
+      {myDevices && <SlideOfferBanner devices={myDevices} mobile={mobile} />}
 
       {/* ── Icon rail (pas dans la fenetre d'une note) ── */}
       {!noteWindow && !mobile && <IconRail

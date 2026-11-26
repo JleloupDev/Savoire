@@ -74,7 +74,10 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   // plus bas. Une fenetre de note ne renouvelle jamais la session.
   // Sans hote (adresse rouverte a la main dans un onglet), une fenetre de
   // note se comporte comme l'application normale.
-  const [noteWindow] = useState(() => readNoteWindow() !== null && (isTauriRuntime() || findHostBridge() !== null))
+  // Meme chose pour la telecommande d'une presentation ouverte en petite
+  // fenetre depuis l'appli (SlideOfferBanner, navigateur seulement).
+  const [noteWindow] = useState(() => (readNoteWindow() !== null && (isTauriRuntime() || findHostBridge() !== null))
+    || (!isTauriRuntime() && new URLSearchParams(window.location.search).get('window') === 'remote' && findHostBridge() !== null))
   const [host, setHost] = useState<AuthBridge | null>(() => noteWindow && !isTauriRuntime() ? findHostBridge() : null)
   const [accounts, setAccounts] = useState<AccountEntry[]>(() => host ? host.accounts() : noteWindow ? [] : loadAccounts())
   const [token, setToken] = useState<string | null>(() => host ? host.token() : null)
