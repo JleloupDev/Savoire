@@ -718,7 +718,10 @@ function buildDecorations(state: EditorState, env: PreviewEnv): PreviewDecoratio
   const objects: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
   // Endroits en texte brut : le curseur, et pendant un clic ce qui est tenu.
-  const live = [...state.selection.ranges.map(r => r.from), ...(state.field(pointerHoldField, false) ?? [])]
+  // Une selection garde ses deux bouts en texte : la ligne ou elle s'arrete
+  // ne parait pas choisie en entier.
+  const ends = state.selection.ranges.flatMap(r => (r.empty ? [r.head] : [r.anchor, r.head]))
+  const live = [...ends, ...(state.field(pointerHoldField, false) ?? [])]
     .map(p => Math.min(p, state.doc.length))
   const liveLines = new Set(live.map(p => state.doc.lineAt(p).number))
   const liveIn = (from: number, to: number): boolean => live.some(p => p >= from && p <= to)
@@ -1625,8 +1628,9 @@ export function createLivePreviewExtension(
 
   // see ADR-005 — une fleche va a la rangee du dessus ou du dessous : dans
   // une longue ligne, d'abord ses rangees. En mode classique, elle entre dans
-  // un objet qui sait se laisser parcourir, sinon elle le saute.
-  const moveOneLine = (view: EditorView, dir: 1 | -1): boolean => {
+  // un objet qui sait se laisser parcourir, sinon elle le saute. Avec Maj
+  // (extend), la selection s'etend d'une ligne, et prend un objet en entier.
+  const moveOneLine = (view: EditorView, dir: 1 | -1, extend = false): boolean => {
     const { state } = view
     const range = state.selection.main
     const pos = range.head
@@ -1635,10 +1639,14 @@ export function createLivePreviewExtension(
     const coords = view.coordsAtPos(pos, range.assoc || 1)
     const box = view.contentDOM.getBoundingClientRect()
     const goal = range.goalColumn ?? (coords ? coords.left - box.left : undefined)
+    // Le curseur va en `head` : seul, ou bout d'une selection qui garde son ancre.
+    const to = (head: number, goalColumn?: number) => extend
+      ? EditorSelection.range(range.anchor, head, goalColumn)
+      : EditorSelection.cursor(head, 0, undefined, goalColumn)
     if (wraps(view, line.from, line.to)) {
       const moved = view.moveVertically(range, dir === 1)
       if (moved.head !== pos && state.doc.lineAt(moved.head).number === line.number) {
-        view.dispatch({ selection: EditorSelection.create([moved]), scrollIntoView: true })
+        view.dispatch({ selection: EditorSelection.create([extend ? to(moved.head, moved.goalColumn) : moved]), scrollIntoView: true })
         return true
       }
     }
@@ -1659,6 +1667,10 @@ export function createLivePreviewExtension(
     if (classic) {
       const obj = objectAround(state, targetLine.from)
       if (obj && !(dir === -1 && pos === obj.to)) {
+        if (extend) {
+          view.dispatch({ selection: to(dir === 1 ? obj.to : obj.from), scrollIntoView: true })
+          return true
+        }
         if (enterObject(view, obj, dir, coords ? coords.left : null)) return true
         const beyond = dir === 1 ? state.doc.lineAt(obj.to).number + 1 : state.doc.lineAt(obj.from).number - 1
         if (beyond < 1 || beyond > state.doc.lines) {
@@ -1671,7 +1683,7 @@ export function createLivePreviewExtension(
     }
     // Preserve horizontal column within the target line.
     const anchor = Math.min(targetLine.from + col, targetLine.to)
-    view.dispatch({ selection: EditorSelection.cursor(anchor, 0, undefined, goal), scrollIntoView: true })
+    view.dispatch({ selection: to(anchor, goal), scrollIntoView: true })
     // La ligne d'arrivee passe a la ligne : la rangee la plus proche (la
     // premiere en descendant, la derniere en montant), a la meme abscisse.
     const target = view.state.doc.lineAt(Math.min(anchor, view.state.doc.length))
@@ -1679,15 +1691,15 @@ export function createLivePreviewExtension(
       const edge = view.coordsAtPos(dir === 1 ? target.from : target.to, dir === 1 ? 1 : -1)
       const at = edge ? view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + goal, y: (edge.top + edge.bottom) / 2 }, false) : null
       if (at !== null && at >= target.from && at <= target.to && at !== view.state.selection.main.head) {
-        view.dispatch({ selection: EditorSelection.cursor(at, 0, undefined, goal), scrollIntoView: true })
+        view.dispatch({ selection: to(at, goal), scrollIntoView: true })
       }
     }
     return true
   }
 
   const blockNavigationKeymap = Prec.highest(keymap.of([
-    { key: 'ArrowDown', run: (view) => moveOneLine(view, 1) },
-    { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1) },
+    { key: 'ArrowDown', run: (view) => moveOneLine(view, 1), shift: (view) => moveOneLine(view, 1, true) },
+    { key: 'ArrowUp',   run: (view) => moveOneLine(view, -1), shift: (view) => moveOneLine(view, -1, true) },
     // Un bloc replie se saute, il ne s'ouvre pas.
     { key: 'ArrowRight', run: (view) => skipFold(view, 1) },
     { key: 'ArrowLeft',  run: (view) => skipFold(view, -1) },

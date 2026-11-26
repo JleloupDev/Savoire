@@ -277,3 +277,35 @@ describe('Le « + » d\'un tableau', () => {
     view.destroy()
   })
 })
+
+describe('Maj + fleche dans une liste : une ligne a la fois', () => {
+  const doc = 'Avant\n\n- un\n- deux\n- trois\n- quatre\n\nApres'
+  const shiftKey = (view: EditorView, key: string) =>
+    runScopeHandlers(view, new KeyboardEvent('keydown', { key, shiftKey: true, bubbles: true, cancelable: true }), 'editor')
+  const selected = (view: EditorView) => view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
+
+  for (const mode of ['power', 'classic'] as const) {
+    it(`descend puis remonte d'une ligne (${mode})`, () => {
+      const view = setup(doc, doc.indexOf('un'), mode)
+      expect(shiftKey(view, 'ArrowDown')).toBe(true)
+      expect(selected(view)).toBe('un\n- ')
+      shiftKey(view, 'ArrowDown')
+      expect(selected(view)).toBe('un\n- deux\n- ')
+      shiftKey(view, 'ArrowUp')
+      expect(selected(view)).toBe('un\n- ')
+      expect(view.state.selection.main.anchor).toBe(doc.indexOf('un'))
+      view.destroy()
+    })
+  }
+
+  it('la ligne ou la selection s\'arrete reste en texte', () => {
+    const view = setup(doc, doc.indexOf('un'), 'power')
+    shiftKey(view, 'ArrowDown')
+    shiftKey(view, 'ArrowDown')
+    const lines = [...view.contentDOM.children].map(el => el.className)
+    // « - trois » (ligne 5) est une vraie ligne de l'editeur, pas un rendu.
+    expect(view.domAtPos(view.state.doc.line(5).from + 3).node.parentElement?.closest('.cm-line')).not.toBeNull()
+    expect(lines.some(c => c.includes('vault-rendered-block'))).toBe(true)
+    view.destroy()
+  })
+})
