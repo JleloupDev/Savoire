@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 //
 // Page vitrine, pour les visiteurs non connectes (/decouvrir) : ce qu'est
-// Savoire, ses ecrans, une galerie. Les images sont dans public/vitrine/,
+// Savoire, les formats qu'il reunit, ses ecrans, une galerie. Style
+// editorial (maquette « Inspire d'Anytype », 26/11/2026) : fond blanc,
+// filets noirs, Newsreader et Inter en maigre. Images dans public/vitrine/,
 // tirees des captures du vault de demo (docs/captures/).
 
 import { useCallback, useEffect, useState } from 'react'
@@ -13,15 +15,37 @@ import './landing.css'
 
 const IMG = '/vitrine/'
 
-interface Feature { title: string; text: string; points: string[]; image: string; alt: string }
+const WORDS = ['Vos idées,', 'Vos notes,', 'Vos présentations,', 'Vos cartes mentales,', 'Vos bases,']
 
-const FEATURES: Feature[] = [
+/** Les formats autour de Savoire : nom, extension, position sur le cercle. */
+const FORMATS: Array<[string, string, number, number]> = [
+  ['Word', '.docx', 50, 12],
+  ['PowerPoint', '.pptx', 79.7, 26.3],
+  ['Carte mentale', 'mindmap', 87, 58.5],
+  ['PDF', '.pdf', 66.5, 84.2],
+  ['Markdown', '.md', 33.5, 84.2],
+  ['Dessin', '.excalidraw', 13, 58.5],
+  ['Base', 'tableau, kanban', 20.3, 26.3],
+]
+
+const BAND = ['Word', 'PowerPoint', 'Carte mentale', 'PDF', 'Markdown', 'Dessin', 'Diapositives', 'Tableau', 'Kanban', 'Graphe']
+
+const VALUES = [
+  { title: 'En temps réel', text: 'Écrivez à plusieurs dans la même note, chacun voit l\'autre.' },
+  { title: 'Hors ligne', text: 'Tout marche sans réseau. Les changements se rejoignent au retour.' },
+  { title: 'Chez vous', text: 'Open source sous AGPL. Hébergez-le sur votre serveur si vous voulez.' },
+  { title: 'Avec votre IA', text: 'Branchez ChatGPT ou Claude. Chaque agent n\'a que les droits donnés.' },
+  { title: 'Extensible', text: 'Plugins, modèles et modules depuis le Store.' },
+  { title: 'Partout', text: 'Dans le navigateur, ou en application pour Windows, macOS et Linux.' },
+]
+
+const FEATURES = [
   {
     title: 'Des notes qui se répondent',
     text: 'Écrivez en Markdown, sans y penser. Un lien [[entre crochets]] relie deux idées, et chaque note montre celles qui la citent.',
     points: ['Propriétés, encadrés, tableaux, notes de bas de page', 'Trois façons d\'écrire : classique, rendu direct ou source', 'Import depuis Notion'],
-    image: 'ecran-note-claire.webp',
-    alt: 'Une note de projet avec ses propriétés, un encadré et un calendrier',
+    image: 'ecran-note-sombre.webp',
+    alt: 'Une note de synthèse en thème sombre',
   },
   {
     title: 'Vos données en tableau ou en kanban',
@@ -46,15 +70,6 @@ const FEATURES: Feature[] = [
   },
 ]
 
-const VALUES = [
-  { icon: 'users', title: 'En temps réel', text: 'Écrivez à plusieurs dans la même note, chacun voit l\'autre.' },
-  { icon: 'wifi-off', title: 'Hors ligne', text: 'Tout marche sans réseau. Les changements se rejoignent au retour.' },
-  { icon: 'lock', title: 'Chez vous', text: 'Open source sous AGPL. Hébergez-le sur votre serveur si vous voulez.' },
-  { icon: 'bot', title: 'Avec votre IA', text: 'Branchez ChatGPT ou Claude. Chaque agent n\'a que les droits donnés.' },
-  { icon: 'puzzle', title: 'Extensible', text: 'Plugins, modèles et modules depuis le Store.' },
-  { icon: 'globe', title: 'Partout', text: 'Dans le navigateur, ou en application pour Windows, macOS et Linux.' },
-]
-
 const GALLERY = [
   { file: 'visuel-hero.webp', title: 'Vos idées, enfin reliées' },
   { file: 'visuel-bases.webp', title: 'Tableau et kanban, une seule source' },
@@ -67,25 +82,23 @@ const GALLERY = [
   { file: 'ecran-diapositive.webp', title: 'Une diapositive' },
 ]
 
-function Logo() {
-  return (
-    <svg width="112" height="32" viewBox="0 0 120 36" fill="none" aria-label="Savoire">
-      <path d="M8 4 L3 9 L3 18 L3 27 L8 32" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
-      <path d="M16 4 L11 9 L11 18 L11 27 L16 32" stroke="#2dd4bf" strokeWidth="2.8" strokeLinecap="round" />
-      <text x="24" y="25" fontFamily="'Source Serif 4',Georgia,serif" fontSize="20" fontWeight="700" fill="currentColor" letterSpacing="-0.3">Savoire</text>
-      <path d="M104 4 L109 9 L109 18 L109 27 L104 32" stroke="#2dd4bf" strokeWidth="2.8" strokeLinecap="round" />
-      <path d="M112 4 L117 9 L117 18 L117 27 L112 32" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
-    </svg>
-  )
-}
+const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-/** Une capture dans une fenetre de navigateur. */
-function Shot({ src, alt, eager }: { src: string; alt: string; eager?: boolean }) {
+/** Les debuts de titre qui se relaient au-dessus de « enfin reliees. ». */
+function RotatingWords() {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    if (reducedMotion()) return
+    const timer = setInterval(() => setI(n => n + 1), 2400)
+    return () => clearInterval(timer)
+  }, [])
+  const cur = i % WORDS.length
   return (
-    <figure className="lp-shot">
-      <div className="lp-shot-bar" aria-hidden="true"><i /><i /><i /><span>savoire.app</span></div>
-      <img src={IMG + src} alt={alt} loading={eager ? 'eager' : 'lazy'} width={1920} height={1200} />
-    </figure>
+    <span className="lp-words">
+      {WORDS.map((w, k) => (
+        <span key={w} aria-hidden={k !== cur} className={k === cur ? 'on' : k < cur ? 'before' : 'after'}>{w}</span>
+      ))}
+    </span>
   )
 }
 
@@ -95,7 +108,7 @@ export function LandingPage() {
 
   useEffect(() => {
     const previous = document.title
-    document.title = 'Savoire · Vos idées, enfin reliées'
+    document.title = 'Savoire, tous vos documents réunis'
     return () => { document.title = previous }
   }, [])
 
@@ -112,79 +125,115 @@ export function LandingPage() {
 
   return (
     <div className="lp" data-testid="landing-page">
-      <header className="lp-nav">
-        <Link to="/decouvrir" className="lp-brand"><Logo /></Link>
-        <nav>
-          <a href="#presentation">Présentation</a>
-          <a href="#galerie">Galerie</a>
-          <Link to="/login" className="lp-btn lp-btn-small" data-testid="landing-login">Se connecter</Link>
-        </nav>
-      </header>
+      <div className="lp-frame">
+        <header className="lp-nav">
+          <Link to="/decouvrir" className="lp-brand">savoire</Link>
+          <nav>
+            <a href="#formats">Formats</a>
+            <a href="#galerie">Galerie</a>
+            <Link to="/login" className="lp-pill" data-testid="landing-login">Se connecter</Link>
+          </nav>
+        </header>
 
-      <section className="lp-hero">
-        <div className="lp-hero-text">
-          <h1>Vos idées, <em>enfin reliées.</em></h1>
+        <section className="lp-hero">
+          <h1>
+            <RotatingWords />
+            <span className="lp-serif">enfin reliées.</span>
+          </h1>
           <p>Notes, bases, dessins et présentations au même endroit. En temps réel, hors ligne, chez vous.</p>
           <div className="lp-actions">
-            <Link to="/login" className="lp-btn" data-testid="landing-start">Commencer gratuitement</Link>
-            <a href="#galerie" className="lp-btn lp-btn-ghost">Voir les écrans</a>
+            <Link to="/login" className="lp-btn lp-lift" data-testid="landing-start">Commencer gratuitement</Link>
+            <a href="#formats" className="lp-btn lp-btn-ghost lp-lift">Voir les formats</a>
           </div>
-          <ul className="lp-tags"><li>Markdown</li><li>Temps réel</li><li>Open source</li></ul>
+          <p className="lp-kicker">Markdown · Temps réel · Open source</p>
+        </section>
+
+        <div className="lp-hero-shot lp-reveal">
+          <img src={IMG + 'ecran-note-claire.webp'} alt="Une note de projet avec ses propriétés, un encadré et un calendrier" width={1920} height={1200} />
         </div>
-        <div className="lp-hero-shot"><Shot src="ecran-note-sombre.webp" alt="Savoire : une note de synthèse en thème sombre" eager /></div>
-      </section>
 
-      <section className="lp-values" aria-label="Les atouts de Savoire">
-        {VALUES.map(v => (
-          <div key={v.title} className="lp-value">
-            <span className="lp-value-icon"><Icon name={v.icon} size={18} /></span>
-            <h3>{v.title}</h3>
-            <p>{v.text}</p>
+        <div className="lp-band" aria-hidden="true">
+          <div className="lp-track">
+            {[...BAND, ...BAND].map((b, k) => <span key={k}>{b} <i>·</i></span>)}
           </div>
-        ))}
-      </section>
+        </div>
 
-      <section id="presentation" className="lp-features">
-        <h2 className="lp-section-title">Un seul outil pour penser, organiser et montrer</h2>
-        {FEATURES.map((f, i) => (
-          <article key={f.title} className={'lp-feature' + (i % 2 ? ' lp-feature-flip' : '')}>
-            <div className="lp-feature-text">
+        <section id="formats" className="lp-formats">
+          <h2 className="lp-reveal">Tous vos documents,<br />réunis et reliés.</h2>
+          <p className="lp-lead lp-reveal">
+            PowerPoint, Word, cartes mentales, PDF : chaque document a sa place dans Savoire, et un lien <code>[[entre crochets]]</code> le relie à tous les autres.
+          </p>
+          <div className="lp-orbit">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <g className="lp-flow">
+                {FORMATS.map(([name, , x, y]) => (
+                  <line key={name} x1="50" y1="50" x2={x} y2={y} vectorEffect="non-scaling-stroke" />
+                ))}
+              </g>
+            </svg>
+            <div className="lp-hub">savoire</div>
+            {FORMATS.map(([name, ext, x, y], k) => (
+              <div key={name} className="lp-tile" style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${k * -0.8}s` }}>
+                <svg width="26" height="32" viewBox="0 0 26 32" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M1 1h16l8 8v22H1z" /><path d="M17 1v8h8" /></svg>
+                <span><b>{name}</b><small>{ext}</small></span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="lp-values" aria-label="Les atouts de Savoire">
+          {VALUES.map(v => (
+            <div key={v.title}>
+              <h3>{v.title}</h3>
+              <p>{v.text}</p>
+            </div>
+          ))}
+        </section>
+
+        <h2 id="presentation" className="lp-big lp-reveal">Un seul outil pour penser,<br />organiser et montrer</h2>
+
+        <section className="lp-features">
+          {FEATURES.map(f => (
+            <article key={f.title} className="lp-reveal">
               <h3>{f.title}</h3>
               <p>{f.text}</p>
-              <ul>{f.points.map(p => <li key={p}><Icon name="check" size={16} />{p}</li>)}</ul>
-            </div>
-            <Shot src={f.image} alt={f.alt} />
-          </article>
-        ))}
-      </section>
-
-      <section id="galerie" className="lp-gallery">
-        <h2 className="lp-section-title">Galerie</h2>
-        <p className="lp-section-sub">Des écrans réels, pris dans un vault de démonstration.</p>
-        <div className="lp-grid">
-          {GALLERY.map((g, i) => (
-            <button key={g.file} type="button" className="lp-thumb" onClick={() => setOpen(i)} data-testid="landing-gallery-item">
-              <img src={IMG + g.file} alt={g.title} loading="lazy" />
-              <span>{g.title}</span>
-            </button>
+              <p className="lp-points">{f.points.join('  ·  ')}</p>
+              <div className="lp-shot lp-lift">
+                <img src={IMG + f.image} alt={f.alt} loading="lazy" width={1920} height={1200} />
+              </div>
+            </article>
           ))}
-        </div>
-      </section>
+        </section>
 
-      <section className="lp-cta">
-        <h2>Prêt à relier vos idées ?</h2>
-        <p>Créez un compte en une minute, ou installez Savoire sur votre propre serveur.</p>
-        <div className="lp-actions lp-actions-center">
-          <Link to="/login" className="lp-btn lp-btn-light">Commencer</Link>
-          <a href="https://github.com/JleloupDev/Savoire" className="lp-btn lp-btn-ghost" target="_blank" rel="noopener noreferrer">Code source</a>
-        </div>
-        <div className="lp-download"><DesktopDownload /></div>
-      </section>
+        <section id="galerie" className="lp-gallery">
+          <h2>Galerie</h2>
+          <p className="lp-sub">Des écrans réels, pris dans un vault de démonstration.</p>
+          <div className="lp-grid">
+            {GALLERY.map((g, i) => (
+              <figure key={g.file} className="lp-reveal">
+                <button type="button" className="lp-zoom" onClick={() => setOpen(i)} data-testid="landing-gallery-item" aria-label={`Agrandir : ${g.title}`}>
+                  <img src={IMG + g.file} alt={g.title} loading="lazy" />
+                </button>
+                <figcaption>{g.title}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
 
-      <footer className="lp-footer">
-        <Logo />
-        <span>AGPL-3.0 · Open source · Auto-hébergeable</span>
-      </footer>
+        <section className="lp-cta">
+          <h2 className="lp-reveal">Prêt à relier vos idées ?</h2>
+          <p>Créez un compte en une minute, ou installez Savoire sur votre propre serveur.</p>
+          <div className="lp-actions">
+            <Link to="/login" className="lp-btn lp-lift">Commencer</Link>
+            <a href="https://github.com/JleloupDev/Savoire" className="lp-btn lp-btn-ghost lp-lift" target="_blank" rel="noopener noreferrer">Code source</a>
+          </div>
+          <div className="lp-download"><DesktopDownload /></div>
+        </section>
+
+        <footer className="lp-footer">
+          <span>savoire</span><span>AGPL-3.0 · Open source · Auto-hébergeable</span>
+        </footer>
+      </div>
 
       {open !== null && (
         <div className="lp-lightbox" role="dialog" aria-modal="true" aria-label={GALLERY[open].title} onClick={() => setOpen(null)}>
