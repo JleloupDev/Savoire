@@ -737,8 +737,26 @@ html[data-layout="mobile"] .sv-overlay > * {
   padding-bottom: env(safe-area-inset-bottom);
   overflow: auto;
 }
-html[data-layout="mobile"] .cm-gutters { display: none !important; }
-html[data-layout="mobile"] .cm-content { padding-left: 14px !important; padding-right: 14px !important; }
+/* Gouttiere : seulement les fleches pour replier un titre ou une liste (pas de survol au doigt). */
+html[data-layout="mobile"] .cm-gutters { border: none !important; background: transparent !important; padding: 0 !important; margin: 0 !important; min-width: 0 !important; width: auto !important; }
+html[data-layout="mobile"] .cm-gutter:not(.plume-fold-gutter) { display: none !important; }
+html[data-layout="mobile"] .plume-fold-gutter .cm-gutterElement { padding: 0 !important; }
+html[data-layout="mobile"] .plume-fold-toggle { width: 22px !important; }
+html[data-layout="mobile"] .cm-content { padding-left: 0 !important; padding-right: 12px !important; }
+
+/* Proprietes de la note : le nom plus etroit, les valeurs prennent la place qui reste. */
+html[data-layout="mobile"] .plume-prop-name { width: 96px !important; }
+html[data-layout="mobile"] .plume-prop { flex-wrap: wrap; }
+html[data-layout="mobile"] .plume-prop-value { min-width: 0; flex: 1 1 150px !important; }
+html[data-layout="mobile"] .plume-prop-input,
+html[data-layout="mobile"] .plume-prop-value input,
+html[data-layout="mobile"] .plume-prop-value select { min-width: 0 !important; max-width: 100%; }
+html[data-layout="mobile"] .plume-prop-remove { visibility: visible !important; min-width: 28px; }
+html[data-layout="mobile"] .plume-prop-newtype { max-width: 40%; }
+
+/* Volet du bas ouvert : la bulle de retour ne cache pas ses champs. */
+html[data-layout="mobile"]:has(.mobile-sheet--open) [data-testid="feedback-bubble"],
+html[data-layout="mobile"]:has(.mobile-sheet--open) [data-testid="bubble-dock"] { display: none !important; }
 
 /* ── Marques de blocs (editor-core/BlockMarks) ───────────────────────────
    Une gouttiere contre le texte : un trait le long du bloc, et une pastille

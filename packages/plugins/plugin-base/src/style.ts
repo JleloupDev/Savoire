@@ -286,6 +286,20 @@ select.base-filter-join { padding-top:2px; }
 .base-error { color:var(--color-danger,#f38ba8); }
 .base-hint { color:var(--text-faint,#6c7086); padding:12px; }
 .base-empty { display:inline-block; min-width:1px; }
+
+/* Interface mobile (html[data-layout="mobile"], voir apps/web/layoutMode) :
+   boutons a la taille du doigt, actions des lignes toujours visibles (pas de
+   survol), apercu d'une ligne en plein ecran, frise avec plus de place. */
+html[data-layout="mobile"] .base-btn { min-height:34px; min-width:34px; padding:4px 10px; font-size:13px; }
+html[data-layout="mobile"] .base-tab { min-height:36px; padding:4px 12px; }
+html[data-layout="mobile"] .base-input { min-height:34px; font-size:16px; }
+html[data-layout="mobile"] .base-search { flex:1 1 120px; width:auto; min-width:0; }
+html[data-layout="mobile"] .base-row-action, html[data-layout="mobile"] .base-cal-add { visibility:visible; }
+html[data-layout="mobile"] .base-row-action { min-width:28px; min-height:28px; }
+html[data-layout="mobile"] .base-peek { position:fixed; inset:0; z-index:60; flex:none; max-width:none; border-left:none; padding:calc(env(safe-area-inset-top) + 10px) 16px calc(env(safe-area-inset-bottom) + 16px); }
+html[data-layout="mobile"] .base-tl-names { flex-basis:120px; }
+html[data-layout="mobile"] .base-menu-item { min-height:40px; padding:8px 12px; }
+html[data-layout="mobile"] .base-bulk-slot { min-width:0; }
 `
 
 let installed = false

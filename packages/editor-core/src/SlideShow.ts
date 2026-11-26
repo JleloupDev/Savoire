@@ -108,6 +108,17 @@ const SHOW_CSS = `
 .plume-speaker-top { display: flex; gap: 12px; flex: none; height: 42%; }
 .plume-speaker-top > div { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .plume-speaker .plume-show-next { flex: 1; aspect-ratio: auto; }
+/* Ecran tactile : la barre reste visible (pas de survol). Telephone : boutons
+   au doigt, sans ce qui sert a un second ecran (vue presentateur, fenetre des
+   notes, telecommande : le telephone est deja l'ecran). */
+@media (hover: none) { .plume-show-bar { opacity: 1; } }
+@media (max-width: 600px), (max-height: 500px) {
+  .plume-show-bar { bottom: max(10px, env(safe-area-inset-bottom)); gap: 2px; }
+  .plume-show-bar button { min-width: 40px; min-height: 40px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
+  .plume-show-count { white-space: nowrap; padding: 0 4px; }
+  .plume-show-bar [data-testid="slide-show-presenter"], .plume-show-bar [data-testid="slide-show-speaker-window"], .plume-show-bar [data-testid="slide-show-remote"] { display: none; }
+  .plume-show-overview { padding: 12px; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
 `
 
 /** Les images cles d'une transition : la diapositive qui entre, celle qui sort. */
@@ -142,6 +153,16 @@ function fitInto(box: HTMLElement, slide: HTMLElement, w: number, h: number): vo
   const s = Math.min(bw / w, bh / h)
   slide.style.transformOrigin = '0 0'
   slide.style.transform = `translate(${Math.round((bw - w * s) / 2)}px, ${Math.round((bh - h * s) / 2)}px) scale(${s})`
+}
+
+/**
+ * Bouton retour du telephone (coquille mobile) : l'appli inscrit ici comment
+ * une fenetre s'y abonne. Rend la fonction a appeler a la fermeture.
+ */
+type BackHandler = (close: () => void) => () => void
+let backHandler: BackHandler | null = null
+export function setSlideShowBackHandler(h: BackHandler | null): void {
+  backHandler = h
 }
 
 function button(doc: Document, label: string, title: string, run: () => void, testid?: string): HTMLButtonElement {
@@ -216,7 +237,7 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     button(document, '›', 'Suivante (→)', () => next(), 'slide-show-next'),
     button(document, '▦', 'Vue d’ensemble (O)', () => toggleOverview()),
     button(document, '🗒', 'Vue présentateur (P)', () => togglePresenter(), 'slide-show-presenter'),
-    button(document, '⧉', 'Notes dans une autre fenêtre (S)', () => openSpeakerWindow()),
+    button(document, '⧉', 'Notes dans une autre fenêtre (S)', () => openSpeakerWindow(), 'slide-show-speaker-window'),
     ...(opts.remote ? [button(document, '📱', 'Télécommande sur le téléphone (T)', () => toggleRemote(), 'slide-show-remote')] : []),
     button(document, '⛶', 'Plein écran (F)', () => toggleFullscreen()),
     button(document, '✕', 'Quitter (Échap)', () => close(), 'slide-show-close'),
@@ -583,9 +604,30 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     if (handled) { e.preventDefault(); e.stopPropagation() }
   }
 
+  // Au doigt : glisser vers la gauche pour la suivante, vers la droite pour
+  // la precedente. Le clic qui suit un glissement ne compte pas.
+  let touch: { x: number; y: number } | null = null
+  let swiped = false
+  stage.addEventListener('touchstart', e => {
+    const t = e.touches[0]
+    touch = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null
+  }, { passive: true })
+  stage.addEventListener('touchend', e => {
+    const t = e.changedTouches[0]
+    if (!touch || !t) return
+    const dx = t.clientX - touch.x, dy = t.clientY - touch.y
+    touch = null
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    swiped = true
+    setTimeout(() => { swiped = false }, 400)
+    if (dx < 0) next()
+    else previous()
+  }, { passive: true })
+
   // Clic sur la diapositive : la suivante (pas sur un lien, un bouton, un cadre).
   stage.addEventListener('click', e => {
     root.focus()
+    if (swiped) return
     if ((e.target as HTMLElement).closest?.('a, button, input, select, textarea, iframe, video, audio, [contenteditable]')) return
     next()
   })
@@ -595,9 +637,13 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   const onWindowKey = (e: KeyboardEvent) => { if (!root.contains(e.target as Node)) onKey(e) }
   window.addEventListener('keydown', onWindowKey, true)
 
+  let releaseBack: (() => void) | null = null
+
   function close(): void {
     if (closed) return
     closed = true
+    releaseBack?.()
+    releaseBack = null
     clearInterval(timerId)
     observer?.disconnect()
     settle()
@@ -610,15 +656,25 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
     releaseSlide(root)
     if (popup && !popup.closed) popup.close()
     if (document.fullscreenElement === root) void document.exitFullscreen?.().catch(() => {})
+    try { (screen.orientation as ScreenOrientation & { unlock?: () => void })?.unlock?.() } catch { /* pas de verrou */ }
     root.remove()
     opts.onExit?.()
   }
 
   document.body.appendChild(root)
+  releaseBack = backHandler?.(() => { releaseBack = null; close() }) ?? null
   show()
   if (opts.remoteOnStart && opts.remote) toggleRemote(true)
   root.focus()
-  void root.requestFullscreen?.().catch(() => {})
+  // Telephone tenu droit : en plein ecran, l'image tourne en paysage (si le systeme le permet).
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+  void root.requestFullscreen?.()
+    .then(() => {
+      if (!coarse) return
+      const o = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }
+      return o?.lock?.('landscape')
+    })
+    .catch(() => {})
   // Plein ecran quitte par le navigateur (Echap) : la presentation reste, a sa taille.
   root.addEventListener('fullscreenchange', () => requestAnimationFrame(place))
 
