@@ -1131,6 +1131,9 @@ export class EditorCore implements EditorController, EditorPositionAPI {
       .sort((a, b) => b.character.length - a.character.length)
 
     for (const trigger of triggers) {
+      // Une sequence reservee sans menu (« ![[ ») ne cache pas un declencheur
+      // qui en a un (« [[ »).
+      if (!trigger.handler) continue
       let match: RegExpMatchArray | null = null
       if (trigger.pattern) {
         match = textBefore.match(trigger.pattern)

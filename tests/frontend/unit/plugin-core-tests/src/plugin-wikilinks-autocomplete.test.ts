@@ -85,3 +85,20 @@ describe('liens vers un titre ou un bloc', () => {
     expect(withBlockId('# Intro\n\nAutre texte.', blocks[1].hash, 'abc')).toBe('# Intro\n\nAutre texte.')
   })
 })
+
+describe('requete [[ : espaces, accents, apres un mot', () => {
+  it('la requete va jusqu\'aux crochets, espaces compris', async () => {
+    const { WIKILINK_QUERY_RE } = await import('@savoire/plugin-wikilinks')
+    expect('Voir [[Ma no'.match(WIKILINK_QUERY_RE)?.[1]).toBe('Ma no')
+    expect('mot[[cib'.match(WIKILINK_QUERY_RE)?.[1]).toBe('cib')
+    expect('![['.match(WIKILINK_QUERY_RE)?.[1]).toBe('')
+    expect('[[Cible]] et la suite'.match(WIKILINK_QUERY_RE)).toBeNull()
+  })
+  it('chaque mot, sans casse ni accents, dans n\'importe quel ordre', async () => {
+    const { foldText, matchesNoteQuery } = await import('@savoire/plugin-wikilinks')
+    expect(matchesNoteQuery('Dossier/Ma note longue.md', foldText('ma longue'))).toBe(true)
+    expect(matchesNoteQuery('Modèle de réunion.md', foldText('modele reu'))).toBe(true)
+    expect(matchesNoteQuery('Ma note.md', foldText('ma autre'))).toBe(false)
+    expect(matchesNoteQuery('Ma note.md', '')).toBe(true)
+  })
+})

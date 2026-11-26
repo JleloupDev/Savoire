@@ -91,6 +91,24 @@ export function wikilinkAtOffset(text: string, at: number): string | null {
 }
 
 /** La note et le morceau vises par un lien rendu (`#Page`, `#Page#Titre`, `#Page#^bloc`). */
+/** Requete d'un lien en cours : depuis « [[ », sans crochet ni retour a la ligne. */
+export const WIKILINK_QUERY_RE = /\[\[([^[\]\n]*)$/
+
+/** Sans casse ni accents : « modele » trouve « Modèle ». */
+export function foldText(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+/**
+ * Une note repond-elle a la requete (deja passee par foldText) ? Chaque mot
+ * doit se trouver dans son chemin, dans n'importe quel ordre : « ma longue »
+ * trouve « Ma note longue ».
+ */
+export function matchesNoteQuery(path: string, q: string): boolean {
+  const hay = foldText(path)
+  return q.split(/\s+/).filter(Boolean).every(word => hay.includes(word))
+}
+
 export function linkTargetOf(href: string): { page: string; subpath: string } {
   let raw = href.replace(/^#/, '')
   try { raw = decodeURIComponent(raw) } catch { /* garde tel quel */ }
@@ -255,6 +273,9 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
       api.triggers.register({
         id: 'wikilinks',
         character: '[[',
+        // Apres n'importe quel caractere (« voir[[ », « ![[ »), et jusqu'aux
+        // crochets fermants : un nom de note a des espaces (« [[Ma note »).
+        pattern: WIKILINK_QUERY_RE,
         description: 'Lien wiki [[Page]]',
         handler: {
           getItems(query: string) {
@@ -269,15 +290,14 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
                 return found ? subpathItems(target, found.blocks, sub.fragment, typeof api.vault?.editText === 'function') : []
               }
             }
-            const q = query.trim().toLowerCase()
+            const q = foldText(query.trim())
             const scored = notePaths
               .map(path => ({ path, stem: stemOf(path) }))
-              .filter(({ path, stem }) =>
-                !q || stem.toLowerCase().includes(q) || path.toLowerCase().includes(q))
+              .filter(({ path }) => matchesNoteQuery(path, q))
               .sort((a, b) => {
                 // Une correspondance en debut de nom passe avant une au milieu.
-                const ap = a.stem.toLowerCase().startsWith(q) ? 0 : 1
-                const bp = b.stem.toLowerCase().startsWith(q) ? 0 : 1
+                const ap = foldText(a.stem).startsWith(q) ? 0 : 1
+                const bp = foldText(b.stem).startsWith(q) ? 0 : 1
                 return ap - bp || a.stem.localeCompare(b.stem)
               })
               .slice(0, 20)
