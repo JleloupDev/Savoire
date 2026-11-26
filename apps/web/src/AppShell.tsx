@@ -454,10 +454,11 @@ export function AppShell() {
 
   useEffect(() => subscribeLocale(setLocaleState), [])
 
-  // Pas connecte : la vitrine pour une premiere visite, sinon la connexion.
+  // Pas connecte : la vitrine pour une premiere visite, sinon la connexion
+  // (toujours la connexion pour un telephone venu du code QR).
   useEffect(() => {
-    if (isReady && !token) navigate(visitorEntryPath({ desktop: isTauriRuntime(), savedAccounts: accounts.length }))
-  }, [isReady, token, navigate, accounts.length])
+    if (isReady && !token) navigate(visitorEntryPath({ desktop: isTauriRuntime(), savedAccounts: accounts.length, slideRemote: !!slideRemote }))
+  }, [isReady, token, navigate, accounts.length, slideRemote])
 
   // ── Stable refs ────────────────────────────────────────────────────────────
 

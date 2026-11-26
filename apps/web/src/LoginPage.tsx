@@ -14,6 +14,7 @@ import { describeAuthError } from './loginFlow'
 import { RETURN_TO_KEY } from './OAuthConsentPage'
 import { BuildInfo } from './BuildInfo'
 import { DesktopDownload } from './DesktopDownload'
+import { readSlideRemote } from './slideRemote'
 
 const FEATURES: Array<{ icon: string; key: 'login.feature.markdown' | 'login.feature.wikilinks' | 'login.feature.collab' | 'login.feature.plugins' }> = [
   { icon: 'file-text', key: 'login.feature.markdown' },
@@ -75,6 +76,8 @@ export function LoginPage() {
   const [loading, setLoading]   = useState<LoginPrompt | 'login' | null>(null)
   const { token, login, activeAccount, accounts, loginError } = useAuth()
   const navigate                = useNavigate()
+  // Telephone venu du code QR d'une presentation.
+  const [remotePending]         = useState(() => readSlideRemote() !== null)
   // Version bureau : la personne saisit l'adresse du serveur.
   const serverChoice            = getServerChoice()
   const [server, setServer]     = useState(serverChoice.current ?? '')
@@ -187,6 +190,11 @@ export function LoginPage() {
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-editor, var(--font-ui))', marginBottom: 6 }}>{t('app', 'login.title')}</div>
           <div style={{ fontSize: 14, color: 'var(--text-faint)', lineHeight: 1.5 }}>{t('app', 'login.subtitle')}</div>
+          {remotePending && (
+            <div data-testid="login-slide-remote" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--radius)', background: 'var(--accent-dim)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.45 }}>
+              Connectez-vous avec le compte de l’ordinateur : le téléphone pilotera ensuite la présentation.
+            </div>
+          )}
         </div>
 
         {/* Error */}

@@ -3,11 +3,12 @@
 //
 // Ou envoyer une personne non connectee qui arrive sur l'appli.
 // Navigateur, premiere visite : la page vitrine (/decouvrir).
-// Quelqu'un qui a deja un compte enregistre (session expiree) ou l'appli
-// de bureau : directement la connexion.
+// Quelqu'un qui a deja un compte enregistre (session expiree), l'appli
+// de bureau ou un telephone qui vient du code QR d'une presentation :
+// directement la connexion.
 
 export const LANDING_PATH = '/decouvrir'
 
-export function visitorEntryPath({ desktop, savedAccounts }: { desktop: boolean; savedAccounts: number }): string {
-  return desktop || savedAccounts > 0 ? '/login' : LANDING_PATH
+export function visitorEntryPath({ desktop, savedAccounts, slideRemote = false }: { desktop: boolean; savedAccounts: number; slideRemote?: boolean }): string {
+  return desktop || savedAccounts > 0 || slideRemote ? '/login' : LANDING_PATH
 }
