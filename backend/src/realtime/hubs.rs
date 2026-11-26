@@ -20,6 +20,9 @@ use crate::state::AppState;
 /// Une relayee est un message du protocole : 2 Mio de base64, bien au-dela d'une enveloppe legitime.
 const MAX_FRAME_BASE64: usize = 2 * 1024 * 1024;
 
+/// Un message entre les appareils d'un compte (NotifyMyDevices) : court.
+const MAX_DEVICE_MESSAGE: usize = 4 * 1024;
+
 fn arg_str(args: &[Value], i: usize) -> AppResult<String> {
     match args.get(i) {
         Some(Value::String(s)) => Ok(s.clone()),
@@ -209,6 +212,27 @@ async fn vault_hub(st: &AppState, conn_id: &str, conn: &Arc<Conn>, caller: &str,
                 hub.send_to(&h.conn, &event("LockRequested", vec![json!(vault_id), json!(doc_id), json!(caller), json!(caller_name(conn))]));
             }
             Ok(Value::Null)
+        }
+        "NotifyMyDevices" => {
+            // Un message ephemere aux AUTRES connexions du meme compte (une
+            // presentation en cours propose au telephone d'etre sa
+            // telecommande). Rien n'est garde, personne d'autre ne le recoit.
+            if is_link_caller(caller) || conn.principal.service.is_some() {
+                return Err(AppError::Unauthorized("Réservé aux comptes.".into()));
+            }
+            let payload = args.first().cloned().unwrap_or(Value::Null);
+            if !payload.is_object() || payload.to_string().len() > MAX_DEVICE_MESSAGE {
+                return Err(AppError::Validation("Message d'appareil invalide ou trop long.".into()));
+            }
+            let msg = event("MyDevicesMessage", vec![payload]);
+            let mut sent = 0;
+            for entry in hub.conns.iter() {
+                if entry.key() != conn_id && entry.value().principal.sub == caller {
+                    let _ = entry.value().tx.send(msg.clone());
+                    sent += 1;
+                }
+            }
+            Ok(json!(sent))
         }
         _ => Err(unknown(method)),
     }

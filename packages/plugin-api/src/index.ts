@@ -158,8 +158,8 @@ export type {
   ComparableView, ComparableFileView,
 } from './capabilities'
 export { SLIDE_THEMES, SLIDE_TRANSITIONS, SLIDE_EFFECTS, SLIDE_DECORS, isSlidesNote, slideDeck, slideSeparators, slideIndexAt, slideSteps, insertIntoSlide, setDeckStyle, setSlideStyle, setSlideImage, slideStyleValue } from './slides'
-export { REMOTE_NOTES_MAX, isRemoteMessage, newRemoteSession, remoteUrl, isLocalOrigin } from './slideRemote'
-export type { SlideScreenState, SlideRemoteCommand, SlideRemoteOrder, SlideRemoteMessage, SlideRemoteLink } from './slideRemote'
+export { REMOTE_NOTES_MAX, isRemoteMessage, newRemoteSession, remoteUrl, remotePath, isLocalOrigin, isSlideOffer, SLIDE_OFFER_EVERY_MS, SLIDE_OFFER_TTL_MS } from './slideRemote'
+export type { SlideScreenState, SlideRemoteCommand, SlideRemoteOrder, SlideRemoteMessage, SlideRemoteLink, SlideOffer } from './slideRemote'
 export type { Slide, SlideDeck, SlideTheme, SlideRatio, SlideTransition, SlideEffect, SlideDecor, SlideImage, SlideOptions, DeckStyle, SlideStyle } from './slides'
 export type { NoteBlock, NoteBlockKind } from './noteBlocks'
 export { splitNoteBlocks, blockFingerprint, textFingerprint, blockAt, newBlockId, blockIdInsertion, PROSE_BLOCK_KINDS } from './noteBlocks'

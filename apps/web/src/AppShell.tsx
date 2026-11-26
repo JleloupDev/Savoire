@@ -8,7 +8,7 @@ import { useVaultKey } from './VaultKeyContext'
 import { VaultKeyGate } from './VaultKeyGate'
 import { sharePagesOf, type SharePages } from './shareScope'
 import { VaultClient, DocumentStore, LocalStorageIndexStorage } from '@savoire/platform'
-import { YMapVaultDirectory, getServerBaseUrl, serverUrl } from '@savoire/infrastructure-sync'
+import { MyDevicesClient, YMapVaultDirectory, getServerBaseUrl, serverUrl } from '@savoire/infrastructure-sync'
 import { getKeyCustody, requiresUserKey } from './keyCustody'
 import { getActiveProfile, setProfileRuntimeDeps } from './profile'
 import { defaultServerFor, getServerChoice } from './serverConnection'
@@ -87,6 +87,7 @@ import { setSlideRemoteFactory } from '@savoire/editor-core'
 import { isLocalOrigin, newRemoteSession, remoteUrl } from '@savoire/plugin-api'
 import { openRemoteLink, readSlideRemote, remoteOrigin } from './slideRemote'
 import { SlideRemotePage } from './SlideRemotePage'
+import { SlideOfferBanner } from './SlideOfferBanner'
 
 initTheme()
 applyTypography()
@@ -1279,13 +1280,32 @@ export function AppShell() {
       if (!onServer) return { reason: 'La télécommande passe par le serveur Savoire : elle marche pour les vaults du serveur.' }
       const origin = remoteOrigin(getServerBaseUrl())
       const session = newRemoteSession()
+      const path = documentsRef.current.find(d => d.id === docId)?.path ?? ''
       return openRemoteLink({
         sync: pluginSyncRef.current, vaultId: vault.id, docId, userId, session,
         url: remoteUrl(origin, vault.id, docId, session), local: isLocalOrigin(origin),
+        // Proposee aux autres appareils du compte (telephone ou Savoire est ouvert).
+        devices: () => vaultSessionRef.current?.devices,
+        title: path.split('/').pop()?.replace(/\.md$/i, ''),
       })
     })
     return () => setSlideRemoteFactory(null)
   }, [activeProfile.desktop, activeProfile.name])
+
+  // Telephone : les messages des autres appareils du compte, meme sans vault
+  // ouvert (une presentation en cours propose d'etre sa telecommande).
+  const [myDevices, setMyDevices] = useState<MyDevicesClient | null>(null)
+  // Le jeton du compte serveur (auth.token), pas celui d'un vault local.
+  const serverTokenRef = useRef<string | null>(auth.token)
+  serverTokenRef.current = auth.token
+  const onServer = !!auth.token && activeProfile.name !== 'edgesync'
+  const serverUser = auth.activeAccount?.userId
+  useEffect(() => {
+    if (!mobile || slideRemote || !onServer) return
+    const client = new MyDevicesClient(getServerBaseUrl(), () => serverTokenRef.current)
+    setMyDevices(client)
+    return () => { setMyDevices(null); void client.dispose() }
+  }, [mobile, slideRemote, onServer, serverUser])
 
   // Telephone en telecommande : le vault de la presentation, des que la liste est la.
   const slideRemoteOpenedRef = useRef(false)
@@ -1777,6 +1797,9 @@ export function AppShell() {
           error={slideRemoteError}
         />
       )}
+
+      {/* Telephone : une presentation en cours ailleurs propose d'etre sa telecommande. */}
+      {myDevices && <SlideOfferBanner devices={myDevices} />}
 
       {/* ── Icon rail (pas dans la fenetre d'une note) ── */}
       {!noteWindow && !mobile && <IconRail

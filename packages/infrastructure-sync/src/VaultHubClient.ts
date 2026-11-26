@@ -47,6 +47,7 @@ export class VaultHubClient {
   private indexCallbacks = new Map<string, ((update: Uint8Array) => void)[]>()
   private lockChangedCallbacks: ((docId: string, holder: DocumentLockState | null) => void)[] = []
   private lockRequestedCallbacks: ((docId: string, requesterName: string) => void)[] = []
+  private readonly deviceCallbacks = new Set<(message: Record<string, unknown>) => void>()
   private unsubLocalVaultUpdate: (() => void) | null = null
   private readonly unsubGone: () => void
   /** Envois en cours (repertoire, index), pour flush(). */
@@ -128,6 +129,12 @@ export class VaultHubClient {
       })
       this.connection.on('LockRequested', (_v: string, docId: string, _u: string, name: string) => {
         for (const cb of this.lockRequestedCallbacks) cb(docId, name)
+      })
+
+      // ── Messages entre les appareils du compte (ephemeres) ────────────────
+      this.connection.on('MyDevicesMessage', (message: unknown) => {
+        if (!message || typeof message !== 'object') return
+        for (const cb of [...this.deviceCallbacks]) cb(message as Record<string, unknown>)
       })
 
       // ── Acces au vault modifie (membre retire, vault supprime) ────────────
@@ -369,6 +376,18 @@ export class VaultHubClient {
   onLockRequested(cb: (docId: string, requesterName: string) => void): () => void {
     this.lockRequestedCallbacks.push(cb)
     return () => { this.lockRequestedCallbacks = this.lockRequestedCallbacks.filter(x => x !== cb) }
+  }
+
+  // ── Appareils du compte ───────────────────────────────────────────────────
+
+  async notifyMyDevices(message: Record<string, unknown>): Promise<void> {
+    const connection = await this._ensureConnected()
+    await connection.invoke('NotifyMyDevices', message)
+  }
+
+  onDeviceMessage(cb: (message: Record<string, unknown>) => void): () => void {
+    this.deviceCallbacks.add(cb)
+    return () => { this.deviceCallbacks.delete(cb) }
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

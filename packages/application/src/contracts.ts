@@ -177,7 +177,20 @@ export interface IVaultSyncSession extends IVaultContentSession {
    * ou l'appli garde ses index locaux. Voir VaultIndexer.ts et ADR-027.
    */
   readonly indexer?: IVaultIndexer
+  /**
+   * Messages ephemeres entre les appareils connectes du meme compte (une
+   * presentation propose au telephone d'etre sa telecommande). Capacite du
+   * profil serveur, qui relaie sans rien garder ; absente ailleurs.
+   */
+  readonly devices?: IMyDevices
   dispose(): Promise<void>
+}
+
+/** Messages entre les appareils d'un meme compte, connectes en ce moment. */
+export interface IMyDevices {
+  /** Envoie un petit objet JSON (4 Kio au plus) aux AUTRES appareils du compte. */
+  send(message: Record<string, unknown>): Promise<void>
+  onMessage(cb: (message: Record<string, unknown>) => void): () => void
 }
 
 /**

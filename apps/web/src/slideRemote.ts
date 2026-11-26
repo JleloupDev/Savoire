@@ -8,8 +8,11 @@
 //    session du vault (sync.openRoom). Les messages passent dans la
 //    presence, ephemere : rien n'est garde ;
 //  - l'adresse que le telephone ouvre, et son souvenir le temps de la
-//    connexion (le retour du fournisseur d'identite revient sur « / »).
-import { isRemoteMessage, type DocumentRoom, type SlideRemoteLink, type SlideRemoteMessage, type SyncAPI } from '@savoire/plugin-api'
+//    connexion (le retour du fournisseur d'identite revient sur « / ») ;
+//  - la proposition aux autres appareils du compte (session.devices), tant
+//    qu'aucun telephone n'est connecte.
+import { SLIDE_OFFER_EVERY_MS, isRemoteMessage, type DocumentRoom, type SlideOffer, type SlideRemoteLink, type SlideRemoteMessage, type SyncAPI } from '@savoire/plugin-api'
+import type { IMyDevices } from '@savoire/application'
 
 const STORAGE_KEY = 'savoire-slide-remote'
 /** Le souvenir d'une telecommande ouverte vit le temps d'une presentation. */
@@ -69,18 +72,43 @@ export function openRemoteLink(opts: {
   session: string
   url: string
   local: boolean
+  /** Les appareils du compte (session du vault) : la presentation leur est proposee. */
+  devices?: () => IMyDevices | undefined
+  /** Titre de la proposition quand la presentation n'en donne pas (nom de la note). */
+  title?: string
 }): SlideRemoteLink {
   const listeners = new Set<(m: SlideRemoteMessage) => void>()
   let room: DocumentRoom | null = null
   let closed = false
   let queue: SlideRemoteMessage[] = []
+  // Proposition aux autres appareils du compte.
+  let offerTitle: string | null = null
+  let offerTimer: ReturnType<typeof setInterval> | null = null
+  let phoneOn = false
+  const sendOffer = (ended = false) => {
+    const devices = opts.devices?.()
+    if (!devices || offerTitle === null) return
+    const offer: SlideOffer = { kind: 'slides-offer', vaultId: opts.vaultId, docId: opts.docId, session: opts.session, title: offerTitle, ...(ended ? { ended: true } : {}) }
+    void devices.send({ ...offer }).catch(() => {})
+  }
+  const watchPhone = (m: SlideRemoteMessage) => {
+    if (m.role !== 'remote') return
+    if (m.cmd === 'bye') { phoneOn = false; return }
+    if (!phoneOn) {
+      phoneOn = true
+      // Les autres telephones retirent la proposition.
+      sendOffer(true)
+    }
+  }
   const push = (r: DocumentRoom, m: SlideRemoteMessage) => { void r.updatePresence({ userId: opts.userId, slides: m }).catch(() => {}) }
   void opts.sync.openRoom(opts.vaultId, opts.docId, opts.userId).then(r => {
     if (closed) { void r.close(); return }
     room = r
     r.onPresence((_user, presence) => {
       const m = (presence as { slides?: unknown }).slides
-      if (isRemoteMessage(m, opts.session)) for (const cb of listeners) cb(m)
+      if (!isRemoteMessage(m, opts.session)) return
+      watchPhone(m)
+      for (const cb of listeners) cb(m)
     })
     for (const m of queue) push(r, m)
     queue = []
@@ -97,10 +125,21 @@ export function openRemoteLink(opts: {
       listeners.add(cb)
       return () => { listeners.delete(cb) }
     },
+    offer(title) {
+      if (closed) return
+      offerTitle = title.trim() || opts.title || 'Présentation'
+      if (offerTimer) return
+      const tick = () => { if (!phoneOn) sendOffer() }
+      tick()
+      offerTimer = setInterval(tick, SLIDE_OFFER_EVERY_MS)
+    },
     close() {
       if (closed) return
       closed = true
       listeners.clear()
+      if (offerTimer) clearInterval(offerTimer)
+      offerTimer = null
+      if (!phoneOn) sendOffer(true)
       const r = room
       room = null
       // Le dernier message (fin, au revoir) part avant la fermeture.

@@ -59,3 +59,42 @@ describe('telecommande : lien sur la room de la note', () => {
     expect(room.close).toHaveBeenCalled()
   })
 })
+
+describe('telecommande : proposition aux autres appareils du compte', () => {
+  it('propose jusqu a ce qu un telephone se connecte, reprend s il part, retire a la fin', async () => {
+    vi.useFakeTimers()
+    try {
+      let listener: ((u: string, p: DocumentRoomPresence) => void) | null = null
+      const room = {
+        updatePresence: vi.fn(async () => {}),
+        onPresence: (cb: (u: string, p: DocumentRoomPresence) => void) => { listener = cb; return () => {} },
+        close: vi.fn(async () => {}),
+      } as unknown as DocumentRoom
+      const sync: SyncAPI = { openRoom: vi.fn(async () => room) }
+      const offers: Record<string, unknown>[] = []
+      const devices = { send: vi.fn(async (m: Record<string, unknown>) => { offers.push(m) }), onMessage: () => () => {} }
+      const link = openRemoteLink({ sync, vaultId: 'v', docId: 'd', userId: 'u', session: 's1', url: 'https://x/?session=s1', local: false, devices: () => devices, title: 'Bilan' })
+      await vi.advanceTimersByTimeAsync(0)
+      link.offer!('')
+      expect(offers).toEqual([{ kind: 'slides-offer', vaultId: 'v', docId: 'd', session: 's1', title: 'Bilan' }])
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(offers).toHaveLength(2)
+      // Un telephone se connecte : la proposition est retiree, puis se tait.
+      listener!('u', { userId: 'u', slides: { role: 'remote', session: 's1', seq: 1, cmd: 'hello' } })
+      expect(offers[2]).toMatchObject({ ended: true })
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(offers).toHaveLength(3)
+      // Il part : la proposition reprend.
+      listener!('u', { userId: 'u', slides: { role: 'remote', session: 's1', seq: 2, cmd: 'bye' } })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(offers).toHaveLength(4)
+      expect(offers[3]).not.toHaveProperty('ended')
+      link.close()
+      expect(offers[4]).toMatchObject({ ended: true })
+      await vi.advanceTimersByTimeAsync(20000)
+      expect(offers).toHaveLength(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

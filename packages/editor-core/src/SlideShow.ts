@@ -665,6 +665,8 @@ export function startSlideShow(text: string, opts: SlideShowOptions = {}): Slide
   releaseBack = backHandler?.(() => { releaseBack = null; close() }) ?? null
   show()
   if (opts.remoteOnStart && opts.remote) toggleRemote(true)
+  // Les autres appareils du compte se voient proposer d'etre la telecommande.
+  if (opts.remote) openRemote()?.offer?.(deck.slides[0]?.title ?? '')
   root.focus()
   // Telephone tenu droit : en plein ecran, l'image tourne en paysage (si le systeme le permet).
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches

@@ -133,6 +133,25 @@ async fn edit_locks() {
 }
 
 #[tokio::test]
+async fn my_devices_messages() {
+    let app = app!();
+    let (_alice, ta) = app.user("alice").await;
+    let (_bob, tb) = app.user("bob").await;
+    let mut pc = app.hub("vault", &ta).await.unwrap();
+    let mut phone = app.hub("vault", &ta).await.unwrap();
+    let mut other = app.hub("vault", &tb).await.unwrap();
+    // Sans vault rejoint : le message va aux autres connexions du meme compte.
+    let offer = json!({ "kind": "slides-offer", "session": "s1" });
+    assert_eq!(pc.invoke("NotifyMyDevices", json!([offer])).await.unwrap(), json!(1));
+    assert_eq!(phone.wait_event("MyDevicesMessage", LONG).await.unwrap(), json!([offer]));
+    assert!(pc.no_event("MyDevicesMessage", SHORT).await);
+    assert!(other.no_event("MyDevicesMessage", SHORT).await);
+    // Pas un objet, ou trop long : refuse.
+    assert!(pc.invoke("NotifyMyDevices", json!(["texte"])).await.is_err());
+    assert!(pc.invoke("NotifyMyDevices", json!([{ "x": "a".repeat(5000) }])).await.is_err());
+}
+
+#[tokio::test]
 async fn sync_hub_documents() {
     let app = app!();
     let (alice, ta) = app.user("alice").await;

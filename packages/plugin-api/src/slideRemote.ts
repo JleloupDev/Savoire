@@ -12,6 +12,12 @@
 // la note y entre ; la session (aleatoire, dans le code) separe deux
 // presentations de la meme note.
 //
+// Sans code QR : tant que la presentation attend un telephone, l'ordinateur
+// la propose aux autres appareils du compte (SlideOffer, toutes les 5 s, par
+// le serveur qui relaie sans rien garder). Un telephone ou Savoire est
+// ouvert affiche « Devenir la télécommande ? » ; oui, il ouvre l'adresse de
+// la telecommande, comme s'il avait scanne le code.
+//
 // Ce module ne connait que le protocole (partage par l'editeur et l'appli).
 // Le transport vient de l'appli (editor-core/SlideRemote.ts,
 // setSlideRemoteFactory) : l'editeur ne sait rien des vaults ni du hub.
@@ -55,7 +61,41 @@ export interface SlideRemoteLink {
   readonly local: boolean
   send(message: SlideRemoteMessage): void
   onMessage(cb: (message: SlideRemoteMessage) => void): () => void
+  /**
+   * Propose la presentation aux autres appareils du compte, jusqu'a ce qu'un
+   * telephone se connecte (repris s'il se deconnecte). Absent : pas de
+   * proposition (le code QR reste).
+   */
+  offer?(title: string): void
   close(): void
+}
+
+/** Une presentation proposee aux autres appareils du compte. */
+export interface SlideOffer {
+  kind: 'slides-offer'
+  vaultId: string
+  docId: string
+  session: string
+  title: string
+  /** La proposition est retiree (telephone connecte, presentation finie). */
+  ended?: boolean
+}
+
+/** Une proposition est renvoyee a ce rythme tant qu'elle tient. */
+export const SLIDE_OFFER_EVERY_MS = 5000
+/** Sans nouvelle depuis ce delai, le telephone oublie la proposition. */
+export const SLIDE_OFFER_TTL_MS = 16000
+
+export function isSlideOffer(m: unknown): m is SlideOffer {
+  if (!m || typeof m !== 'object') return false
+  const o = m as Record<string, unknown>
+  return o.kind === 'slides-offer' && typeof o.vaultId === 'string' && typeof o.docId === 'string'
+    && typeof o.session === 'string' && typeof o.title === 'string'
+}
+
+/** Adresse relative de la telecommande, dans la meme appli (telephone qui accepte). */
+export function remotePath(vaultId: string, docId: string, session: string): string {
+  return `/?${new URLSearchParams({ window: 'remote', vault: vaultId, note: docId, session }).toString()}`
 }
 
 /** Une session de telecommande : 16 octets aleatoires, en base64url. */

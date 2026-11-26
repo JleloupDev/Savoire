@@ -13,7 +13,7 @@
 // hub des documents CRDT, rooms des documents snapshot, REST des pieces jointes.
 import type { DocumentRoomPresence, ICRDT, IIdentityProvider, ISharedText, ISharedTree } from '@savoire/plugin-api'
 import type { DocumentSyncKind, ISnapshotDocument, IVaultDirectory } from '@savoire/platform'
-import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IVaultSharing } from '@savoire/application'
+import type { IVaultSyncSession, VaultSyncSessionFactoryParams, IDocumentLocks, IMyDevices, IVaultSharing } from '@savoire/application'
 import type { IIndexChannel } from '@savoire/plugin-api'
 import { encodeSignedOp } from '@savoire/plugin-api'
 import * as Y from 'yjs'
@@ -307,6 +307,14 @@ export class SavoireServerVaultSession implements IVaultSyncSession {
       request: (docId) => this.hub.requestLock(docId),
       onChanged: (cb) => this.hub.onLockChanged(cb),
       onRequested: (cb) => this.hub.onLockRequested(cb),
+    }
+  }
+
+  /** Messages entre les appareils du compte : relayes par le hub du vault. */
+  get devices(): IMyDevices {
+    return {
+      send: (message) => this.hub.notifyMyDevices(message),
+      onMessage: (cb) => this.hub.onDeviceMessage(cb),
     }
   }
 
