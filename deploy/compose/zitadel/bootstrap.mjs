@@ -77,6 +77,9 @@ const API_USER = 'savoire-api'
 // Le bureau revient sur une adresse locale ; le port est choisi a chaque
 // connexion (RFC 8252, 7.3), Zitadel l'accepte pour une appli native.
 const DESKTOP_REDIRECT = 'http://127.0.0.1/callback'
+// L'app Android : le navigateur du telephone revient par l'adresse propre a
+// l'app (schema prive, RFC 8252 ; apps/web/src/loginFlow.ts).
+const ANDROID_REDIRECT = 'org.savoire.desktop:/auth/callback'
 
 async function waitForPat() {
   for (let i = 0; i < 120; i++) {
@@ -496,10 +499,10 @@ const webClientId = await ensureOidcApp(projectId, WEB_APP, {
 const desktopClientId = await ensureOidcApp(projectId, DESKTOP_APP, {
   ...common,
   appType: 'OIDC_APP_TYPE_NATIVE',
-  redirectUris: [DESKTOP_REDIRECT],
+  redirectUris: [DESKTOP_REDIRECT, ANDROID_REDIRECT],
   postLogoutRedirectUris: [],
-  // Une appli native revient sur http://127.0.0.1 (port libre) : admis sans
-  // le mode dev (verifie avec Zitadel v4.16).
+  // Une appli native revient sur http://127.0.0.1 (port libre) ou sur un
+  // schema prive : admis sans le mode dev (verifie avec Zitadel v4.16).
   devMode: false,
 })
 

@@ -7,7 +7,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { AuthService, type AppAuthResponse, type IAuthAPI, type PendingLogin } from '@savoire/application'
 import { HttpAuthBackend } from '@savoire/infrastructure-sync'
 import {
-  CALLBACK_PATH, PENDING_KEY, describeAuthError, loopbackLoginDriver, readLoginCallback, redirectLoginDriver,
+  ANDROID_AUTH_EVENT, ANDROID_PENDING_KEY, ANDROID_REDIRECT_URI,
+  CALLBACK_PATH, PENDING_KEY, androidLoginDriver, describeAuthError, loopbackLoginDriver, readLoginCallback, redirectLoginDriver,
 } from '../../../../../apps/web/src/loginFlow'
 
 const SERVER = 'https://savoire.test'
@@ -229,5 +230,69 @@ describe('bureau : navigateur du systeme, retour sur 127.0.0.1', () => {
     const svc = new AuthService(backend)
     await svc.endSessionUrl('https://app.test/')
     expect(backend.endSessionUrl).toHaveBeenCalledWith('https://app.test/', undefined)
+  })
+})
+
+describe('Android : navigateur du telephone, retour par l\'adresse de l\'app', () => {
+  function androidEnv() {
+    const { port, store } = memoryPort()
+    const events = new EventTarget()
+    const page = Object.assign(new EventTarget(), { visibilityState: 'visible' as DocumentVisibilityState })
+    let ret = ''
+    const opened: string[] = []
+    const bridge = {
+      openInBrowser: (url: string) => { opened.push(url); return true },
+      takeAuthReturn: () => { const r = ret; ret = ''; return r },
+    }
+    const reloads: number[] = []
+    const driver = androidLoginDriver(bridge, { storage: port.storage, events, page, reload: () => reloads.push(1) })
+    /** Le navigateur rend la main a l'app (onNewIntent). */
+    const comeBack = (query: string) => { ret = `${ANDROID_REDIRECT_URI}?${query}`; events.dispatchEvent(new Event(ANDROID_AUTH_EVENT)) }
+    const setVisible = (v: boolean) => { page.visibilityState = v ? 'visible' : 'hidden'; page.dispatchEvent(new Event('visibilitychange')) }
+    return { driver, store, opened, reloads, comeBack, setVisible, setReturn: (r: string) => { ret = r } }
+  }
+
+  it('ouvre le navigateur, attend le retour, echange le code', async () => {
+    const env = androidEnv()
+    const auth = fakeAuth()
+    const login = env.driver.start(auth)
+    await vi.waitFor(() => expect(env.opened).toHaveLength(1))
+    expect(new URL(env.opened[0]).searchParams.get('redirect_uri')).toBe(ANDROID_REDIRECT_URI)
+    expect(env.store.has(ANDROID_PENDING_KEY)).toBe(true)
+    env.comeBack('code=c&state=st')
+    expect(await login).toBe(RESPONSE)
+    expect(vi.mocked(auth.completeLogin).mock.calls[0][1].get('code')).toBe('c')
+    expect(env.store.has(ANDROID_PENDING_KEY)).toBe(false)
+  })
+
+  it('app fermee pendant la connexion : le retour est pris au demarrage', async () => {
+    const env = androidEnv()
+    env.store.set(ANDROID_PENDING_KEY, JSON.stringify(PENDING))
+    env.setReturn(`${ANDROID_REDIRECT_URI}?code=c&state=st`)
+    const callback = env.driver.takeCallback!()
+    expect(callback?.get('code')).toBe('c')
+    expect(env.driver.takeCallback!()).toBeNull()
+    expect(await env.driver.complete(fakeAuth(), callback!)).toBe(RESPONSE)
+  })
+
+  it('retour dans l\'app sans connexion : annulee ; finie plus tard, la page la reprend', async () => {
+    vi.useFakeTimers()
+    try {
+      const env = androidEnv()
+      const login = env.driver.start(fakeAuth())
+      const failed = expect(login).rejects.toThrow('Connexion annulée.')
+      await vi.waitFor(() => expect(env.opened).toHaveLength(1))
+      env.setVisible(false)
+      env.setVisible(true)
+      await vi.advanceTimersByTimeAsync(3000)
+      await failed
+      expect(describeAuthError(await login.catch(e => e))).toBe('Connexion annulée.')
+      // L'etat reste : un retour tardif recharge la page, qui le reprend.
+      expect(env.store.has(ANDROID_PENDING_KEY)).toBe(true)
+      env.comeBack('code=c&state=st')
+      expect(env.reloads).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

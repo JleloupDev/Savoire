@@ -17,7 +17,7 @@ import { pluginRegistry } from './pluginRegistry'
 import { ToastContainer } from './ToastContainer'
 import { FeedbackBubble } from './FeedbackBubble'
 import { getServerChoice } from './serverConnection'
-import { CALLBACK_PATH, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
+import { CALLBACK_PATH, androidAuthBridge, androidLoginDriver, loopbackLoginDriver, redirectLoginDriver, tauriLoopbackBridge } from './loginFlow'
 import { isAndroidRuntime, isTauriRuntime } from './tauriRuntime'
 import { IconContext, type IconRenderer } from '@savoire/editor-react'
 import { Icon } from '@savoire/ui-components'
@@ -27,11 +27,15 @@ const renderIcon: IconRenderer = (name, { size }) => <Icon name={name} size={siz
 
 const { authApi, adminApi, sharingApi, setTokenRenewer } = createWebServices()
 
-// Bureau : navigateur du systeme et retour sur 127.0.0.1. Navigateur et
-// Android (pas de port local a ecouter) : redirection dans la page.
-const loginDriver = isTauriRuntime() && !isAndroidRuntime()
-  ? loopbackLoginDriver(tauriLoopbackBridge())
-  : redirectLoginDriver()
+// Bureau : navigateur du systeme et retour sur 127.0.0.1. Android :
+// navigateur du telephone et retour par l'adresse propre a l'app.
+// Navigateur : redirection dans la page.
+const androidBridge = isTauriRuntime() && isAndroidRuntime() ? androidAuthBridge() : null
+const loginDriver = androidBridge
+  ? androidLoginDriver(androidBridge)
+  : isTauriRuntime() && !isAndroidRuntime()
+    ? loopbackLoginDriver(tauriLoopbackBridge())
+    : redirectLoginDriver()
 
 export function App() {
   return (

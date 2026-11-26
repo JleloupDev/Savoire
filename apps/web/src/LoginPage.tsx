@@ -8,6 +8,7 @@ import { useAuth } from './AuthContext'
 import { t } from '@savoire/i18n'
 import { ServerAddressError } from '@savoire/infrastructure-sync'
 import { getServerChoice } from './serverConnection'
+import { isAndroidRuntime } from './tauriRuntime'
 import { connectToServer, desktopConnectionDeps } from './desktopConnection'
 import { describeAuthError } from './loginFlow'
 import { RETURN_TO_KEY } from './OAuthConsentPage'
@@ -231,7 +232,8 @@ export function LoginPage() {
           {t('app', 'login.hint')}
         </div>
 
-        {serverChoice.configurable && (
+        {/* Android : pas de vault sur le telephone, seulement le serveur. */}
+        {serverChoice.configurable && !isAndroidRuntime() && (
           <button
             data-testid="login-back-to-desktop"
             // Bureau : retour a l'app (vaults locaux) sans recharger la page.

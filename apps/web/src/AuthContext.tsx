@@ -102,8 +102,9 @@ export function AuthProvider({ children, authApi, loginDriver, singleAccount = f
   }, [noteWindow])
   const [loginError, setLoginError] = useState<string | null>(null)
   // Retour du fournisseur (/auth/callback) : lu au premier rendu, avant que
-  // le routeur ne renvoie ailleurs.
-  const [callback] = useState(() => readLoginCallback())
+  // le routeur ne renvoie ailleurs. Android : l'app rouverte par son adresse
+  // de retour (voir androidLoginDriver).
+  const [callback] = useState(() => readLoginCallback() ?? loginDriver.takeCallback?.() ?? null)
 
   const activeAccount = accounts.find(a => a.isActive) ?? null
 

@@ -155,6 +155,16 @@ revient à l'écran (ou à la note) précédent. Pour la voir dans un navigateur
 de plugin choisit sa place sur mobile avec `mobile: 'tab' | 'more' | 'sheet' |
 'hidden'` (`ViewSpec`, `ViewGroup`).
 
+La connexion s'ouvre dans le **navigateur du téléphone** (gestionnaire de
+mots de passe, connexion Google : refusée par Google dans la WebView d'une
+app). Le fournisseur revient par l'adresse propre à l'app,
+`org.savoire.desktop:/auth/callback`, déclarée pour l'appli native chez
+Zitadel (`deploy/compose/zitadel/bootstrap.mjs`) et dans le manifeste
+(`scripts/android-extras.mjs`). Côté page : `androidLoginDriver`
+(`apps/web/src/loginFlow.ts`). L'app tourne en plein écran (Android 15) :
+l'activité laisse la place des barres du système et du clavier
+(`android/java/MainActivity.kt`).
+
 Côté code : `src-tauri/src/lib.rs` (les commandes de dossier sont réservées
 au bureau, Android n'a que celles des serveurs), `isAndroidRuntime`
 (`apps/web/src/tauriRuntime.ts`) et `initProfile` (`apps/web/src/profile.ts`).
@@ -178,7 +188,8 @@ le modèle « Note du jour » si besoin), en élément de liste précédé de l'
 Les fichiers Android propres à Savoire (activité principale, widget, ses
 ressources) sont dans `android/`. Le projet généré par `tauri android init`
 ne les a pas : `scripts/android-extras.mjs` les y copie et déclare le widget
-dans `AndroidManifest.xml`, entre `init` et `build`.
+et l'adresse de retour de la connexion dans `AndroidManifest.xml`, entre
+`init` et `build`.
 
 Construction : le job « Android » de `.github/workflows/desktop.yml` génère
 le projet Android (`src-tauri/gen/android`, ignoré par git) puis un **APK

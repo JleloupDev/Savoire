@@ -3,8 +3,10 @@
 //
 // Aller chez le fournisseur d'identite du serveur, et en revenir (ADR-028).
 //
-// - Navigateur (et Android) : la page part chez le fournisseur et revient sur
+// - Navigateur : la page part chez le fournisseur et revient sur
 //   /auth/callback ; l'etat PKCE attend dans sessionStorage.
+// - Android : le navigateur du telephone, retour par l'adresse propre a
+//   l'app (org.savoire.desktop:/auth/callback), voir androidLoginDriver.
 // - Bureau : la page reste ; le navigateur du systeme s'ouvre, le
 //   fournisseur revient sur http://127.0.0.1:<port>/callback, ou la coquille
 //   Rust attend (RFC 8252). Recommande pour les applis natives : la
@@ -24,6 +26,11 @@ export interface LoginDriver {
   start(auth: IAuthAPI, prompt?: LoginPrompt): Promise<AppAuthResponse | null>
   /** Retour sur /auth/callback (navigateur) : le compte, ou null si ce n'est pas le notre. */
   complete(auth: IAuthAPI, callback: URLSearchParams): Promise<AppAuthResponse | null>
+  /**
+   * Un retour du fournisseur recu hors de l'adresse de la page (Android : l'app
+   * rouverte par son adresse de retour), a donner a complete(). Lu une fois.
+   */
+  takeCallback?(): URLSearchParams | null
   /**
    * Fin de la session du fournisseur (navigateur : redirection). `idToken` :
    * la session a fermer ; sans lui, le fournisseur demande laquelle.
@@ -113,6 +120,121 @@ export function loopbackLoginDriver(bridge: LoopbackBridge): LoginDriver {
       return null
     },
   }
+}
+
+/**
+ * Android : adresse de retour propre a l'app (RFC 8252, schema prive). Le
+ * navigateur du telephone la donne a l'app, qui seule la declare
+ * (apps/desktop/android, scripts/android-extras.mjs) ; le fournisseur
+ * l'accepte pour l'appli native (deploy/compose/zitadel/bootstrap.mjs).
+ */
+export const ANDROID_REDIRECT_URI = 'org.savoire.desktop:/auth/callback'
+/** Android : l'etat PKCE survit a l'app fermee par le systeme pendant la connexion. */
+export const ANDROID_PENDING_KEY = 'savoire.oidc.android-pending'
+/** La coquille Android previent la page d'un retour de connexion. */
+export const ANDROID_AUTH_EVENT = 'savoire-android-auth'
+
+/** Ce que l'activite Android fournit : voir apps/desktop/android/java/MainActivity.kt. */
+export interface AndroidAuthBridge {
+  /** Ouvre l'adresse dans le navigateur du telephone ; faux s'il n'y en a pas. */
+  openInBrowser(url: string): boolean
+  /** L'adresse de retour recue (une seule fois) ; vide sinon. */
+  takeAuthReturn(): string
+}
+
+/** Le pont pose par l'activite Android (window.SavoireAndroid), s'il est la. */
+export function androidAuthBridge(scope: unknown = globalThis): AndroidAuthBridge | null {
+  const b = (scope as { SavoireAndroid?: Partial<AndroidAuthBridge> }).SavoireAndroid
+  if (typeof b?.openInBrowser !== 'function' || typeof b.takeAuthReturn !== 'function') return null
+  return { openInBrowser: url => b.openInBrowser!(url), takeAuthReturn: () => b.takeAuthReturn!() }
+}
+
+/** Les parametres d'une adresse de retour Android (`org.savoire.desktop:/auth/callback?...`). */
+function returnParams(url: string): URLSearchParams | null {
+  if (!url.startsWith(ANDROID_REDIRECT_URI)) return null
+  const q = url.indexOf('?')
+  return new URLSearchParams(q < 0 ? '' : url.slice(q + 1))
+}
+
+/**
+ * Android : le navigateur du telephone, puis retour dans l'app par
+ * ANDROID_REDIRECT_URI. Pas la WebView de l'app : Google y refuse la
+ * connexion, et le gestionnaire de mots de passe n'y est pas.
+ *
+ * App restee ouverte : start() attend l'evenement ANDROID_AUTH_EVENT. App
+ * fermee entre-temps : l'adresse de retour la rouvre, et le premier rendu la
+ * prend par takeCallback() (AuthContext), puis complete().
+ */
+export function androidLoginDriver(
+  bridge: AndroidAuthBridge,
+  env: {
+    storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null
+    events: Pick<Window, 'addEventListener' | 'removeEventListener'>
+    /** La page (visibilitychange) : la personne revient sans s'etre connectee. */
+    page: Pick<Document, 'addEventListener' | 'removeEventListener' | 'visibilityState'>
+    /** Recharge la page : un retour arrive alors que personne ne l'attend. */
+    reload(): void
+  } = { storage: safeLocalStorage(), events: window, page: document, reload: () => window.location.replace('/') },
+): LoginDriver {
+  let waiting: ((url: string) => void) | null = null
+  env.events.addEventListener(ANDROID_AUTH_EVENT, () => {
+    if (waiting) {
+      const url = bridge.takeAuthReturn()
+      if (url) waiting(url)
+    } else {
+      // Connexion abandonnee puis finie quand meme : le rechargement la reprend.
+      env.reload()
+    }
+  })
+  const finish = (auth: IAuthAPI, params: URLSearchParams) => {
+    const raw = env.storage?.getItem(ANDROID_PENDING_KEY) ?? null
+    env.storage?.removeItem(ANDROID_PENDING_KEY)
+    if (!raw) throw new Error('Connexion expirée : recommencez.')
+    return auth.completeLogin(JSON.parse(raw) as PendingLogin, params)
+  }
+  return {
+    async start(auth, prompt) {
+      const { url, pending } = await auth.beginLogin(ANDROID_REDIRECT_URI, prompt)
+      env.storage?.setItem(ANDROID_PENDING_KEY, JSON.stringify(pending))
+      if (!bridge.openInBrowser(url)) throw new Error('Aucun navigateur sur ce téléphone pour se connecter.')
+      let cancelTimer: ReturnType<typeof setTimeout> | undefined
+      let onVisible = () => {}
+      const back = new Promise<string>((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const done = (fn: () => void) => {
+          clearTimeout(timer)
+          clearTimeout(cancelTimer)
+          env.page.removeEventListener('visibilitychange', onVisible)
+          waiting = null
+          fn()
+        }
+        timer = setTimeout(() => done(() => reject(new Error('Connexion expirée : recommencez.'))), LOOPBACK_TIMEOUT_SECS * 1000)
+        // Retour dans l'app sans adresse de retour (bouton Retour du
+        // navigateur) : connexion annulee, le bouton redevient utilisable.
+        // L'etat PKCE reste : une connexion finie plus tard est reprise.
+        onVisible = () => {
+          clearTimeout(cancelTimer)
+          if (env.page.visibilityState !== 'visible') return
+          cancelTimer = setTimeout(() => done(() => reject(Object.assign(new Error('Connexion annulée.'), { code: 'access_denied' }))), 3000)
+        }
+        waiting = u => done(() => resolve(u))
+      })
+      env.page.addEventListener('visibilitychange', onVisible)
+      const params = returnParams(await back)
+      if (!params) throw new Error('Retour de connexion inattendu.')
+      return finish(auth, params)
+    },
+    takeCallback() {
+      return returnParams(bridge.takeAuthReturn())
+    },
+    async complete(auth, callback) {
+      return finish(auth, callback)
+    },
+  }
+}
+
+function safeLocalStorage(): Storage | null {
+  try { return window.localStorage } catch { return null }
 }
 
 interface TauriInternals { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> }

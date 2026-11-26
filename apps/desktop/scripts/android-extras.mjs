@@ -7,7 +7,8 @@
 //  - android/java/*.kt : l'activite principale (remplace celle de Tauri) et le
 //    widget « Note rapide » ;
 //  - android/res/** : la mise en page, les images et les textes du widget ;
-//  - le widget declare dans AndroidManifest.xml.
+//  - le widget declare dans AndroidManifest.xml, et l'adresse de retour de la
+//    connexion (org.savoire.desktop:/auth/callback) donnee a l'activite.
 //
 // A lancer entre `tauri android init` et `tauri android build` (voir
 // .github/workflows/desktop.yml). Le relancer ne change rien de plus.
@@ -54,7 +55,28 @@ const RECEIVER = `        <receiver
                 android:resource="@xml/quick_note_widget_info" />
         </receiver>
 `
+// L'adresse de retour de la connexion (apps/web/src/loginFlow.ts) : le
+// navigateur du telephone la donne a l'activite principale.
+const AUTH_FILTER = `            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${identifier}" />
+            </intent-filter>
+`
 let manifest = readFileSync(manifestPath, 'utf8')
+if (!manifest.includes(`android:scheme="${identifier}"`)) {
+  const activity = manifest.search(/android:name="\.MainActivity"/)
+  const close = activity < 0 ? -1 : manifest.indexOf('</activity>', activity)
+  if (close < 0) {
+    console.error('AndroidManifest.xml sans activite .MainActivity : adresse de retour non declaree.')
+    process.exit(1)
+  }
+  const lineStart = manifest.lastIndexOf('\n', close) + 1
+  manifest = manifest.slice(0, lineStart) + AUTH_FILTER + manifest.slice(lineStart)
+  writeFileSync(manifestPath, manifest)
+  console.log('AndroidManifest.xml : adresse de retour de la connexion declaree')
+}
 if (!manifest.includes('.QuickNoteWidget')) {
   if (!manifest.includes('</application>')) {
     console.error('AndroidManifest.xml sans </application> : widget non declare.')
