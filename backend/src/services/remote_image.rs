@@ -91,21 +91,21 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
 
 /// Une adresse https acceptable ; Err : message pour l'IA.
 fn check_url(raw: &str) -> Result<url::Url, String> {
-    let u = url::Url::parse(raw.trim()).map_err(|_| "Adresse de l'image illisible.".to_string())?;
+    let u = url::Url::parse(raw.trim()).map_err(|_| "Adresse illisible.".to_string())?;
     if u.scheme() != "https" {
-        return Err("L'adresse de l'image doit commencer par https://.".into());
+        return Err("L'adresse doit commencer par https://.".into());
     }
     if !u.username().is_empty() || u.password().is_some() {
-        return Err("Adresse de l'image refusée (identifiants dans l'adresse).".into());
+        return Err("Adresse refusée (identifiants dans l'adresse).".into());
     }
     if u.port().is_some_and(|p| p != 443) {
-        return Err("Adresse de l'image refusée (port autre que 443).".into());
+        return Err("Adresse refusée (port autre que 443).".into());
     }
     match u.host() {
         Some(url::Host::Domain(_)) => {}
         Some(url::Host::Ipv4(ip)) if is_public_v4(ip) => {}
         Some(url::Host::Ipv6(ip)) if is_public(IpAddr::V6(ip)) => {}
-        _ => return Err("Adresse de l'image refusée (adresse non publique).".into()),
+        _ => return Err("Adresse refusée (adresse non publique).".into()),
     }
     Ok(u)
 }
@@ -114,12 +114,12 @@ fn check_url(raw: &str) -> Result<url::Url, String> {
 async fn resolve_public(u: &url::Url) -> Result<SocketAddr, String> {
     let host = u.host_str().ok_or("Adresse sans nom de site.")?;
     let host = host.trim_start_matches('[').trim_end_matches(']');
-    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, 443)).await.map_err(|_| "Site de l'image introuvable.".to_string())?.collect();
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, 443)).await.map_err(|_| "Site introuvable.".to_string())?.collect();
     if addrs.is_empty() {
-        return Err("Site de l'image introuvable.".into());
+        return Err("Site introuvable.".into());
     }
     if addrs.iter().any(|a| !is_public(a.ip())) {
-        return Err("Adresse de l'image refusée (adresse non publique).".into());
+        return Err("Adresse refusée (adresse non publique).".into());
     }
     Ok(addrs[0])
 }
@@ -131,9 +131,17 @@ fn url_name(u: &url::Url) -> Option<String> {
     (!t.is_empty() && t.len() <= 255).then(|| t.to_string())
 }
 
-/// Telecharge et verifie l'image. Err : message lisible, rendu tel quel a l'IA.
-pub async fn fetch(raw_url: &str) -> Result<RemoteImage, String> {
+/// Un fichier quelconque recu d'une IA (outil MCP add_file).
+pub struct RemoteFile {
+    pub bytes: Vec<u8>,
+    /// Dernier segment de l'adresse (nom propose quand l'IA n'en donne pas).
+    pub url_name: Option<String>,
+}
+
+/// Telecharge une adresse publique (memes protections que les images). Err : message pour l'IA.
+async fn download(raw_url: &str, max_bytes: usize, what: &str) -> Result<(Vec<u8>, Option<String>), String> {
     let mut u = check_url(raw_url)?;
+    let max_mb = max_bytes / (1024 * 1024);
     for _ in 0..=MAX_REDIRECTS {
         let addr = resolve_public(&u).await?;
         let host = u.host_str().unwrap_or_default().to_string();
@@ -145,7 +153,7 @@ pub async fn fetch(raw_url: &str) -> Result<RemoteImage, String> {
             .timeout(TIMEOUT)
             .build()
             .map_err(|_| "Téléchargement impossible.".to_string())?;
-        let mut res = client.get(u.clone()).send().await.map_err(|_| "Image injoignable.".to_string())?;
+        let mut res = client.get(u.clone()).send().await.map_err(|_| format!("{what} injoignable."))?;
         let status = res.status();
         if status.is_redirection() {
             let next = res.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).ok_or("Redirection sans adresse.")?;
@@ -154,22 +162,34 @@ pub async fn fetch(raw_url: &str) -> Result<RemoteImage, String> {
             continue;
         }
         if !status.is_success() {
-            return Err(format!("Image injoignable (statut {}). Une adresse de ChatGPT expire vite : renvoyez l'image.", status.as_u16()));
+            return Err(format!("{what} injoignable (statut {}). Une adresse de ChatGPT expire vite : renvoyez le fichier.", status.as_u16()));
         }
-        if res.content_length().is_some_and(|n| n as usize > MAX_IMAGE_BYTES) {
-            return Err("Image trop lourde (20 Mo au plus).".into());
+        if res.content_length().is_some_and(|n| n as usize > max_bytes) {
+            return Err(format!("{what} trop lourd(e) ({max_mb} Mo au plus)."));
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = res.chunk().await.map_err(|_| "Téléchargement interrompu.".to_string())? {
-            if bytes.len() + chunk.len() > MAX_IMAGE_BYTES {
-                return Err("Image trop lourde (20 Mo au plus).".into());
+            if bytes.len() + chunk.len() > max_bytes {
+                return Err(format!("{what} trop lourd(e) ({max_mb} Mo au plus)."));
             }
             bytes.extend_from_slice(&chunk);
         }
-        let (ext, content_type) = sniff(&bytes).ok_or("Ce fichier n'est pas une image acceptée (PNG, JPEG, GIF, WebP, AVIF).")?;
-        return Ok(RemoteImage { bytes, ext, content_type, url_name: url_name(&u) });
+        return Ok((bytes, url_name(&u)));
     }
     Err("Trop de redirections.".into())
+}
+
+/// Telecharge et verifie l'image. Err : message lisible, rendu tel quel a l'IA.
+pub async fn fetch(raw_url: &str) -> Result<RemoteImage, String> {
+    let (bytes, url_name) = download(raw_url, MAX_IMAGE_BYTES, "Image").await?;
+    let (ext, content_type) = sniff(&bytes).ok_or("Ce fichier n'est pas une image acceptée (PNG, JPEG, GIF, WebP, AVIF).")?;
+    Ok(RemoteImage { bytes, ext, content_type, url_name })
+}
+
+/// Telecharge un fichier quelconque (bibliotheque, donnees, document...).
+pub async fn fetch_file(raw_url: &str, max_bytes: usize) -> Result<RemoteFile, String> {
+    let (bytes, url_name) = download(raw_url, max_bytes, "Fichier").await?;
+    Ok(RemoteFile { bytes, url_name })
 }
 
 #[cfg(test)]

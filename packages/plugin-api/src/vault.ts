@@ -26,6 +26,12 @@ export interface VaultAPI {
    * du vault). Absent, ou null : ce profil ne garde pas ses octets.
    */
   readBinary?(path: string): Promise<Uint8Array | null>
+  /**
+   * Lecture partielle d'un fichier : les octets [start, end[ et la taille du
+   * fichier, sans le telecharger en entier (gros PDF, video, fonds de carte).
+   * null : fichier introuvable ou illisible ainsi.
+   */
+  readBinaryRange?(path: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number } | null>
   /** Ajoute un fichier quelconque (PDF, Word, image...) au dossier `folder`, tel quel. Rend son chemin. */
   uploadFile?(file: File, folder?: string): Promise<string>
   write(documentId: string, content: string): Promise<void>

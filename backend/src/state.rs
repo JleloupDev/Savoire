@@ -39,6 +39,8 @@ pub struct Inner {
     pub notion_tickets: DashMap<String, crate::api::notion::NotionTicket>,
     /// Ou travaille chaque personne dans l'editeur, pour l'IA (en memoire : api/editor_context.rs).
     pub editor_contexts: crate::api::editor_context::ContextStore,
+    /// Envois de fichiers en attente (outil MCP file_upload_url), par jeton.
+    pub upload_slots: DashMap<String, crate::api::open::UploadSlot>,
 }
 
 impl std::ops::Deref for AppState {
@@ -65,6 +67,7 @@ impl AppState {
             limiter: RateLimiter::new(),
             realtime: Realtime::new(),
             agent_tickets: DashMap::new(),
+            upload_slots: DashMap::new(),
             agent_catalog: Mutex::new(None),
             notion_tickets: DashMap::new(),
             editor_contexts: crate::api::editor_context::ContextStore::new(),

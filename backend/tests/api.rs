@@ -477,6 +477,29 @@ async fn link_scopes() {
 }
 
 #[tokio::test]
+async fn attachments_serve_byte_ranges_for_any_file() {
+    let app = app!();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "v").await;
+    // Un fichier qui n'est ni une image ni une video (un PDF, une bibliotheque) : par morceaux aussi.
+    let file = app.document(&ta, &v).await;
+    let bytes: Vec<u8> = b"%PDF-1.7 ".iter().copied().chain((0..200u8).map(|i| b'a' + i % 26)).collect();
+    assert_eq!(upload(&app, &ta, &format!("/api/v1/vaults/{v}/attachments/{file}"), &bytes).await.0, 200);
+    let url = app.url(&format!("/api/v1/vaults/{v}/attachments/{file}"));
+    let res = app.http.get(&url).bearer_auth(&ta).header("Range", "bytes=9-18").send().await.unwrap();
+    assert_eq!(res.status(), 206);
+    assert_eq!(res.headers()["content-range"], format!("bytes 9-18/{}", bytes.len()));
+    assert_eq!(res.headers()["accept-ranges"], "bytes");
+    assert!(res.headers().get("content-disposition").is_some(), "reste un telechargement");
+    assert_eq!(res.bytes().await.unwrap().as_ref(), &bytes[9..=18]);
+    let res = app.http.get(&url).bearer_auth(&ta).header("Range", "bytes=-5").send().await.unwrap();
+    assert_eq!(res.bytes().await.unwrap().as_ref(), &bytes[bytes.len() - 5..]);
+    let res = app.http.get(&url).bearer_auth(&ta).send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.bytes().await.unwrap().as_ref(), bytes.as_slice());
+}
+
+#[tokio::test]
 async fn upload_stops_at_quota() {
     let app = app!(json!({ "Limits": { "AccountBytes": 20 } }));
     let (alice, ta) = app.user("alice").await;

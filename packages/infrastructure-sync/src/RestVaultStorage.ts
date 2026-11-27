@@ -186,6 +186,23 @@ export class RestVaultStorage implements IVaultStorage {
     return res.blob()
   }
 
+  /**
+   * Un morceau d'un fichier, octets [start, end[ (Range), et sa taille : un
+   * gros PDF, une video, un fond de carte lus sans tout telecharger.
+   */
+  async fetchAttachmentRange(vaultId: string, path: string, token: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number }> {
+    const res = await this.fetchFn(
+      this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(path)}`),
+      { method: 'GET', headers: { Authorization: `Bearer ${token}`, Range: `bytes=${start}-${Math.max(start, end - 1)}` } },
+    )
+    if (!res.ok) throw new Error(`${res.status}`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const m = /\/(\d+)$/.exec(res.headers.get('content-range') ?? '')
+    // Serveur sans morceaux : le fichier entier est venu.
+    if (res.status !== 206 || !m) return { bytes: bytes.slice(start, end), size: bytes.length }
+    return { bytes, size: Number(m[1]) }
+  }
+
   private resolve(path: string): string {
     return serverUrl(path, this.baseUrl)
   }

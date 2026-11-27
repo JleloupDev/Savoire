@@ -114,6 +114,40 @@ describe('outils du socle', () => {
     expect((await propose.call('add_image', { path: 'Projets/Plan.md', fileId: 'f-2' })).result.text).toContain('mode proposition')
   })
 
+  it('ajouter un fichier : range seul a son chemin, jamais ecrase, serveur seulement', async () => {
+    const host = new MemoryHost({ 'Bibliothèques/lib.js': 'ancien' })
+    const a = agent({ permissions: { read: 'direct', create: 'direct' } })
+    expect(box(host, a).specs().map(s => s.name)).not.toContain('add_file')
+    const server = new ToolBox({ agent: a, person: { canWrite: true }, actor, runtime: 'server', host })
+    const r = await server.call('add_file', { path: 'Bibliothèques/lib.js', fileId: 'f-1' })
+    expect(r.result.isError).toBeFalsy()
+    expect(host.notes.get('f-1')?.path).toBe('Bibliothèques/lib 1.js')
+    expect(host.attached.get('f-1')).toBe('')
+    expect((await server.call('add_file', { path: '../x.js', fileId: 'f-2' })).result.isError).toBe(true)
+    expect((await server.call('add_file', { path: 'a.js', fileId: '../x' })).result.isError).toBe(true)
+  })
+
+  it('lire des pages d un PDF : lecture partielle par l hote, sinon decoupe du texte extrait', async () => {
+    const host = new MemoryHost({ 'Docs/Gros.pdf': '', 'Docs/Petit.pdf': '---\npages: 3\n---\n\n## Page 1\n\nUn\n\n## Page 2\n\nDeux\n\n## Page 3\n\nTrois\n', 'n.md': 'x' })
+    host.pagedFiles.set('Docs/Gros.pdf', Array.from({ length: 400 }, (_, i) => `Texte ${i + 1}`))
+    const b = box(host, agent({ permissions: { read: 'direct' } }))
+    const r = await b.call('read_note', { path: 'Docs/Gros.pdf', pages: '120-122' })
+    expect(r.result.text).toContain('Pages 120-122 sur 400')
+    expect(r.result.text).toContain('## Page 121\n\nTexte 121')
+    expect(host.pageReads).toEqual([['Docs/Gros.pdf', 120, 122]])
+    // 50 pages au plus : la suite est indiquee.
+    const many = await b.call('read_note', { path: 'Docs/Gros.pdf', pages: '1-80' })
+    expect(host.pageReads.at(-1)).toEqual(['Docs/Gros.pdf', 1, 50])
+    expect(many.result.text).toContain('pages 51-80')
+    expect((await b.call('read_note', { path: 'Docs/Gros.pdf', pages: '500' })).result.text).toContain('400 page(s)')
+    // Sans lecture partielle pour ce fichier : les titres « Page N » du texte extrait.
+    const small = await b.call('read_note', { path: 'Docs/Petit.pdf', pages: '2' })
+    expect(small.result.text).toContain('## Page 2\n\nDeux')
+    expect(small.result.text).not.toContain('Trois')
+    expect((await b.call('read_note', { path: 'n.md', pages: '1' })).result.isError).toBe(true)
+    expect((await b.call('read_note', { path: 'Docs/Petit.pdf', pages: 'x' })).result.isError).toBe(true)
+  })
+
   it('modifier en direct : la note change, la trace porte le nom de l agent', async () => {
     const host = new MemoryHost({ 'a.md': 'Bonjour le monde' })
     const r = await box(host, agent({ permissions: { read: 'direct', edit: 'direct' } })).call('edit_note', { path: 'a.md', find: 'le monde', replace: 'tout le monde' })

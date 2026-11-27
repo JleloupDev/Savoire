@@ -106,10 +106,27 @@ export class MemoryHost implements AgentToolHost {
   /** Fichiers inscrits par attachFile : id -> note. */
   attached = new Map<string, string>()
 
-  async attachFile(fileId: string, path: string, noteId: string): Promise<HostNoteRef> {
+  async attachFile(fileId: string, path: string, noteId: string | undefined): Promise<HostNoteRef> {
     this.notes.set(fileId, { path, content: '' })
-    this.attached.set(fileId, noteId)
+    this.attached.set(fileId, noteId ?? '')
     return { id: fileId, path }
+  }
+
+  /** Pages des fichiers pagines (lecture partielle) : chemin -> textes des pages. Vide : l'hote ne sait pas. */
+  pagedFiles = new Map<string, string[]>()
+  pageReads: [string, number, number][] = []
+
+  get readFilePages(): AgentToolHost['readFilePages'] {
+    if (!this.pagedFiles.size) return undefined
+    return async (ref, from, to) => {
+      const id = ref.id ?? this.idOf(ref.path ?? '')
+      const n = id ? this.notes.get(id) : undefined
+      const pages = n ? this.pagedFiles.get(n.path) : undefined
+      if (!n || !pages || !id) return null
+      this.pageReads.push([n.path, from, to])
+      const b = Math.min(to, pages.length)
+      return { id, path: n.path, total: pages.length, from, to: b, pages: pages.slice(from - 1, b).map((text, i) => ({ page: from + i, text })) }
+    }
   }
 
   private entry(docId: string, kind: HostReviewEntry['kind'], text: string, actor: ToolActor, extra: Partial<HostReviewEntry & { from: number; to: number }> = {}): string {

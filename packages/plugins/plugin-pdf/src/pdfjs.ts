@@ -66,6 +66,38 @@ export async function openPdf(bytes: Uint8Array, render = false): Promise<{ doc:
   return { doc, destroy: () => task.destroy() }
 }
 
+/** Morceaux demandes au fichier quand il est lu par plages (octets). */
+export const RANGE_CHUNK = 64 * 1024
+
+/**
+ * Ouvre un PDF par morceaux (lecture partielle) : pdf.js ne demande que les
+ * plages dont il a besoin (la table de references, puis les pages lues). Un
+ * PDF de 300 Mo se lit ainsi page par page sans etre telecharge.
+ */
+export async function openPdfRange(source: { size: number; read(start: number, end: number): Promise<Uint8Array> }): Promise<{ doc: PdfDocument; destroy(): Promise<void> }> {
+  const lib = await loadPdfJs()
+  const first = await source.read(0, Math.min(source.size, RANGE_CHUNK))
+  const transport = new lib.PDFDataRangeTransport(source.size, first)
+  transport.requestDataRange = (begin: number, end: number) => {
+    source.read(begin, Math.min(end, source.size)).then(
+      chunk => transport.onDataRange(begin, chunk),
+      err => { console.warn('[plugin-pdf] morceau illisible', begin, end, err); transport.abort() },
+    )
+  }
+  const task = lib.getDocument({
+    range: transport,
+    disableAutoFetch: true,
+    disableStream: true,
+    rangeChunkSize: RANGE_CHUNK,
+    disableFontFace: true,
+    verbosity: 0,
+    ...assets(),
+    ...(assets().cMapUrl ? { cMapPacked: true } : {}),
+  })
+  const doc = await task.promise
+  return { doc, destroy: () => task.destroy() }
+}
+
 /** Le texte d'une page (lignes rendues par pdf.js), propre. */
 export async function pageText(page: PdfPage): Promise<string> {
   const content = await page.getTextContent()

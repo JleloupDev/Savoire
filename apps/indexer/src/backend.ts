@@ -74,7 +74,7 @@ export interface WriteBody {
   register?: string[]
   folders?: { docId: string; folder: string }[]
   /** Fichiers recus par le serveur (images des IA) : rangement avec leur note. */
-  attach?: { docId: string; noteId: string; name: string }[]
+  attach?: { docId: string; noteId?: string; name: string }[]
   ops: ({ target: 'document'; docId: string; update: string } | { target: 'vault'; update: string } | { target: 'index'; ns: string; update: string })[]
 }
 
@@ -214,6 +214,26 @@ export class BackendClient {
     if (declared > maxBytes) { await res.body?.cancel(); return null }
     const bytes = new Uint8Array(await res.arrayBuffer())
     return bytes.length > maxBytes ? null : bytes
+  }
+
+  /**
+   * Un morceau d'un fichier, octets [start, end[ (lecture partielle : un gros
+   * PDF ouvert page par page), et la taille du fichier. Null : inconnu.
+   */
+  async fileRange(vaultId: string, fileId: string, start: number, end: number, signal?: AbortSignal): Promise<{ bytes: Uint8Array; size: number } | null> {
+    const timeout = AbortSignal.timeout(this.opts.timeoutMs * 2)
+    const res = await fetch(`${this.opts.url}/internal/indexer/vaults/${encodeURIComponent(vaultId)}/files/${encodeURIComponent(fileId)}`, {
+      headers: { authorization: `Bearer ${await this.opts.token.get()}`, 'user-agent': this.opts.userAgent, range: `bytes=${start}-${Math.max(start, end - 1)}` },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    if (res.status === 404 || res.status === 416) return null
+    if (res.status === 401) this.opts.token.invalidate?.()
+    if (!res.ok) throw new BackendError(res.status, 'http_' + res.status, `Le backend a repondu ${res.status} (file range).`, res.status >= 500 || res.status === 429)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const m = /\/(\d+)$/.exec(res.headers.get('content-range') ?? '')
+    // Ancien serveur, sans morceaux : le fichier entier.
+    if (res.status !== 206 || !m) return { bytes: bytes.slice(start, end), size: bytes.length }
+    return { bytes, size: Number(m[1]) }
   }
 
   private async log(route: Route, path: string, signal?: AbortSignal): Promise<UpdatesLog | null> {

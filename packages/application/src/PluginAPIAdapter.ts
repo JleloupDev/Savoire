@@ -43,6 +43,7 @@ export class PluginVaultAPIAdapter implements IPluginVaultAPI {
   read(documentId: string): Promise<string> { return this.inner.read(documentId) }
   readDocumentByPath(path: string): Promise<string> { return this.inner.readDocumentByPath(path) }
   readBinary(path: string): Promise<Uint8Array | null> { return this.inner.readBinary?.(path) ?? Promise.resolve(null) }
+  readBinaryRange(path: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number } | null> { return this.inner.readBinaryRange?.(path, start, end) ?? Promise.resolve(null) }
   uploadFile(file: File, folder?: string): Promise<string> { return this.inner.uploadFile?.(file, folder) ?? Promise.reject(new Error('Envoi de fichiers indisponible.')) }
   write(documentId: string, content: string): Promise<void> { return this.inner.write(documentId, content) }
   editText(documentId: string, edit: (current: string) => string): Promise<boolean> {

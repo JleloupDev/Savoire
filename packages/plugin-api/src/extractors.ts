@@ -64,7 +64,36 @@ export interface ExtractorSpec {
   annexes?: string[]
   /** Apercu en lecture seule. Absent : l'apercu generique (texte des sections). */
   preview?(bytes: Uint8Array, info: { path: string }): Promise<HTMLElement> | HTMLElement
+  /**
+   * Lecture partielle : quelques pages d'un document paginé (PDF), lues par
+   * morceaux dans le fichier, sans le télécharger en entier ni le lire tout.
+   * Les pages vont de 1 a total ; from/to sont bornes par l'extracteur.
+   */
+  readPages?(source: ByteRangeSource, from: number, to: number, info: ExtractInfo): Promise<ExtractedPages>
 }
+
+/**
+ * Un fichier lu par morceaux (lecture partielle) : sa taille, et la lecture
+ * d'une plage d'octets [start, end[. Un gros PDF s'ouvre ainsi page par page.
+ */
+export interface ByteRangeSource {
+  size: number
+  read(start: number, end: number): Promise<Uint8Array>
+}
+
+/** Des pages lues par readPages. */
+export interface ExtractedPages {
+  /** Nombre de pages du document. */
+  total: number
+  /** Pages rendues (bornes comprises). */
+  from: number
+  to: number
+  pages: { page: number; text: string }[]
+  title?: string
+}
+
+/** Pages au plus par lecture partielle. */
+export const MAX_READ_PAGES = 50
 
 export interface ExtractorRegistry {
   /** Rend la fonction qui retire l'extracteur. */

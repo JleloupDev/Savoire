@@ -168,39 +168,20 @@ pub async fn download(
     let mut c = st.db.acquire().await?;
     access::check_attachment(&mut c, &p.sub, &vault_id, &path, Level::Read).await?;
     drop(c);
-    let Some(mut file) = st.store.read(&vault_id, &path).await? else { return Ok(status(404)) };
-    let mut bytes = vec![];
-    file.read_to_end(&mut bytes).await?;
+    let Some(file) = st.store.read(&vault_id, &path).await? else { return Ok(status(404)) };
     let ext = std::path::Path::new(&path).extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase());
+    let (mut res, sniffed) = ranged_body(file, &headers, ext.is_none()).await?;
     let (kind, download) = match ext {
         Some(e) => (content_type_of(&e).to_string(), false),
         None => {
             // Rangee sous un identifiant : le type se lit dans les premiers octets.
-            let t = sniff(&bytes);
+            let t = sniff(&sniffed);
             if t.starts_with("image/") || t.starts_with("video/") || t.starts_with("audio/") {
                 (t.to_string(), false)
             } else {
                 ("application/octet-stream".to_string(), true)
             }
         }
-    };
-    // Lecteurs video et audio : lecture par morceaux (Range: bytes=a-b).
-    let total = bytes.len();
-    let range = headers
-        .get(header::RANGE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|r| parse_range(r, total))
-        .filter(|_| !download);
-    let mut res = match range {
-        Some((start, end)) => {
-            let mut r = bytes[start..=end].to_vec().into_response();
-            *r.status_mut() = axum::http::StatusCode::PARTIAL_CONTENT;
-            if let Ok(v) = HeaderValue::from_str(&format!("bytes {start}-{end}/{total}")) {
-                r.headers_mut().insert(header::CONTENT_RANGE, v);
-            }
-            r
-        }
-        None => bytes.into_response(),
     };
     let h = res.headers_mut();
     // Rien ne s'execute jamais depuis un fichier envoye : bac a sable, type non devine.
@@ -223,6 +204,43 @@ pub async fn delete(State(st): State<AppState>, Auth(p): Auth, Path((vault_id, p
     st.store.delete(&vault_id, &path).await?;
     st.quota.invalidate(&vault_id);
     Ok(no_content())
+}
+
+/// Le corps d'un fichier : entier, ou le morceau demande (Range: bytes=a-b) :
+/// lecteurs video et audio, PDF ouverts page par page, applications. Seul le
+/// morceau est lu sur le disque. Rend aussi ses premiers octets si `sniff`.
+pub async fn ranged_body(mut file: tokio::fs::File, headers: &axum::http::HeaderMap, sniff: bool) -> AppResult<(Response, Vec<u8>)> {
+    use tokio::io::AsyncSeekExt;
+    let total = file.metadata().await?.len() as usize;
+    let mut head = Vec::new();
+    if sniff {
+        head = vec![0u8; total.min(512)];
+        file.read_exact(&mut head).await?;
+        file.seek(std::io::SeekFrom::Start(0)).await?;
+    }
+    let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(|r| parse_range(r, total));
+    let mut res = match range {
+        Some((start, end)) => {
+            file.seek(std::io::SeekFrom::Start(start as u64)).await?;
+            let mut part = vec![0u8; end - start + 1];
+            file.read_exact(&mut part).await?;
+            let mut r = part.into_response();
+            *r.status_mut() = axum::http::StatusCode::PARTIAL_CONTENT;
+            if let Ok(v) = HeaderValue::from_str(&format!("bytes {start}-{end}/{total}")) {
+                r.headers_mut().insert(header::CONTENT_RANGE, v);
+            }
+            r
+        }
+        None => {
+            let mut r = axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(file)).into_response();
+            if let Ok(v) = HeaderValue::from_str(&total.to_string()) {
+                r.headers_mut().insert(header::CONTENT_LENGTH, v);
+            }
+            r
+        }
+    };
+    res.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    Ok((res, head))
 }
 
 /// « bytes=a-b », « bytes=a- », « bytes=-n » : (debut, fin incluse), ou None.

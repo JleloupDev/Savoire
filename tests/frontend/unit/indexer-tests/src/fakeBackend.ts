@@ -68,6 +68,8 @@ export interface FakeBackendOptions {
 }
 
 export class FakeBackend {
+  /** Plages lues dans les fichiers (route files/{id}), bornes comprises. */
+  fileRanges: [number, number][] = []
   readonly vaults = new Map<string, FakeVault>()
   private rows = new Map<string, Row>()
   private seq = 0
@@ -190,6 +192,18 @@ export class FakeBackend {
         const v = this.vaults.get(decodeURIComponent(m[1]!))
         const bytes = v?.managed ? v.files.get(decodeURIComponent(m[2]!)) : undefined
         if (!bytes) return send(404, { error: { code: 'not_found', message: '' } })
+        // Lecture partielle (Range), comme le vrai serveur.
+        const range = /^bytes=(\d+)-(\d+)$/.exec(String(req.headers.range ?? ''))
+        if (range) {
+          const start = Number(range[1])
+          const end = Math.min(Number(range[2]), bytes.length - 1)
+          this.fileRanges.push([start, end])
+          const part = bytes.slice(start, end + 1)
+          res.writeHead(206, { 'content-type': 'application/octet-stream', 'content-length': part.length, 'content-range': `bytes ${start}-${end}/${bytes.length}` })
+          res.end(Buffer.from(part))
+          return
+        }
+        this.fileRanges.push([0, bytes.length - 1])
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': bytes.length })
         res.end(Buffer.from(bytes))
         return

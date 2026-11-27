@@ -19,7 +19,7 @@
 // ecrit (POST /internal/indexer/vaults/{id}/write). Le serveur reverifie tout.
 import {
   HostError, ToolBox, agentColor, coreCatalog, minimalChange, parseTypingSpot, planTyping, titleOf,
-  type AgentToolHost, type HostHit, type HostNote, type HostNoteRef, type HostRequest, type HostReviewEntry, type RequestState, type TextChange, type TypingSpot,
+  type AgentToolHost, type HostFilePages, type HostHit, type HostNote, type HostNoteRef, type HostRequest, type HostReviewEntry, type RequestState, type TextChange, type TypingSpot,
 } from '@savoire/agent-core'
 import {
   NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetUpdate,
@@ -51,6 +51,8 @@ export interface PeerVaultFacade {
   paths(): Promise<Map<string, string>>
   /** Texte d'un document (note, fichier extrait, texte publie). */
   readText(id: string, path: string): Promise<string | null>
+  /** Quelques pages d'un fichier pagine (PDF), lues par morceaux. Null : pas un tel fichier. Absent : non. */
+  readPages?(id: string, path: string, from: number, to: number): Promise<{ total: number; from: number; to: number; pages: { page: number; text: string }[] } | null>
   /** Un pouvoir de l'index (search, query, links, tags). */
   call(capability: string, method: string, params: Record<string, unknown>): Promise<unknown>
   docLog(id: string): Promise<UpdatesLog | null | undefined>
@@ -278,6 +280,14 @@ export class PeerToolHost implements AgentToolHost {
     return { ...n, title: titleOf(n.path), content: truncated ? content.slice(0, MAX_READ) : content, ...(truncated ? { truncated } : {}) }
   }
 
+  async readFilePages(ref: { id?: string; path?: string }, from: number, to: number): Promise<HostFilePages | null> {
+    if (!this.f.readPages) return null
+    const n = await this.find(ref)
+    if (!n) return null
+    const r = await this.f.readPages(n.id, n.path, from, to)
+    return r ? { ...n, ...r } : null
+  }
+
   async power(capability: string, method: string, params: Record<string, unknown>): Promise<unknown | null> {
     if (!['links', 'tags', 'blocks', 'query'].includes(capability)) return null
     const result = await this.f.call(capability, method, params)
@@ -465,15 +475,16 @@ export class PeerToolHost implements AgentToolHost {
     return { id, path }
   }
 
-  async attachFile(fileId: string, path: string, noteId: string): Promise<HostNoteRef> {
+  async attachFile(fileId: string, path: string, noteId: string | undefined): Promise<HostNoteRef> {
     const tree = await this.f.treeLog()
     const folders = parentFolders(path)
     // Le serveur verifie que fileId est un fichier qu'il vient de recevoir, pas encore inscrit.
+    // Ses octets sont gardes tels quels : « binary », pour que l'appli les lise ainsi.
     await this.write({
       register: [fileId],
       folders: [{ docId: fileId, folder: folders.at(-1) ?? '' }],
-      attach: [{ docId: fileId, noteId, name: path.slice(path.lastIndexOf('/') + 1) }],
-      ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], fileId, { path }, folders)) }],
+      attach: [{ docId: fileId, ...(noteId ? { noteId } : {}), name: path.slice(path.lastIndexOf('/') + 1) }],
+      ops: [{ target: 'vault', update: b64(treeSetUpdate(tree?.updates ?? [], fileId, { path, binary: true }, folders)) }],
     })
     this.moved.set(fileId, path)
     return { id: fileId, path }

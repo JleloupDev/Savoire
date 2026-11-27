@@ -131,6 +131,24 @@ export class VaultClient implements VaultAPI {
   }
 
   /**
+   * Lecture partielle : octets [start, end[ d'un fichier et sa taille. Le
+   * serveur n'envoie que le morceau ; ailleurs (dossier du poste, profil
+   * local), le fichier est lu puis decoupe.
+   */
+  async readBinaryRange(path: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number } | null> {
+    const from = Math.max(0, Math.floor(start))
+    const to = Math.max(from, Math.floor(end))
+    const doc = this._resolveDocumentByPath(path)
+    if (!doc || !this.session) return null
+    const files = this.session.files
+    if (files.readRange && !this.session.readDocumentBytes && (doc.binary || isAttachmentPath(doc.path))) {
+      return files.readRange(doc.id, from, to)
+    }
+    const all = await this.readBinary(path)
+    return all ? { bytes: all.slice(from, to), size: all.length } : null
+  }
+
+  /**
    * Ajoute un fichier quelconque au vault (PDF, Word, image...) : ses octets
    * sont gardes tels quels, dans `folder`. Rend son chemin.
    */

@@ -251,16 +251,19 @@ const SINCE_LAST = /^(last|dernier|derni[eè]re)$/i
 const readNote: CoreTool = {
   spec: {
     name: 'read_note', title: 'Lire une note', action: 'read', runtimes: [...RUNTIMES],
-    description: 'Rend le texte d’une note en Markdown (ou le texte d’un fichier), par son chemin ou son id. Chaque bloc est précédé de sa référence ‹…›, à donner à patch_note pour écrire. Pour ne pas tout relire : section (un titre), lines (des lignes), outline (le plan seul), ou since (seulement ce qui a changé depuis une lecture).',
+    description: 'Rend le texte d’une note en Markdown (ou le texte d’un fichier), par son chemin ou son id. Chaque bloc est précédé de sa référence ‹…›, à donner à patch_note pour écrire. Pour ne pas tout relire : section (un titre), lines (des lignes), outline (le plan seul), ou since (seulement ce qui a changé depuis une lecture). Un PDF : pages (ex. 120-135), lues dans le fichier sans l’ouvrir en entier, même très gros.',
     inputSchema: schema({
       ...NOTE_REF,
       section: str('Ne lire qu’une section : son titre, ou un chemin « Titre > Sous-titre ».'),
       lines: str('Ne lire que ces lignes (ex. 10-40).'),
       since: str('Jeton de version d’une lecture précédente (ligne « Version »), ou « last » pour votre dernière lecture : ne rend que les blocs ajoutés, modifiés ou supprimés depuis.'),
       outline: { type: 'boolean', description: 'Rendre seulement le plan : titres, lignes et références.' },
+      pages: str('Un PDF : ne lire que ces pages (ex. 12 ou 120-135), 50 au plus. Lecture partielle du fichier : marche aussi pour un PDF trop gros pour être lu en entier.'),
     }),
   },
   async run(args, ctx) {
+    const rawPages = typeof args.pages === 'number' ? String(args.pages) : optString(args, 'pages', 40)
+    if (rawPages) return readPages(args, ctx, rawPages)
     const note = await noteArg(args, ctx)
     const tail = note.truncated ? '\n\n[Texte tronqué : note trop longue.]' : ''
     const head = `# ${note.path} (id : ${note.id})`
@@ -970,6 +973,82 @@ const addImage: CoreTool = {
   },
 }
 
+/** Pages au plus par lecture (read_note pages). */
+const MAX_PAGES_PER_READ = 50
+
+/**
+ * read_note avec pages : lecture partielle d'un PDF. L'hote qui sait
+ * (readFilePages) lit seulement les morceaux du fichier utiles ; sinon, le
+ * texte extrait est decoupe a ses titres « Page N ».
+ */
+async function readPages(args: Record<string, unknown>, ctx: CoreToolContext, raw: string): Promise<ToolResult> {
+  const range = parseLines(raw)
+  if (!range) throw new HostError('pages : une page ou une plage, par exemple 12 ou 120-135.')
+  const from = range.from
+  const to = Math.min(range.to, from + MAX_PAGES_PER_READ - 1)
+  const id = optString(args, 'id', 200)
+  const path = optString(args, 'path', 1024)
+  if (!id && !path) throw new HostError('Donner path ou id.')
+  const ref = id ? { id } : { path: path! }
+  if (path && /\.md$/i.test(path)) throw new HostError('pages ne vaut que pour un PDF (ou un document paginé) ; pour une note : section ou lines.')
+  const more = range.to > to ? `\n\n[${MAX_PAGES_PER_READ} pages au plus par lecture : continuez avec pages ${to + 1}-${range.to}.]` : ''
+  if (ctx.host.readFilePages) {
+    const r = await ctx.host.readFilePages(ref, from, to)
+    if (r) {
+      if (!pathInScope(ctx.scope, r.path)) throw new HostError(`Note introuvable : ${path ?? id}.`, 'not_found')
+      if (from > r.total) throw new HostError(`Ce document a ${r.total} page(s).`)
+      signal(ctx, r.id, 'reading')
+      const body = r.pages.map(p => `## Page ${p.page}\n\n${p.text || '(page sans texte)'}`).join('\n\n')
+      return ok(`# ${r.path} (id : ${r.id})\nPages ${r.from}-${r.to} sur ${r.total}.\n\n${body}${more}`, { data: { id: r.id, path: r.path, total: r.total, from: r.from, to: r.to }, sources: [{ docId: r.id, path: r.path }] })
+    }
+  }
+  // Sans lecture partielle : le texte extrait (tronque s'il est tres long), decoupe aux pages.
+  const note = await noteArg(args, ctx)
+  if (/\.md$/i.test(note.path)) throw new HostError('pages ne vaut que pour un PDF (ou un document paginé) ; pour une note : section ou lines.')
+  const parts = note.content.split(/^## Page (\d+)\s*$/m)
+  const found: { page: number; text: string }[] = []
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    const n = Number(parts[i])
+    if (n >= from && n <= to) found.push({ page: n, text: parts[i + 1]!.trim() })
+  }
+  if (!found.length) throw new HostError(`Pages ${from}-${to} introuvables dans le texte de ce fichier${note.truncated ? ' (texte tronqué : fichier trop long pour être lu ici)' : ''}.`, 'not_found')
+  signal(ctx, note.id, 'reading')
+  const body = found.map(p => `## Page ${p.page}\n\n${p.text || '(page sans texte)'}`).join('\n\n')
+  return ok(`# ${note.path} (id : ${note.id})\nPages ${found[0]!.page}-${found.at(-1)!.page}.\n\n${body}${more}`, { data: { id: note.id, path: note.path }, sources: [source(note)] })
+}
+
+/** Un fichier envoye par une IA (add_file) : le serveur a deja range ses octets sous fileId. */
+const addFile: CoreTool = {
+  spec: {
+    name: 'add_file', title: 'Ajouter un fichier', action: 'create', runtimes: ['server'],
+    description: 'Range un fichier dans le vault, tel quel (bibliothèque JavaScript, données, PDF, document...), au chemin donné. Le dossier est créé au besoin ; un fichier du même nom n’est jamais écrasé (un numéro est ajouté).',
+    inputSchema: schema({
+      path: str('Chemin du fichier dans le vault, avec son nom et son extension (ex. Bibliothèques/maplibre-gl@5.6.0/maplibre-gl.js).'),
+      fileId: str('Id du fichier, donné par Savoire.'),
+      why: str('Raison courte, montrée à la personne.'),
+    }, ['path', 'fileId']),
+  },
+  async run(args, ctx) {
+    if (ctx.mode === 'propose') throw new HostError('En mode proposition, un agent ne peut pas ajouter de fichier : il faut le droit de créer en direct, ou « demander ».', 'denied')
+    if (!ctx.host.attachFile) throw new HostError('Ajout de fichier indisponible ici.', 'unavailable')
+    const fileId = reqString(args, 'fileId', 64)
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(fileId)) throw new HostError('fileId invalide.')
+    const raw = reqString(args, 'path', 1024).trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/')
+    if (!raw || raw.endsWith('/') || raw.split('/').some(seg => seg === '..' || seg === '.')) throw new HostError('Chemin de fichier invalide.')
+    if (raw.startsWith('.trash/')) throw new HostError('Pas dans la corbeille.')
+    const slash = raw.lastIndexOf('/')
+    const folder = slash < 0 ? '' : raw.slice(0, slash + 1)
+    const name = raw.slice(slash + 1).replace(/[\\:*?"<>|]+/g, ' ').trim().slice(0, 200) || 'fichier'
+    const dot = name.lastIndexOf('.')
+    let path = `${folder}${name}`
+    for (let n = 1; await ctx.host.findNote({ path }); n++) path = dot > 0 ? `${folder}${name.slice(0, dot)} ${n}${name.slice(dot)}` : `${folder}${name} ${n}`
+    guard(ctx, path)
+    const file = await ctx.host.attachFile(fileId, path, undefined, ctx.actor)
+    const why = optString(args, 'why', 500)
+    return ok(`Fichier ajouté : ${file.path}${why ? ` (${why})` : ''}.`, { data: file, sources: [{ docId: file.id, path: file.path }] })
+  },
+}
+
 /** Tous les outils du socle, dans l'ordre ou l'IA les voit. */
 export const CORE_TOOLS: readonly CoreTool[] = [
   search, readNote, listNotes, backlinks, outgoingLinks, brokenLinks, listTags, notesWithTag, queryNotes, listComments, listRequests,
@@ -977,7 +1056,7 @@ export const CORE_TOOLS: readonly CoreTool[] = [
   editNote, patchNote, appendNote, setProperty,
   createNote, createFolder, moveNote,
   trashNote,
-  addImage,
+  addImage, addFile,
   // Contexte de l'editeur (appli) : ou travaille la personne, ses epingles.
   ...CONTEXT_TOOLS,
 ]

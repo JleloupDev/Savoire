@@ -63,6 +63,10 @@ export class ServerVaultFiles implements IVaultFiles {
     return { bytes: new Uint8Array(await blob.arrayBuffer()), type: blob.type || 'application/octet-stream' }
   }
 
+  readRange(fileId: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number }> {
+    return this.storage.fetchAttachmentRange(this.vaultId, fileId, this.token(), start, end)
+  }
+
   dispose(): void {
     for (const u of this.created.splice(0)) URL.revokeObjectURL(u)
     this.urls.clear()

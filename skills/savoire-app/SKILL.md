@@ -36,11 +36,17 @@ fichiers de son dossier, et s'ouvre en plein écran. React 19 est fourni.
   (`./lib/arbre.js`).
 - **Réseau fermé** : ni `fetch` vers Internet, ni CDN, ni police ou image
   distante. Une bibliothèque en plus doit être un module ES déposé dans le
-  dossier de l'application.
+  dossier de l'application, **sans recopier son code** : `add_file` avec
+  `url` (adresse https du module, avec l'accord de la personne sur la
+  source), ou, si vous avez un terminal, `file_upload_url` puis
+  `curl -T fichier <adresse>` puis `add_file` avec `upload`.
+- Photos, sons, données lourdes : même chemin (`add_file`).
 - Données : un fichier JSON par chose (un plan, une fiche) plutôt qu'un gros
   fichier ; relire un fichier quand `savoire.files.watch` le signale.
 - Les images et sons du dossier s'affichent par `await savoire.files.url(chemin)`.
-- Fichiers de 2 Mo au plus par appel d'outil ; découper les gros modules.
+- `app_write_file` : 2 Mo au plus, pour le code que vous écrivez ; un
+  fichier existant (bibliothèque, image) passe par `add_file` (100 Mo).
+- Lire un gros PDF : `read_note` avec `pages` (ex. `120-135`).
 
 ## Porter une application existante (Vite, React)
 

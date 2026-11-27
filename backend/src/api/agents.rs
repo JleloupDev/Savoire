@@ -721,7 +721,8 @@ pub struct Placement {
 #[serde(rename_all = "camelCase")]
 pub struct Attach {
     doc_id: String,
-    note_id: String,
+    /// La note qui l'accueille (une image) ; absente : un fichier range seul (add_file).
+    note_id: Option<String>,
     name: String,
 }
 
@@ -782,9 +783,11 @@ pub async fn internal_write(
         if repos::doc_get(&mut c, &a.doc_id).await?.is_some() || st.store.read(&vault_id, &a.doc_id).await?.is_none() {
             return Ok(internal_error(403, "denied", "Ce fichier n'est pas un envoi en attente."));
         }
-        match repos::doc_get(&mut c, &a.note_id).await? {
-            Some(n) if n.vault_id == vault_id => {}
-            _ => return Ok(internal_error(403, "denied", "Note inconnue dans ce vault.")),
+        if let Some(note_id) = &a.note_id {
+            match repos::doc_get(&mut c, note_id).await? {
+                Some(n) if n.vault_id == vault_id => {}
+                _ => return Ok(internal_error(403, "denied", "Note inconnue dans ce vault.")),
+            }
         }
     }
 
@@ -809,7 +812,7 @@ pub async fn internal_write(
     }
     for a in &attach {
         // Range avec sa note (partage), puis relu par le pair (texte d'une image).
-        repos::doc_set_placement(&mut c, &a.doc_id, Some(&a.note_id), Some(&a.name)).await?;
+        repos::doc_set_placement(&mut c, &a.doc_id, a.note_id.as_deref(), Some(&a.name)).await?;
         repos::indexer_record_file(&mut c, &a.doc_id).await?;
     }
 

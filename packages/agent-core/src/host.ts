@@ -22,6 +22,14 @@ export interface HostNote extends HostNoteRef {
   truncated?: boolean
 }
 
+/** Des pages d'un fichier pagine (readFilePages). */
+export interface HostFilePages extends HostNoteRef {
+  total: number
+  from: number
+  to: number
+  pages: { page: number; text: string }[]
+}
+
 export interface HostHit extends HostNoteRef {
   title?: string
   snippets?: string[]
@@ -74,6 +82,13 @@ export interface AgentToolHost {
   /** Null : introuvable, ou cachee a la personne. */
   readNote(ref: { id?: string; path?: string }): Promise<HostNote | null>
   /**
+   * Lecture partielle d'un fichier pagine (PDF) : les pages from..to, lues par
+   * morceaux dans le fichier, sans le telecharger ni l'extraire en entier
+   * (gros PDF). Null : introuvable, cache, ou pas un document pagine. Absent :
+   * l'hote ne sait pas (read_note decoupe alors le texte extrait).
+   */
+  readFilePages?(ref: { id?: string; path?: string }, from: number, to: number): Promise<HostFilePages | null>
+  /**
    * Un pouvoir de l'index (links.*, tags.*, query.run), memes parametres et
    * resultats que le pair (indexer-protocol.md). Null : indisponible ici.
    */
@@ -108,10 +123,11 @@ export interface AgentToolHost {
   trashNote(docId: string, actor: ToolActor): Promise<string>
   /**
    * Inscrit au vault un fichier dont le serveur a deja range les octets sous
-   * `fileId` (image envoyee par une IA), a ce chemin, range avec sa note.
+   * `fileId` (image ou fichier envoye par une IA), a ce chemin, range avec sa
+   * note (une image) ou seul (noteId absent : add_file).
    * Absent : l'hote ne sait pas recevoir de fichier (l'appli).
    */
-  attachFile?(fileId: string, path: string, noteId: string, actor: ToolActor): Promise<HostNoteRef>
+  attachFile?(fileId: string, path: string, noteId: string | undefined, actor: ToolActor): Promise<HostNoteRef>
 
   // ── Revision ──
   comment(docId: string, text: string, actor: ToolActor, range?: { from: number; to: number }): Promise<string>

@@ -335,4 +335,42 @@ describe('presence de l agent dans la note', () => {
     expect(backend.text('v1', 'a')).toBe('Bonjour\n\nSuite')
     expect(backend.presences).toHaveLength(0)
   })
+
+  it('read_note pages : quelques pages d un PDF, lues par morceaux dans le fichier', async () => {
+    backend.writeNote('v1', 'a', 'A.md', 'x')
+    backend.addFile('v1', 'pdf', 'Docs/Gros.pdf', paddedPdf(Array.from({ length: 40 }, (_, i) => `Texte page ${i + 1}`), 3000))
+    const p = await ready()
+    backend.fileRanges.length = 0
+    const r = await call(p, 'read_note', { path: 'Docs/Gros.pdf', pages: '20-21' })
+    expect(r.body.result.isError).toBe(false)
+    expect(r.body.result.text).toContain('Pages 20-21 sur 40')
+    expect(r.body.result.text).toContain('Texte page 21')
+    expect(r.body.result.text).not.toContain('Texte page 22')
+    // Par morceaux (Range), jamais le fichier entier d'un coup.
+    expect(backend.fileRanges.length).toBeGreaterThan(1)
+    const size = backend.vault('v1').files.get('pdf')!.length
+    expect(backend.fileRanges.some(([a, b]) => a === 0 && b >= size - 1)).toBe(false)
+  })
 })
+
+/** Un PDF valide, une page par texte, gonfle d'un commentaire (pad caracteres par page). */
+function paddedPdf(pages: string[], pad: number): Uint8Array {
+  const objs: string[] = []
+  const kids = pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')
+  objs.push('<< /Type /Catalog /Pages 2 0 R >>')
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`)
+  const font = 3 + pages.length * 2
+  pages.forEach((t, i) => {
+    const stream = `BT /F1 12 Tf 72 720 Td (${t}) Tj ET\n%${'x'.repeat(pad)}`
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${4 + i * 2} 0 R >>`)
+    objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
+  })
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return new TextEncoder().encode(out)
+}

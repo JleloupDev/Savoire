@@ -14,11 +14,12 @@
 //    l'ecrit dans l'annexe (une fois pour tout le monde).
 import {
   PDF_OCR_ANNEX, parsePdfOcrPage, pdfOcrKey, pdfOcrText,
-  type ExtractedContent, type ExtractInfo, type ExtractorSpec, type FileContext, type PdfOcrPage, type PluginAPI, type PropertyValue, type VaultPlugin,
+  MAX_READ_PAGES,
+  type ByteRangeSource, type ExtractedContent, type ExtractedPages, type ExtractInfo, type ExtractorSpec, type FileContext, type PdfOcrPage, type PluginAPI, type PropertyValue, type VaultPlugin,
 } from '@savoire/plugin-api'
 import type { OcrWords } from '@savoire/plugin-images'
 import { MIN_PAGE_TEXT, ocrEnabled, ocrPdfPage } from './ocr'
-import { openPdf, pageText } from './pdfjs'
+import { openPdf, openPdfRange, pageText } from './pdfjs'
 import { createPdfView } from './view'
 
 export { configurePdf } from './pdfjs'
@@ -94,6 +95,39 @@ export async function extractPdf(bytes: Uint8Array, opts: ExtractPdfOptions = {}
   }
 }
 
+/**
+ * Quelques pages d'un PDF, lues par morceaux (ExtractorSpec.readPages) : le
+ * MCP lit ainsi « les pages 120 a 135 » d'un gros PDF, sans le telecharger ni
+ * l'extraire en entier. Une page scannee rend le texte deja reconnu (annexe
+ * « ocr ») s'il existe ; pas d'OCR ici (trop long pour une lecture).
+ */
+export async function readPdfPages(source: ByteRangeSource, from: number, to: number, opts: { known?: ReadonlyMap<number, PdfOcrPage> } = {}): Promise<ExtractedPages> {
+  const { doc, destroy } = await openPdfRange(source)
+  try {
+    const total = doc.numPages
+    const a = Math.max(1, Math.min(Math.floor(from) || 1, total))
+    const b = Math.max(a, Math.min(Math.floor(to) || a, total, a + MAX_READ_PAGES - 1))
+    const fp = doc.fingerprints[0] ?? undefined
+    const pages: { page: number; text: string }[] = []
+    for (let n = a; n <= b; n++) {
+      const page = await doc.getPage(n)
+      let text = await pageText(page)
+      page.cleanup()
+      if (text.length < MIN_PAGE_TEXT) {
+        const kept = opts.known?.get(n)
+        if (kept && (!kept.fp || !fp || kept.fp === fp)) text = pdfOcrText(kept).trim() || text
+      }
+      pages.push({ page: n, text })
+    }
+    const meta = await doc.getMetadata().catch(() => null)
+    const info = (meta?.info ?? {}) as Record<string, unknown>
+    const title = typeof info.Title === 'string' && info.Title.trim() ? info.Title.trim() : undefined
+    return { total, from: a, to: b, pages, ...(title ? { title } : {}) }
+  } finally {
+    await destroy()
+  }
+}
+
 /** L'extraction de l'index : avec le texte reconnu deja garde dans le vault, s'il est lisible ici. */
 async function extractForIndex(bytes: Uint8Array, info: ExtractInfo): Promise<ExtractedContent> {
   const root = await info.annex?.(PDF_OCR_ANNEX).catch(() => null)
@@ -107,6 +141,10 @@ export const EXTRACTOR: ExtractorSpec = {
   id: 'pdf', label: 'PDF', extensions: ['pdf'], version: 3,
   annexes: [PDF_OCR_ANNEX],
   extract: (b, info) => extractForIndex(b, info),
+  readPages: async (source, from, to, info) => {
+    const root = await info.annex?.(PDF_OCR_ANNEX).catch(() => null)
+    return readPdfPages(source, from, to, { known: knownOcrPages(root) })
+  },
 }
 
 const FILE_TYPES = [{ extension: 'pdf', label: 'PDF', icon: 'file-text', superType: 'binary' as const }]

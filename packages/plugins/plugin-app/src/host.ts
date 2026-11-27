@@ -134,7 +134,8 @@ export class AppHost extends BoardHost {
     switch (fn) {
       case 'files.list': return this.listRel(!!args[1], typeof args[0] === 'string' ? args[0] : '')
       case 'files.read': return this.readText(normalizeAppPath(args[0]))
-      case 'files.bytes': return this.readBytes(normalizeAppPath(args[0]))
+      case 'files.bytes': return this.readBytes(normalizeAppPath(args[0]), args[1], args[2])
+      case 'files.size': return this.size(normalizeAppPath(args[0]))
       case 'files.write': return this.writeText(normalizeAppPath(args[0]), args[1])
       case 'files.remove': return this.remove(normalizeAppPath(args[0]))
       case 'files.move': return this.move(normalizeAppPath(args[0]), normalizeAppPath(args[1]))
@@ -191,10 +192,12 @@ export class AppHost extends BoardHost {
   private async readText(rel: string): Promise<string> {
     const vault = this.api!.vault
     const path = vaultPathOf(this.folder, rel)
-    const id = this.docOf(rel)
+    this.docOf(rel)
     let text: string
     try {
-      text = await vault.read(id)
+      // Par le chemin : un fichier garde tel quel (bibliotheque envoyee par
+      // add_file) se lit comme ses octets, un texte partage comme son texte.
+      text = await vault.readDocumentByPath(path)
     } catch (err) {
       // Fichier envoye tel quel (octets) : lu comme du texte UTF-8.
       const bytes = await vault.readBinary?.(path).catch(() => null)
@@ -211,13 +214,31 @@ export class AppHost extends BoardHost {
     while (this.known.size > MAX_FOLLOWED) this.known.delete(this.known.keys().next().value as string)
   }
 
-  private async readBytes(rel: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  private async readBytes(rel: string, start?: unknown, end?: unknown): Promise<{ bytes: Uint8Array; mime: string; size?: number }> {
     const vault = this.api!.vault
     const path = vaultPathOf(this.folder, rel)
     this.docOf(rel)
+    // Lecture partielle : un morceau seulement (fonds de carte, gros fichiers).
+    if (typeof start === 'number' && Number.isFinite(start)) {
+      const to = typeof end === 'number' && Number.isFinite(end) ? end : start + 1024 * 1024
+      if (to - start > MAX_APP_MESSAGE) throw new Error(`Morceau trop grand (${MAX_APP_MESSAGE / 1024 / 1024} Mo au plus).`)
+      const part = await vault.readBinaryRange?.(path, start, to).catch(() => null)
+      if (part) return { bytes: part.bytes, mime: mimeOf(rel), size: part.size }
+      const all = (await this.readBytes(rel)).bytes
+      return { bytes: all.slice(start, to), mime: mimeOf(rel), size: all.length }
+    }
     const bytes = await vault.readBinary?.(path).catch(() => null)
     if (bytes) return { bytes, mime: mimeOf(rel) }
     return { bytes: new TextEncoder().encode(await this.readText(rel)), mime: mimeOf(rel) }
+  }
+
+  /** Taille d'un fichier (octets), sans le lire en entier quand c'est possible. */
+  private async size(rel: string): Promise<number> {
+    const path = vaultPathOf(this.folder, rel)
+    this.docOf(rel)
+    const part = await this.api!.vault.readBinaryRange?.(path, 0, 1).catch(() => null)
+    if (part) return part.size
+    return (await this.readBytes(rel)).bytes.length
   }
 
   private allowFileWrite(): void {
@@ -307,9 +328,9 @@ export class AppHost extends BoardHost {
       for (const [rel, before] of [...this.known]) {
         if (this.isDisposed || !this.seen) return
         if (already.has(rel)) continue
-        const id = this.api.vault.resolveDocumentId(vaultPathOf(this.folder, rel))
-        if (!id) continue
-        const now = await this.api.vault.read(id).catch(() => null)
+        const full = vaultPathOf(this.folder, rel)
+        if (!this.api.vault.resolveDocumentId(full)) continue
+        const now = await this.api.vault.readDocumentByPath(full).catch(() => null)
         if (now === null || now === before) continue
         this.known.set(rel, now)
         changed.push({ path: rel, change: 'changed' })

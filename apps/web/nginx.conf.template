@@ -52,6 +52,22 @@ server {
         proxy_ssl_server_name on;
     }
 
+    # Envois de fichiers des IA (outil MCP file_upload_url) : 100 Mo au plus.
+    location /api/open/v1/uploads/ {
+        client_max_body_size 101m;
+        proxy_pass ${API_URL}/api/open/v1/uploads/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $savoire_proto;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_ssl_server_name on;
+    }
+
     # Proxy SignalR WebSocket
     location /hubs/ {
         proxy_pass ${API_URL}/hubs/;

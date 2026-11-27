@@ -22,7 +22,7 @@ function world(files: Record<string, string> = {}) {
     getFileTree: () => [...docs.entries()].map(([path, d]) => ({ docId: d.id, path, crdtVersion: { v: d.v } })),
     resolveDocumentId: (p: string) => docs.get(p)?.id,
     read: async (id: string) => { const e = byId(id); if (!e || e[1].binary) throw new Error('binaire'); return e[1].text },
-    readDocumentByPath: async (p: string) => docs.get(p)?.text ?? '',
+    readDocumentByPath: async (p: string) => { const d = docs.get(p); if (!d) throw new Error('introuvable'); if (d.binary) return new TextDecoder().decode(d.binary); return d.text },
     readBinary: async (p: string) => docs.get(p)?.binary ?? null,
     createFile: vi.fn(async (p: string) => { docs.set(p, { id: `d${++n}`, text: '', v: 1 }) }),
     createFolder: vi.fn(async () => {}),
@@ -143,6 +143,15 @@ describe('application : fichiers de son dossier', () => {
     expect((await call('files.read', 'donnees/c.json')).e).toMatch(/introuvable/)
     const bytes = await call('files.bytes', 'main.js')
     expect((bytes.v as { mime: string }).mime).toBe('text/javascript')
+    host.dispose()
+  })
+
+  it('un module garde tel quel (envoye par add_file) part avec l application', async () => {
+    const w = world({ 'H/H.app': '' })
+    w.docs.set('H/lib/carte.js', { id: 'bin', text: '', binary: new TextEncoder().encode('export const carte = 42'), v: 1 })
+    const { host } = await mount(w.api, 'H/H.app')
+    expect(host.frame.srcdoc).toContain('export const carte = 42')
+    expect(host.frame.srcdoc).toContain('lib/carte.js')
     host.dispose()
   })
 

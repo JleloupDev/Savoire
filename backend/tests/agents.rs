@@ -52,6 +52,8 @@ async fn fake_peer() -> (String, Peer) {
                     if p.image.load(std::sync::atomic::Ordering::Relaxed) {
                         cat["tools"].as_array_mut().unwrap().push(json!({ "name": "add_image", "title": "Ajouter une image", "description": "Ajoute une image.", "action": "edit",
                             "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "fileId": { "type": "string" }, "fileName": { "type": "string" } }, "required": ["fileId"], "additionalProperties": false } }));
+                        cat["tools"].as_array_mut().unwrap().push(json!({ "name": "add_file", "title": "Ajouter un fichier", "description": "Range un fichier.", "action": "create",
+                            "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "fileId": { "type": "string" } }, "required": ["path", "fileId"], "additionalProperties": false } }));
                     }
                     return axum::Json(json!({ "result": cat }));
                 }
@@ -369,6 +371,60 @@ async fn add_image_takes_a_chatgpt_file_and_never_fetches_a_private_address() {
         assert_eq!(r["result"]["isError"], true, "{r}");
     }
     assert!(!peer.calls.lock().unwrap().iter().any(|c| c["params"]["name"] == "add_image"));
+}
+
+#[tokio::test]
+async fn add_file_takes_an_upload_sent_outside_the_conversation() {
+    let (url, peer) = fake_peer().await;
+    peer.image.store(true, std::sync::atomic::Ordering::Relaxed);
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Archiviste", "permissions": { "read": "direct", "create": "direct" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "a", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+
+    // add_file : fichier joint, adresse ou envoi ; file_upload_url a cote.
+    let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
+    let t = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "add_file").unwrap().clone();
+    assert_eq!(t["_meta"]["openai/fileParams"], json!(["file"]));
+    assert!(t["inputSchema"]["properties"].get("fileId").is_none());
+    assert!(t["inputSchema"]["properties"].get("upload").is_some());
+    assert_eq!(t["inputSchema"]["required"], json!(["vault", "path"]));
+    assert!(names(&tools).contains(&"file_upload_url".to_string()));
+
+    // L'adresse d'envoi, le PUT, puis add_file avec le jeton.
+    let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "file_upload_url", "arguments": { "vault": v } })).await;
+    let put_url = r["result"]["structuredContent"]["url"].as_str().unwrap().to_string();
+    let upload = r["result"]["structuredContent"]["upload"].as_str().unwrap().to_string();
+    assert!(put_url.ends_with(&format!("/api/open/v1/uploads/{upload}")), "{put_url}");
+    let res = app.http.put(app.url(&format!("/api/open/v1/uploads/{upload}"))).body(b"export default 1\n".to_vec()).send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    // Une seule fois.
+    let res = app.http.put(app.url(&format!("/api/open/v1/uploads/{upload}"))).body(b"x".to_vec()).send().await.unwrap();
+    assert_eq!(res.status(), 409);
+    assert_eq!(app.http.put(app.url("/api/open/v1/uploads/abc")).body(b"x".to_vec()).send().await.unwrap().status(), 404);
+
+    let r = mcp(&app, &token, 3, "tools/call", json!({ "name": "add_file", "arguments": { "vault": v, "path": "Bibliothèques/lib.js", "upload": upload } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    let call = peer.calls.lock().unwrap().iter().rev().find(|c| c["params"]["name"] == "add_file").cloned().unwrap();
+    assert_eq!(call["params"]["args"]["path"], "Bibliothèques/lib.js");
+    let file_id = call["params"]["args"]["fileId"].as_str().unwrap().to_string();
+    assert!(call["params"]["args"].get("upload").is_none());
+    assert_eq!(file_id.len(), 36);
+
+    // Le jeton ne resert pas ; une adresse privee est refusee avant le pair.
+    let before = peer.calls.lock().unwrap().len();
+    for args in [
+        json!({ "vault": v, "path": "a.js", "upload": upload }),
+        json!({ "vault": v, "path": "a.js", "url": "https://127.0.0.1/a.js" }),
+        json!({ "vault": v, "path": "a.js" }),
+        json!({ "vault": v, "url": "https://exemple.org/a.js" }),
+    ] {
+        let r = mcp(&app, &token, 4, "tools/call", json!({ "name": "add_file", "arguments": args })).await;
+        assert_eq!(r["result"]["isError"], true, "{r}");
+    }
+    assert!(!peer.calls.lock().unwrap()[before..].iter().any(|c| c["params"]["name"] == "add_file"));
 }
 
 fn text(r: &Value) -> String {

@@ -179,7 +179,9 @@ const INSTRUCTIONS: &str = "Savoire : les notes Markdown de la personne, rangees
 Commencez par list_vaults, puis search pour trouver des notes et read_note pour les lire. \
 Un vault se designe par son id ou par son nom (parametre vault de chaque outil). \
 Ne relisez pas une note entiere : read_note sait rendre une section (section), des lignes (lines), \
-ou seulement ce qui a change depuis votre lecture (since). \
+ou seulement ce qui a change depuis votre lecture (since) ; un PDF, meme tres gros, se lit par pages (pages, ex. 120-135). \
+Un fichier (bibliotheque, donnees, PDF...) se range avec add_file : par adresse https (url), \
+ou, depuis un terminal, envoye d'abord a l'adresse donnee par file_upload_url (upload). \
 Pour ecrire, ne reecrivez pas la note : patch_note retouche un bloc par sa reference (entre ‹ › dans read_note). \
 Les dessins Excalidraw (.excalidraw) ne sont pas des notes : ils se lisent et s'ecrivent avec les outils drawing_* \
 (drawing_create, drawing_diagram, drawing_add...), jamais en ecrivant leur JSON dans une note. \
@@ -206,7 +208,7 @@ fn rpc_result(id: Value, result: Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "result": result })
 }
 
-pub async fn mcp_post(State(st): State<AppState>, OpenAuth(p): OpenAuth, body: axum::body::Bytes) -> AppResult<Response> {
+pub async fn mcp_post(State(st): State<AppState>, OpenAuth(p): OpenAuth, ReqParts(parts): ReqParts, body: axum::body::Bytes) -> AppResult<Response> {
     if let Err(r) = indexer_rate(&st, &p.sub, None) {
         return Ok(r);
     }
@@ -214,7 +216,9 @@ pub async fn mcp_post(State(st): State<AppState>, OpenAuth(p): OpenAuth, body: a
         Ok(v) => v,
         Err(_) => return Ok(raw_json_ok(rpc_error(Value::Null, -32700, "JSON invalide."))),
     };
-    Ok(match handle(&st, &p, message).await {
+    // L'adresse publique de Savoire : celle des envois de fichiers (file_upload_url).
+    let base = public_base(&st, &parts);
+    Ok(match handle(&st, &p, message, &base).await {
         Some(reply) => raw_json_ok(reply),
         None => status(202),
     })
@@ -225,7 +229,7 @@ pub async fn mcp_other() -> Response {
 }
 
 /// Un message JSON-RPC ; None : notification ou reponse du client (rien a rendre).
-pub async fn handle(st: &AppState, p: &Principal, message: Value) -> Option<Value> {
+pub async fn handle(st: &AppState, p: &Principal, message: Value, base: &str) -> Option<Value> {
     let Some(msg) = message.as_object().filter(|m| m.get("jsonrpc").and_then(Value::as_str) == Some("2.0")) else {
         return Some(rpc_error(Value::Null, -32600, "Requete JSON-RPC 2.0 attendue (un seul message, pas de lot)."));
     };
@@ -248,7 +252,7 @@ pub async fn handle(st: &AppState, p: &Principal, message: Value) -> Option<Valu
         }
         "ping" => rpc_result(id, json!({})),
         "tools/list" => rpc_result(id, json!({ "tools": list_tools(st, p).await })),
-        "tools/call" => match call_tool(st, p, params).await {
+        "tools/call" => match call_tool(st, p, params, base).await {
             Ok(r) => rpc_result(id, r),
             Err(InvalidParams(m)) => rpc_error(id, -32602, &m),
         },
@@ -357,7 +361,15 @@ async fn list_tools(st: &AppState, p: &Principal) -> Value {
         if name == ADD_IMAGE {
             image_tool_schema(&mut entry);
         }
+        let file = name == ADD_FILE;
+        if file {
+            file_tool_schema(&mut entry);
+        }
         out.push(entry);
+        // L'envoi d'un fichier du poste (agents qui ont un terminal) : avec add_file.
+        if file {
+            out.push(upload_url_tool_entry());
+        }
     }
     out.extend(modes);
     json!(out)
@@ -497,6 +509,200 @@ pub async fn drop_received_image(st: &AppState, vault_id: &str, args: &Value) {
     let _ = st.store.delete(vault_id, id).await;
 }
 
+// ── Fichiers (add_file, file_upload_url) ─────────────────────────────────────
+//
+// Comme add_image, pour tout fichier (bibliotheque, donnees, document...) : le
+// pair ne recoit jamais d'octets. Trois facons de donner le fichier :
+//  - file : un fichier joint a la discussion (ChatGPT) ;
+//  - url : une adresse https publique (memes protections que les images) ;
+//  - upload : un envoi fait avant par file_upload_url. L'IA (ou son terminal)
+//    envoie les octets par PUT a une adresse a usage unique, valable 15 min,
+//    liee a la personne et au vault ; ils ne passent jamais par la discussion.
+
+pub const ADD_FILE: &str = "add_file";
+pub const FILE_UPLOAD_URL: &str = "file_upload_url";
+/// Taille maximale d'un fichier recu d'une IA.
+pub const MAX_AGENT_FILE_BYTES: usize = 100 * 1024 * 1024;
+const UPLOAD_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+/// Envois en attente au plus, par personne.
+const MAX_UPLOAD_SLOTS: usize = 50;
+
+/// Un envoi en attente : la place reservee, puis le fichier recu.
+pub struct UploadSlot {
+    user: String,
+    vault_id: String,
+    expires: std::time::Instant,
+    /// Les octets recus, ranges sous cet id (pas encore un document).
+    file_id: Option<String>,
+    size: i64,
+}
+
+fn file_tool_schema(entry: &mut Value) {
+    let schema = &mut entry["inputSchema"];
+    if let Some(props) = schema["properties"].as_object_mut() {
+        props.remove("fileId");
+        props.insert("file".into(), json!({
+            "type": "object",
+            "description": "Le fichier joint à la discussion.",
+            "properties": {
+                "download_url": { "type": "string" }, "file_id": { "type": "string" },
+                "mime_type": { "type": "string" }, "file_name": { "type": "string" },
+            },
+            "required": ["download_url", "file_id"],
+        }));
+        props.insert("url".into(), s("Ou : adresse https publique du fichier."));
+        props.insert("upload".into(), s("Ou : le jeton d'un envoi fait avec file_upload_url (fichier du poste, sans passer par la discussion)."));
+    }
+    schema["required"] = json!(["vault", "path"]);
+    entry["description"] = json!(format!("{} Donner file (fichier joint), url ou upload. 100 Mo au plus.", entry["description"].as_str().unwrap_or("")));
+    entry["_meta"] = json!({ "openai/fileParams": ["file"] });
+    entry["annotations"]["openWorldHint"] = json!(true);
+}
+
+fn upload_url_tool_entry() -> Value {
+    let mut t = tool(
+        FILE_UPLOAD_URL,
+        "Adresse d'envoi d'un fichier",
+        "Donne une adresse à usage unique (15 minutes) pour envoyer un fichier du poste, par PUT, sans le faire passer par la discussion : \
+`curl -T fichier.pdf <adresse>`. Puis add_file avec upload = le jeton rendu. 100 Mo au plus. Pour les agents qui ont un terminal.",
+        json!({ "vault": s("Id ou nom du vault où le fichier sera rangé.") }),
+        &["vault"],
+    );
+    t["annotations"] = json!({ "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false });
+    t
+}
+
+/// Rend la place d'un envoi jamais inscrit (expire, ou abandonne).
+async fn drop_slot(st: &AppState, slot: &UploadSlot) {
+    let Some(id) = &slot.file_id else { return };
+    let Ok(mut c) = st.db.acquire().await else { return };
+    if !matches!(crate::db::repos::doc_get(&mut c, id).await, Ok(None)) {
+        return;
+    }
+    st.quota.added(&slot.vault_id, -slot.size);
+    let _ = st.store.delete(&slot.vault_id, id).await;
+}
+
+async fn sweep_slots(st: &AppState) {
+    let now = std::time::Instant::now();
+    let expired: Vec<String> = st.upload_slots.iter().filter(|e| e.expires <= now).map(|e| e.key().clone()).collect();
+    for k in expired {
+        if let Some((_, slot)) = st.upload_slots.remove(&k) {
+            drop_slot(st, &slot).await;
+        }
+    }
+}
+
+async fn upload_url_tool(st: &AppState, p: &Principal, args: &Map<String, Value>, base: &str) -> Result<Value, ToolFailure> {
+    let Some(agent) = own_agent(st, p).await? else { return Ok(tool_error("Ce jeton n'a pas d'agent : il ne fait que lire.")) };
+    if agents::mode_for(&agent.definition, "create") == "deny" {
+        return Ok(tool_error("Cet agent n'a pas le droit d'ajouter des fichiers."));
+    }
+    let vault = vault_arg(st, p, args).await?;
+    sweep_slots(st).await;
+    if st.upload_slots.iter().filter(|e| e.user == p.sub).count() >= MAX_UPLOAD_SLOTS {
+        return Ok(tool_error("Trop d'envois en attente : inscrivez-les avec add_file, ou attendez qu'ils expirent."));
+    }
+    let token = {
+        use rand::Rng;
+        let bytes: [u8; 24] = rand::rng().random();
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    };
+    st.upload_slots.insert(token.clone(), UploadSlot { user: p.sub.clone(), vault_id: vault.id.clone(), expires: std::time::Instant::now() + UPLOAD_TTL, file_id: None, size: 0 });
+    let url = format!("{base}/api/open/v1/uploads/{token}");
+    let mut out = tool_text(&format!(
+        "Adresse d'envoi (15 minutes, une seule fois) : {url}\nEnvoyer le fichier par PUT, par exemple : curl -sS -T \"chemin/du/fichier\" \"{url}\"\nPuis : add_file avec upload = {token} et path = le chemin voulu dans le vault."
+    ));
+    out["structuredContent"] = json!({ "url": url, "upload": token, "expiresInSeconds": UPLOAD_TTL.as_secs() });
+    Ok(out)
+}
+
+/// PUT /api/open/v1/uploads/{token} : les octets d'un envoi (le jeton suffit).
+pub async fn upload_put(State(st): State<AppState>, Path(token): Path<String>, body: axum::body::Bytes) -> AppResult<Response> {
+    let bad = |code: u16, m: &str| crate::error::raw_json(code, json!({ "error": m }).to_string());
+    if !token.chars().all(|c| c.is_ascii_hexdigit()) || token.len() != 48 {
+        return Ok(bad(404, "Envoi inconnu."));
+    }
+    let (vault_id, expired, used) = match st.upload_slots.get(&token) {
+        Some(s) => (s.vault_id.clone(), s.expires <= std::time::Instant::now(), s.file_id.is_some()),
+        None => return Ok(bad(404, "Envoi inconnu ou expiré.")),
+    };
+    if expired {
+        if let Some((_, slot)) = st.upload_slots.remove(&token) {
+            drop_slot(&st, &slot).await;
+        }
+        return Ok(bad(410, "Envoi expiré : redemandez une adresse (file_upload_url)."));
+    }
+    if used {
+        return Ok(bad(409, "Cet envoi a déjà reçu son fichier."));
+    }
+    if body.is_empty() {
+        return Ok(bad(400, "Fichier vide."));
+    }
+    if body.len() > MAX_AGENT_FILE_BYTES {
+        return Ok(bad(413, "Fichier trop lourd (100 Mo au plus)."));
+    }
+    let size = body.len() as i64;
+    if st.quota.ensure_room(&st.limits(), &vault_id, size).await.is_err() {
+        return Ok(bad(507, "Plus de place dans ce vault."));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    st.store.put(&vault_id, &id, &body).await?;
+    st.quota.added(&vault_id, size);
+    match st.upload_slots.get_mut(&token) {
+        Some(mut slot) if slot.file_id.is_none() => {
+            slot.file_id = Some(id);
+            slot.size = size;
+        }
+        _ => {
+            st.quota.added(&vault_id, -size);
+            let _ = st.store.delete(&vault_id, &id).await;
+            return Ok(bad(409, "Cet envoi a déjà reçu son fichier."));
+        }
+    }
+    Ok(raw_json_ok(json!({ "upload": token, "bytes": size, "next": "add_file avec upload = ce jeton" })))
+}
+
+/// Le fichier de l'appel (joint, adresse ou envoi), range sous un id neuf ; rend les arguments pour le pair.
+async fn receive_file(st: &AppState, user: &str, vault_id: &str, args: &Map<String, Value>) -> Result<(Map<String, Value>, String, i64), Value> {
+    let path = opt_str(args, "path").unwrap_or_default();
+    if path.trim().is_empty() {
+        return Err(tool_error("Donner path : le chemin du fichier dans le vault (ex. Bibliothèques/maplibre-gl.js)."));
+    }
+    let (id, size) = if let Some(token) = opt_str(args, "upload") {
+        let ok = st.upload_slots.get(&token).is_some_and(|s| s.user == user && s.vault_id == vault_id && s.file_id.is_some() && s.expires > std::time::Instant::now());
+        if !ok {
+            return Err(tool_error("Envoi inconnu, expiré, d'un autre vault, ou sans fichier : refaites file_upload_url puis le PUT."));
+        }
+        let (_, slot) = st.upload_slots.remove(&token).ok_or_else(|| tool_error("Envoi inconnu."))?;
+        (slot.file_id.unwrap_or_default(), slot.size)
+    } else {
+        let file = args.get("file").and_then(Value::as_object);
+        let url = file.and_then(|f| f.get("download_url")).and_then(Value::as_str).map(str::to_string).or_else(|| opt_str(args, "url"));
+        let Some(url) = url else {
+            return Err(tool_error("Donner le fichier : file (joint), url (adresse https) ou upload (file_upload_url)."));
+        };
+        let f = crate::services::remote_image::fetch_file(&url, MAX_AGENT_FILE_BYTES).await.map_err(|m| tool_error(&m))?;
+        let size = f.bytes.len() as i64;
+        if st.quota.ensure_room(&st.limits(), vault_id, size).await.is_err() {
+            return Err(tool_error("Plus de place dans ce vault pour ce fichier."));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        if let Err(e) = st.store.put(vault_id, &id, &f.bytes).await {
+            tracing::error!(error = %e, "MCP : fichier non range");
+            return Err(tool_error("Erreur interne de Savoire."));
+        }
+        st.quota.added(vault_id, size);
+        (id, size)
+    };
+    let mut out = args.clone();
+    for k in ["vault", "file", "url", "upload", "fileId"] {
+        out.remove(k);
+    }
+    out.insert("fileId".into(), json!(id));
+    Ok((out, id, size))
+}
+
 pub(crate) static FILE_ID_SHAPE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9-]{1,64}$").unwrap());
 
 /// Un outil du catalogue. None : catalogue indisponible (l'appelant se rabat sur la lecture d'avant).
@@ -519,8 +725,9 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
         return Ok(Some(tool_error(m)));
     }
     // L'image d'abord (seulement si l'agent en a le droit) : l'accord eventuel porte sur une image deja recue.
-    let image = if name == ADD_IMAGE {
-        match receive_image(st, &vault.id, &rest).await {
+    let image = if name == ADD_IMAGE || name == ADD_FILE {
+        let received = if name == ADD_IMAGE { receive_image(st, &vault.id, &rest).await } else { receive_file(st, &p.sub, &vault.id, &rest).await };
+        match received {
             Ok((a, _, _)) => {
                 rest = a;
                 true
@@ -578,7 +785,7 @@ fn node_text(v: Option<&Value>) -> String {
     }
 }
 
-async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Value>>) -> Result<Value, InvalidParams> {
+async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Value>>, base: &str) -> Result<Value, InvalidParams> {
     let name = params
         .as_ref()
         .and_then(|p| p.get("name"))
@@ -590,6 +797,7 @@ async fn call_tool(st: &AppState, p: &Principal, params: Option<Map<String, Valu
         "list_vaults" => list_vaults_tool(st, p).await,
         GET_MODE => get_mode_tool(st, p, &args).await,
         agents::REQUEST_MODE => request_mode_tool(st, p, &args).await,
+        FILE_UPLOAD_URL => upload_url_tool(st, p, &args, base).await,
         n if super::editor_context::is_tool(n) => context_tool(st, p, n, &args).await,
         _ => match agent_tool(st, p, &name, &args).await {
             // Pas de catalogue (pair absent, ancien pair) : les outils de lecture d'avant.

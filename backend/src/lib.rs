@@ -176,6 +176,7 @@ pub fn router(st: AppState) -> Router {
         .route("/api/open/v1/vaults/{vaultId}/notes", get(open::rest_notes))
         .route("/api/open/v1/vaults/{vaultId}/notes/read", get(open::rest_read))
         .route("/api/open/v1/vaults/{vaultId}/query", post(open::rest_query).layer(small(open::MAX_QUERY_BYTES / 1024)))
+        .route("/api/open/v1/uploads/{token}", axum::routing::put(open::upload_put).layer(axum::extract::DefaultBodyLimit::max(open::MAX_AGENT_FILE_BYTES)))
         .route("/api/mcp", post(open::mcp_post).get(open::mcp_other).delete(open::mcp_other).layer(small(open::MAX_MCP_BYTES / 1024)))
         // OAuth du MCP (ChatGPT, Claude.ai)
         .route("/.well-known/oauth-protected-resource", get(oauth::protected_resource))

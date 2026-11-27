@@ -183,6 +183,11 @@ export interface IVaultFiles {
   read(fileId: string): Promise<string>
   /** Octets du fichier, tels quels, et leur type MIME. Rejette s'il est introuvable. */
   readBytes(fileId: string): Promise<{ bytes: Uint8Array; type: string }>
+  /**
+   * Un morceau du fichier, octets [start, end[, et sa taille, sans le
+   * telecharger en entier. Absent : lire tout (readBytes) puis decouper.
+   */
+  readRange?(fileId: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number }>
 }
 
 /**

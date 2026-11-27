@@ -41,7 +41,10 @@ Savoire fournit React 19 : \`import React from 'react'\`,
 \`react/jsx-runtime\`. Il n'y a pas d'étape de construction : pas de JSX,
 écrivez \`const h = React.createElement\` puis \`h('div', props, ...enfants)\`.
 Toute autre bibliothèque doit être un module ES dans le dossier de
-l'application (aucun CDN : le réseau est fermé).
+l'application (aucun CDN à l'exécution : le réseau est fermé). Pour l'y
+déposer sans recopier son code : l'outil MCP \`add_file\` (adresse https du
+module, ou fichier du poste envoyé avec \`file_upload_url\`), par exemple dans
+\`lib/\`, puis \`import x from './lib/x.js'\`.
 
 ## L'objet \`savoire\`
 
@@ -58,6 +61,8 @@ l'application (aucun CDN : le réseau est fermé).
 | \`savoire.files.remove(path)\` | à la corbeille |
 | \`savoire.files.move(from, to)\` | déplace ou renomme |
 | \`savoire.files.bytes(path)\` | un ArrayBuffer (image, son...) |
+| \`savoire.files.bytes(path, { start, end })\` | seulement les octets [start, end[ : lecture partielle d'un gros fichier (fonds de carte PMTiles, vidéo) |
+| \`savoire.files.size(path)\` | la taille du fichier, sans le lire |
 | \`savoire.files.url(path)\` | une adresse blob: pour \`<img src>\`, \`<audio>\`, \`<video>\` |
 | \`savoire.files.watch(cb)\` | \`cb([{ path, change: 'added' \\| 'removed' \\| 'changed' }])\` quand le dossier change (autres membres, IA) ; rend la fonction d'arrêt |
 | \`savoire.query(q)\` / \`savoire.watch(q, cb)\` | requête sur une base du vault (comme un board) |

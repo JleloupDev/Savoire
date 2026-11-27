@@ -13,7 +13,7 @@ import { EXTRACTOR as XLSX, extractXlsx } from '@savoire/plugin-excel'
 import { EXTRACTOR as ODF, extractOpenDocument } from '@savoire/plugin-opendocument'
 import { EXTRACTOR as HTML, extractHtml } from '@savoire/plugin-webpage'
 import { EXTRACTOR as IMAGES, extractImage } from '@savoire/plugin-images'
-import { EXTRACTOR as PDF, extractPdf } from '@savoire/plugin-pdf'
+import { EXTRACTOR as PDF, extractPdf, readPdfPages } from '@savoire/plugin-pdf'
 
 const EXTRACTORS = [CSV, DOCX, PPTX, XLSX, ODF, HTML, IMAGES, PDF]
 import { createZip } from '../../../../../apps/web/src/zipArchive'
@@ -144,6 +144,28 @@ describe('documents existants : PDF et OCR', () => {
     expect(c.props).toMatchObject({ pages: 2 })
   })
 
+  it('PDF : quelques pages lues par morceaux, sans lire tout le fichier', async () => {
+    const texts = Array.from({ length: 300 }, (_, i) => `Texte de la page ${i + 1}`)
+    const pdf = minimalPdf(texts, 2000)
+    const asked: [number, number][] = []
+    const source = { size: pdf.length, read: async (a: number, b: number) => { asked.push([a, b]); return pdf.slice(a, b) } }
+    const r = await readPdfPages(source, 150, 152)
+    expect(r.total).toBe(300)
+    expect(r.pages.map(p => p.page)).toEqual([150, 151, 152])
+    expect(r.pages[1].text).toContain('Texte de la page 151')
+    // Lu par morceaux de 64 Ko au plus. (Ce PDF fabrique a la main, sans flux de
+    // references, est encore lu en entier par pdf.js a l'ouverture ; un vrai PDF
+    // de 290 Ko s'ouvre en 2 morceaux de 16 Ko sur 18.)
+    expect(asked.length).toBeGreaterThan(1)
+    expect(asked.every(([a, b]) => b - a <= 64 * 1024)).toBe(true)
+    // Bornes : jamais au-dela du document, 50 pages au plus.
+    const end = await readPdfPages(source, 299, 400)
+    expect([end.from, end.to]).toEqual([299, 300])
+    const many = await readPdfPages(source, 1, 200)
+    expect(many.to).toBe(50)
+    expect(PDF.readPages).toBeTypeOf('function')
+  })
+
   it('images : le texte reconnu (OCR) devient une section', async () => {
     // PNG 200 x 100 (en-tete seul) : assez grande pour l'OCR.
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 200, 0, 0, 0, 100, 8, 6, 0, 0, 0])
@@ -156,14 +178,15 @@ describe('documents existants : PDF et OCR', () => {
 })
 
 /** Un PDF minimal valide, une page par texte (police standard Helvetica). */
-function minimalPdf(pages: string[]): Uint8Array {
+function minimalPdf(pages: string[], pad = 0): Uint8Array {
   const objs: string[] = []
   const kids = pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')
   objs.push('<< /Type /Catalog /Pages 2 0 R >>')
   objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`)
   const font = 3 + pages.length * 2
   pages.forEach((t, i) => {
-    const stream = `BT /F1 12 Tf 72 720 Td (${t}) Tj ET`
+    // pad : un commentaire de bourrage, pour un gros fichier (lecture par morceaux).
+    const stream = `BT /F1 12 Tf 72 720 Td (${t}) Tj ET${pad ? `\n%${'x'.repeat(pad)}` : ''}`
     objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${4 + i * 2} 0 R >>`)
     objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
   })

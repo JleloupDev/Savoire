@@ -534,6 +534,7 @@ export class VaultStore {
       readText: async (id, path) => {
         try { return (await this.readText(v, id, path, signal))?.content ?? null } catch { return null }
       },
+      readPages: (id, path, from, to) => this.readPages(v, id, path, from, to, signal),
       call: (capability, method, params) => this.slot.run(INTERACTIVE, async () => (await this.handleFor(v, capability)).call(capability, method, params, { signal }), signal),
       docLog: id => this.fetch(() => this.readDoc(v, id, signal)),
       treeLog: () => this.fetch(() => this.backend.tree(v.id, signal)),
@@ -549,6 +550,26 @@ export class VaultStore {
         }
       },
     }
+  }
+
+  /**
+   * Lecture partielle : les pages from..to d'un fichier pagine (PDF), par
+   * morceaux demandes au backend. Aucune limite de taille du fichier : seules
+   * les plages utiles sont lues. Null : pas un fichier que son extracteur sait
+   * lire ainsi.
+   */
+  private async readPages(v: Vault, id: string, path: string, from: number, to: number, signal?: AbortSignal): Promise<{ total: number; from: number; to: number; pages: { page: number; text: string }[] } | null> {
+    if (!this.extractable(path)) return null
+    const spec = this.opts.extractor!(path)!
+    if (!spec.readPages) return null
+    const head = await this.backend.fileRange(v.id, id, 0, 1, signal)
+    if (!head) return null
+    const source = {
+      size: head.size,
+      read: async (start: number, end: number) => (await this.backend.fileRange(v.id, id, start, end, signal))?.bytes ?? new Uint8Array(0),
+    }
+    const annex = async (name: string) => (spec.annexes?.includes(name) ? this.annexRoot(v, id, name, signal) : null)
+    return spec.readPages(source, from, to, { path, annex })
   }
 
   /** Le texte d'un document, comme l'index le lit : note, fichier extrait, texte publie. */

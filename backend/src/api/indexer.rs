@@ -21,7 +21,7 @@ use std::sync::{Arc, LazyLock};
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use base64::Engine;
 use regex::Regex;
 use serde::Deserialize;
@@ -524,8 +524,8 @@ pub async fn internal_file(State(st): State<AppState>, ReqParts(parts): ReqParts
     }
     drop(c);
     let Some(file) = st.store.read(&vault_id, &file_id).await? else { return Ok(not_found()) };
-    let body = axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(file));
-    let mut r = body.into_response();
+    // Un morceau (Range) : le pair ouvre un gros PDF page par page.
+    let (mut r, _) = crate::api::attachments::ranged_body(file, &parts.headers, false).await?;
     r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
     Ok(r)
 }
