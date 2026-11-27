@@ -27,6 +27,7 @@
     "@savoire/plugin-ai-mistral": "workspace:*",
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-base": "workspace:*",
+    "@savoire/plugin-bookmarks": "workspace:*",
     "@savoire/plugin-bible": "workspace:*",
     "@savoire/plugin-animation": "workspace:*",
     "@savoire/plugin-slides": "workspace:*",

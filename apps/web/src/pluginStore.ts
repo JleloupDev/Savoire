@@ -113,6 +113,8 @@ export const STORE_CATALOG: StoreEntry[] = [
   { id: 'plugin-templates', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-templates')).default },
   { id: 'plugin-agenda', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-agenda')).createAgendaPlugin() },
   { id: 'plugin-history', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-history')).createHistoryPlugin() },
+  // Favoris (signets d'Obsidian).
+  { id: 'plugin-bookmarks', preinstalled: true, core: true, load: async () => (await import('@savoire/plugin-bookmarks')).createBookmarksPlugin() },
 
   // ── Coeur : types Savoire ──────────────────────────────────────────────────
   {

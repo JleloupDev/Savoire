@@ -251,6 +251,9 @@ importers:
       '@savoire/plugin-board':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-board
+      '@savoire/plugin-bookmarks':
+        specifier: workspace:*
+        version: link:../../packages/plugins/plugin-bookmarks
       '@savoire/plugin-callout':
         specifier: workspace:*
         version: link:../../packages/plugins/plugin-callout
@@ -789,6 +792,22 @@ importers:
         specifier: workspace:*
         version: link:../plugin-base
     devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  ../packages/plugins/plugin-bookmarks:
+    dependencies:
+      '@savoire/plugin-api':
+        specifier: workspace:*
+        version: link:../../plugin-api
+    devDependencies:
+      '@types/react':
+        specifier: ^18.2.0
+        version: 18.3.28
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
