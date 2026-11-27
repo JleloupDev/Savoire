@@ -243,6 +243,12 @@ describe('application : fichiers de son dossier', () => {
     await call('files.writeBytes', 'photos/a.jpg', new Uint8Array([4]))
     expect([...w.docs.get('H/photos/a.jpg')!.binary!]).toEqual([4])
     expect((await call('files.writeBytes', 'x.bin', 'pas des octets')).e).toMatch(/octets attendus/)
+    // 3 Mo d'octets : comptes pour leur taille, pas pour leur ecriture en texte (environ 12 fois plus).
+    const big = new Uint8Array(3 * 1024 * 1024).fill(200)
+    expect((await call('files.writeBytes', 'gros.bin', big)).v).toEqual({ path: 'gros.bin' })
+    expect(w.docs.get('H/gros.bin')!.binary!.length).toBe(big.length)
+    // Au-dela de la limite, l'appel recoit un refus au lieu de rester sans reponse.
+    expect((await call('files.writeBytes', 'trop.bin', new Uint8Array(9 * 1024 * 1024))).e).toMatch(/trop gros/)
     await call('app.reload')
     await tick()
     expect(onReload).toHaveBeenCalled()

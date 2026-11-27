@@ -163,9 +163,15 @@ export class BoardHost {
       return
     }
     if (!m || typeof m !== 'object' || m.ch !== this.channel) return
-    let size = 0
-    try { size = JSON.stringify(m).length } catch { return }
-    if (size > this.maxMessage) { this.opts.onError?.('Message trop gros.'); return }
+    const size = messageSize(m)
+    if (size === null) return
+    if (size > this.maxMessage) {
+      // Un appel trop gros recoit une reponse : le cadre n'attend pas pour rien.
+      const tooBig = `Message trop gros (${Math.round(this.maxMessage / 1024 / 1024)} Mo au plus).`
+      if (m.t === 'call') this.post({ t: 'res', id: Number(m.id), ok: false, e: tooBig })
+      else this.opts.onError?.(tooBig)
+      return
+    }
     switch (m.t) {
       case 'size':
         if (typeof m.h === 'number' && Number.isFinite(m.h)) this.opts.onSize?.(Math.max(0, Math.min(20_000, m.h)))
@@ -371,4 +377,23 @@ function messageOf(err: unknown): string {
 /** Le resultat, en donnees simples (passe par postMessage). */
 function plain(r: QueryResult): QueryResult {
   return JSON.parse(JSON.stringify(r)) as QueryResult
+}
+
+/**
+ * Taille d'un message du cadre. Les octets bruts (Uint8Array, ArrayBuffer)
+ * comptent pour leur longueur : passes en texte, ils gonfleraient d'environ
+ * douze fois. Rend null si le message ne se lit pas.
+ */
+export function messageSize(m: unknown): number | null {
+  let bytes = 0
+  try {
+    const text = JSON.stringify(m, (_k, v: unknown) => {
+      if (v instanceof ArrayBuffer) { bytes += v.byteLength; return 0 }
+      if (ArrayBuffer.isView(v)) { bytes += v.byteLength; return 0 }
+      return v
+    })
+    return (text?.length ?? 0) + bytes
+  } catch {
+    return null
+  }
 }
