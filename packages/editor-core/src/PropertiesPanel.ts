@@ -166,13 +166,13 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 function emptyValue(type: PropertyType): PropertyValue {
   if (type === 'checkbox') return false
-  if (type === 'multiselect' || type === 'relation' || type === 'files') return []
+  if (type === 'multiselect' || type === 'relation' || type === 'files' || type === 'aliases' || type === 'tags') return []
   return null
 }
 
 /** Types des bases rendus par un editeur existant du panneau. */
 const EDITOR_OF: Partial<Record<PropertyType, PropertyType>> = {
-  status: 'select', relation: 'multiselect', files: 'multiselect',
+  status: 'select', relation: 'multiselect', files: 'multiselect', aliases: 'multiselect', tags: 'multiselect',
 }
 /** Valeurs posees par l'appli (bases) : affichees, pas saisies. */
 const READ_ONLY_TYPES: ReadonlySet<PropertyType> = new Set<PropertyType>(['id', 'created', 'modified', 'createdBy', 'modifiedBy'])
@@ -339,7 +339,7 @@ export class PropertiesPanel {
         const list = Array.isArray(value) ? value : value === null ? [] : [String(value)]
         const pills = el('div', 'plume-prop-pills')
         for (const item of list) {
-          const pill = el('span', 'plume-pill', item)
+          const pill = el('span', 'plume-pill', declared === 'tags' ? `#${item}` : item)
           pill.dataset.testid = 'property-pill'
           if (!ro) {
             const x = el('button', 'plume-pill-x', '×')
@@ -356,7 +356,7 @@ export class PropertiesPanel {
           input.placeholder = 'Ajouter…'
           input.dataset.testid = 'property-pill-input'
           const add = () => {
-            const v = input.value.trim()
+            const v = declared === 'tags' ? input.value.trim().replace(/^#/, '') : input.value.trim()
             if (!v || list.includes(v)) { input.value = ''; return }
             this.setValue(key, [...list, v])
           }

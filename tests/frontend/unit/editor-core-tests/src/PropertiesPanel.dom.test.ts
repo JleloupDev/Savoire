@@ -85,11 +85,12 @@ describe('panneau des proprietes', () => {
     const types = Object.fromEntries(Array.from(panel()!.querySelectorAll('[data-testid="property-row"]')).map(r => [(r as HTMLElement).dataset.key, (r as HTMLElement).dataset.type]))
     expect(types).toEqual({
       status: 'select', priority: 'number', due: 'date', done: 'checkbox',
-      tags: 'multiselect', parent: 'link', owner: 'person', note: 'text',
+      // `tags` a son type a lui, comme dans Obsidian (RESERVED_PROPERTY_TYPES).
+      tags: 'tags', parent: 'link', owner: 'person', note: 'text',
     })
     expect((row('due').querySelector('[data-testid=\"property-value\"] input') as HTMLInputElement).type).toBe('date')
     expect((row('priority').querySelector('[data-testid=\"property-value\"] input') as HTMLInputElement).type).toBe('number')
-    expect(Array.from(row('tags').querySelectorAll('[data-testid="property-pill"]')).map(p => p.firstChild!.textContent)).toEqual(['urgent', 'client'])
+    expect(Array.from(row('tags').querySelectorAll('[data-testid="property-pill"]')).map(p => p.firstChild!.textContent)).toEqual(['#urgent', '#client'])
     expect(row('parent').querySelector('[data-testid="property-link"]')!.textContent).toBe('Projet Alpha')
   })
 

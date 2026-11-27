@@ -53,7 +53,7 @@ export function parseCsv(input: string, sep?: string): string[][] {
 }
 
 const TRUE_RE = /^(true|vrai|oui|yes|x|1|☑|✓)$/i
-const LIST_TYPES: ReadonlySet<string> = new Set(['multiselect', 'relation', 'files'])
+const LIST_TYPES: ReadonlySet<string> = new Set(['multiselect', 'relation', 'files', 'aliases', 'tags'])
 
 /** Un texte (CSV, presse-papiers) -> valeur du type de la propriete. Vide : null. */
 export function parseCellText(type: PropertyType, text: string, multiple = false): PropertyValue {

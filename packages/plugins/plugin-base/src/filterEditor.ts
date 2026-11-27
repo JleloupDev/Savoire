@@ -84,7 +84,7 @@ export function opsFor(type: PropertyType): OpInfo[] {
     case 'date': case 'created': case 'modified': return DATE_OPS
     case 'checkbox': return CHECK_OPS
     case 'select': case 'status': case 'person': return CHOICE_OPS
-    case 'multiselect': case 'relation': case 'files': return LIST_OPS
+    case 'multiselect': case 'relation': case 'files': case 'aliases': case 'tags': return LIST_OPS
     default: return TEXT_OPS
   }
 }

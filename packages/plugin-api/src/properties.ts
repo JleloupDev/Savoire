@@ -27,6 +27,8 @@ export type PropertyType =
   | 'modified'     // date-heure de la derniere modification par une base
   | 'createdBy'    // qui a cree la ligne (id d'un membre)
   | 'modifiedBy'   // qui l'a modifiee en dernier par une base
+  | 'aliases'      // autres noms de la note : un lien [[alias]] y mene (comme Obsidian)
+  | 'tags'         // tags de la note, comme les #tags du texte (sans le #)
 
 /** Une valeur, telle que l'index la conserve. Les listes : multiselect, liens multiples. */
 export type PropertyValue = string | number | boolean | null | string[]
@@ -110,7 +112,7 @@ export const AUTO_PROPERTY_TYPES: readonly PropertyType[] = ['id', 'created', 'm
 
 /** Types dont la valeur est une liste. */
 export function isListType(type: PropertyType, def?: Pick<PropertyDef, 'multiple'>): boolean {
-  return type === 'multiselect' || type === 'files' || type === 'relation' || (type === 'person' && !!def?.multiple)
+  return type === 'multiselect' || type === 'aliases' || type === 'tags' || type === 'files' || type === 'relation' || (type === 'person' && !!def?.multiple)
 }
 
 /** Une date, ou une periode « debut/fin » (ISO 8601). */
@@ -161,8 +163,16 @@ export interface IPropertyTypes {
 
 export const PROPERTY_TYPES: readonly PropertyType[] = [
   'text', 'number', 'date', 'checkbox', 'select', 'multiselect', 'status', 'link', 'relation', 'person',
-  'url', 'email', 'phone', 'files', 'id', 'created', 'modified', 'createdBy', 'modifiedBy',
+  'url', 'email', 'phone', 'files', 'id', 'created', 'modified', 'createdBy', 'modifiedBy', 'aliases', 'tags',
 ]
+
+/**
+ * Proprietes dont le nom fixe le type, comme dans Obsidian : `tags` et
+ * `aliases` (et l'ancien `alias`) ont toujours le leur, sauf declaration contraire.
+ */
+export const RESERVED_PROPERTY_TYPES: Readonly<Record<string, PropertyType>> = {
+  tags: 'tags', tag: 'tags', aliases: 'aliases', alias: 'aliases',
+}
 
 /** Libelle et icone de chaque type, les memes partout. */
 export const PROPERTY_TYPE_INFO: Readonly<Record<PropertyType, { label: string; icon: string }>> = {
@@ -185,6 +195,8 @@ export const PROPERTY_TYPE_INFO: Readonly<Record<PropertyType, { label: string; 
   modified: { label: 'Modifié le', icon: 'calendar-clock' },
   createdBy: { label: 'Créé par', icon: 'user-plus' },
   modifiedBy: { label: 'Modifié par', icon: 'user-pen' },
+  aliases: { label: 'Alias', icon: 'forward' },
+  tags: { label: 'Tags', icon: 'tags' },
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?(\/\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?)?$/
@@ -222,8 +234,14 @@ export function coercePropertyValue(value: PropertyValue | undefined, type: Prop
     case 'multiselect':
     case 'files':
     case 'relation':
+    case 'aliases':
       if (Array.isArray(value)) return value
       return value === '' ? [] : [String(value)]
+    case 'tags': {
+      // « a, b » ou « #a #b » sur une ligne, ou une liste : des tags sans #.
+      const list = Array.isArray(value) ? value : String(value).split(/[\s,]+/)
+      return list.map(t => String(t).trim().replace(/^#/, '')).filter(Boolean)
+    }
     case 'person':
       // Une liste de membres reste une liste (PropertyDef.multiple).
       if (Array.isArray(value)) return value
@@ -251,7 +269,7 @@ export function coercePropertyValue(value: PropertyValue | undefined, type: Prop
 
 /** Type effectif d'une propriete : declare, sinon devine depuis la valeur. */
 export function propertyTypeOf(types: Pick<IPropertyTypes, 'get'> | undefined, key: string, value?: PropertyValue): PropertyType {
-  return types?.get(key)?.type ?? guessPropertyType(value)
+  return types?.get(key)?.type ?? RESERVED_PROPERTY_TYPES[key.toLowerCase()] ?? guessPropertyType(value)
 }
 
 // Lecture et edition du frontmatter (une seule implementation, dans

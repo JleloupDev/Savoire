@@ -92,16 +92,17 @@ export class BaseForm {
       : h('input', { class: 'base-input', id })
     if (input instanceof HTMLInputElement) {
       input.type = type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'url' ? 'url' : type === 'email' ? 'email' : type === 'phone' ? 'tel' : 'text'
-      if (type === 'multiselect' || type === 'files' || type === 'relation') input.placeholder = 'a, b, c'
+      if (type === 'multiselect' || type === 'files' || type === 'relation' || type === 'aliases' || type === 'tags') input.placeholder = 'a, b, c'
     }
     if (col.key === '@title') input.setAttribute('required', '')
     const read = (): PropertyValue | undefined => {
       const raw = input.value.trim()
       if (!raw) return undefined
       if (type === 'number') { const n = Number(raw); return Number.isFinite(n) ? n : raw }
-      if (type === 'multiselect' || type === 'files' || type === 'relation') {
+      if (type === 'multiselect' || type === 'files' || type === 'relation' || type === 'aliases' || type === 'tags') {
         const items = raw.split(',').map(x => x.trim()).filter(Boolean)
-        return type === 'multiselect' ? items : items.map(x => /^https?:\/\//i.test(x) || x.startsWith('[[') ? x : `[[${x}]]`)
+        if (type === 'tags') return items.map(x => x.replace(/^#/, ''))
+        return type === 'multiselect' || type === 'aliases' ? items : items.map(x => /^https?:\/\//i.test(x) || x.startsWith('[[') ? x : `[[${x}]]`)
       }
       if (type === 'link') return raw.startsWith('[[') ? raw : `[[${raw}]]`
       return raw

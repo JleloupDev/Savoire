@@ -149,7 +149,10 @@ export function renderValue(type: PropertyType, raw: PropertyValue | undefined, 
     case 'status':
       return pill(valueText(value), ctx, key, type)
     case 'multiselect':
+    case 'aliases':
       return h('span', { class: 'base-pills' }, ...list.map(v => pill(v, ctx, key)))
+    case 'tags':
+      return h('span', { class: 'base-pills' }, ...list.map(v => pill(`#${v.replace(/^#/, '')}`, ctx, key)))
     case 'link':
     case 'relation':
     case 'files': {
