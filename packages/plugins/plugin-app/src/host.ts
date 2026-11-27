@@ -116,7 +116,7 @@ export class AppHost extends BoardHost {
   private async codeFiles(): Promise<Record<string, string>> {
     const out: Record<string, string> = {}
     let total = 0
-    for (const rel of this.listRel(true).filter(e => e.type === 'file' && isCodeFile(e.path)).map(e => e.path)) {
+    for (const rel of (await this.listRel(true)).filter(e => e.type === 'file' && isCodeFile(e.path)).map(e => e.path)) {
       const text = await this.readText(rel).catch(() => null)
       if (text === null) continue
       total += text.length
@@ -152,20 +152,39 @@ export class AppHost extends BoardHost {
 
   // ── Fichiers ──────────────────────────────────────────────────────────
 
-  private tree(): { docId: string; path: string; version: string }[] {
+  /**
+   * Les fichiers du dossier (chemins du vault), d'apres le repertoire du
+   * vault (a jour tout de suite), et la version connue de chacun (releve de
+   * l'index, quand il l'a deja vu).
+   */
+  private async tree(): Promise<{ path: string; version: string }[]> {
     const vault = this.api?.vault
-    return (vault?.getFileTree?.() ?? [])
-      .filter(f => !f.path.startsWith('.trash/') && !vault?.isTrashed?.(f.docId))
-      .map(f => ({ docId: f.docId, path: f.path, version: JSON.stringify(f.crdtVersion ?? null) }))
+    if (!vault) return []
+    const versions = new Map<string, string>()
+    for (const f of vault.getFileTree?.() ?? []) versions.set(f.path, JSON.stringify(f.crdtVersion ?? null))
+    const out: { path: string; version: string }[] = []
+    const dirs = [this.folder ? `${this.folder}/` : '']
+    const seen = new Set<string>()
+    while (dirs.length) {
+      const dir = dirs.pop()!
+      if (seen.has(dir)) continue
+      seen.add(dir)
+      for (const entry of await vault.list(dir).catch(() => [] as string[])) {
+        if (entry.startsWith('.trash/')) continue
+        if (entry.endsWith('/')) dirs.push(entry)
+        else out.push({ path: entry, version: versions.get(entry) ?? '' })
+      }
+    }
+    return out
   }
 
   /** Fichiers et dossiers du dossier de l'application (ou d'un sous-dossier). */
-  listRel(recursive: boolean, dir = ''): AppFileEntry[] {
+  async listRel(recursive: boolean, dir = ''): Promise<AppFileEntry[]> {
     const sub = dir ? normalizeAppPath(dir) : ''
     const prefix = sub ? `${sub}/` : ''
     const files: AppFileEntry[] = []
     const folders = new Set<string>()
-    for (const f of this.tree()) {
+    for (const f of await this.tree()) {
       const rel = relPathOf(this.folder, f.path)
       if (rel === null || !rel.startsWith(prefix)) continue
       const rest = rel.slice(prefix.length)
@@ -184,7 +203,7 @@ export class AppHost extends BoardHost {
     const vault = this.api?.vault
     if (!vault) throw new Error('Aucun vault ouvert.')
     const path = vaultPathOf(this.folder, rel)
-    const id = vault.resolveDocumentId(path) ?? this.tree().find(f => f.path === path)?.docId
+    const id = vault.resolveDocumentId(path)
     if (!id) throw new Error(`Fichier introuvable : ${rel}`)
     return id
   }
@@ -255,7 +274,7 @@ export class AppHost extends BoardHost {
     this.allowFileWrite()
     const vault = this.api!.vault
     const path = vaultPathOf(this.folder, rel)
-    let id = vault.resolveDocumentId(path) ?? this.tree().find(f => f.path === path)?.docId
+    let id = vault.resolveDocumentId(path)
     if (!id) {
       if (!vault.createFile) throw new Error('Ce vault ne permet pas de créer de fichier.')
       const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
@@ -294,18 +313,23 @@ export class AppHost extends BoardHost {
 
   // ── Suivi du dossier ──────────────────────────────────────────────────
 
-  private snapshot(): Map<string, string> {
+  private async snapshot(): Promise<Map<string, string>> {
     const map = new Map<string, string>()
-    for (const f of this.tree()) {
+    for (const f of await this.tree()) {
       const rel = relPathOf(this.folder, f.path)
       if (rel !== null) map.set(rel, f.version)
     }
     return map
   }
 
-  private check(): void {
+  private checking = false
+
+  private async check(): Promise<void> {
+    if (!this.seen || this.isDisposed || this.checking) return
+    this.checking = true
+    let now: Map<string, string>
+    try { now = await this.snapshot() } finally { this.checking = false }
     if (!this.seen || this.isDisposed) return
-    const now = this.snapshot()
     const changes: Change[] = []
     for (const [p, v] of now) {
       const before = this.seen.get(p)
@@ -342,10 +366,10 @@ export class AppHost extends BoardHost {
   }
 
   private startFileWatch(): void {
-    if (this.seen) return
-    this.seen = this.snapshot()
-    this.watchTimer = setInterval(() => this.check(), WATCH_MS)
-    this.unsubVault = this.api?.workspace.subscribeVaultChange?.(() => this.check()) ?? null
+    if (this.seen || this.watchTimer) return
+    this.watchTimer = setInterval(() => void this.check(), WATCH_MS)
+    this.unsubVault = this.api?.workspace.subscribeVaultChange?.(() => void this.check()) ?? null
+    void this.snapshot().then(m => { if (this.watchTimer) this.seen = m })
   }
 
   private stopFileWatch(): void {

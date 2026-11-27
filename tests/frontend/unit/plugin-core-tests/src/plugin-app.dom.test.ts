@@ -21,6 +21,17 @@ function world(files: Record<string, string> = {}) {
   const vault = {
     getFileTree: () => [...docs.entries()].map(([path, d]) => ({ docId: d.id, path, crdtVersion: { v: d.v } })),
     resolveDocumentId: (p: string) => docs.get(p)?.id,
+    // Comme VaultClient.list : un niveau, dossiers termines par « / », sans la corbeille.
+    list: async (dir = '') => {
+      const out = new Set<string>()
+      for (const p of docs.keys()) {
+        if (!p.startsWith(dir) || p.startsWith('.trash/')) continue
+        const rest = p.slice(dir.length)
+        const i = rest.indexOf('/')
+        out.add(i < 0 ? p : dir + rest.slice(0, i + 1))
+      }
+      return [...out].sort()
+    },
     read: async (id: string) => { const e = byId(id); if (!e || e[1].binary) throw new Error('binaire'); return e[1].text },
     readDocumentByPath: async (p: string) => { const d = docs.get(p); if (!d) throw new Error('introuvable'); if (d.binary) return new TextDecoder().decode(d.binary); return d.text },
     readBinary: async (p: string) => docs.get(p)?.binary ?? null,
