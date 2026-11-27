@@ -35,6 +35,18 @@ export function dailyNotes(files: readonly string[]): Map<string, string> {
   return byDay
 }
 
+/**
+ * La note du jour existante qui suit (dir 1) ou precede (dir -1) celle-ci,
+ * comme « Note du jour suivante » d'Obsidian. Null : aucune, ou pas une note du jour.
+ */
+export function adjacentDailyNote(files: readonly string[], current: string, dir: 1 | -1): string | null {
+  const m = DAY_RE.exec(current)
+  if (!m) return null
+  const days = [...dailyNotes(files).entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  const next = dir === 1 ? days.find(([d]) => d > m[1]) : [...days].reverse().find(([d]) => d < m[1])
+  return next?.[1] ?? null
+}
+
 /** Le chemin de la note de ce jour : l'existante, sinon une neuve dans `Journal/`. */
 export function dailyNotePath(key: string, files: readonly string[]): string {
   return dailyNotes(files).get(key) ?? `${DAILY_FOLDER}${key}.md`

@@ -7,7 +7,7 @@
 // dossier des modeles s'il existe (variables : voir renderTemplate).
 import type { PluginAPI, VaultPlugin } from '@savoire/plugin-api'
 import { AgendaWidget, type AgendaHost } from './AgendaWidget'
-import { dayKey } from './daily'
+import { adjacentDailyNote, dayKey } from './daily'
 import { ensureDailyNote } from './dailyFile'
 import { appendBlock, createCaptureFlusher, QUICK_CAPTURE_EVENT, type CaptureEvent } from './quickCapture'
 import { agendaAgentTools } from './agentTools'
@@ -91,6 +91,17 @@ export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribb
         run: () => { const d = new Date(); d.setDate(d.getDate() + 1); void open(dayKey(d)) },
       })
 
+      // Comme Obsidian : la note du jour precedente ou suivante, depuis la note du jour ouverte.
+      const step = (dir: 1 | -1) => async () => {
+        const current = api.workspace?.getActiveDocument?.()?.path
+        if (!current) return
+        const target = adjacentDailyNote(await allFiles(api), current, dir)
+        if (target) await api.workspace.openFile(target)
+        else api.workspace?.notify?.('info', 'Note du jour', dir === 1 ? 'Pas de note du jour plus récente.' : 'Pas de note du jour plus ancienne.')
+      }
+      api.commands.register({ id: 'daily-notes:goto-prev', label: 'Note du jour précédente', run: step(-1) })
+      api.commands.register({ id: 'daily-notes:goto-next', label: 'Note du jour suivante', run: step(1) })
+
       stopCapture?.()
       stopCapture = startQuickCapture(api, open)
     },
@@ -102,6 +113,6 @@ export function createAgendaPlugin(options: { container?: 'left' | 'right'; ribb
   }
 }
 
-export { dailyNotes, dailyNotePath, dailyTemplatePath, dayKey, monthGrid } from './daily'
+export { adjacentDailyNote, dailyNotes, dailyNotePath, dailyTemplatePath, dayKey, monthGrid } from './daily'
 export { appendBlock, captureMarkdown, createCaptureFlusher, readCaptureQueue, removeCaptureEntry, QUICK_CAPTURE_EVENT, QUICK_CAPTURE_KEY, QUICK_CAPTURE_OPEN_KEY, type CaptureEntry, type CaptureEvent } from './quickCapture'
 export default createAgendaPlugin()
