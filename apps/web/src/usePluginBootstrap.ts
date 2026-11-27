@@ -59,7 +59,7 @@ import { clearAiMarks, highlightForAi, pinForAi, startAiMarks } from './aiMarks'
 import type { VaultSummary } from './types'
 import { IndexerServices } from './indexerServices'
 import { LocalIndexServices } from './localIndex'
-import { linkPreviewDelay, setNoteEditorMode, showFileExtensions, subscribeDisplayPreferences } from './displayPreferences'
+import { linkPreviewDelay, noteEditorMode, setNoteEditorMode, showFileExtensions, subscribeDisplayPreferences, type NoteEditorMode } from './displayPreferences'
 import { defaultFileType, subscribeLayoutPreferences } from './layoutPreferences'
 import { notify } from '@savoire/notifications'
 import { takeRemoteEditors } from '@savoire/infrastructure-sync'
@@ -444,6 +444,16 @@ export function usePluginBootstrap({
       for (const [mode, label] of [['classic', 'classique'], ['power', 'power user'], ['source', 'source']] as const) {
         pluginApi.commands.register({ id: `editor:mode-${mode}`, label: `Mode d'édition : ${label}`, run: () => setNoteEditorMode(mode) })
       }
+      // Bascules d'Obsidian, sous leur identifiant : source <-> mode d'avant, lecture (classique) <-> mode d'avant.
+      let modeBefore: NoteEditorMode = 'power'
+      const toggleMode = (target: NoteEditorMode) => () => {
+        const now = noteEditorMode()
+        if (now === target) { setNoteEditorMode(modeBefore === target ? 'power' : modeBefore); return }
+        modeBefore = now
+        setNoteEditorMode(target)
+      }
+      pluginApi.commands.register({ id: 'editor:toggle-source', label: 'Basculer le mode source', run: toggleMode('source') })
+      pluginApi.commands.register({ id: 'markdown:toggle-preview', label: 'Basculer le mode lecture (classique)', run: toggleMode('classic') })
       pluginApi.commands.register({
         id: 'review:toggle-suggest',
         label: 'Mode suggestion (suivi des modifications)',

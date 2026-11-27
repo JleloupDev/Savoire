@@ -58,7 +58,7 @@ import type { VaultSummary, SharedNote, DocumentDto, AccountEntry } from './type
 import { SharingPanel } from './SharingPanel'
 import { IndexStatusIndicator } from './IndexStatusIndicator'
 import { VaultKeyDebugPanel } from './VaultKeyDebugPanel'
-import { SettingsPanel, initTheme } from './SettingsWidget'
+import { SettingsPanel, initTheme, toggleLightDark } from './SettingsWidget'
 import { applyTypography } from './typography'
 import { createWebAppRoot, createWebInfrastructure, makeServerVaultSessionFactory } from './createWebAppRoot'
 import { QuickOpenModal } from './QuickOpenModal'
@@ -614,7 +614,7 @@ export function AppShell() {
   // Raccourcis de l'application : des commandes du moteur de raccourcis,
   // comme celles des plugins. Le ref garde les gestionnaires a jour.
   // Ctrl+N est pris par le navigateur (nouvelle fenetre) : Ctrl+Alt+N.
-  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {}, bubble: () => {}, notionImport: () => {} })
+  const appActionsRef = useRef({ newNote: () => {}, quickOpen: () => {}, openSettings: () => {}, palette: () => {}, bubble: () => {}, notionImport: () => {}, openView: (_id: string) => {}, togglePane: (_side: 'left' | 'right') => {}, randomNote: () => {} })
   const appCommands = useMemo<PluginCommand[]>(() => [
     { id: 'app:new-note', label: 'Nouvelle note', hotkeys: [{ modifiers: ['Mod', 'Alt'], key: 'n' }], run: () => appActionsRef.current.newNote() },
     { id: 'app:quick-open', label: 'Ouverture rapide', hotkeys: [{ modifiers: ['Mod'], key: 'o' }], run: () => appActionsRef.current.quickOpen() },
@@ -622,6 +622,16 @@ export function AppShell() {
     { id: 'app:command-palette', label: 'Palette de commandes', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'p' }], run: () => appActionsRef.current.palette() },
     { id: 'app:open-settings', label: 'Ouvrir les paramètres', hotkeys: [{ modifiers: ['Mod'], key: ',' }], run: () => appActionsRef.current.openSettings() },
     { id: 'app:notion-import', label: 'Importer depuis Notion…', run: () => appActionsRef.current.notionImport() },
+    // Commandes d'Obsidian, sous leur identifiant (raccourcis importes d'un vault Obsidian).
+    { id: 'app:toggle-left-sidebar', label: 'Afficher ou masquer le volet de gauche', run: () => appActionsRef.current.togglePane('left') },
+    { id: 'app:toggle-right-sidebar', label: 'Afficher ou masquer le volet de droite', run: () => appActionsRef.current.togglePane('right') },
+    { id: 'theme:toggle-light-dark', label: 'Basculer entre thème clair et sombre', run: () => toggleLightDark() },
+    { id: 'random-note', label: 'Ouvrir une note au hasard', run: () => appActionsRef.current.randomNote() },
+    { id: 'file-explorer:open', label: 'Afficher l\'explorateur de fichiers', run: () => appActionsRef.current.openView('filetree') },
+    { id: 'graph:open', label: 'Ouvrir le graphe', run: () => appActionsRef.current.openView('graph') },
+    { id: 'backlink:open', label: 'Afficher les rétroliens', run: () => appActionsRef.current.openView('backlinks') },
+    { id: 'tag-pane:open', label: 'Afficher les tags', run: () => appActionsRef.current.openView('hashtags') },
+    { id: 'properties:open', label: 'Afficher les métadonnées', run: () => appActionsRef.current.openView('metadata') },
     { id: 'app:toggle-editor-toolbar', label: 'Afficher ou masquer la barre d\'édition', run: () => setShowEditorToolbar(!showEditorToolbar()) },
   ], [])
 
@@ -1663,6 +1673,18 @@ export function AppShell() {
     palette: () => setPaletteVisible(true),
     bubble: () => { if (activeDoc) bubbles.add(activeDoc.id, activeDoc.path, true) },
     notionImport: () => setNotionDialogOpen(true),
+    openView: (id: string) => {
+      const m = managerRef.current
+      if (!m) return
+      m.openPanel(id)
+      m.focusPanel(id)
+    },
+    togglePane: (side: 'left' | 'right') => managerRef.current?.togglePane(side),
+    randomNote: () => {
+      const notes = (pluginAPIRef.current?.vault.getFileTree?.() ?? []).filter(f => /\.md$/i.test(f.path) && !f.path.startsWith('.trash/'))
+      const pick = notes[Math.floor(Math.random() * notes.length)]
+      if (pick) void pluginAPIRef.current?.workspace.openFile(pick.path)
+    },
   }
 
   // Raccourcis personnalises de la personne connectee : charges a la

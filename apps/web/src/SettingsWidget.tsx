@@ -56,6 +56,13 @@ export function initTheme(): void {
   applyTheme(loadSavedTheme())
 }
 
+/** Clair <-> sombre (theme:toggle-light-dark d'Obsidian). Un autre theme passe au sombre. */
+export function toggleLightDark(): void {
+  const next = loadSavedTheme() === 'dark' ? 'light' : 'dark'
+  applyTheme(next)
+  localStorage.setItem(THEME_KEY, next)
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Tab = 'features' | 'plugins' | 'store' | 'hotkeys' | 'triggers' | 'themes' | 'vault' | 'ai' | 'agents' | 'api' | 'account'

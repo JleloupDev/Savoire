@@ -40,6 +40,7 @@ import { addProperty, propertiesPanelExtension, propertiesRefresh, toggleYamlSou
 import type { PropertiesHost } from './PropertiesPanel'
 import { brackets, dedentListItem, enterBeforeHeading, highlightSelectionMatches, indentListItem, listHome, tripleClickLine, multipleCursors, multipleCursorsEnabled, renumberOrderedLists, selectAllOccurrences, selectNextOccurrence, spellcheck } from './EditingAids'
 import { findReplace, openFind } from './FindReplace'
+import { obsidianEditorCommands } from './MoreCommands'
 import { noteTitleExtension, notePathChanged, renameNoteForTitle } from './NoteTitle'
 import { smartPaste } from './SmartPaste'
 import { notePosition } from './NotePosition'
@@ -178,6 +179,8 @@ export function plumeCommands(): PluginCommand[] {
     { id: 'editor:toggle-fold',           label: 'Replier / déplier le bloc',                          run: on(v => { toggleFoldAtCursor(v) }) },
     { id: 'editor:fold-all',              label: 'Replier tous les titres',                            run: on(v => { foldAllHeadings(v) }) },
     { id: 'editor:unfold-all',            label: 'Tout déplier',                                       run: on(v => { unfoldAll(v) }) },
+    // Celles d'Obsidian qui manquaient, sous leur identifiant (MoreCommands.ts).
+    ...obsidianEditorCommands(viewOf),
   ]
   return commands.map(cmd => ({ ...cmd, editor: true }))
 }

@@ -109,6 +109,31 @@ export function matchesNoteQuery(path: string, q: string): boolean {
   return q.split(/\s+/).filter(Boolean).every(word => hay.includes(word))
 }
 
+/**
+ * Le lien sous le curseur d'une ligne : [[page#morceau|alias]], [texte](cible)
+ * ou une adresse nue. `external` : une adresse web.
+ */
+export function linkUnderCursor(line: string, at: number): { page: string; subpath: string; external?: string } | null {
+  const within = (re: RegExp, fn: (m: RegExpExecArray) => { page: string; subpath: string; external?: string } | null) => {
+    for (const m of line.matchAll(re)) {
+      const start = m.index ?? 0
+      if (at >= start && at <= start + m[0].length) return fn(m as RegExpExecArray)
+    }
+    return undefined
+  }
+  const wiki = within(/!?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, m => linkTargetOf(m[1]))
+  if (wiki !== undefined) return wiki
+  const md = within(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, m => {
+    const href = m[1].replace(/^<|>$/g, '')
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return { page: '', subpath: '', external: href }
+    const t = linkTargetOf(href)
+    return { ...t, page: t.page.replace(/\.md$/i, '') }
+  })
+  if (md !== undefined) return md
+  const url = within(/https?:\/\/[^\s<>()]+/g, m => ({ page: '', subpath: '', external: m[0] }))
+  return url ?? null
+}
+
 export function linkTargetOf(href: string): { page: string; subpath: string } {
   let raw = href.replace(/^#/, '')
   try { raw = decodeURIComponent(raw) } catch { /* garde tel quel */ }
@@ -397,6 +422,23 @@ export function createWikilinksPlugin(options: { backlinks?: BacklinksPanelOptio
           document.removeEventListener('click', onClick, true)
         }
       }
+
+      // « Suivre le lien sous le curseur » (editor:follow-link d'Obsidian).
+      api.commands.register({
+        id: 'editor:follow-link',
+        label: 'Suivre le lien sous le curseur',
+        hotkeys: [{ modifiers: ['Alt'], key: 'Enter' }],
+        run: (ctx) => {
+          const view = ctx.editorView as { state?: { selection: { main: { head: number } }; doc: { lineAt(pos: number): { from: number; text: string } } } } | null
+          if (!view?.state) return
+          const head = view.state.selection.main.head
+          const line = view.state.doc.lineAt(head)
+          const link = linkUnderCursor(line.text, head - line.from)
+          if (!link) return
+          if (link.external) { window.open(link.external, '_blank', 'noopener'); return }
+          void openOrCreate(link.page, link.subpath)
+        },
+      })
 
       // « /page » : des crochets [[ ]] ou taper le nom de la page ; Ctrl+clic
       // sur le lien la cree, rangee sous la note courante.
