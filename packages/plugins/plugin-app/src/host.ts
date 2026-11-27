@@ -275,6 +275,12 @@ export class AppHost extends BoardHost {
     const vault = this.api!.vault
     const path = vaultPathOf(this.folder, rel)
     let id = vault.resolveDocumentId(path)
+    // Un fichier garde tel quel (envoye par add_file) ne se reecrit pas : il
+    // part a la corbeille et un texte partage prend sa place.
+    if (id && vault.isStoredFile?.(path) && vault.deleteFile) {
+      await vault.deleteFile(id)
+      id = undefined
+    }
     if (!id) {
       if (!vault.createFile) throw new Error('Ce vault ne permet pas de créer de fichier.')
       const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''

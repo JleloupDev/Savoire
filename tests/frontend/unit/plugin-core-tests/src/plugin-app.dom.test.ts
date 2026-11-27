@@ -42,6 +42,7 @@ function world(files: Record<string, string> = {}) {
     deleteFile: vi.fn(async (id: string) => { const e = byId(id)!; docs.delete(e[0]); docs.set(`.trash/${e[0]}`, e[1]); trashed.add(id) }),
     renameFile: vi.fn(async (id: string, to: string) => { const e = byId(id)!; docs.delete(e[0]); docs.set(to, e[1]) }),
     isTrashed: (id: string) => trashed.has(id),
+    isStoredFile: (p: string) => !!docs.get(p)?.binary,
     getCurrentUser: () => ({ id: 'u1', name: 'Camille' }),
   }
   const notify = vi.fn()
@@ -163,6 +164,18 @@ describe('application : fichiers de son dossier', () => {
     const { host } = await mount(w.api, 'H/H.app')
     expect(host.frame.srcdoc).toContain('export const carte = 42')
     expect(host.frame.srcdoc).toContain('lib/carte.js')
+    host.dispose()
+  })
+
+  it('ecrire un fichier garde tel quel : il part a la corbeille, un texte prend sa place', async () => {
+    const w = world({ 'H/H.app': '' })
+    w.docs.set('H/data.json', { id: 'bin', text: '', binary: new TextEncoder().encode('{"n":1}'), v: 1 })
+    const { host, call } = await mount(w.api, 'H/H.app')
+    expect((await call('files.read', 'data.json')).v).toBe('{"n":1}')
+    expect((await call('files.write', 'data.json', '{"n":2}')).ok).toBe(true)
+    expect(w.docs.get('H/data.json')!.binary).toBeUndefined()
+    expect(w.docs.get('H/data.json')!.text).toBe('{"n":2}')
+    expect(w.docs.has('.trash/H/data.json')).toBe(true)
     host.dispose()
   })
 

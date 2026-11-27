@@ -22,7 +22,7 @@ import {
   type AgentToolHost, type HostFilePages, type HostHit, type HostNote, type HostNoteRef, type HostRequest, type HostReviewEntry, type RequestState, type TextChange, type TypingSpot,
 } from '@savoire/agent-core'
 import {
-  NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetUpdate,
+  NOTE_TEXT, editDoc, vaultTreeFromUpdates, mapEntries, mapEntryUpdate, newNoteUpdate, noteText, parentFolders, replaceTextUpdate, resolveRelativeRange, textAnchor, treeFoldersUpdate, treeSetManyUpdate, treeSetUpdate,
 } from '@savoire/indexer-core'
 import { AiChangeTracker, recordAiChange } from '@savoire/infrastructure-sync/ai-changes'
 import { MAX_PROPOSAL_BYTES, relinkAfterMoves, textFingerprint, type AgentDefinition, type RelinkVault, type ToolActor } from '@savoire/plugin-api'
@@ -38,6 +38,8 @@ const TYPES_NS = 'settings/properties'
 const MAX_WRITE_OPS = 32
 const TRASH_DIR = '.trash/'
 const MAX_READ = 512 * 1024
+/** Fichiers inscrits par ecriture (archive deballee). */
+const ATTACH_BATCH = 200
 /**
  * Effet de frappe : un long texte part en quelques ecritures, sur 1,5 s au
  * plus. Un appel d'outil doit finir bien avant le delai du pair (4 s par defaut).
@@ -488,6 +490,25 @@ export class PeerToolHost implements AgentToolHost {
     })
     this.moved.set(fileId, path)
     return { id: fileId, path }
+  }
+
+  /** Fichiers d'une archive : inscrits par lots (une ecriture par lot, l'arborescence en une operation). */
+  async attachFiles(files: { fileId: string; path: string }[]): Promise<HostNoteRef[]> {
+    const done: HostNoteRef[] = []
+    for (let i = 0; i < files.length; i += ATTACH_BATCH) {
+      const batch = files.slice(i, i + ATTACH_BATCH)
+      const tree = await this.f.treeLog()
+      const folders = new Set<string>()
+      for (const f of batch) for (const d of parentFolders(f.path)) folders.add(d)
+      await this.write({
+        register: batch.map(f => f.fileId),
+        folders: batch.map(f => ({ docId: f.fileId, folder: parentFolders(f.path).at(-1) ?? '' })),
+        attach: batch.map(f => ({ docId: f.fileId, name: f.path.slice(f.path.lastIndexOf('/') + 1) })),
+        ops: [{ target: 'vault', update: b64(treeSetManyUpdate(tree?.updates ?? [], batch.map(f => ({ id: f.fileId, entry: { path: f.path, binary: true as const } })), [...folders])) }],
+      })
+      for (const f of batch) { this.moved.set(f.fileId, f.path); done.push({ id: f.fileId, path: f.path }) }
+    }
+    return done
   }
 
   async createFolder(path: string): Promise<void> {

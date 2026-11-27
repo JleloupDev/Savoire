@@ -82,6 +82,24 @@ export function treeSetUpdate(updates: readonly YjsUpdate[], id: string, entry: 
   })
 }
 
+/** Pose plusieurs documents d'un coup (une archive deballee), et leurs dossiers. */
+export function treeSetManyUpdate(updates: readonly YjsUpdate[], entries: readonly { id: string; entry: TreeEntry }[], folders: readonly string[] = []): Uint8Array {
+  return diffAfter(updates, doc => {
+    doc.transact(() => {
+      const map = doc.getMap<unknown>(VAULT_MAP)
+      for (const { id, entry } of entries) {
+        const prev = map.get(id) as TreeEntry | undefined
+        map.set(id, { ...(prev ?? {}), ...entry })
+      }
+      const fm = doc.getMap<unknown>(FOLDERS_MAP)
+      for (const f of folders) {
+        const key = f.endsWith('/') ? f : `${f}/`
+        if (key !== '/' && !fm.has(key)) fm.set(key, 1)
+      }
+    })
+  })
+}
+
 /** Ajoute des dossiers explicites (vides) a l'arborescence. */
 export function treeFoldersUpdate(updates: readonly YjsUpdate[], folders: readonly string[]): Uint8Array {
   return diffAfter(updates, doc => {

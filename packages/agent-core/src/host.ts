@@ -128,6 +128,8 @@ export interface AgentToolHost {
    * Absent : l'hote ne sait pas recevoir de fichier (l'appli).
    */
   attachFile?(fileId: string, path: string, noteId: string | undefined, actor: ToolActor): Promise<HostNoteRef>
+  /** Plusieurs fichiers recus d'un coup (archive deballee par le serveur), ranges seuls. */
+  attachFiles?(files: { fileId: string; path: string }[], actor: ToolActor): Promise<HostNoteRef[]>
 
   // ── Revision ──
   comment(docId: string, text: string, actor: ToolActor, range?: { from: number; to: number }): Promise<string>

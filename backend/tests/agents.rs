@@ -427,6 +427,59 @@ async fn add_file_takes_an_upload_sent_outside_the_conversation() {
     assert!(!peer.calls.lock().unwrap()[before..].iter().any(|c| c["params"]["name"] == "add_file"));
 }
 
+/// Une archive .tar minimale (ustar), fichiers ordinaires seulement.
+fn tar(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, data) in files {
+        let mut h = vec![0u8; 512];
+        h[..name.len()].copy_from_slice(name.as_bytes());
+        h[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+        h[156] = b'0';
+        h[257..263].copy_from_slice(b"ustar\0");
+        out.extend(h);
+        out.extend_from_slice(data);
+        out.resize(out.len() + (512 - data.len() % 512) % 512, 0);
+    }
+    out.extend(vec![0u8; 1024]);
+    out
+}
+
+#[tokio::test]
+async fn add_file_unpacks_a_tar_archive_into_a_folder() {
+    let (url, peer) = fake_peer().await;
+    peer.image.store(true, std::sync::atomic::Ordering::Relaxed);
+    let app = app!(indexer_config(&url));
+    *peer.server.lock().unwrap() = app.base.clone();
+    let (alice, ta) = app.user("alice").await;
+    let v = app.vault(&alice, &ta, "Journal").await;
+    let agent = app.post(&ta, "/api/v1/agents", json!({ "name": "Archiviste", "permissions": { "read": "direct", "create": "direct" } })).await;
+    let token = app.post(&ta, "/api/v1/me/access-tokens", json!({ "name": "a", "agentId": agent.1["id"] })).await.1["token"].as_str().unwrap().to_string();
+    let tools = mcp(&app, &token, 1, "tools/list", json!({})).await;
+    let t = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "add_file").unwrap().clone();
+    assert!(t["inputSchema"]["properties"].get("unpack").is_some());
+    assert!(t["inputSchema"]["properties"].get("files").is_none());
+
+    let r = mcp(&app, &token, 2, "tools/call", json!({ "name": "file_upload_url", "arguments": { "vault": v } })).await;
+    let upload = r["result"]["structuredContent"]["upload"].as_str().unwrap().to_string();
+    let archive = tar(&[("geo/a.json", b"{}"), ("photos/b.jpg", b"jpg"), ("../hors.txt", b"non")]);
+    assert_eq!(app.http.put(app.url(&format!("/api/open/v1/uploads/{upload}"))).body(archive).send().await.unwrap().status(), 200);
+    let r = mcp(&app, &token, 3, "tools/call", json!({ "name": "add_file", "arguments": { "vault": v, "path": "Données", "upload": upload, "unpack": true } })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    let call = peer.calls.lock().unwrap().iter().rev().find(|c| c["params"]["name"] == "add_file").cloned().unwrap();
+    let files = call["params"]["args"]["files"].as_array().unwrap().clone();
+    let paths: Vec<_> = files.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+    assert_eq!(paths, vec!["geo/a.json", "photos/b.jpg"]);
+    assert!(call["params"]["args"].get("fileId").is_none());
+    assert!(call["params"]["args"].get("unpack").is_none());
+
+    // Pas une archive : refuse avant le pair.
+    let r = mcp(&app, &token, 4, "tools/call", json!({ "name": "file_upload_url", "arguments": { "vault": v } })).await;
+    let upload = r["result"]["structuredContent"]["upload"].as_str().unwrap().to_string();
+    assert_eq!(app.http.put(app.url(&format!("/api/open/v1/uploads/{upload}"))).body(b"pas une archive".to_vec()).send().await.unwrap().status(), 200);
+    let r = mcp(&app, &token, 5, "tools/call", json!({ "name": "add_file", "arguments": { "vault": v, "path": "X", "upload": upload, "unpack": true } })).await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
+}
+
 fn text(r: &Value) -> String {
     r["result"]["content"][0]["text"].as_str().unwrap_or("").to_string()
 }

@@ -127,6 +127,16 @@ describe('outils du socle', () => {
     expect((await server.call('add_file', { path: 'a.js', fileId: '../x' })).result.isError).toBe(true)
   })
 
+  it('ajouter une archive deballee : tous ses fichiers sous le dossier, l existant garde', async () => {
+    const host = new MemoryHost({ 'Données/geo/a.json': 'ancien' })
+    const server = new ToolBox({ agent: agent({ permissions: { read: 'direct', create: 'direct' } }), person: { canWrite: true }, actor, runtime: 'server', host })
+    const r = await server.call('add_file', { path: 'Données/', files: [{ fileId: 'f-1', path: 'geo/a.json' }, { fileId: 'f-2', path: 'photos/b.jpg' }] })
+    expect(r.result.text).toContain('1 fichier(s) rangé(s) dans Données, 1 déjà présent(s)')
+    expect(host.notes.get('f-2')?.path).toBe('Données/photos/b.jpg')
+    expect(host.notes.has('f-1')).toBe(false)
+    expect((await server.call('add_file', { path: 'X', files: [{ fileId: 'f-3', path: '../y' }] })).result.isError).toBe(true)
+  })
+
   it('lire des pages d un PDF : lecture partielle par l hote, sinon decoupe du texte extrait', async () => {
     const host = new MemoryHost({ 'Docs/Gros.pdf': '', 'Docs/Petit.pdf': '---\npages: 3\n---\n\n## Page 1\n\nUn\n\n## Page 2\n\nDeux\n\n## Page 3\n\nTrois\n', 'n.md': 'x' })
     host.pagedFiles.set('Docs/Gros.pdf', Array.from({ length: 400 }, (_, i) => `Texte ${i + 1}`))

@@ -1023,13 +1023,15 @@ const addFile: CoreTool = {
     name: 'add_file', title: 'Ajouter un fichier', action: 'create', runtimes: ['server'],
     description: 'Range un fichier dans le vault, tel quel (bibliothèque JavaScript, données, PDF, document...), au chemin donné. Le dossier est créé au besoin ; un fichier du même nom n’est jamais écrasé (un numéro est ajouté).',
     inputSchema: schema({
-      path: str('Chemin du fichier dans le vault, avec son nom et son extension (ex. Bibliothèques/maplibre-gl@5.6.0/maplibre-gl.js).'),
+      path: str('Chemin du fichier dans le vault, avec son nom et son extension (ex. Bibliothèques/maplibre-gl@5.6.0/maplibre-gl.js). Une archive déballée (unpack) : le dossier où ranger ses fichiers.'),
       fileId: str('Id du fichier, donné par Savoire.'),
+      files: { type: 'array', description: 'Fichiers d’une archive déballée par Savoire : [{ fileId, path }] (chemins relatifs au dossier path).', items: { type: 'object' } },
       why: str('Raison courte, montrée à la personne.'),
-    }, ['path', 'fileId']),
+    }, ['path']),
   },
   async run(args, ctx) {
     if (ctx.mode === 'propose') throw new HostError('En mode proposition, un agent ne peut pas ajouter de fichier : il faut le droit de créer en direct, ou « demander ».', 'denied')
+    if (Array.isArray(args.files)) return addFolderFiles(args, ctx)
     if (!ctx.host.attachFile) throw new HostError('Ajout de fichier indisponible ici.', 'unavailable')
     const fileId = reqString(args, 'fileId', 64)
     if (!/^[A-Za-z0-9-]{1,64}$/.test(fileId)) throw new HostError('fileId invalide.')
@@ -1047,6 +1049,35 @@ const addFile: CoreTool = {
     const why = optString(args, 'why', 500)
     return ok(`Fichier ajouté : ${file.path}${why ? ` (${why})` : ''}.`, { data: file, sources: [{ docId: file.id, path: file.path }] })
   },
+}
+
+/** Fichiers d'archive en une fois, au plus. */
+const MAX_FOLDER_FILES = 5000
+
+/** add_file avec files : une archive deballee par le serveur, rangee sous le dossier path. */
+async function addFolderFiles(args: Record<string, unknown>, ctx: CoreToolContext): Promise<ToolResult> {
+  if (!ctx.host.attachFiles) throw new HostError('Ajout de fichiers indisponible ici.', 'unavailable')
+  const folder = reqString(args, 'path', 1024).trim().replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/')
+  if (folder.split('/').some(seg => seg === '..' || seg === '.') || folder.startsWith('.trash')) throw new HostError('Dossier invalide.')
+  const raw = args.files as unknown[]
+  if (!raw.length) throw new HostError('Archive vide.')
+  if (raw.length > MAX_FOLDER_FILES) throw new HostError(`Trop de fichiers (${MAX_FOLDER_FILES} au plus).`)
+  const files: { fileId: string; path: string }[] = []
+  let skipped = 0
+  for (const f of raw) {
+    const o = f as { fileId?: unknown; path?: unknown }
+    if (typeof o?.fileId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(o.fileId) || typeof o.path !== 'string') throw new HostError('files : [{ fileId, path }] attendu.')
+    const rel = o.path.replace(/\\/g, '/').split('/').filter(s => s && s !== '.')
+    if (!rel.length || rel.includes('..')) throw new HostError(`Chemin invalide dans l’archive : ${o.path}`)
+    const path = [folder, ...rel].filter(Boolean).join('/')
+    guard(ctx, path)
+    // Jamais d'ecrasement : un fichier qui existe deja est laisse tel quel.
+    if (await ctx.host.findNote({ path })) { skipped++; continue }
+    files.push({ fileId: o.fileId, path })
+  }
+  const done = files.length ? await ctx.host.attachFiles(files, ctx.actor) : []
+  const why = optString(args, 'why', 500)
+  return ok(`${done.length} fichier(s) rangé(s) dans ${folder || 'le vault'}${skipped ? `, ${skipped} déjà présent(s) laissé(s) tel(s) quel(s)` : ''}${why ? ` (${why})` : ''}.`, { data: { folder, added: done.length, skipped }, sources: done.slice(0, 20).map(f => ({ docId: f.id, path: f.path })) })
 }
 
 /** Tous les outils du socle, dans l'ordre ou l'IA les voit. */

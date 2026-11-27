@@ -112,6 +112,11 @@ export class MemoryHost implements AgentToolHost {
     return { id: fileId, path }
   }
 
+  async attachFiles(files: { fileId: string; path: string }[]): Promise<HostNoteRef[]> {
+    for (const f of files) { this.notes.set(f.fileId, { path: f.path, content: '' }); this.attached.set(f.fileId, '') }
+    return files.map(f => ({ id: f.fileId, path: f.path }))
+  }
+
   /** Pages des fichiers pagines (lecture partielle) : chemin -> textes des pages. Vide : l'hote ne sait pas. */
   pagedFiles = new Map<string, string[]>()
   pageReads: [string, number, number][] = []

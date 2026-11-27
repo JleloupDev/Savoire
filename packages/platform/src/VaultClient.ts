@@ -135,6 +135,12 @@ export class VaultClient implements VaultAPI {
    * serveur n'envoie que le morceau ; ailleurs (dossier du poste, profil
    * local), le fichier est lu puis decoupe.
    */
+  /** Fichier garde tel quel (ses octets), et non un texte partage. */
+  isStoredFile(path: string): boolean {
+    const doc = this._resolveDocumentByPath(path)
+    return !!doc && (!!doc.binary || isAttachmentPath(doc.path))
+  }
+
   async readBinaryRange(path: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number } | null> {
     const from = Math.max(0, Math.floor(start))
     const to = Math.max(from, Math.floor(end))

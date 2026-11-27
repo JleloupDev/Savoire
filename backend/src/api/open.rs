@@ -492,6 +492,13 @@ async fn receive_image(st: &AppState, vault_id: &str, args: &Map<String, Value>)
 
 /// L'image n'a pas ete inscrite (refus, echec) : on rend la place.
 pub async fn drop_received_image(st: &AppState, vault_id: &str, args: &Value) {
+    // Archive deballee : chacun de ses fichiers.
+    if let Some(files) = args.get("files").and_then(Value::as_array) {
+        for f in files {
+            Box::pin(drop_received_image(st, vault_id, f)).await;
+        }
+        return;
+    }
     let Some(id) = args.get("fileId").and_then(Value::as_str) else { return };
     if !FILE_ID_SHAPE.is_match(id) {
         return;
@@ -541,6 +548,8 @@ fn file_tool_schema(entry: &mut Value) {
     let schema = &mut entry["inputSchema"];
     if let Some(props) = schema["properties"].as_object_mut() {
         props.remove("fileId");
+        props.remove("files");
+        props.insert("unpack".into(), json!({ "type": "boolean", "description": "Le fichier est une archive .tar (non compressée) : ses fichiers sont rangés sous path (un dossier), avec leurs sous-dossiers. Pour envoyer tout un dossier en une fois : tar -cf dossier.tar -C dossier ." }));
         props.insert("file".into(), json!({
             "type": "object",
             "description": "Le fichier joint à la discussion.",
@@ -564,7 +573,8 @@ fn upload_url_tool_entry() -> Value {
         FILE_UPLOAD_URL,
         "Adresse d'envoi d'un fichier",
         "Donne une adresse à usage unique (15 minutes) pour envoyer un fichier du poste, par PUT, sans le faire passer par la discussion : \
-`curl -T fichier.pdf <adresse>`. Puis add_file avec upload = le jeton rendu. 100 Mo au plus. Pour les agents qui ont un terminal.",
+`curl -T fichier.pdf <adresse>`. Puis add_file avec upload = le jeton rendu. 100 Mo au plus. Pour les agents qui ont un terminal. \
+Tout un dossier : une archive (tar -cf dossier.tar -C dossier .), puis add_file avec unpack. Un redémarrage de Savoire efface les envois pas encore inscrits.",
         json!({ "vault": s("Id ou nom du vault où le fichier sera rangé.") }),
         &["vault"],
     );
@@ -669,6 +679,7 @@ async fn receive_file(st: &AppState, user: &str, vault_id: &str, args: &Map<Stri
     if path.trim().is_empty() {
         return Err(tool_error("Donner path : le chemin du fichier dans le vault (ex. Bibliothèques/maplibre-gl.js)."));
     }
+    let unpack = args.get("unpack").and_then(Value::as_bool).unwrap_or(false);
     let (id, size) = if let Some(token) = opt_str(args, "upload") {
         let ok = st.upload_slots.get(&token).is_some_and(|s| s.user == user && s.vault_id == vault_id && s.file_id.is_some() && s.expires > std::time::Instant::now());
         if !ok {
@@ -696,11 +707,61 @@ async fn receive_file(st: &AppState, user: &str, vault_id: &str, args: &Map<Stri
         (id, size)
     };
     let mut out = args.clone();
-    for k in ["vault", "file", "url", "upload", "fileId"] {
+    for k in ["vault", "file", "url", "upload", "fileId", "files", "unpack"] {
         out.remove(k);
+    }
+    if unpack {
+        let files = unpack_archive(st, vault_id, &id, size).await?;
+        out.insert("files".into(), Value::Array(files));
+        return Ok((out, id, size));
     }
     out.insert("fileId".into(), json!(id));
     Ok((out, id, size))
+}
+
+/// Fichiers d'une archive au plus.
+const MAX_ARCHIVE_ENTRIES: usize = 5000;
+
+/// Deballe une archive .tar deja rangee sous `archive_id` : chaque fichier sous
+/// un id neuf ; l'archive elle-meme est retiree. Rend [{ fileId, path }].
+async fn unpack_archive(st: &AppState, vault_id: &str, archive_id: &str, archive_size: i64) -> Result<Vec<Value>, Value> {
+    use tokio::io::AsyncReadExt;
+    let mut bytes = Vec::new();
+    match st.store.read(vault_id, archive_id).await {
+        Ok(Some(mut f)) => {
+            if f.read_to_end(&mut bytes).await.is_err() {
+                return Err(tool_error("Archive illisible."));
+            }
+        }
+        _ => return Err(tool_error("Archive introuvable.")),
+    }
+    // L'archive ne reste pas : seuls ses fichiers comptent.
+    let _ = st.store.delete(vault_id, archive_id).await;
+    st.quota.added(vault_id, -archive_size);
+    let entries = crate::services::tar::entries(&bytes, MAX_ARCHIVE_ENTRIES).map_err(|m| tool_error(&m))?;
+    if entries.is_empty() {
+        return Err(tool_error("Archive vide (ou pas une archive .tar non compressée)."));
+    }
+    let total: i64 = entries.iter().map(|e| e.data.len() as i64).sum();
+    if st.quota.ensure_room(&st.limits(), vault_id, total).await.is_err() {
+        return Err(tool_error("Plus de place dans ce vault pour ces fichiers."));
+    }
+    let mut out: Vec<Value> = Vec::with_capacity(entries.len());
+    for e in entries {
+        let id = uuid::Uuid::new_v4().to_string();
+        if let Err(err) = st.store.put(vault_id, &id, &bytes[e.data.clone()]).await {
+            tracing::error!(error = %err, "MCP : fichier d'archive non range");
+            for v in &out {
+                if let Some(fid) = v.get("fileId").and_then(Value::as_str) {
+                    let _ = st.store.delete(vault_id, fid).await;
+                }
+            }
+            return Err(tool_error("Erreur interne de Savoire."));
+        }
+        out.push(json!({ "fileId": id, "path": e.path }));
+    }
+    st.quota.added(vault_id, total);
+    Ok(out)
 }
 
 pub(crate) static FILE_ID_SHAPE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9-]{1,64}$").unwrap());

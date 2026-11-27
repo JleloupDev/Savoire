@@ -32,6 +32,8 @@ export interface VaultAPI {
    * null : fichier introuvable ou illisible ainsi.
    */
   readBinaryRange?(path: string, start: number, end: number): Promise<{ bytes: Uint8Array; size: number } | null>
+  /** Fichier garde tel quel (octets : image, PDF, fichier envoye par add_file), pas un texte partage. */
+  isStoredFile?(path: string): boolean
   /** Ajoute un fichier quelconque (PDF, Word, image...) au dossier `folder`, tel quel. Rend son chemin. */
   uploadFile?(file: File, folder?: string): Promise<string>
   write(documentId: string, content: string): Promise<void>

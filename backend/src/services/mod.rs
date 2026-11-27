@@ -8,3 +8,4 @@ pub mod rate_limit;
 pub mod remote_image;
 pub mod search;
 pub mod storage;
+pub mod tar;
