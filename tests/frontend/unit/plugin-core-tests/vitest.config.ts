@@ -15,6 +15,8 @@ export default defineConfig({
     conditions: ['source'],
     alias: {
       // Excalidraw charge ses morceaux depuis le web : un bouchon suffit (catalogue du store).
+      // Sa feuille de style (0.18) d'abord : un alias vise aussi les sous-chemins.
+      '@excalidraw/excalidraw/index.css': path.resolve(__dirname, 'src/__mocks__/excalidraw.css'),
       '@excalidraw/excalidraw': path.resolve(__dirname, 'src/__mocks__/excalidraw.ts'),
       '@savoire/plugin-api': path.resolve(__dirname, '../../../../packages/plugin-api/src/index.ts'),
       '@savoire/domain-index': path.resolve(__dirname, '../../../../packages/domain-index/src/index.ts'),

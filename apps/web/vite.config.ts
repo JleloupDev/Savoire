@@ -17,30 +17,30 @@ function gitInfo(format: string): string {
 const buildCommit = process.env.SAVOIRE_COMMIT || gitInfo('%H')
 const buildCommitDate = process.env.SAVOIRE_COMMIT_DATE || gitInfo('%cI')
 
-// Les morceaux d'Excalidraw (polices, langues, code differe), servis par
-// l'app au lieu du CDN : l'appli de bureau doit marcher hors ligne et sa CSP
-// interdit unpkg. Voir src/excalidrawAssets.ts.
+// Les polices d'Excalidraw, servies par l'app au lieu du CDN : l'appli de
+// bureau doit marcher hors ligne et sa CSP interdit unpkg. Depuis la 0.18,
+// les langues et le code differe sont des modules ordinaires (Vite les
+// range dans le paquet) ; seules les polices se lisent a l'execution, sous
+// EXCALIDRAW_ASSET_PATH (src/excalidrawAssets.ts) + « fonts/ ».
 function excalidrawAssets(): Plugin {
   const req = createRequire(resolve(__dirname, '../../packages/plugins/plugin-excalidraw/package.json'))
-  const dist = join(resolve(req.resolve('@excalidraw/excalidraw/package.json'), '..'), 'dist')
-  const dir = join(dist, 'excalidraw-assets')
+  // Le paquet n'exporte plus package.json : on remonte de son point d'entree
+  // (dist/prod/index.js) a son dossier dist.
+  const dist = resolve(req.resolve('@excalidraw/excalidraw'), '..', '..')
   let outDir = 'dist'
   return {
     name: 'savoire-excalidraw-assets',
     configResolved(config) { outDir = resolve(config.root, config.build.outDir) },
     configureServer(server) {
-      // En dev, Excalidraw (version developpement) lit excalidraw-assets-dev.
-      for (const name of ['excalidraw-assets', 'excalidraw-assets-dev']) {
-        const root = join(dist, name)
-        server.middlewares.use(`/${name}`, (req, res, next) => {
-          const file = join(root, decodeURIComponent((req.url ?? '/').split('?')[0]))
-          if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) return next()
-          if (file.endsWith('.js')) res.setHeader('Content-Type', 'text/javascript')
-          createReadStream(file).pipe(res)
-        })
-      }
+      // En dev, Excalidraw (version developpement) lit dist/dev.
+      const root = join(dist, 'dev')
+      server.middlewares.use('/excalidraw-assets', (req, res, next) => {
+        const file = join(root, decodeURIComponent((req.url ?? '/').split('?')[0]))
+        if (!file.startsWith(join(root, 'fonts')) || !existsSync(file) || !statSync(file).isFile()) return next()
+        createReadStream(file).pipe(res)
+      })
     },
-    closeBundle() { cpSync(dir, join(outDir, 'excalidraw-assets'), { recursive: true }) },
+    closeBundle() { cpSync(join(dist, 'prod', 'fonts'), join(outDir, 'excalidraw-assets', 'fonts'), { recursive: true }) },
   }
 }
 
@@ -106,6 +106,10 @@ function pdfjsAssets(): Plugin {
 
 // Dossier du paquet SQLite WebAssembly (index local) : son .wasm est servi en
 // dev depuis node_modules (hors des dossiers que Vite sert par defaut).
+// Les polices d'Excalidraw 0.18 : sa feuille de style les vise par chemin
+// relatif, que Vite sert en dev par /@fs/ (hors du dossier du workspace).
+const excalidrawDir = realpathSync(resolve(createRequire(resolve(__dirname, '../../packages/plugins/plugin-excalidraw/package.json')).resolve('@excalidraw/excalidraw'), '..', '..'))
+
 const sqliteWasmDir = realpathSync(resolve(
   createRequire(resolve(__dirname, '../../packages/indexer-core/package.json')).resolve('@sqlite.org/sqlite-wasm/package.json'), '..'))
 
@@ -136,7 +140,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), sqliteWasmDir] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), sqliteWasmDir, excalidrawDir] },
     proxy: {
       '/api': 'http://localhost:5000',
       // Pages publiees sur le web : rendues par l'API.

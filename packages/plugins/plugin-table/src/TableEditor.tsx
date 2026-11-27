@@ -4,7 +4,7 @@
 //
 
 import React, { useState, useMemo, useRef, useCallback } from 'react'
-import DataGrid, { type Column, type SortColumn, type RenderEditCellProps } from 'react-data-grid'
+import { DataGrid, type Column, type SortColumn, type RenderEditCellContentProps } from 'react-data-grid'
 import 'react-data-grid/lib/styles.css'
 import { HyperFormula } from 'hyperformula'
 import type { TableData } from './gfm'
@@ -142,7 +142,7 @@ export function TableEditor({ initialData, onChange, height, maxHeight = 560, re
       },
 
       // Editor shows the raw formula string for editing
-      renderEditCell(props: RenderEditCellProps<GridRow>) {
+      renderEditCell(props: RenderEditCellContentProps<GridRow>) {
         const ri = parseInt(props.row.__ri)
         const rawVal = rawDataRef.current[ri]?.[ci] ?? ''
         return (
@@ -198,7 +198,7 @@ export function TableEditor({ initialData, onChange, height, maxHeight = 560, re
           onCellKeyDown={(args, event) => {
             // Fleche bas sur la derniere ligne, ou Tab sur sa derniere case :
             // une nouvelle ligne, comme dans Notion.
-            if (readOnly || args.mode !== 'SELECT') return
+            if (readOnly || args.mode !== 'ACTIVE' || !args.column) return
             const lastRow = args.rowIdx === sortedRows.length - 1
             const lastCol = args.column.idx === columns.length - 1
             if (lastRow && (event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey && lastCol))) {
@@ -207,7 +207,7 @@ export function TableEditor({ initialData, onChange, height, maxHeight = 560, re
               addRow()
               // La nouvelle ligne est selectionnee, prete a etre remplie.
               const idx = event.key === 'Tab' ? 0 : args.column.idx
-              setTimeout(() => args.selectCell({ rowIdx: args.rowIdx + 1, idx }), 0)
+              setTimeout(() => args.setActivePosition({ rowIdx: args.rowIdx + 1, idx }), 0)
             }
           }}
           style={{ height: gridHeight, blockSize: gridHeight, colorScheme: 'dark' }}

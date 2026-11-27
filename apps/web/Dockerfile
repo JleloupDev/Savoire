@@ -31,7 +31,9 @@ COPY packages/ ./packages/
 ARG SAVOIRE_COMMIT=""
 ARG SAVOIRE_COMMIT_DATE=""
 ENV SAVOIRE_COMMIT=$SAVOIRE_COMMIT SAVOIRE_COMMIT_DATE=$SAVOIRE_COMMIT_DATE
-RUN cd frontend && pnpm --filter @savoire/web build
+# Le paquet de l'appli est gros (Excalidraw, PDF, OCR...) : le tas par defaut
+# de Node ne suffit pas toujours (meme reglage que desktop.yml).
+RUN cd frontend && NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @savoire/web build
 
 # ── Image finale : nginx ─────────────────────────────────────────────
 # nginx sans root (M9), version figee. L'image traite deja les modeles

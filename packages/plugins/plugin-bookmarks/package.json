@@ -17,11 +17,11 @@
     "@savoire/plugin-api": "workspace:*"
   },
   "peerDependencies": {
-    "react": "^18.0.0"
+    "react": "^19.2.0"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0",
-    "react": "^18.3.1",
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
     "typescript": "^5.4.0"
   }
 }

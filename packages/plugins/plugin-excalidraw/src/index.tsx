@@ -17,6 +17,7 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Excalidraw, restoreElements } from '@excalidraw/excalidraw'
+import '@excalidraw/excalidraw/index.css'
 import type { VaultPlugin, PluginAPI, FileContext, FileView, DocumentRoom, ISharedTree } from '@savoire/plugin-api'
 import { excalidrawContentExtractor } from './content-extractor'
 import { SceneBinding, applyScenePatch, type ScenePatch, type SceneElement, type SceneFile, type StoredFile } from './binding'
@@ -32,7 +33,8 @@ type Elements = Parameters<ExcalidrawChange>[0]
 type BinaryFiles = Parameters<ExcalidrawChange>[2]
 type PointerPayload = Parameters<NonNullable<ExcalidrawProps['onPointerUpdate']>>[0]
 type Collaborators = NonNullable<Parameters<ExcalidrawImperativeAPI['updateScene']>[0]['collaborators']>
-type Collaborator = Collaborators extends Map<string, infer C> ? C : never
+type CollaboratorId = Collaborators extends Map<infer K, unknown> ? K : never
+type Collaborator = Collaborators extends Map<CollaboratorId, infer C> ? C : never
 
 export { excalidrawContentExtractor } from './content-extractor'
 export { SceneBinding, assignOrder, isBetter, applyScenePatch } from './binding'
@@ -167,7 +169,9 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
     const ids = new Set<string>()
     if (!excalidrawAPI) return ids
     const s = excalidrawAPI.getAppState()
-    for (const el of [s.editingElement, s.draggingElement, s.resizingElement, s.multiElement]) {
+    // Excalidraw 0.18 : draggingElement devient newElement, editingElement
+    // devient editingTextElement.
+    for (const el of [s.editingTextElement, s.newElement, s.resizingElement, s.multiElement]) {
       if (el) ids.add(el.id)
     }
     if (s.selectedElementsAreBeingDragged || s.isResizing || s.isRotating) {
@@ -230,10 +234,10 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
 
   function showCollaborators(): void {
     if (!excalidrawAPI) return
-    const map = new Map<string, Collaborator>()
+    const map = new Map<CollaboratorId, Collaborator>()
     for (const [id, c] of collaborators) {
       const { seen: _seen, ...rest } = c
-      map.set(id, rest)
+      map.set(id as CollaboratorId, rest)
     }
     excalidrawAPI.updateScene({ collaborators: map })
   }
@@ -417,8 +421,16 @@ function createExcalidrawView(path: string, ctx: FileContext, api: PluginAPI | n
           excalidrawAPI?.updateScene({ elements: els as unknown as Elements })
           if (fitted || !excalidrawAPI || !els.some(e => !(e as { isDeleted?: boolean }).isDeleted)) return
           fitted = true
+          // Excalidraw 0.18 : a l'ouverture, la taille du cadre reste a 0
+          // quelques secondes (le temps de ses polices). Cadrer avant donnerait
+          // le zoom minimal (10 %) : on attend que la taille soit connue.
           const api = excalidrawAPI
-          requestAnimationFrame(() => api.scrollToContent(undefined, { fitToContent: true, animate: false }))
+          const fit = () => api.scrollToContent(undefined, { fitToContent: true, animate: false })
+          const ready = (s: { width: number; height: number }) => s.width > 0 && s.height > 0
+          if (ready(api.getAppState())) requestAnimationFrame(fit)
+          else {
+            const stop = api.onChange((_els, s) => { if (ready(s)) { stop(); requestAnimationFrame(fit) } })
+          }
         },
         hasFile: id => !!excalidrawAPI?.getFiles()[id],
         addFiles: files => excalidrawAPI?.addFiles(files as never),
