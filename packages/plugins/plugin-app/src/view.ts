@@ -36,6 +36,7 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
   let workersBox: HTMLElement
   let workersText: HTMLElement
   let root: HTMLElement
+  let setTab: (on: boolean) => void = () => {}
   const buttons = new Map<Mode, HTMLButtonElement>()
   const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.app$/i, '')
   const folder = appFolderOf(path)
@@ -74,6 +75,7 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
       onError: msg => setStatus(`⚠ ${msg}`, true),
       confirmWrite: what => confirmIn(preview, what),
       onWorkers: showWorkers,
+      onReload: () => launch(),
     })
     host = h
     preview.replaceChildren(h.frame)
@@ -110,6 +112,22 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
       const toolbar = document.createElement('div')
       toolbar.className = 'board-toolbar'
       const again = action('↻ Relancer', 'app-reload', launch)
+      // Plein onglet : l'application prend tout l'onglet, comme si on etait
+      // directement dessus ; une petite fleche la rend a Savoire.
+      const tab = action('Plein onglet', 'app-tab', () => setTab(true))
+      const exitTab = document.createElement('button')
+      exitTab.type = 'button'
+      exitTab.className = 'app-tab-exit'
+      exitTab.dataset.testid = 'app-tab-exit'
+      exitTab.title = 'Revenir à Savoire (Échap)'
+      exitTab.setAttribute('aria-label', 'Revenir à Savoire')
+      exitTab.textContent = '↙'
+      exitTab.addEventListener('click', () => setTab(false))
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && root.classList.contains('app-view--tab')) setTab(false) }
+      setTab = (on: boolean) => {
+        root.classList.toggle('app-view--tab', on)
+        if (on) { setMode('app'); document.addEventListener('keydown', onKey) } else document.removeEventListener('keydown', onKey)
+      }
       const full = action('Plein écran', 'app-fullscreen', () => {
         if (document.fullscreenElement) void document.exitFullscreen()
         else void root.requestFullscreen?.().catch(() => setStatus('Plein écran refusé par le navigateur.', true))
@@ -131,7 +149,7 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
       status.className = 'board-status'; status.dataset.testid = 'app-status'
       const spacer = document.createElement('span')
       spacer.className = 'board-spacer'
-      toolbar.append(btn('Application', 'app'), btn('Code', 'code'), again, full, example, spacer, workersBox, status)
+      toolbar.append(btn('Application', 'app'), btn('Code', 'code'), again, tab, full, example, spacer, workersBox, status)
       codePane = document.createElement('div')
       codePane.className = 'board-code'
       preview = document.createElement('div')
@@ -141,7 +159,7 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
       panes.append(codePane, preview)
       root = document.createElement('div')
       root.className = 'board-view app-view'; root.dataset.testid = 'app-view'
-      root.append(toolbar, panes)
+      root.append(toolbar, panes, exitTab)
       container.replaceChildren(root)
 
       const start = (doc: string) => {
@@ -179,6 +197,7 @@ export function createAppView(path: string, ctx: FileContext, api: PluginAPI | u
       launch()
     },
     destroy() {
+      setTab(false)
       if (poll) clearInterval(poll)
       editor?.destroy()
       editor = null

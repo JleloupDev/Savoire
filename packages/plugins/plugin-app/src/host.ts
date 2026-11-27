@@ -48,6 +48,8 @@ export interface AppHostOptions extends Omit<BoardHostOptions, 'boardPath'> {
   appPath: string
   /** Nombre de workers du cadre qui tournent. */
   onWorkers?: (count: number) => void
+  /** L'application demande a repartir (savoire.reload : un theme change...). */
+  onReload?: () => void
 }
 
 export interface AppFileEntry {
@@ -137,6 +139,8 @@ export class AppHost extends BoardHost {
       case 'files.bytes': return this.readBytes(normalizeAppPath(args[0]), args[1], args[2])
       case 'files.size': return this.size(normalizeAppPath(args[0]))
       case 'files.write': return this.writeText(normalizeAppPath(args[0]), args[1])
+      case 'files.writeBytes': return this.writeBytes(normalizeAppPath(args[0]), args[1])
+      case 'app.reload': setTimeout(() => this.appOpts.onReload?.(), 0); return true
       case 'files.remove': return this.remove(normalizeAppPath(args[0]))
       case 'files.move': return this.move(normalizeAppPath(args[0]), normalizeAppPath(args[1]))
       case 'files.watch': this.startFileWatch(); return true
@@ -295,6 +299,27 @@ export class AppHost extends BoardHost {
     }
     this.rememberText(rel, text)
     return { path: rel }
+  }
+
+  /**
+   * Un fichier en octets (photo deposee...), garde tel quel. S'il existe, il
+   * part a la corbeille d'abord. Rend son chemin (relatif).
+   */
+  private async writeBytes(rel: string, bytes: unknown): Promise<{ path: string }> {
+    if (!(bytes instanceof Uint8Array) && !(bytes instanceof ArrayBuffer)) throw new Error('files.writeBytes : octets attendus (Uint8Array ou ArrayBuffer).')
+    this.allowFileWrite()
+    const vault = this.api!.vault
+    if (!vault.uploadFile) throw new Error('Ce vault ne permet pas d\'envoyer de fichier.')
+    const path = vaultPathOf(this.folder, rel)
+    const existing = vault.resolveDocumentId(path)
+    if (existing && vault.deleteFile) await vault.deleteFile(existing)
+    const name = rel.slice(rel.lastIndexOf('/') + 1)
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    if (dir) await vault.createFolder?.(dir)
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+    const file = new File([data as BlobPart], name, { type: mimeOf(rel) })
+    const stored = await vault.uploadFile(file, dir)
+    return { path: relPathOf(this.folder, stored) ?? rel }
   }
 
   private async remove(rel: string): Promise<boolean> {

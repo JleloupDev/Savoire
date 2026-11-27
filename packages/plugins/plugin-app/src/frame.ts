@@ -85,6 +85,7 @@ bytes:async(p,o)=>{const r=await call('files.bytes',o&&typeof o.start==='number'
 size:p=>call('files.size',[p]),
 url:async p=>{if(urls.has(p))return urls.get(p);const r=await call('files.bytes',[p]);const u=URL.createObjectURL(new Blob([r.bytes],{type:r.mime}));urls.set(p,u);return u},
 write:(p,text)=>call('files.write',[p,String(text)]),
+writeBytes:(p,data)=>call('files.writeBytes',[p,data instanceof Blob?null:data]),
 writeJSON:(p,v)=>call('files.write',[p,JSON.stringify(v,null,2)+'\\n']),
 remove:p=>call('files.remove',[p]),
 move:(from,to)=>call('files.move',[from,to]),
@@ -97,7 +98,8 @@ open:p=>call('open',[p]),
 setProperty:(target,key,value)=>call('setProperty',[target,key,value]),
 createPage:(base,title,values)=>call('createPage',[base,title,values||{}]),
 createRow:(base,title,values)=>call('createRow',[base,title,values||{}]),
-notify:(message,type)=>call('notify',[String(message),type||'info'])});
+notify:(message,type)=>call('notify',[String(message),type||'info']),
+reload:()=>call('app.reload',[])});
 const W=window.Worker,live=new Set();
 if(W){const report=()=>post({t:'workers',n:live.size});
 window.Worker=function(url,opts){const w=new W(url,opts);live.add(w);const stop=w.terminate.bind(w);w.terminate=()=>{stop();if(live.delete(w))report()};report();return w};

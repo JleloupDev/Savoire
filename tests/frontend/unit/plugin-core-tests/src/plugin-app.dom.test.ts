@@ -43,6 +43,7 @@ function world(files: Record<string, string> = {}) {
     renameFile: vi.fn(async (id: string, to: string) => { const e = byId(id)!; docs.delete(e[0]); docs.set(to, e[1]) }),
     isTrashed: (id: string) => trashed.has(id),
     isStoredFile: (p: string) => !!docs.get(p)?.binary,
+    uploadFile: vi.fn(async (f: File, folder = '') => { const path = folder ? `${folder}/${f.name}` : f.name; docs.set(path, { id: `d${++n}`, text: '', binary: new Uint8Array(await f.arrayBuffer()), v: 1 }); return path }),
     getCurrentUser: () => ({ id: 'u1', name: 'Camille' }),
   }
   const notify = vi.fn()
@@ -51,8 +52,8 @@ function world(files: Record<string, string> = {}) {
 }
 
 /** Une application montee (srcdoc), et un faux code d'application qui lui parle. */
-async function mount(api: PluginAPI, appPath = 'Histoire/Histoire.app', opts: { readOnly?: boolean; onWorkers?: (n: number) => void } = {}) {
-  const host = new AppHost(api, { appPath, readOnly: !!opts.readOnly, onWorkers: opts.onWorkers })
+async function mount(api: PluginAPI, appPath = 'Histoire/Histoire.app', opts: { readOnly?: boolean; onWorkers?: (n: number) => void; onReload?: () => void } = {}) {
+  const host = new AppHost(api, { appPath, readOnly: !!opts.readOnly, onWorkers: opts.onWorkers, onReload: opts.onReload })
   document.body.appendChild(host.frame)
   await host.loadApp('<div id="root"></div>', { react: 'export default {}' })
   const channel = /const ch="([0-9a-f]+)"/.exec(host.frame.srcdoc)![1]
@@ -230,6 +231,22 @@ describe('application : fichiers de son dossier', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('octets (photo deposee) : ranges tels quels, l ancien a la corbeille ; relance demandee', async () => {
+    const w = world({ 'H/H.app': '' })
+    const onReload = vi.fn()
+    const { host, call, tick } = await mount(w.api, 'H/H.app', { onReload })
+    const r = await call('files.writeBytes', 'photos/a.jpg', new Uint8Array([1, 2, 3]))
+    expect(r.v).toEqual({ path: 'photos/a.jpg' })
+    expect([...w.docs.get('H/photos/a.jpg')!.binary!]).toEqual([1, 2, 3])
+    await call('files.writeBytes', 'photos/a.jpg', new Uint8Array([4]))
+    expect([...w.docs.get('H/photos/a.jpg')!.binary!]).toEqual([4])
+    expect((await call('files.writeBytes', 'x.bin', 'pas des octets')).e).toMatch(/octets attendus/)
+    await call('app.reload')
+    await tick()
+    expect(onReload).toHaveBeenCalled()
+    host.dispose()
   })
 
   it('workers : le cadre les compte, Savoire peut les arreter', async () => {

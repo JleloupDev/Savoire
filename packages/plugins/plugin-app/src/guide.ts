@@ -58,6 +58,7 @@ module, ou fichier du poste envoyé avec \`file_upload_url\`), par exemple dans
 | \`savoire.files.list(dir?, { recursive })\` | \`[{ path, name, type: 'file' \\| 'folder' }]\`, chemins relatifs au dossier |
 | \`savoire.files.read(path)\` / \`readJSON(path)\` | le texte d'un fichier, ou son JSON |
 | \`savoire.files.write(path, text)\` / \`writeJSON(path, value)\` | crée ou remplace (dossiers créés au besoin) |
+| \`savoire.files.writeBytes(path, octets)\` | range des octets (Uint8Array : une photo déposée) tels quels ; rend \`{ path }\` |
 | \`savoire.files.remove(path)\` | à la corbeille |
 | \`savoire.files.move(from, to)\` | déplace ou renomme |
 | \`savoire.files.bytes(path)\` | un ArrayBuffer (image, son...) |
@@ -69,6 +70,7 @@ module, ou fichier du poste envoyé avec \`file_upload_url\`), par exemple dans
 | \`savoire.createRow(base, titre, valeurs)\` / \`setProperty(...)\` | écrire dans une base (accord demandé une fois) |
 | \`savoire.open(chemin)\` | ouvrir une note du vault |
 | \`savoire.notify(message, type)\` | une notification brève ('info', 'success', 'warn', 'danger') |
+| \`savoire.reload()\` | relance l'application (après un changement de thème, par exemple) ; \`location.reload()\` ne marche pas dans le cadre |
 
 Tous les appels rendent des promesses. Les chemins sont relatifs au dossier
 de l'application et ne peuvent pas en sortir.
