@@ -21,7 +21,9 @@ class FakeXhr {
   setRequestHeader(k: string, v: string) { this.headers[k] = v }
   send(body: unknown) { this.body = body }
   progress(loaded: number, total: number) { this.upload.onprogress?.({ lengthComputable: true, loaded, total }) }
-  respond(status: number) { this.status = status; this.onload?.() }
+  responseHeaders: Record<string, string> = {}
+  getResponseHeader(k: string) { return this.responseHeaders[k] ?? null }
+  respond(status: number, headers: Record<string, string> = {}) { this.status = status; this.responseHeaders = headers; this.onload?.() }
 }
 
 function withXhr() {
@@ -46,6 +48,31 @@ describe('envoi avec progression (mode serveur)', () => {
     await done
     expect(seen).toEqual([0.25, 0.8, 1])
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('trop d envois (429) : attend le Retry-After puis repart, sans erreur pour l appelant', async () => {
+    const xhrs: FakeXhr[] = []
+    const waits: number[] = []
+    const storage = new RestVaultStorage({
+      fetchFn: vi.fn() as never,
+      xhrFactory: () => { const x = new FakeXhr(); xhrs.push(x); return x as unknown as XMLHttpRequest },
+      wait: async ms => { waits.push(ms) },
+    })
+    const done = storage.putAttachment('v1', 'doc-1', new Blob(['x']), 'tok', () => {})
+    xhrs[0].respond(429, { 'Retry-After': '3' })
+    await vi.waitFor(() => expect(xhrs).toHaveLength(2))
+    xhrs[1].respond(200)
+    await done
+    expect(waits).toEqual([3000])
+  })
+
+  it('429 sans fin : abandonne apres quelques essais ; sans suivi (fetch) aussi', async () => {
+    const waits: number[] = []
+    const fetchFn = vi.fn(async () => ({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '1' }) }))
+    const storage = new RestVaultStorage({ fetchFn: fetchFn as never, xhrFactory: null, wait: async ms => { waits.push(ms) } })
+    await expect(storage.putAttachment('v1', 'doc-1', new Blob(['x']), 'tok')).rejects.toThrow('429')
+    expect(fetchFn).toHaveBeenCalledTimes(7)
+    expect(waits).toEqual([1000, 1000, 1000, 1000, 1000, 1000])
   })
 
   it('un refus du serveur rejette avec son code', async () => {

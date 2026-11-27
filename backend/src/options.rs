@@ -189,7 +189,7 @@ impl LimitsOptions {
             min_free_disk_bytes: s.i64_or("Limits:MinFreeDiskBytes", 2 * GIB),
             disk_check_from_bytes: s.i64_or("Limits:DiskCheckFromBytes", 256 * 1024),
             hub_calls_per_minute: s.i64_or("Limits:HubCallsPerMinute", 12_000),
-            uploads_per_minute: s.i64_or("Limits:UploadsPerMinute", 120),
+            uploads_per_minute: s.i64_or("Limits:UploadsPerMinute", 600),
             publish_per_minute: s.i64_or("Limits:PublishPerMinute", 30),
             lookups_per_minute: s.i64_or("Limits:LookupsPerMinute", 30),
             vault_creations_per_minute: s.i64_or("Limits:VaultCreationsPerMinute", 20),

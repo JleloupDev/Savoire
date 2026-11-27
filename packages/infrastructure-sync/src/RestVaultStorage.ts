@@ -13,7 +13,42 @@ export interface RestVaultStorageOptions {
    * pour s'en passer.
    */
   xhrFactory?: (() => XMLHttpRequest) | null
+  /** Attente avant un nouvel essai apres un refus 429 (tests : sans attendre). */
+  wait?: (ms: number) => Promise<void>
 }
+
+/** Refus « trop de requetes » : le delai demande par le serveur (Retry-After), en secondes. */
+class TooManyRequests extends Error {
+  constructor(readonly retryAfter: number) { super('429') }
+}
+
+/** Nouveaux essais apres un refus 429, au plus. */
+export const UPLOAD_RETRIES = 6
+/** Attente maximale entre deux essais (ms), quel que soit le Retry-After. */
+const MAX_RETRY_WAIT_MS = 60_000
+
+function retryAfterOf(header: string | null): number {
+  const n = Number(header)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+/**
+ * Un envoi refuse pour exces de debit attend le temps que le serveur demande,
+ * puis repart : l'appelant (une application qui range beaucoup de fichiers)
+ * ne voit pas d'erreur. Les autres refus remontent tels quels.
+ */
+async function withRateRetry(send: () => Promise<void>, wait: (ms: number) => Promise<void>): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await send()
+    } catch (err) {
+      if (!(err instanceof TooManyRequests) || attempt >= UPLOAD_RETRIES) throw err instanceof TooManyRequests ? new Error('429') : err
+      await wait(Math.min(MAX_RETRY_WAIT_MS, err.retryAfter * 1000))
+    }
+  }
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /** Envoi d'un formulaire avec suivi des octets envoyes. Rejette avec le code HTTP, comme fetch. */
 function sendWithProgress(xhr: XMLHttpRequest, url: string, token: string, body: FormData, onProgress: (fraction: number) => void): Promise<void> {
@@ -23,6 +58,7 @@ function sendWithProgress(xhr: XMLHttpRequest, url: string, token: string, body:
     xhr.upload.onprogress = e => { if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total) }
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { onProgress(1); resolve() }
+      else if (xhr.status === 429) reject(new TooManyRequests(retryAfterOf(xhr.getResponseHeader('Retry-After'))))
       else reject(new Error(`${xhr.status}`))
     }
     xhr.onerror = () => reject(new Error('network error'))
@@ -35,6 +71,7 @@ export class RestVaultStorage implements IVaultStorage {
   private readonly baseUrl: string
   private readonly fetchFn: typeof fetch
   private readonly xhrFactory: (() => XMLHttpRequest) | null
+  private readonly wait: (ms: number) => Promise<void>
 
   constructor(options: RestVaultStorageOptions = {}) {
     this.baseUrl = options.baseUrl ?? ''
@@ -43,6 +80,7 @@ export class RestVaultStorage implements IVaultStorage {
     this.fetchFn = ((input: string, init?: RequestInit) => fetchWithRenewal(raw, input, init)) as typeof fetch
     const browserXhr = typeof XMLHttpRequest !== 'undefined' && !options.fetchFn ? () => new XMLHttpRequest() : null
     this.xhrFactory = options.xhrFactory === undefined ? browserXhr : options.xhrFactory
+    this.wait = options.wait ?? sleep
   }
 
   async readFile(vaultId: string, path: string, token: string): Promise<string> {
@@ -116,19 +154,27 @@ export class RestVaultStorage implements IVaultStorage {
     // Le serveur controle l'extension : le nom d'origine la porte.
     form.append('file', file, file instanceof File ? file.name : fileId)
     const url = this.resolve(`/api/v1/vaults/${encodeURIComponent(vaultId)}/attachments/${encodeURIComponent(fileId)}`)
-    if (onProgress && this.xhrFactory) {
-      try {
-        await sendWithProgress(this.xhrFactory(), url, token, form, onProgress)
-      } catch (err) {
-        // Jeton refuse : un seul nouvel envoi, avec le jeton renouvele.
-        const next = err instanceof Error && err.message === '401' ? await renewRejectedToken(token) : null
-        if (!next) throw err
-        await sendWithProgress(this.xhrFactory(), url, next, form, onProgress)
-      }
+    const xhrFactory = this.xhrFactory
+    if (onProgress && xhrFactory) {
+      let current = token
+      await withRateRetry(async () => {
+        try {
+          await sendWithProgress(xhrFactory(), url, current, form, onProgress)
+        } catch (err) {
+          // Jeton refuse : un seul nouvel envoi, avec le jeton renouvele.
+          const next = err instanceof Error && err.message === '401' ? await renewRejectedToken(current) : null
+          if (!next) throw err
+          current = next
+          await sendWithProgress(xhrFactory(), url, current, form, onProgress)
+        }
+      }, this.wait)
       return
     }
-    const res = await this.fetchFn(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
-    if (!res.ok) throw new Error(`${res.status}`)
+    await withRateRetry(async () => {
+      const res = await this.fetchFn(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
+      if (res.status === 429) throw new TooManyRequests(retryAfterOf(res.headers.get('Retry-After')))
+      if (!res.ok) throw new Error(`${res.status}`)
+    }, this.wait)
   }
 
   /** Annonce le rangement d'une piece jointe (PUT .../attachments/{fileId}/placement). */
