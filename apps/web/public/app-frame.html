@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><script>
+// Cadre des applications (.app), version web. Comme /frame.html (boards),
+// mais avec sa propre politique (nginx.conf.template) : modules et workers en
+// adresses blob:, toujours aucun reseau. Attend le document envoye par
+// Savoire (postMessage) et l'ecrit. L'iframe reste isolee
+// (sandbox="allow-scripts", origine opaque).
+(function(){
+  function boot(e){
+    if (e.source !== parent) return;
+    var m = e.data;
+    if (!m || m.t !== 'savoire-board-boot' || typeof m.html !== 'string') return;
+    removeEventListener('message', boot);
+    document.open(); document.write(m.html); document.close();
+  }
+  addEventListener('message', boot);
+  parent.postMessage({ t: 'savoire-board-ready' }, '*');
+})();
+</script></head><body></body></html>

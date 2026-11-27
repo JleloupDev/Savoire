@@ -18,7 +18,7 @@
 // son code : son entree recopie alors son manifeste, et un test verifie que la
 // copie reste fidele. Un plugin preinstalle est charge au demarrage ; le store
 // lit son manifeste directement.
-import { isAndroidRuntime, isTauriRuntime, sandboxFrameUrl } from './tauriRuntime'
+import { isAndroidRuntime, isTauriRuntime, sandboxAppFrameUrl, sandboxFrameUrl } from './tauriRuntime'
 import { selectNeededEntries } from './pluginNeeds'
 import type { PluginManifest, VaultPlugin } from '@savoire/plugin-api'
 import type { VaultBrowserRefs } from '@savoire/plugin-vault-browser'
@@ -133,6 +133,29 @@ export const STORE_CATALOG: StoreEntry[] = [
     extensions: ['base'],
     load: async () => (await import('@savoire/plugin-base')).default,
   },
+  {
+    // Les applications (.app) et les fichiers de code et de donnees qu'elles
+    // lisent (.json, .js...) : ces textes partages doivent se relire meme
+    // sans ouvrir d'application, d'ou un plugin du coeur, toujours charge.
+    id: 'plugin-app', preinstalled: true, core: true,
+    manifest: {
+      id: 'plugin-app',
+      name: 'Applications',
+      version: '0.0.1',
+      description: 'Des applications dans le vault (fichiers .app) : React fourni, fichiers de leur dossier, plein écran ; fichiers de code et de données (JSON, JS, CSS)',
+      scope: 'vault',
+      permissions: ['ui:editor', 'vault:read', 'vault:write'],
+      official: true,
+    },
+    extensions: ['app', 'json', 'geojson', 'js', 'mjs', 'css'],
+    load: async () => {
+      const mod = await import('@savoire/plugin-app')
+      // Son cadre a sa propre politique (modules blob:, workers, aucun reseau).
+      mod.setAppFrameUrl(sandboxAppFrameUrl())
+      return mod.default
+    },
+  },
+
   {
     // editorDefault : ![[x.board]] s'affiche dans les notes.
     id: 'plugin-board', preinstalled: true, core: true, editorDefault: true,

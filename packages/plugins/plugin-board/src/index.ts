@@ -17,6 +17,8 @@ export { buildSrcdoc, BOARD_CSP, themeCss, setBoardFrameUrl, boardFrameUrl, FRAM
 export { parseBoardEmbed, renderBoardEmbed, BOARD_EMBED_RE } from './embed'
 export { createBoardView } from './view'
 export { BOARD_TEMPLATE } from './template'
+export { ensureStyle as ensureBoardStyle } from './style'
+export { confirmIn } from './confirm'
 
 export function createBoardPlugin(): VaultPlugin {
   let api: PluginAPI | undefined

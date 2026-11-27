@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jean Leloup
 import { fileURLToPath } from 'node:url'
-import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
+import { build as viteBuild, defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve, join } from 'path'
 import { createRequire } from 'module'
-import { cpSync, existsSync, createReadStream, statSync, realpathSync } from 'fs'
+import { cpSync, existsSync, createReadStream, statSync, realpathSync, mkdirSync, writeFileSync } from 'fs'
 import { execSync } from 'child_process'
 
 // Le commit construit, affiche dans l'en-tete (src/BuildInfo.tsx). L'image
@@ -41,6 +41,77 @@ function excalidrawAssets(): Plugin {
       })
     },
     closeBundle() { cpSync(join(dist, 'prod', 'fonts'), join(outDir, 'excalidraw-assets', 'fonts'), { recursive: true }) },
+  }
+}
+
+// Les bibliotheques fournies aux applications (plugin-app) : React en modules
+// ES, servis sous /app-libs/. Le cadre d'une application (origine opaque) ne
+// lit pas les adresses de l'appli : l'appli les lit et les lui passe, il en
+// fait des adresses blob: nommees par sa carte d'import. Chaque fichier est
+// construit a part, React laisse dehors (une seule copie, celle de react.js).
+const APP_LIBS: { file: string; id: string; external: string[] }[] = [
+  { file: 'react.js', id: 'react', external: [] },
+  { file: 'react-dom.js', id: 'react-dom', external: ['react'] },
+  { file: 'react-dom-client.js', id: 'react-dom/client', external: ['react', 'react-dom'] },
+  { file: 'react-jsx-runtime.js', id: 'react/jsx-runtime', external: ['react'] },
+]
+
+async function buildAppLibrary(lib: { id: string; external: string[] }): Promise<string> {
+  // Les noms exportes, lus sur le module CommonJS lui-meme : un module ES a
+  // besoin de les declarer un par un.
+  const names = Object.keys(createRequire(resolve(__dirname, 'package.json'))(lib.id) as Record<string, unknown>)
+    .filter(n => n !== 'default' && /^[A-Za-z_$][\w$]*$/.test(n))
+  const entry = `import * as M from ${JSON.stringify(lib.id)}\nconst m = M.default ?? M\nexport default m\n`
+    + names.map(n => `export const ${n} = m.${n}`).join('\n') + '\n'
+  const out = await viteBuild({
+    configFile: false, root: __dirname, logLevel: 'silent', mode: 'production',
+    define: { 'process.env.NODE_ENV': '"production"' },
+    plugins: [{
+      name: 'savoire-app-lib-entry',
+      resolveId: (id: string) => (id === 'savoire-app-lib-entry' ? '\0savoire-app-lib-entry' : null),
+      load: (id: string) => (id === '\0savoire-app-lib-entry' ? entry : null),
+    }],
+    build: {
+      write: false, minify: true, copyPublicDir: false,
+      rollupOptions: {
+        input: 'savoire-app-lib-entry', external: lib.external, preserveEntrySignatures: 'strict',
+        output: { format: 'es', entryFileNames: 'lib.js', inlineDynamicImports: true },
+      },
+    },
+  })
+  const outputs = (Array.isArray(out) ? out : [out]) as { output: { type: string; isEntry?: boolean; code?: string }[] }[]
+  const chunk = outputs.flatMap(o => o.output).find(c => c.type === 'chunk' && c.isEntry)
+  if (!chunk?.code) throw new Error(`bibliotheque d'application ${lib.id} : rien de construit`)
+  return chunk.code
+}
+
+function appLibraries(): Plugin {
+  const cache = new Map<string, Promise<string>>()
+  const get = (lib: (typeof APP_LIBS)[number]) => {
+    let p = cache.get(lib.file)
+    if (!p) { p = buildAppLibrary(lib); cache.set(lib.file, p); p.catch(() => cache.delete(lib.file)) }
+    return p
+  }
+  let outDir = 'dist'
+  let isBuild = false
+  return {
+    name: 'savoire-app-libraries',
+    configResolved(config) { outDir = resolve(config.root, config.build.outDir); isBuild = config.command === 'build' },
+    configureServer(server) {
+      server.middlewares.use('/app-libs', (req, res, next) => {
+        const lib = APP_LIBS.find(l => `/${l.file}` === (req.url ?? '').split('?')[0])
+        if (!lib) return next()
+        get(lib).then(code => {
+          res.setHeader('Content-Type', 'text/javascript; charset=utf-8')
+          res.end(code)
+        }, err => { res.statusCode = 500; res.end(String(err)) })
+      })
+    },
+    async closeBundle() {
+      if (!isBuild) return
+      mkdirSync(join(outDir, 'app-libs'), { recursive: true })
+      for (const lib of APP_LIBS) writeFileSync(join(outDir, 'app-libs', lib.file), await get(lib))
+    },
   }
 }
 
@@ -114,7 +185,7 @@ const sqliteWasmDir = realpathSync(resolve(
   createRequire(resolve(__dirname, '../../packages/indexer-core/package.json')).resolve('@sqlite.org/sqlite-wasm/package.json'), '..'))
 
 export default defineConfig({
-  plugins: [react(), excalidrawAssets(), tesseractAssets(), pdfjsAssets()],
+  plugins: [react(), excalidrawAssets(), tesseractAssets(), pdfjsAssets(), appLibraries()],
   build: {
     rollupOptions: {
       input: {

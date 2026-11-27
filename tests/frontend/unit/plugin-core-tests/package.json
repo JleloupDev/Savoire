@@ -15,6 +15,7 @@
     "@savoire/plugin-api": "workspace:*",
     "@savoire/plugin-base": "workspace:*",
     "@savoire/plugin-bible": "workspace:*",
+    "@savoire/plugin-app": "workspace:*",
     "@savoire/plugin-board": "workspace:*",
     "@savoire/plugin-callout": "workspace:*",
     "@savoire/plugin-chat": "workspace:*",

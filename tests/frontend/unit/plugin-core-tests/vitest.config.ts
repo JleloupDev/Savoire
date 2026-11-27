@@ -39,6 +39,7 @@ export default defineConfig({
       '@savoire/plugin-hashtags': src('plugin-hashtags'),
       '@savoire/plugin-task-list': src('plugin-task-list'),
       '@savoire/plugin-board': src('plugin-board'),
+      '@savoire/plugin-app': src('plugin-app'),
       '@savoire/plugin-animation': src('plugin-animation'),
       '@savoire/plugin-slides': src('plugin-slides'),
       '@savoire/plugin-outline': src('plugin-outline'),

@@ -20,6 +20,13 @@ use tauri::http::{Request, Response};
 const BOARD_CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
 img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'";
 
+/// Politique du cadre des applications (.app) : celle des boards, plus les
+/// modules et les workers en adresses blob: (plugin-app, frame.ts : APP_CSP).
+/// Toujours aucun reseau.
+const APP_CSP: &str = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline' blob:; \
+img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src blob: data:; worker-src blob:; \
+form-action 'none'; base-uri 'none'";
+
 /// La page vide : signale qu'elle est prete, recoit le document, l'ecrit.
 const SHELL: &str = r#"<!doctype html><html><head><meta charset="utf-8"><script>
 (function(){
@@ -35,10 +42,13 @@ const SHELL: &str = r#"<!doctype html><html><head><meta charset="utf-8"><script>
 })();
 </script></head><body></body></html>"#;
 
-pub fn respond(_request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+pub fn respond(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+    // savoire-board://localhost/app (ou http://savoire-board.localhost/app) :
+    // le cadre d'une application.
+    let csp = if request.uri().path().starts_with("/app") { APP_CSP } else { BOARD_CSP };
     Response::builder()
         .header("Content-Type", "text/html; charset=utf-8")
-        .header("Content-Security-Policy", BOARD_CSP)
+        .header("Content-Security-Policy", csp)
         .header("Cache-Control", "no-store")
         .body(SHELL.as_bytes().to_vec())
         .expect("reponse du cadre de board")
@@ -57,5 +67,15 @@ mod tests {
         assert!(!csp.contains("connect-src"));
         let body = String::from_utf8(r.body().clone()).unwrap();
         assert!(body.contains("savoire-board-ready"));
+    }
+
+    #[test]
+    fn le_cadre_des_applications_admet_modules_et_workers_sans_reseau() {
+        let r = respond(Request::builder().uri("savoire-board://localhost/app?n=1").body(Vec::new()).unwrap());
+        let csp = r.headers().get("Content-Security-Policy").unwrap().to_str().unwrap();
+        assert!(csp.contains("script-src 'unsafe-inline' blob:"));
+        assert!(csp.contains("worker-src blob:"));
+        assert!(csp.contains("connect-src blob: data:"));
+        assert!(!csp.contains("https:"));
     }
 }

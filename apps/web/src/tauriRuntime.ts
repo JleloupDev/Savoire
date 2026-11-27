@@ -61,3 +61,17 @@ export function desktopNetwork(
   const internals = (scope as { __TAURI_INTERNALS__: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> } }).__TAURI_INTERNALS__
   return { fetchText: async url => String(await internals.invoke('web_fetch_text', { url })) }
 }
+
+/**
+ * Cadre des applications (.app) : sa propre politique, plus large que celle
+ * des boards (modules blob:, workers), toujours sans reseau. Bureau : le
+ * protocole savoire-board, chemin /app (board_frame.rs) ; web : la page
+ * /app-frame.html (nginx.conf.template).
+ */
+export function sandboxAppFrameUrl(scope: unknown = globalThis, userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): string | null {
+  const desktop = boardFrameUrl(scope, userAgent)
+  if (desktop) return `${desktop}app`
+  const loc = (scope as { location?: { href?: string; protocol?: string } }).location
+  if (!loc?.href || !/^https?:$/.test(loc.protocol ?? '')) return null
+  return new URL('/app-frame.html', loc.href).href
+}

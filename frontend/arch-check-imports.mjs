@@ -168,7 +168,7 @@ const RULES = [
 
   // ── plugins/* ─────────────────────────────────────────────────────────────
   ...pluginDirs
-    .filter(name => name !== 'plugin-module')
+    .filter(name => name !== 'plugin-module' && name !== 'plugin-app')
     .map(name => ({
       label: `plugins/${name} — only plugin-api`,
       files: src(`${PKGS}/plugins/${name}`),
@@ -178,6 +178,13 @@ const RULES = [
     label: 'plugins/plugin-module — only plugin-api, module-bridge',
     files: src(`${PKGS}/plugins/plugin-module`),
     allowedSavoire: [pkg('plugin-api'), pkg('module-bridge')],
+  },
+  {
+    // Une application est un board en plus grand : meme cadre isole, memes
+    // requetes et ecritures dans les bases (BoardHost), plus ses fichiers.
+    label: 'plugins/plugin-app — only plugin-api, plugin-board',
+    files: src(`${PKGS}/plugins/plugin-app`),
+    allowedSavoire: [pkg('plugin-api'), pkg('plugin-board')],
   },
 
   // ── apps/web — must not import ./api directly ─────────────────────────────

@@ -65,7 +65,7 @@ const isPlainValue = (v: unknown): v is PropertyValue =>
 
 export class BoardHost {
   readonly frame: HTMLIFrameElement
-  private readonly channel = randomChannel()
+  protected readonly channel = randomChannel()
   private readonly watches = new Map<number, () => void>()
   private readonly onMessage = (e: MessageEvent) => this.handle(e)
   private writes: number[] = []
@@ -75,10 +75,12 @@ export class BoardHost {
   private loads = 0
   /** Base de chaque ligne legere vue dans un resultat. */
   private readonly rowBase = new Map<string, string>()
+  /** Taille max d'un message du cadre (les applications ecrivent des fichiers entiers). */
+  protected maxMessage = MAX_MESSAGE
   /** Lots ouverts pour ecrire, par base. */
   private readonly lightRows = new Map<string, Promise<{ tree: ISharedTree | undefined; rows: LightRows }>>()
 
-  constructor(private readonly api: PluginAPI | undefined, private readonly opts: BoardHostOptions) {
+  constructor(protected readonly api: PluginAPI | undefined, protected readonly opts: BoardHostOptions) {
     const frame = document.createElement('iframe')
     frame.setAttribute('sandbox', 'allow-scripts')
     frame.setAttribute('referrerpolicy', 'no-referrer')
@@ -91,13 +93,22 @@ export class BoardHost {
   /** (Re)charge le code du board : les requetes suivies de l'ancien s'arretent. */
   load(source: string): void {
     this.stopWatches()
-    const html = buildSrcdoc(source, { channel: this.channel, readOnly: this.opts.readOnly })
-    const url = boardFrameUrl()
+    this.boot(buildSrcdoc(source, { channel: this.channel, readOnly: this.opts.readOnly }))
+  }
+
+  /** Le document de l'iframe : srcdoc, ou envoye a la page cadre (frameUrl). */
+  protected boot(html: string): void {
+    const url = this.frameUrl()
     if (!url) { this.frame.srcdoc = html; return }
     // Page cadre (bureau) : on la recharge, elle dit qu'elle est prete, puis
     // recoit le document.
     this.pendingHtml = html
     this.frame.src = `${url}${url.includes('?') ? '&' : '?'}n=${++this.loads}`
+  }
+
+  /** Adresse de la page cadre (null : srcdoc). Les applications ont la leur. */
+  protected frameUrl(): string | null {
+    return boardFrameUrl()
   }
 
   dispose(): void {
@@ -106,7 +117,7 @@ export class BoardHost {
     window.removeEventListener('message', this.onMessage)
     this.stopWatches()
     this.pendingHtml = null
-    if (boardFrameUrl()) this.frame.removeAttribute('src')
+    if (this.frameUrl()) this.frame.removeAttribute('src')
     else this.frame.srcdoc = ''
     for (const [baseId, p] of this.lightRows) {
       void p.then(({ tree, rows }) => { rows.close(); if (tree) this.api?.vault.closeTree?.(baseId) }, () => {})
@@ -132,7 +143,11 @@ export class BoardHost {
     this.watches.clear()
   }
 
-  private post(msg: Record<string, unknown>): void {
+  protected get isDisposed(): boolean {
+    return this.disposed
+  }
+
+  protected post(msg: Record<string, unknown>): void {
     if (this.disposed) return
     // Origine opaque : '*' est la seule cible possible. Seule cette iframe le recoit.
     this.frame.contentWindow?.postMessage({ ch: this.channel, ...msg }, '*')
@@ -150,7 +165,7 @@ export class BoardHost {
     if (!m || typeof m !== 'object' || m.ch !== this.channel) return
     let size = 0
     try { size = JSON.stringify(m).length } catch { return }
-    if (size > MAX_MESSAGE) { this.opts.onError?.('Message du board trop gros.'); return }
+    if (size > this.maxMessage) { this.opts.onError?.('Message trop gros.'); return }
     switch (m.t) {
       case 'size':
         if (typeof m.h === 'number' && Number.isFinite(m.h)) this.opts.onSize?.(Math.max(0, Math.min(20_000, m.h)))
@@ -177,8 +192,13 @@ export class BoardHost {
         this.watches.delete(id)
         return
       }
+      default:
+        this.onExtraMessage(m as Record<string, unknown>)
     }
   }
+
+  /** Autres messages du cadre (applications : workers...). */
+  protected onExtraMessage(_m: Record<string, unknown>): void {}
 
   private async startWatch(id: number, raw: unknown): Promise<void> {
     const engine = this.api?.query
@@ -194,7 +214,7 @@ export class BoardHost {
     }
   }
 
-  private async call(fn: string, args: unknown[]): Promise<unknown> {
+  protected async call(fn: string, args: unknown[]): Promise<unknown> {
     const api = this.api
     if (!api) throw new Error('Aucun vault ouvert.')
     switch (fn) {
@@ -248,8 +268,8 @@ export class BoardHost {
   }
 
   /** Accord et debit avant une ecriture. */
-  private async allowWrite(what: string): Promise<void> {
-    if (this.opts.readOnly) throw new Error('Lecture seule : ce board ne peut rien modifier ici.')
+  protected async allowWrite(what: string): Promise<void> {
+    if (this.opts.readOnly) throw new Error('Lecture seule : rien ne peut être modifié ici.')
     const now = Date.now()
     this.writes = this.writes.filter(t => now - t < 60_000)
     if (this.writes.length >= MAX_WRITES_PER_MINUTE) throw new Error(`Trop d'écritures (${MAX_WRITES_PER_MINUTE} par minute au plus).`)

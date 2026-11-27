@@ -32,12 +32,13 @@ import mermaid from '@savoire/plugin-mermaid/server'
 import hashtags from '@savoire/plugin-hashtags/server'
 import excalidraw from '@savoire/plugin-excalidraw/server'
 import animation from '@savoire/plugin-animation/server'
+import applications from '@savoire/plugin-app/server'
 import slides from '@savoire/plugin-slides/server'
 import bases from '@savoire/plugin-base/server'
 import { flushTrees, headlessPluginAPI, runInScope, type HeadlessPlugin, type PluginCallScope } from './pluginApi'
 
 /** Les plugins livres avec Savoire qui apportent des outils serveur. */
-export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags, excalidraw, bases, animation, slides]
+export const BUILTIN_SERVER_PLUGINS: readonly VaultPlugin[] = [taskList, agenda, templates, mermaid, hashtags, excalidraw, bases, animation, slides, applications]
 
 export interface ServerPluginsOptions {
   policy: PeerPluginPolicy

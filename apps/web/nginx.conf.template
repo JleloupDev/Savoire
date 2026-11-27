@@ -114,6 +114,21 @@ server {
         add_header Cache-Control "no-store" always;
     }
 
+    # Cadre des applications (.app) : comme celui des boards, plus les modules
+    # et les workers en adresses blob: (crees dans le cadre). Aucun reseau.
+    location = /app-frame.html {
+        add_header Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src blob: data:; worker-src blob:; form-action 'none'; base-uri 'none'" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Bibliotheques fournies aux applications (React en modules ES), lues par
+    # l'appli puis passees au cadre.
+    location /app-libs/ {
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "no-cache" always;
+    }
+
     # Polices : servies ici (aucun appel a un autre domaine), nom au contenu.
     location ~* ^/fonts/.+\.woff2$ {
         expires 1y;
