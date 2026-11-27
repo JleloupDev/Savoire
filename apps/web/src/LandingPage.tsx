@@ -34,7 +34,7 @@ const VALUES = [
   { title: 'En temps réel', text: 'Écrivez à plusieurs dans la même note, chacun voit l\'autre.' },
   { title: 'Hors ligne', text: 'Tout marche sans réseau. Les changements se rejoignent au retour.' },
   { title: 'Chez vous', text: 'Open source sous AGPL. Hébergez-le sur votre serveur si vous voulez.' },
-  { title: 'Avec votre IA', text: 'Branchez ChatGPT ou Claude. Chaque agent n\'a que les droits donnés.' },
+  { title: 'Avec votre IA', text: 'Branchez ChatGPT, Claude ou n\'importe quelle autre IA, même locale.' },
   { title: 'Extensible', text: 'Plugins, modèles et modules depuis le Store.' },
   { title: 'Partout', text: 'Dans le navigateur, ou en application pour Windows, macOS et Linux.' },
 ]
@@ -42,29 +42,21 @@ const VALUES = [
 const FEATURES = [
   {
     title: 'Des notes qui se répondent',
-    text: 'Écrivez en Markdown, sans y penser. Un lien [[entre crochets]] relie deux idées, et chaque note montre celles qui la citent.',
-    points: ['Propriétés, encadrés, tableaux, notes de bas de page', 'Trois façons d\'écrire : classique, rendu direct ou source', 'Import depuis Notion'],
     image: 'ecran-note-sombre.webp',
     alt: 'Une note de synthèse en thème sombre',
   },
   {
     title: 'Vos données en tableau ou en kanban',
-    text: 'Une base, c\'est un dossier de notes. Chaque ligne reste une vraie note, que vous la voyiez en tableau, en kanban ou en liste.',
-    points: ['Statuts colorés, dates, personnes, cases à cocher', 'Plusieurs vues sur les mêmes données', 'Tri, filtres et regroupements'],
     image: 'ecran-kanban.webp',
     alt: 'La roadmap d\'un produit en kanban, par statut',
   },
   {
     title: 'Voyez votre pensée prendre forme',
-    text: 'Le graphe dessine les liens entre vos notes. Les sujets centraux ressortent, les idées isolées aussi.',
-    points: ['Filtrer par dossier ou par étiquette', 'Ouvrir une note d\'un clic'],
     image: 'ecran-graphe.webp',
     alt: 'Le graphe des notes d\'un vault, reliées entre elles',
   },
   {
     title: 'Du croquis à la scène',
-    text: 'Dessinez au tableau blanc, puis présentez sans changer d\'outil : une présentation est une note comme les autres.',
-    points: ['Dessins Excalidraw dans le vault', 'Diapositives, transitions et animations', 'Télécommande sur le téléphone'],
     image: 'ecran-dessin.webp',
     alt: 'Un dessin Excalidraw du parcours d\'un utilisateur',
   },
@@ -145,7 +137,6 @@ export function LandingPage() {
             <Link to="/login" className="lp-btn lp-lift" data-testid="landing-start">Commencer gratuitement</Link>
             <a href="#formats" className="lp-btn lp-btn-ghost lp-lift">Voir les formats</a>
           </div>
-          <p className="lp-kicker">Markdown · Temps réel · Open source</p>
         </section>
 
         <div className="lp-hero-shot lp-reveal">
@@ -160,9 +151,7 @@ export function LandingPage() {
 
         <section id="formats" className="lp-formats">
           <h2 className="lp-reveal">Tous vos documents,<br />réunis et reliés.</h2>
-          <p className="lp-lead lp-reveal">
-            PowerPoint, Word, cartes mentales, PDF : chaque document a sa place dans Savoire, et un lien <code>[[entre crochets]]</code> le relie à tous les autres.
-          </p>
+          <p className="lp-lead lp-reveal">PowerPoint, Word, cartes mentales, PDF : chaque document a sa place dans Savoire.</p>
           <div className="lp-orbit">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <g className="lp-flow">
@@ -196,8 +185,6 @@ export function LandingPage() {
           {FEATURES.map(f => (
             <article key={f.title} className="lp-reveal">
               <h3>{f.title}</h3>
-              <p>{f.text}</p>
-              <p className="lp-points">{f.points.join('  ·  ')}</p>
               <div className="lp-shot lp-lift">
                 <img src={IMG + f.image} alt={f.alt} loading="lazy" width={1920} height={1200} />
               </div>
@@ -207,10 +194,9 @@ export function LandingPage() {
 
         <section id="galerie" className="lp-gallery">
           <h2>Galerie</h2>
-          <p className="lp-sub">Des écrans réels, pris dans un vault de démonstration.</p>
           <div className="lp-grid">
             {GALLERY.map((g, i) => (
-              <figure key={g.file} className="lp-reveal">
+              <figure key={g.file}>
                 <button type="button" className="lp-zoom" onClick={() => setOpen(i)} data-testid="landing-gallery-item" aria-label={`Agrandir : ${g.title}`}>
                   <img src={IMG + g.file} alt={g.title} loading="lazy" />
                 </button>
@@ -221,7 +207,7 @@ export function LandingPage() {
         </section>
 
         <section className="lp-cta">
-          <h2 className="lp-reveal">Prêt à relier vos idées ?</h2>
+          <h2>Prêt à relier vos idées ?</h2>
           <p>Créez un compte en une minute, ou installez Savoire sur votre propre serveur.</p>
           <div className="lp-actions">
             <Link to="/login" className="lp-btn lp-lift">Commencer</Link>

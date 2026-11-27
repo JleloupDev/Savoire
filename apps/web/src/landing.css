@@ -56,8 +56,7 @@
 .lp-words > .before { transform: translateY(-30px); }
 .lp-words > .after { transform: translateY(30px); }
 .lp-serif { display: block; font-family: var(--serif); font-weight: 300; font-size: clamp(50px, 10vw, 108px); }
-.lp-hero > p:not(.lp-kicker) { margin: 0 auto 40px; font-size: 20px; max-width: 520px; color: var(--mute); }
-.lp-kicker { margin: 28px 0 0; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--soft); }
+.lp-hero > p { margin: 0 auto 40px; font-size: 20px; max-width: 520px; color: var(--mute); }
 .lp-hero-shot { padding: 0 24px 112px; }
 .lp-hero-shot img { display: block; width: 100%; max-width: 1000px; height: auto; margin: 0 auto; border: 1px solid var(--ink); }
 
@@ -72,7 +71,6 @@
 .lp-formats h2, .lp-big, .lp-gallery h2, .lp-cta h2 { font-family: var(--serif); font-weight: 300; line-height: 1.02; letter-spacing: -0.02em; }
 .lp-formats h2 { margin-bottom: 20px; font-size: clamp(40px, 6.5vw, 72px); }
 .lp-lead { margin: 0 auto 64px; max-width: 600px; font-size: 19px; color: var(--mute); }
-.lp-lead code { font-family: 'JetBrains Mono', monospace; font-size: 16px; }
 .lp-orbit { position: relative; max-width: 920px; height: 560px; margin: 0 auto; }
 .lp-orbit > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .lp-flow { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 6 6; fill: none; animation: lp-flow 1.6s linear infinite; }
@@ -99,16 +97,13 @@
 .lp-big { padding: 120px 24px 96px; text-align: center; font-size: clamp(36px, 5.6vw, 64px); line-height: 1.05; }
 .lp-features { display: flex; flex-direction: column; gap: 120px; padding: 0 24px 120px; }
 .lp-features article { text-align: center; }
-.lp-features h3 { margin-bottom: 14px; font-size: clamp(28px, 3.6vw, 40px); font-weight: 300; letter-spacing: -0.02em; }
-.lp-features p { margin: 0 auto 12px; max-width: 580px; color: var(--mute); }
-.lp-features .lp-points { margin-bottom: 40px; max-width: 680px; font-size: 14px; color: #777; white-space: pre-wrap; }
+.lp-features h3 { margin-bottom: 32px; font-size: clamp(28px, 3.6vw, 40px); font-weight: 300; letter-spacing: -0.02em; }
 .lp-shot { max-width: 960px; margin: 0 auto; border: 1px solid var(--ink); line-height: 0; }
 .lp-shot img { display: block; width: 100%; height: auto; }
 
 /* Galerie */
 .lp-gallery { border-top: 1px solid var(--ink); padding: 96px 32px; }
-.lp-gallery h2 { margin-bottom: 8px; text-align: center; font-size: 56px; }
-.lp-sub { margin: 0 0 48px; text-align: center; color: #555; }
+.lp-gallery h2 { margin-bottom: 48px; text-align: center; font-size: 56px; }
 .lp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 40px 24px; max-width: 1080px; margin: 0 auto; }
 .lp-grid figure { margin: 0; }
 .lp-zoom { display: block; width: 100%; padding: 0; border: 1px solid var(--ink); background: #fff; line-height: 0; overflow: hidden; cursor: zoom-in; }
@@ -127,7 +122,7 @@
 
 /* Apparition au defilement (navigateurs qui le savent ; sinon, rien ne bouge) */
 @supports (animation-timeline: view()) {
-  .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% cover 28%; }
+  .lp-reveal { animation: lp-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 30%; }
 }
 @keyframes lp-rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
 
