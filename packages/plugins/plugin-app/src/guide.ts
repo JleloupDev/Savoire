@@ -82,6 +82,9 @@ de l'application et ne peuvent pas en sortir.
   fusionne avec les modifications des autres. Si deux personnes changent la
   même ligne au même moment, la dernière gagne.
 - Relisez un fichier quand \`files.watch\` le signale.
+- Les fichiers que l'application modifie (JSON) se créent en texte
+  (\`app_write_file\`, ou \`savoire.files.write\`) ; \`add_file\` range un
+  fichier tel quel, à ne pas réécrire (bibliothèque, image, police).
 
 ## Workers
 
