@@ -26,6 +26,8 @@ struct Peer {
     /// « append » montre aussi l'agent dans la note (route presence) ; reponses du serveur gardees.
     presence: Arc<std::sync::atomic::AtomicBool>,
     presence_replies: Arc<Mutex<Vec<u16>>>,
+    /// add_file echoue (pair qui ne sait pas ranger le fichier pour l'instant).
+    fail_add_file: Arc<std::sync::atomic::AtomicBool>,
 }
 
 fn catalog() -> Value {
@@ -58,6 +60,9 @@ async fn fake_peer() -> (String, Peer) {
                     return axum::Json(json!({ "result": cat }));
                 }
                 let params = &call["params"];
+                if params["name"] == "add_file" && p.fail_add_file.load(std::sync::atomic::Ordering::Relaxed) {
+                    return axum::Json(json!({ "result": { "text": "Pair occupé.", "isError": true } }));
+                }
                 if params["name"] == "append" || params["name"] == "move_note" {
                     let doc = params["args"]["id"].as_str().unwrap_or("").to_string();
                     let server = p.server.lock().unwrap().clone();
@@ -471,6 +476,24 @@ async fn add_file_unpacks_a_tar_archive_into_a_folder() {
     assert_eq!(paths, vec!["geo/a.json", "photos/b.jpg"]);
     assert!(call["params"]["args"].get("fileId").is_none());
     assert!(call["params"]["args"].get("unpack").is_none());
+
+    // Le pair echoue : l'envoi reste inscrit, un nouvel add_file le range sans tout renvoyer.
+    let r = mcp(&app, &token, 6, "tools/call", json!({ "name": "file_upload_url", "arguments": { "vault": v } })).await;
+    let upload2 = r["result"]["structuredContent"]["upload"].as_str().unwrap().to_string();
+    let archive = tar(&[("c.json", b"[]")]);
+    assert_eq!(app.http.put(app.url(&format!("/api/open/v1/uploads/{upload2}"))).body(archive).send().await.unwrap().status(), 200);
+    peer.fail_add_file.store(true, std::sync::atomic::Ordering::Relaxed);
+    let args = json!({ "vault": v, "path": "Encore", "upload": upload2, "unpack": true });
+    let r = mcp(&app, &token, 7, "tools/call", json!({ "name": "add_file", "arguments": args })).await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
+    peer.fail_add_file.store(false, std::sync::atomic::Ordering::Relaxed);
+    let r = mcp(&app, &token, 8, "tools/call", json!({ "name": "add_file", "arguments": args })).await;
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    let call = peer.calls.lock().unwrap().iter().rev().find(|c| c["params"]["name"] == "add_file").cloned().unwrap();
+    assert_eq!(call["params"]["args"]["files"][0]["path"], "c.json");
+    // Puis le jeton est consomme.
+    let r = mcp(&app, &token, 9, "tools/call", json!({ "name": "add_file", "arguments": args })).await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
 
     // Pas une archive : refuse avant le pair.
     let r = mcp(&app, &token, 4, "tools/call", json!({ "name": "file_upload_url", "arguments": { "vault": v } })).await;

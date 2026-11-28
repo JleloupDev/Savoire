@@ -516,6 +516,35 @@ pub async fn drop_received_image(st: &AppState, vault_id: &str, args: &Value) {
     let _ = st.store.delete(vault_id, id).await;
 }
 
+/// Fichier range (ou mis en attente d'accord) : l'envoi est consomme, et
+/// l'archive deballee n'est plus utile (seuls ses fichiers comptent).
+async fn finish_upload(st: &AppState, vault_id: &str, upload: Option<&str>, archive: Option<&(String, i64)>) {
+    if let Some(token) = upload {
+        st.upload_slots.remove(token);
+    }
+    if let Some((id, size)) = archive {
+        let _ = st.store.delete(vault_id, id).await;
+        st.quota.added(vault_id, -size);
+    }
+}
+
+/// Echec apres reception (pair indisponible, refus) : les fichiers deballes
+/// partent ; un envoi par file_upload_url reste inscrit, avec son fichier ou
+/// son archive, pour un nouvel add_file. Un fichier recu par adresse part.
+async fn received_failed(st: &AppState, vault_id: &str, args: &Value, upload: Option<&str>, archive: Option<&(String, i64)>) {
+    match (upload, archive) {
+        // Envoi garde : seuls les fichiers deballes partent.
+        (Some(_), Some(_)) => drop_received_image(st, vault_id, args).await,
+        (Some(_), None) => {}
+        (None, Some((id, size))) => {
+            drop_received_image(st, vault_id, args).await;
+            let _ = st.store.delete(vault_id, id).await;
+            st.quota.added(vault_id, -size);
+        }
+        (None, None) => drop_received_image(st, vault_id, args).await,
+    }
+}
+
 // ── Fichiers (add_file, file_upload_url) ─────────────────────────────────────
 //
 // Comme add_image, pour tout fichier (bibliotheque, donnees, document...) : le
@@ -685,8 +714,10 @@ async fn receive_file(st: &AppState, user: &str, vault_id: &str, args: &Map<Stri
         if !ok {
             return Err(tool_error("Envoi inconnu, expiré, d'un autre vault, ou sans fichier : refaites file_upload_url puis le PUT."));
         }
-        let (_, slot) = st.upload_slots.remove(&token).ok_or_else(|| tool_error("Envoi inconnu."))?;
-        (slot.file_id.unwrap_or_default(), slot.size)
+        // L'envoi reste inscrit jusqu'a ce que le fichier soit range (finish_upload) :
+        // un pair indisponible n'oblige pas a tout renvoyer.
+        let slot = st.upload_slots.get(&token).ok_or_else(|| tool_error("Envoi inconnu."))?;
+        (slot.file_id.clone().unwrap_or_default(), slot.size)
     } else {
         let file = args.get("file").and_then(Value::as_object);
         let url = file.and_then(|f| f.get("download_url")).and_then(Value::as_str).map(str::to_string).or_else(|| opt_str(args, "url"));
@@ -711,7 +742,17 @@ async fn receive_file(st: &AppState, user: &str, vault_id: &str, args: &Map<Stri
         out.remove(k);
     }
     if unpack {
-        let files = unpack_archive(st, vault_id, &id, size).await?;
+        let files = match unpack_archive(st, vault_id, &id, size).await {
+            Ok(f) => f,
+            Err(v) => {
+                // Archive recue par adresse : elle part. Par file_upload_url : elle reste avec l'envoi.
+                if opt_str(args, "upload").is_none() {
+                    let _ = st.store.delete(vault_id, &id).await;
+                    st.quota.added(vault_id, -size);
+                }
+                return Err(v);
+            }
+        };
         out.insert("files".into(), Value::Array(files));
         return Ok((out, id, size));
     }
@@ -735,9 +776,8 @@ async fn unpack_archive(st: &AppState, vault_id: &str, archive_id: &str, archive
         }
         _ => return Err(tool_error("Archive introuvable.")),
     }
-    // L'archive ne reste pas : seuls ses fichiers comptent.
-    let _ = st.store.delete(vault_id, archive_id).await;
-    st.quota.added(vault_id, -archive_size);
+    // L'archive reste jusqu'a ce que ses fichiers soient ranges (finish_upload).
+    let _ = archive_size;
     let entries = crate::services::tar::entries(&bytes, MAX_ARCHIVE_ENTRIES).map_err(|m| tool_error(&m))?;
     if entries.is_empty() {
         return Err(tool_error("Archive vide (ou pas une archive .tar non compressée)."));
@@ -786,11 +826,17 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
         return Ok(Some(tool_error(m)));
     }
     // L'image d'abord (seulement si l'agent en a le droit) : l'accord eventuel porte sur une image deja recue.
+    let upload = if name == ADD_FILE { opt_str(&rest, "upload") } else { None };
+    let unpack = name == ADD_FILE && rest.get("unpack").and_then(Value::as_bool).unwrap_or(false);
+    let mut archive: Option<(String, i64)> = None;
     let image = if name == ADD_IMAGE || name == ADD_FILE {
         let received = if name == ADD_IMAGE { receive_image(st, &vault.id, &rest).await } else { receive_file(st, &p.sub, &vault.id, &rest).await };
         match received {
-            Ok((a, _, _)) => {
+            Ok((a, id, size)) => {
                 rest = a;
+                if unpack {
+                    archive = Some((id, size));
+                }
                 true
             }
             Err(v) => return Ok(Some(v)),
@@ -803,15 +849,36 @@ async fn agent_tool(st: &AppState, p: &Principal, name: &str, args: &Map<String,
     Ok(Some(match plan {
         agents::Plan::Deny(m) => tool_error(&m),
         agents::Plan::Ask { action } => {
-            let id = agents::hold(st, &call, &action).await?;
+            let id = match agents::hold(st, &call, &action).await {
+                Ok(id) => id,
+                Err(e) => {
+                    if image {
+                        received_failed(st, &vault.id, &rest, upload.as_deref(), archive.as_ref()).await;
+                    }
+                    return Err(e.into());
+                }
+            };
+            finish_upload(st, &vault.id, upload.as_deref(), archive.as_ref()).await;
             tool_text(&format!(
                 "Action en attente de validation dans Savoire (accord {id}). Elle sera faite quand la personne l'acceptera, dans le panneau Agents > Activité. Ne la refaites pas."
             ))
         }
         agents::Plan::Run { action, mode } => {
-            let r = agents::execute(st, &call, &action, &mode).await?;
-            if r.is_error && image {
-                drop_received_image(st, &vault.id, &rest).await;
+            let r = match agents::execute(st, &call, &action, &mode).await {
+                Ok(r) => r,
+                Err(e) => {
+                    if image {
+                        received_failed(st, &vault.id, &rest, upload.as_deref(), archive.as_ref()).await;
+                    }
+                    return Err(e.into());
+                }
+            };
+            if image {
+                if r.is_error {
+                    received_failed(st, &vault.id, &rest, upload.as_deref(), archive.as_ref()).await;
+                } else {
+                    finish_upload(st, &vault.id, upload.as_deref(), archive.as_ref()).await;
+                }
             }
             if r.is_error { tool_error(&r.text) } else { tool_text(&r.text) }
         }
