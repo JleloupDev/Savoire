@@ -365,7 +365,9 @@ export class AppHost extends BoardHost {
     for (const [p, v] of now) {
       const before = this.seen.get(p)
       if (before === undefined) changes.push({ path: p, change: 'added' })
-      else if (before !== v) changes.push({ path: p, change: 'changed' })
+      // Une version encore inconnue (l'index ne l'a pas vue) qui apparait
+      // n'est pas un changement : seul un passage d'une version connue a une autre l'est.
+      else if (before !== v && known(before) && known(v)) changes.push({ path: p, change: 'changed' })
     }
     for (const p of this.seen.keys()) if (!now.has(p)) changes.push({ path: p, change: 'removed' })
     this.seen = now
@@ -412,6 +414,9 @@ export class AppHost extends BoardHost {
     this.ticks = 0
   }
 }
+
+/** Version relevee par l'index ('' : absent du releve ; 'null' : sans version). */
+const known = (version: string): boolean => version !== '' && version !== 'null'
 
 /** L'id d'un document tout juste cree (l'arborescence suit un peu apres). */
 async function waitForId(api: PluginAPI, path: string, timeoutMs = 5000): Promise<string> {

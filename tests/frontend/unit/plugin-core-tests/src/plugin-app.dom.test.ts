@@ -9,7 +9,7 @@ import {
   APP_CSP, AppHost, appAgentTools, appPathOf, buildAppDocument, normalizeAppPath, rewriteAppHtml, rewriteModuleImports,
 } from '@savoire/plugin-app'
 
-type Doc = { id: string; text: string; binary?: Uint8Array; v: number }
+type Doc = { id: string; text: string; binary?: Uint8Array; v: number; unindexed?: boolean }
 
 /** Un faux vault : des fichiers par chemin, ce que l'application et les outils utilisent. */
 function world(files: Record<string, string> = {}) {
@@ -19,7 +19,7 @@ function world(files: Record<string, string> = {}) {
   const byId = (id: string) => [...docs.entries()].find(([, d]) => d.id === id)
   const trashed = new Set<string>()
   const vault = {
-    getFileTree: () => [...docs.entries()].map(([path, d]) => ({ docId: d.id, path, crdtVersion: { v: d.v } })),
+    getFileTree: () => [...docs.entries()].filter(([, d]) => !d.unindexed).map(([path, d]) => ({ docId: d.id, path, crdtVersion: { v: d.v } })),
     resolveDocumentId: (p: string) => docs.get(p)?.id,
     // Comme VaultClient.list : un niveau, dossiers termines par « / », sans la corbeille.
     list: async (dir = '') => {
@@ -204,6 +204,23 @@ describe('application : fichiers de son dossier', () => {
       const msg = replies.find(r => r.t === 'files') as { changes: { path: string; change: string }[] }
       expect(msg.changes).toEqual(expect.arrayContaining([{ path: 'a.json', change: 'changed' }, { path: 'b.json', change: 'added' }]))
       expect(msg.changes.some(c => c.path.includes('c.json'))).toBe(false)
+      host.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('suivi : un fichier que l index decouvre (version jusque-la inconnue) n est pas un changement', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const w = world({ 'H/H.app': '', 'H/p.mjs': 'x' })
+      w.docs.get('H/p.mjs')!.unindexed = true
+      const { host, call, replies } = await mount(w.api, 'H/H.app')
+      await call('files.watch')
+      await vi.advanceTimersByTimeAsync(100)
+      w.docs.get('H/p.mjs')!.unindexed = false
+      await vi.advanceTimersByTimeAsync(1600)
+      expect(replies.some(r => r.t === 'files')).toBe(false)
       host.dispose()
     } finally {
       vi.useRealTimers()

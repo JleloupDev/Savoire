@@ -73,7 +73,7 @@ const post=(m,tr)=>parent.postMessage(Object.assign({ch},m),'*',tr||[]);
 addEventListener('message',e=>{if(e.source!==parent)return;const m=e.data;if(!m||m.ch!==ch)return;
 if(m.t==='res'){const p=pend.get(m.id);if(p){pend.delete(m.id);m.ok?p[0](m.v):p[1](new Error(m.e))}}
 else if(m.t==='watch'){const w=watches.get(m.id);if(w){m.ok?w[0](m.v):w[1]&&w[1](new Error(m.e))}}
-else if(m.t==='files'){for(const c of m.changes||[]){const u=urls.get(c.path);if(u){URL.revokeObjectURL(u);urls.delete(c.path)}}for(const cb of fileWatchers){try{cb(m.changes)}catch(err){post({t:'error',m:String(err&&err.message||err)})}}}
+else if(m.t==='files'){for(const c of m.changes||[]){urls.delete(c.path)}for(const cb of fileWatchers){try{cb(m.changes)}catch(err){post({t:'error',m:String(err&&err.message||err)})}}}
 else if(m.t==='stop-workers'){for(const w of [...live])w.terminate()}});
 const call=(fn,args)=>new Promise((res,rej)=>{const id=++n;pend.set(id,[res,rej]);post({t:'call',id,fn,args})});
 const urls=new Map();
@@ -102,7 +102,12 @@ notify:(message,type)=>call('notify',[String(message),type||'info']),
 reload:()=>call('app.reload',[])});
 const W=window.Worker,live=new Set();
 if(W){const report=()=>post({t:'workers',n:live.size});
-window.Worker=function(url,opts){const w=new W(url,opts);live.add(w);const stop=w.terminate.bind(w);w.terminate=()=>{stop();if(live.delete(w))report()};report();return w};
+/* Un worker module (type: 'module') ne se charge pas depuis une origine opaque : il part en worker classique qui importe le module, messages gardes jusqu'au chargement. Le module est importe un peu apres : une adresse blob: revoquee entre-temps (MapLibre le fait) est remplacee par une copie. */
+const blobs=new Map(),mk=URL.createObjectURL.bind(URL),rm=URL.revokeObjectURL.bind(URL);
+URL.createObjectURL=o=>{const u=mk(o);if(o instanceof Blob)blobs.set(u,o);return u};
+URL.revokeObjectURL=u=>{blobs.delete(u);rm(u)};
+const shim=url=>{const abs=new URL(String(url),location.href).href,b=blobs.get(abs),src=b?mk(b):abs;return mk(new Blob(['const q=[],h=e=>q.push(e);self.addEventListener("message",h);import('+JSON.stringify(src)+').then(()=>{self.removeEventListener("message",h);for(const e of q)self.dispatchEvent(new MessageEvent("message",{data:e.data,ports:[...e.ports]}))},e=>setTimeout(()=>{throw e}))'],{type:'text/javascript'}))};
+window.Worker=function(url,opts){const mod=opts&&opts.type==='module';const w=mod?new W(shim(url),{name:opts.name}):new W(url,opts);live.add(w);const stop=w.terminate.bind(w);w.terminate=()=>{stop();if(live.delete(w))report()};report();return w};
 window.Worker.prototype=W.prototype}
 addEventListener('error',e=>post({t:'error',m:String(e.message||e)}));
 addEventListener('unhandledrejection',e=>post({t:'error',m:String(e.reason&&e.reason.message||e.reason)}));
